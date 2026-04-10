@@ -16,15 +16,15 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:9003',
+        target: 'http://localhost:9001',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:9003',
+        target: 'ws://localhost:9001',
         ws: true,
       },
       '/uploads': {
-        target: 'http://localhost:9003',
+        target: 'http://localhost:9001',
         changeOrigin: true,
       },
     },

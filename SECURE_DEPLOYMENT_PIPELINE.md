@@ -31,7 +31,23 @@
 
 > **Who does this?** Senior developer or build engineer, at the office.
 > **When?** Before every new client deployment or version update.
-> **Time needed:** ~20 minutes.
+> **Time needed:** ~20 minutes (first time ~40 minutes including setup).
+
+### 0.0 Clone the Repository (First Time Only)
+
+```powershell
+# Open PowerShell and clone the code from GitHub
+cd C:\Projects
+git clone https://github.com/manhotraconsultingservices/mcs_weightbridge.git
+cd mcs_weightbridge
+```
+
+> **All commands below use `$repoDir` as the project root.**
+> Set it once at the start of every session:
+> ```powershell
+> $repoDir = "C:\Projects\mcs_weightbridge"
+> ```
+> Replace `C:\Projects\mcs_weightbridge` with wherever you cloned the repo.
 
 ### 0.1 One-Time Setup (First Time Only)
 
@@ -84,23 +100,61 @@ pip install nuitka ordered-set zstandard
 
 **Step 6 — Frontend dependencies:**
 ```powershell
-cd C:\Users\Admin\Documents\workspace_Weighbridge\frontend
+cd "$repoDir\frontend"
 npm install
 ```
 
 **Step 7 — Backend dependencies:**
 ```powershell
-cd C:\Users\Admin\Documents\workspace_Weighbridge\backend
+cd "$repoDir\backend"
 pip install -r requirements.txt
 ```
+
+**Step 8 — NSSM (Windows Service Manager):**
+
+NSSM is NOT in the git repo (binary files are excluded). Download it once:
+```powershell
+# Download NSSM and place in scripts folder
+$nssmUrl = "https://nssm.cc/release/nssm-2.24.zip"
+$zipFile = "$env:TEMP\nssm.zip"
+Invoke-WebRequest -Uri $nssmUrl -OutFile $zipFile -UseBasicParsing
+Expand-Archive -Path $zipFile -DestinationPath "$env:TEMP\nssm-extract" -Force
+Copy-Item "$env:TEMP\nssm-extract\nssm-2.24\win64\nssm.exe" "$repoDir\scripts\nssm.exe" -Force
+Remove-Item $zipFile, "$env:TEMP\nssm-extract" -Recurse -Force
+Write-Host "NSSM downloaded to scripts\nssm.exe" -ForegroundColor Green
+```
+
+**Step 9 — Vendor Keypair for License Generation** (ask senior developer):
+
+The license generator needs a vendor keypair (Ed25519). These are NOT in git for security.
+If you're the first person setting up, generate them:
+```powershell
+cd "$repoDir\tools\license-generator"
+python -c "
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives import serialization
+private_key = Ed25519PrivateKey.generate()
+with open('vendor_private.key', 'wb') as f:
+    f.write(private_key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+with open('vendor_public.key', 'wb') as f:
+    f.write(private_key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
+print('Keypair generated: vendor_private.key + vendor_public.key')
+"
+```
+
+> **CRITICAL:** The `vendor_private.key` must NEVER be shared or committed to git.
+> Store it in a password manager or secure vault. Only the person who generates
+> licenses needs this file. The `vendor_public.key` must be embedded in the
+> backend source code (`backend/app/services/license.py`).
 
 ### 0.2 Build the Frontend
 
 ```powershell
-cd C:\Users\Admin\Documents\workspace_Weighbridge\frontend
+cd "$repoDir\frontend"
 
-# IMPORTANT: Before building, make sure vite.config.ts proxy points to port 9001
-# (for production, the backend runs on port 9001)
+# IMPORTANT: Before building, verify vite.config.ts proxy points to port 9001
+# Open vite.config.ts and check the proxy target is http://localhost:9001 (NOT 9003 or other dev ports)
+# If it shows a different port, change it back to 9001 before building:
 
 # Build production bundle (minified, no source maps)
 npm run build
@@ -116,7 +170,7 @@ dir dist\index.html
 ### 0.3 Build the Backend Binary
 
 ```powershell
-cd C:\Users\Admin\Documents\workspace_Weighbridge\backend
+cd "$repoDir\backend"
 
 # Compile Python to native Windows .exe (takes 5-15 minutes first time)
 powershell -File build_dist.ps1
@@ -133,7 +187,11 @@ dir dist\weighbridge_server.exe
 ### 0.4 Package the Release
 
 Create a release folder with everything the client needs.
-Run this in **PowerShell** from the project root (`C:\Users\Admin\Documents\workspace_Weighbridge`):
+Run this in **PowerShell** from the project root (where you cloned the repo):
+
+```powershell
+cd $repoDir
+```
 
 ```powershell
 # Set version number (change this for each release)
@@ -163,6 +221,13 @@ Copy-Item "docker-compose.yml" "$releaseDir\" -Force
 
 # Copy all deployment scripts
 xcopy "scripts" "$releaseDir\scripts\" /E /I /Y /Q
+
+# Verify NSSM is in scripts (needed for Windows service registration)
+if (-not (Test-Path "scripts\nssm.exe")) {
+    Write-Host "WARNING: nssm.exe not found in scripts\. Download it:" -ForegroundColor Red
+    Write-Host "  https://nssm.cc/release/nssm-2.24.zip" -ForegroundColor Yellow
+    Write-Host "  Extract win64\nssm.exe to scripts\nssm.exe" -ForegroundColor Yellow
+}
 
 # Create .env template (secrets get auto-generated during install — NOT stored here)
 @"
@@ -385,9 +450,9 @@ Do this ONCE from your Cloudflare dashboard. All future clients reuse the same a
 **Option A — You already have the client's fingerprint** (from a previous visit or sent remotely):
 
 ```powershell
-cd backend
+cd "$repoDir\tools\license-generator"
 
-# Generate license (on YOUR machine with the private key)
+# Generate license (on YOUR machine — requires vendor_private.key in this folder)
 python generate_license.py `
     --customer "Shree Ram Stone Crusher Pvt Ltd" `
     --hostname "CLIENT-PC" `
@@ -395,6 +460,10 @@ python generate_license.py `
     --expires 2027-04-10 `
     --output license.key
 ```
+
+> **If you get "vendor_private.key not found":** Ask the senior developer for the
+> keypair, or generate one (see Section 0.1 Step 9). The private key stays on the
+> vendor machine — never give it to clients or commit to git.
 
 **Option B — First deployment, no fingerprint yet:**
 
@@ -464,10 +533,33 @@ deployment-packages/shreeram/
 Copy these to a USB drive:
 ```
 USB Drive/
-    deployment-packages/shreeram/     # Config package
-    weighbridge-full-1.0.0/           # Release files
-    scripts/                          # All deployment scripts
-    Docker Desktop Installer.exe      # (if client needs it)
+    deployment-packages/shreeram/     # Config package (from Step 3.4)
+    weighbridge-full-1.0.0/           # Release files (from Section 0.4)
+    Docker Desktop Installer.exe      # Download from docker.com (if client needs it)
+```
+
+> **Note:** The `scripts/` folder is already inside `weighbridge-full-1.0.0/scripts/`
+> (copied during Section 0.4 packaging). No need to copy it separately.
+
+**Verify USB contents before leaving:**
+```powershell
+# Check USB drive (replace D: with your USB drive letter)
+$usb = "D:"
+
+# Must exist:
+@(
+    "$usb\deployment-packages\shreeram\deploy-config.json",
+    "$usb\deployment-packages\shreeram\license.key",
+    "$usb\deployment-packages\shreeram\DEPLOY.bat",
+    "$usb\weighbridge-full-1.0.0\backend\weighbridge_server.exe",
+    "$usb\weighbridge-full-1.0.0\frontend\dist\index.html",
+    "$usb\weighbridge-full-1.0.0\scripts\Deploy-Full.ps1",
+    "$usb\weighbridge-full-1.0.0\scripts\nssm.exe",
+    "$usb\weighbridge-full-1.0.0\docker-compose.yml"
+) | ForEach-Object {
+    if (Test-Path $_) { Write-Host "[OK] $_" -ForegroundColor Green }
+    else { Write-Host "[MISSING] $_" -ForegroundColor Red }
+}
 ```
 
 ---
@@ -968,7 +1060,16 @@ If you skip `npm run build`, the `frontend/dist/` folder will be empty or outdat
 - **Development:** proxy target can be any port (9001, 9003, etc.)
 - **Production build:** The frontend is served as static files — no proxy is used. The backend runs on port 9001.
 
-Before running `npm run build` for a release, make sure `vite.config.ts` proxy points to `localhost:9001`.
+Before running `npm run build` for a release, open `frontend/vite.config.ts` and verify ALL proxy targets point to `localhost:9001`:
+```typescript
+// CORRECT for production build:
+proxy: {
+    '/api':     { target: 'http://localhost:9001' },
+    '/ws':      { target: 'ws://localhost:9001' },
+    '/uploads': { target: 'http://localhost:9001' },
+}
+```
+If you see a different port (9003, 9005, etc.), change it to 9001 before building.
 
 ### Mistake 6: Not Saving .env.bak to USB
 
