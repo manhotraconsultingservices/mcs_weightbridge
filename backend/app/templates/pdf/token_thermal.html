@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  /* ── Screen: constrain to 80mm so the popup looks like a receipt ── */
+  html, body {
+    width: 80mm;
+    max-width: 80mm;
+    margin: 0 auto;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  /* ── Print: force 80mm thermal paper, no margins ── */
+  @media print {
+    @page {
+      size: 80mm auto;
+      margin: 2mm 3mm;
+    }
+    html, body {
+      width: 80mm;
+      max-width: 80mm;
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 10px;
+    color: #000;
+    padding: 2mm 3mm;
+  }
+
+  .center { text-align: center; }
+  .bold   { font-weight: bold; }
+
+  .co-name {
+    font-size: 13px;
+    font-weight: bold;
+    text-align: center;
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  .sep {
+    border: none;
+    border-top: 1px dashed #000;
+    margin: 3px 0;
+  }
+
+  .row {
+    display: flex;
+    justify-content: space-between;
+    margin: 1.5px 0;
+    gap: 4px;
+  }
+  .row-label {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .row-value {
+    flex: 1;
+    text-align: right;
+    font-weight: bold;
+    word-break: break-all;
+  }
+
+  .weight-block { margin: 2px 0; }
+  .weight-row   { display: flex; margin: 2px 0; }
+  .wlabel       { width: 12ch; flex-shrink: 0; }
+  .wval         { flex: 1; text-align: right; font-weight: bold; }
+
+  .net-mt       { text-align: right; font-weight: bold; margin-top: 1px; }
+  .thank-you    { text-align: center; margin-top: 4px; }
+
+  /* Feed paper at the end so the cutter cuts cleanly */
+  .feed { height: 16mm; }
+
+  /* Setup banner — screen only, never printed */
+  .setup-banner {
+    display: block;
+    background: #1e40af;
+    color: #fff;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    padding: 7px 10px;
+    margin-bottom: 6px;
+    border-radius: 4px;
+    line-height: 1.5;
+  }
+  .setup-banner b { font-size: 12px; display: block; margin-bottom: 2px; }
+  .setup-banner ol { padding-left: 16px; margin: 0; }
+  @media print {
+    .setup-banner { display: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="setup-banner">
+  <b>⚙️ First-time thermal printer setup</b>
+  <ol>
+    <li>Select your <b>thermal printer</b> (not PDF)</li>
+    <li>Click <b>More settings</b></li>
+    <li>Paper size → <b>80mm × 200mm</b> (or your roll size)</li>
+    <li>Margins → <b>None</b> &nbsp;|&nbsp; Scale → <b>100%</b></li>
+    <li>Uncheck <b>Headers and footers</b></li>
+  </ol>
+  Chrome remembers these settings once set.
+</div>
+
+<div class="co-name">{{ company.name }}</div>
+{% if company.gstin %}
+<div class="center" style="font-size:9px;">GSTIN: {{ company.gstin }}</div>
+{% endif %}
+<div class="center" style="font-size:10px; margin-top:1px;">WEIGHMENT SLIP</div>
+<hr class="sep">
+
+<div class="row">
+  <span class="row-label">TOKEN NO</span>
+  <span class="row-value">{{ token.token_no or 'PENDING' }}</span>
+</div>
+<div class="row">
+  <span class="row-label">DATE</span>
+  <span class="row-value">{{ token.token_date.strftime('%d-%m-%Y') if token.token_date else '—' }}</span>
+</div>
+<div class="row">
+  <span class="row-label">TYPE</span>
+  <span class="row-value">{{ (token.token_type or 'SALE') | upper }}</span>
+</div>
+<hr class="sep">
+
+<div class="row">
+  <span class="row-label">VEHICLE</span>
+  <span class="row-value">{{ token.vehicle_no or '—' }}</span>
+</div>
+<div class="row">
+  <span class="row-label">PARTY</span>
+  <span class="row-value">{{ token.party.name if token.party else '—' }}</span>
+</div>
+<div class="row">
+  <span class="row-label">PRODUCT</span>
+  <span class="row-value">{{ token.product.name if token.product else '—' }}</span>
+</div>
+{% if token.driver %}
+<div class="row">
+  <span class="row-label">DRIVER</span>
+  <span class="row-value">{{ token.driver.name }}</span>
+</div>
+{% endif %}
+<hr class="sep">
+
+<div class="weight-block">
+  <div class="weight-row">
+    <span class="wlabel">GROSS WT  :</span>
+    <span class="wval">{% if token.gross_weight %}{{ '%.2f'|format(token.gross_weight|float) }} kg{% else %}—{% endif %}</span>
+  </div>
+  <div class="weight-row">
+    <span class="wlabel">TARE  WT  :</span>
+    <span class="wval">{% if token.tare_weight %}{{ '%.2f'|format(token.tare_weight|float) }} kg{% else %}—{% endif %}</span>
+  </div>
+  <div class="weight-row">
+    <span class="wlabel">NET   WT  :</span>
+    <span class="wval">{% if token.net_weight %}{{ '%.2f'|format(token.net_weight|float) }} kg{% else %}—{% endif %}</span>
+  </div>
+  {% if token.net_weight %}
+  <div class="net-mt">= {{ '%.3f'|format(token.net_weight|float / 1000) }} MT</div>
+  {% endif %}
+</div>
+<hr class="sep">
+
+<div class="row">
+  <span class="row-label">IN</span>
+  <span class="row-value">{% if token.first_weight_at %}{{ token.first_weight_at.strftime('%d-%m-%Y %H:%M') }}{% else %}—{% endif %}</span>
+</div>
+<div class="row">
+  <span class="row-label">OUT</span>
+  <span class="row-value">{% if token.second_weight_at %}{{ token.second_weight_at.strftime('%d-%m-%Y %H:%M') }}{% else %}—{% endif %}</span>
+</div>
+<hr class="sep">
+
+<div class="thank-you">Thank You</div>
+
+<!-- Paper feed so the auto-cutter fires below the last line -->
+<div class="feed"></div>
+
+<script>
+  window.onload = function () {
+    window.print();
+    window.onafterprint = function () { window.close(); };
+  };
+</script>
+</body>
+</html>

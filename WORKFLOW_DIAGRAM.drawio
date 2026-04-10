@@ -1,0 +1,743 @@
+<mxfile host="app.diagrams.net" modified="2026-04-08T00:00:00.000Z" agent="Claude" version="21.0.0" type="device">
+  <diagram id="page1-sale" name="Sale Invoice Workflow">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title1" value="Sale Invoice — End-to-End Workflow" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=18;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="327" y="20" width="1000" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Swimlane container -->
+        <mxCell id="swim" value="" style="shape=pool;startSize=0;horizontal=1;childLayout=stackLayout;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=1;collapsible=0;marginBottom=0;swimlaneHead=0;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="1580" height="1060" as="geometry" />
+        </mxCell>
+
+        <!-- Lane 1: Vehicle / Driver -->
+        <mxCell id="lane1" value="Vehicle / Driver" style="swimlane;startSize=30;horizontal=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=11;" vertex="1" parent="swim">
+          <mxGeometry x="0" y="0" width="1580" height="160" as="geometry" />
+        </mxCell>
+
+        <!-- Lane 2: Operator -->
+        <mxCell id="lane2" value="Operator" style="swimlane;startSize=30;horizontal=0;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;" vertex="1" parent="swim">
+          <mxGeometry x="0" y="160" width="1580" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- Lane 3: System (Auto) -->
+        <mxCell id="lane3" value="System (Auto)" style="swimlane;startSize=30;horizontal=0;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=11;" vertex="1" parent="swim">
+          <mxGeometry x="0" y="360" width="1580" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- Lane 4: Admin / Finance -->
+        <mxCell id="lane4" value="Admin / Finance" style="swimlane;startSize=30;horizontal=0;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=11;" vertex="1" parent="swim">
+          <mxGeometry x="0" y="560" width="1580" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- Lane 5: Tally Prime -->
+        <mxCell id="lane5" value="Tally Prime" style="swimlane;startSize=30;horizontal=0;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=11;" vertex="1" parent="swim">
+          <mxGeometry x="0" y="760" width="1580" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- ===== LANE 1: Vehicle/Driver ===== -->
+        <!-- Vehicle Arrives -->
+        <mxCell id="v1" value="Vehicle Arrives&#xa;at Weighbridge" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="lane1">
+          <mxGeometry x="50" y="60" width="120" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Driver presents docs -->
+        <mxCell id="v2" value="Driver Presents&#xa;Delivery Challan" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="lane1">
+          <mxGeometry x="230" y="60" width="120" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Vehicle on 2nd weight -->
+        <mxCell id="v3" value="Vehicle Returns&#xa;for Tare Weight" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="lane1">
+          <mxGeometry x="710" y="60" width="120" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Vehicle Leaves -->
+        <mxCell id="v4" value="Vehicle&#xa;Departs" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="lane1">
+          <mxGeometry x="1010" y="60" width="100" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== LANE 2: Operator ===== -->
+        <!-- Create Token -->
+        <mxCell id="op1" value="Create Token&#xa;(Party, Product,&#xa;Vehicle)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="lane2">
+          <mxGeometry x="200" y="70" width="120" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- 1st Weight -->
+        <mxCell id="op2" value="Record Gross&#xa;Weight (1st)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="lane2">
+          <mxGeometry x="410" y="70" width="120" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Loading -->
+        <mxCell id="op3" value="Material&#xa;Loading/Unloading" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="lane2">
+          <mxGeometry x="560" y="70" width="120" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- 2nd Weight -->
+        <mxCell id="op4" value="Record Tare&#xa;Weight (2nd)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="lane2">
+          <mxGeometry x="710" y="70" width="120" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Print / Confirm -->
+        <mxCell id="op5" value="View Token&#xa;Slip / Confirm" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="lane2">
+          <mxGeometry x="1010" y="70" width="120" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== LANE 3: System Auto ===== -->
+        <!-- Token Created -->
+        <mxCell id="sys1" value="Token OPEN&#xa;status created" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="lane3">
+          <mxGeometry x="200" y="70" width="120" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- 1st weight saved -->
+        <mxCell id="sys2" value="Gross weight saved&#xa;Token → FIRST_WEIGHT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="lane3">
+          <mxGeometry x="410" y="70" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Camera Capture -->
+        <mxCell id="sys3" value="Camera Snapshot&#xa;(Front + Top)&#xa;BackgroundTask" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontStyle=2;" vertex="1" parent="lane3">
+          <mxGeometry x="710" y="70" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Token complete + Invoice -->
+        <mxCell id="sys4" value="Token COMPLETED&#xa;token_no assigned&#xa;Draft Invoice auto-created" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="lane3">
+          <mxGeometry x="880" y="55" width="140" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- tally_needs_sync flag -->
+        <mxCell id="sys5" value="tally_needs_sync = TRUE&#xa;(invoice modified)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="lane3">
+          <mxGeometry x="1230" y="70" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== LANE 4: Admin/Finance ===== -->
+        <!-- Edit Invoice -->
+        <mxCell id="fin1" value="Review &amp; Edit&#xa;Draft Invoice&#xa;(Rate, Qty, Discount)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="lane4">
+          <mxGeometry x="1010" y="60" width="130" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- Move to Supplement? -->
+        <mxCell id="fin2" value="Private / Non-GST?&#xa;Move to Supplement" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="lane4">
+          <mxGeometry x="1160" y="50" width="130" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Finalise -->
+        <mxCell id="fin3" value="Finalise Invoice&#xa;invoice_no assigned&#xa;Status = FINAL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="lane4">
+          <mxGeometry x="1320" y="60" width="130" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- Record Payment -->
+        <mxCell id="fin4" value="Record Payment&#xa;(Receipt Voucher)&#xa;Partial / Full" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="lane4">
+          <mxGeometry x="1460" y="60" width="110" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- Send to Tally -->
+        <mxCell id="fin5" value="Send to Tally&#xa;(single or bulk)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="lane4">
+          <mxGeometry x="1320" y="140" width="130" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ===== LANE 5: Tally ===== -->
+        <!-- Receives XML -->
+        <mxCell id="tal1" value="Receives POST XML&#xa;HTTP port 9002" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="lane5">
+          <mxGeometry x="1320" y="60" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Creates voucher -->
+        <mxCell id="tal2" value="Creates Sales Voucher&#xa;Party + Stock Ledger&#xa;BILLALLOCATIONS (aging)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="lane5">
+          <mxGeometry x="1460" y="55" width="110" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- DB flag updated -->
+        <mxCell id="sys6" value="tally_synced = TRUE&#xa;tally_needs_sync = FALSE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="lane5">
+          <mxGeometry x="1320" y="140" width="130" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ===== ARROWS: Lane 1 ===== -->
+        <mxCell id="e_v1v2" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="v1" target="v2" parent="lane1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_v2op1" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="v2" target="op1" parent="swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_v3v4" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="v3" target="v4" parent="lane1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== ARROWS: Lane 2 ===== -->
+        <mxCell id="e_op1op2" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="op1" target="op2" parent="lane2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_op2op3" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="op2" target="op3" parent="lane2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_op3op4" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="op3" target="op4" parent="lane2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_op4op5" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="op4" target="op5" parent="lane2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Cross-lane: op1 → sys1 -->
+        <mxCell id="e_op1sys1" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="op1" target="sys1" parent="swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- Cross-lane: op2 → sys2 -->
+        <mxCell id="e_op2sys2" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="op2" target="sys2" parent="swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- Cross-lane: op4 → sys3 (camera) -->
+        <mxCell id="e_op4sys3" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="op4" target="sys3" parent="swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- sys3 → sys4 (token complete) -->
+        <mxCell id="e_sys3sys4" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="sys3" target="sys4" parent="swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- sys4 → fin1 (draft invoice → finance) -->
+        <mxCell id="e_sys4fin1" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="sys4" target="fin1" parent="swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- fin1 → fin2 -->
+        <mxCell id="e_fin1fin2" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="fin1" target="fin2" parent="swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- fin2 → fin3 (No = normal) -->
+        <mxCell id="e_fin2fin3" value="No (GST)" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="fin2" target="fin3" parent="swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- fin3 → fin4 -->
+        <mxCell id="e_fin3fin4" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="fin3" target="fin4" parent="swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- fin3 → fin5 (send tally) -->
+        <mxCell id="e_fin3fin5" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="fin3" target="fin5" parent="swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- fin3 → sys5 (needs sync) -->
+        <mxCell id="e_fin3sys5" style="edgeStyle=orthogonalEdgeStyle;dashed=1;" edge="1" source="fin3" target="sys5" parent="swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- fin5 → tal1 -->
+        <mxCell id="e_fin5tal1" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="fin5" target="tal1" parent="swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- tal1 → tal2 -->
+        <mxCell id="e_tal1tal2" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="tal1" target="tal2" parent="swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- tal1 → sys6 (flag update) -->
+        <mxCell id="e_tal1sys6" style="edgeStyle=orthogonalEdgeStyle;dashed=1;" edge="1" source="tal1" target="sys6" parent="swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="page2-purchase" name="Purchase Invoice Workflow">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title2" value="Purchase Invoice — End-to-End Workflow" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=18;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="327" y="20" width="1000" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Swimlane container -->
+        <mxCell id="pswim" value="" style="shape=pool;startSize=0;horizontal=1;childLayout=stackLayout;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=1;collapsible=0;marginBottom=0;swimlaneHead=0;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="1580" height="1000" as="geometry" />
+        </mxCell>
+
+        <!-- Lane 1 -->
+        <mxCell id="pl1" value="Vehicle / Supplier" style="swimlane;startSize=30;horizontal=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=11;" vertex="1" parent="pswim">
+          <mxGeometry x="0" y="0" width="1580" height="150" as="geometry" />
+        </mxCell>
+        <!-- Lane 2 -->
+        <mxCell id="pl2" value="Operator" style="swimlane;startSize=30;horizontal=0;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;" vertex="1" parent="pswim">
+          <mxGeometry x="0" y="150" width="1580" height="190" as="geometry" />
+        </mxCell>
+        <!-- Lane 3 -->
+        <mxCell id="pl3" value="System (Auto)" style="swimlane;startSize=30;horizontal=0;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=11;" vertex="1" parent="pswim">
+          <mxGeometry x="0" y="340" width="1580" height="190" as="geometry" />
+        </mxCell>
+        <!-- Lane 4 -->
+        <mxCell id="pl4" value="Purchase Manager / Finance" style="swimlane;startSize=30;horizontal=0;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=11;" vertex="1" parent="pswim">
+          <mxGeometry x="0" y="530" width="1580" height="190" as="geometry" />
+        </mxCell>
+        <!-- Lane 5 -->
+        <mxCell id="pl5" value="Tally Prime" style="swimlane;startSize=30;horizontal=0;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=11;" vertex="1" parent="pswim">
+          <mxGeometry x="0" y="720" width="1580" height="180" as="geometry" />
+        </mxCell>
+
+        <!-- Lane 1: Supplier -->
+        <mxCell id="pv1" value="Loaded Truck&#xa;Arrives" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="pl1">
+          <mxGeometry x="50" y="45" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="pv2" value="Material&#xa;Unloaded" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="pl1">
+          <mxGeometry x="560" y="45" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="pv3" value="Empty Truck&#xa;Departs" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="pl1">
+          <mxGeometry x="880" y="45" width="110" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Lane 2: Operator -->
+        <mxCell id="pop1" value="Create Token&#xa;(Supplier, Product,&#xa;Vehicle, Inbound)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="pl2">
+          <mxGeometry x="180" y="65" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="pop2" value="Record GROSS&#xa;Weight (Loaded)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="pl2">
+          <mxGeometry x="380" y="65" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="pop3" value="Record TARE&#xa;Weight (Empty)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="pl2">
+          <mxGeometry x="710" y="65" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="pop4" value="Confirm Token&#xa;Slip" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="pl2">
+          <mxGeometry x="1010" y="65" width="110" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Lane 3: System -->
+        <mxCell id="psys1" value="Token OPEN created&#xa;direction=inbound" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="pl3">
+          <mxGeometry x="180" y="65" width="130" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="psys2" value="Gross weight saved&#xa;Camera snapshot fires&#xa;(BackgroundTask)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontStyle=2;" vertex="1" parent="pl3">
+          <mxGeometry x="380" y="55" width="130" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="psys3" value="Tare weight saved&#xa;Net = Gross − Tare&#xa;Token COMPLETED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="pl3">
+          <mxGeometry x="710" y="55" width="130" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="psys4" value="Draft Purchase Invoice&#xa;auto-created&#xa;token_no assigned" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="pl3">
+          <mxGeometry x="880" y="60" width="130" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Lane 4: Finance -->
+        <mxCell id="pfin1" value="Review Draft&#xa;Purchase Invoice" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="pl4">
+          <mxGeometry x="1010" y="60" width="120" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="pfin2" value="Edit Rate / HSN&#xa;Match Supplier Bill" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="pl4">
+          <mxGeometry x="1160" y="60" width="120" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="pfin3" value="Finalise Invoice&#xa;invoice_no assigned" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="pl4">
+          <mxGeometry x="1310" y="60" width="120" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="pfin4" value="Record Payment&#xa;(Payment Voucher)&#xa;Outgoing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="pl4">
+          <mxGeometry x="1450" y="60" width="110" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="pfin5" value="Send to Tally" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="pl4">
+          <mxGeometry x="1310" y="135" width="120" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- Lane 5: Tally -->
+        <mxCell id="ptal1" value="Receives Purchase&#xa;XML via HTTP 9002" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="pl5">
+          <mxGeometry x="1310" y="55" width="130" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ptal2" value="Creates Purchase Voucher&#xa;Supplier Ledger + Stock&#xa;BILLALLOCATIONS (ITC)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="pl5">
+          <mxGeometry x="1450" y="50" width="110" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Edges purchase -->
+        <mxCell id="pe1" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="pv1" target="pop1" parent="pswim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pe2" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="pop1" target="pop2" parent="pl2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pe3" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="pop2" target="pop3" parent="pl2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pe4" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="pop3" target="pop4" parent="pl2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pe5" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="pop1" target="psys1" parent="pswim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pe6" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="pop2" target="psys2" parent="pswim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pe7" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="pop3" target="psys3" parent="pswim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pe8" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="psys3" target="psys4" parent="pswim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pe9" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="psys4" target="pfin1" parent="pswim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pe10" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="pfin1" target="pfin2" parent="pl4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pe11" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="pfin2" target="pfin3" parent="pl4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pe12" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="pfin3" target="pfin4" parent="pl4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pe13" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="pfin3" target="pfin5" parent="pl4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pe14" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="pfin5" target="ptal1" parent="pswim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pe15" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="ptal1" target="ptal2" parent="pswim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pe16" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="pv2" target="pop3" parent="pswim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pe17" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="psys3" target="pv3" parent="pswim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="page3-architecture" name="System Architecture">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="archtitle" value="Weighbridge System — Module Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=18;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="327" y="20" width="1000" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ========== FRONTEND GROUP ========== -->
+        <mxCell id="fe_group" value="Frontend (React 19 + TypeScript · Vite · Port 9000)" style="swimlane;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;startSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="960" height="620" as="geometry" />
+        </mxCell>
+
+        <!-- Operations cluster -->
+        <mxCell id="fe_ops" value="Operations" style="swimlane;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=10;startSize=20;" vertex="1" parent="fe_group">
+          <mxGeometry x="20" y="40" width="200" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_dashboard" value="Dashboard" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="fe_ops">
+          <mxGeometry x="10" y="30" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_tokens" value="Token / Weighment" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="fe_ops">
+          <mxGeometry x="10" y="70" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_camera" value="Camera Snapshots" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="fe_ops">
+          <mxGeometry x="105" y="30" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_ws" value="Weight Scale WS" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="fe_ops">
+          <mxGeometry x="105" y="70" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_compliance" value="Compliance Tracker" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="fe_ops">
+          <mxGeometry x="10" y="115" width="175" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_private" value="Private Invoices (USB-gated)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="fe_ops">
+          <mxGeometry x="10" y="155" width="175" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Finance cluster -->
+        <mxCell id="fe_finance" value="Finance" style="swimlane;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=10;startSize=20;" vertex="1" parent="fe_group">
+          <mxGeometry x="240" y="40" width="200" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_inv" value="Sales Invoices" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="fe_finance">
+          <mxGeometry x="10" y="30" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_pur" value="Purchase Invoices" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="fe_finance">
+          <mxGeometry x="105" y="30" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_quot" value="Quotations" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="fe_finance">
+          <mxGeometry x="10" y="70" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_pay" value="Payments" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="fe_finance">
+          <mxGeometry x="105" y="70" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_ledger" value="Ledger / Outstanding" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="fe_finance">
+          <mxGeometry x="10" y="115" width="175" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_tally" value="Tally Sync (multi-select)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="fe_finance">
+          <mxGeometry x="10" y="155" width="175" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Reports cluster -->
+        <mxCell id="fe_reports" value="Reports &amp; GST" style="swimlane;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=10;startSize=20;" vertex="1" parent="fe_group">
+          <mxGeometry x="460" y="40" width="200" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_gstr1" value="GSTR-1 (B2B/B2C/JSON)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="fe_reports">
+          <mxGeometry x="10" y="30" width="175" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_gstr3b" value="GSTR-3B" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="fe_reports">
+          <mxGeometry x="10" y="70" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_pl" value="Profit &amp; Loss" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="fe_reports">
+          <mxGeometry x="105" y="70" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_stock" value="Stock Summary" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="fe_reports">
+          <mxGeometry x="10" y="115" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_salesreg" value="Sales/Weight Register" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="fe_reports">
+          <mxGeometry x="10" y="155" width="175" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Admin cluster -->
+        <mxCell id="fe_admin" value="Administration" style="swimlane;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=10;startSize=20;" vertex="1" parent="fe_group">
+          <mxGeometry x="680" y="40" width="260" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_users" value="User Management" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="fe_admin">
+          <mxGeometry x="10" y="30" width="110" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_perms" value="Role Permissions" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="fe_admin">
+          <mxGeometry x="135" y="30" width="110" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_settings" value="Settings (Company/FY/Serial)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="fe_admin">
+          <mxGeometry x="10" y="70" width="235" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_notif" value="Notifications Config" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="fe_admin">
+          <mxGeometry x="10" y="110" width="110" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_audit" value="Audit Trail" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="fe_admin">
+          <mxGeometry x="135" y="110" width="110" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_backup" value="Backup &amp; Restore" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="fe_admin">
+          <mxGeometry x="10" y="155" width="110" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_import" value="Data Import (Excel)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="fe_admin">
+          <mxGeometry x="135" y="155" width="110" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Masters cluster -->
+        <mxCell id="fe_masters" value="Masters" style="swimlane;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=10;startSize=20;" vertex="1" parent="fe_group">
+          <mxGeometry x="20" y="260" width="480" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_parties" value="Parties (Customers/Suppliers)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="fe_masters">
+          <mxGeometry x="10" y="30" width="140" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_products" value="Products &amp; Categories" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="fe_masters">
+          <mxGeometry x="165" y="30" width="140" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_vehicles" value="Vehicles / Drivers / Transporters" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="fe_masters">
+          <mxGeometry x="320" y="30" width="145" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Hooks cluster -->
+        <mxCell id="fe_hooks" value="React Hooks" style="swimlane;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=10;startSize=20;" vertex="1" parent="fe_group">
+          <mxGeometry x="20" y="380" width="920" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_h1" value="useAuth (JWT)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="fe_hooks">
+          <mxGeometry x="10" y="25" width="90" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_h2" value="useWeight (WS)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="fe_hooks">
+          <mxGeometry x="115" y="25" width="90" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_h3" value="useUsbGuard" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="fe_hooks">
+          <mxGeometry x="220" y="25" width="90" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_h4" value="useAppSettings" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="fe_hooks">
+          <mxGeometry x="325" y="25" width="90" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_h5" value="api.ts (Axios interceptor)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="fe_hooks">
+          <mxGeometry x="430" y="25" width="120" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- ========== BACKEND GROUP ========== -->
+        <mxCell id="be_group" value="Backend (FastAPI + Python 3.11 · Port 9001)" style="swimlane;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=12;startSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="730" width="960" height="380" as="geometry" />
+        </mxCell>
+
+        <!-- Routers -->
+        <mxCell id="be_routers" value="API Routers (/api/v1)" style="swimlane;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=10;startSize=20;" vertex="1" parent="be_group">
+          <mxGeometry x="20" y="40" width="580" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r1" value="auth" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="10" y="30" width="60" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r2" value="tokens" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="80" y="30" width="60" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r3" value="invoices" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="150" y="30" width="60" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r4" value="quotations" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="220" y="30" width="65" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r5" value="payments" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="295" y="30" width="65" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r6" value="parties" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="370" y="30" width="60" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r7" value="cameras" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="440" y="30" width="60" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r8" value="tally" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="510" y="30" width="60" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r9" value="reports" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="10" y="65" width="60" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r10" value="compliance" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="80" y="65" width="65" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r11" value="notifications" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="155" y="65" width="75" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r12" value="audit" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="240" y="65" width="55" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r13" value="backup" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="305" y="65" width="60" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r14" value="import" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="375" y="65" width="55" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r15" value="usb-guard" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="440" y="65" width="65" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r16" value="private-invoices" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="10" y="100" width="100" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r17" value="app-settings" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="120" y="100" width="80" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r18" value="ws/weight (WebSocket)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="210" y="100" width="130" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_r19" value="dashboard" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_routers">
+          <mxGeometry x="350" y="100" width="70" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Integrations -->
+        <mxCell id="be_integrations" value="Integrations" style="swimlane;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=10;startSize=20;" vertex="1" parent="be_group">
+          <mxGeometry x="620" y="40" width="320" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="be_i1" value="Tally XML Builder&#xa;(xml_builder.py)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="be_integrations">
+          <mxGeometry x="10" y="30" width="140" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="be_i2" value="Camera Capture&#xa;(httpx + PIL)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="be_integrations">
+          <mxGeometry x="160" y="30" width="140" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="be_i3" value="Serial Port (Weight Scale)&#xa;WebSocket streamer" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="be_integrations">
+          <mxGeometry x="10" y="85" width="140" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="be_i4" value="Notifications&#xa;(SMTP / MSG91 / WATI)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="be_integrations">
+          <mxGeometry x="160" y="85" width="140" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Core services -->
+        <mxCell id="be_core" value="Core (main.py / dependencies.py / pdf_generator)" style="swimlane;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=10;startSize=20;" vertex="1" parent="be_group">
+          <mxGeometry x="20" y="220" width="920" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="be_c1" value="JWT Auth + Role Guards" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_core">
+          <mxGeometry x="10" y="25" width="130" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_c2" value="Async DB Session (SQLAlchemy)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_core">
+          <mxGeometry x="155" y="25" width="150" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_c3" value="xhtml2pdf PDF Generator" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_core">
+          <mxGeometry x="320" y="25" width="130" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_c4" value="Runtime DDL Migrations" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_core">
+          <mxGeometry x="465" y="25" width="130" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_c5" value="AES-256-GCM Encryption" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_core">
+          <mxGeometry x="610" y="25" width="130" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_c6" value="Static /uploads mount" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_core">
+          <mxGeometry x="755" y="25" width="120" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- DB -->
+        <mxCell id="be_db" value="Models (ORM)" style="swimlane;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=10;startSize=20;" vertex="1" parent="be_group">
+          <mxGeometry x="20" y="300" width="920" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="be_m1" value="tokens" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_db">
+          <mxGeometry x="10" y="25" width="70" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_m2" value="invoices" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_db">
+          <mxGeometry x="90" y="25" width="70" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_m3" value="parties" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_db">
+          <mxGeometry x="170" y="25" width="70" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_m4" value="products" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_db">
+          <mxGeometry x="250" y="25" width="70" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_m5" value="payments" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_db">
+          <mxGeometry x="330" y="25" width="70" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_m6" value="token_snapshots" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_db">
+          <mxGeometry x="410" y="25" width="100" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_m7" value="supplementary_entries" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_db">
+          <mxGeometry x="520" y="25" width="130" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_m8" value="compliance_items" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_db">
+          <mxGeometry x="660" y="25" width="110" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="be_m9" value="app_settings" style="rounded=1;whiteSpace=wrap;html=1;fontSize=9;" vertex="1" parent="be_db">
+          <mxGeometry x="780" y="25" width="90" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- ========== EXTERNAL SYSTEMS ========== -->
+        <mxCell id="ext_db" value="PostgreSQL 16&#xa;(Port 5432)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="80" width="140" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ext_tally" value="Tally Prime&#xa;HTTP 9002&#xa;(Windows Local)" style="shape=mxgraph.cisco.servers.standard_server;html=1;pointerEvents=1;dashed=0;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=2;verticalLabelPosition=bottom;verticalAlign=top;align=center;outlineConnect=0;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="230" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_tally_lbl" value="Tally Prime" style="text;html=1;align=center;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="295" width="100" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ext_camera" value="IP Cameras&#xa;(STQC certified)&#xa;HTTP Snapshot" style="shape=mxgraph.cisco.computers_and_peripherals.ip_camera;html=1;pointerEvents=1;dashed=0;fillColor=#ffe6cc;strokeColor=#d79b00;strokeWidth=2;verticalLabelPosition=bottom;verticalAlign=top;align=center;outlineConnect=0;fontStyle=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1065" y="360" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_camera_lbl" value="IP Cameras (Front+Top)" style="text;html=1;align=center;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="415" width="140" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ext_scale" value="Weight Scale&#xa;(Serial / COM Port)" style="shape=mxgraph.cisco.computers_and_peripherals.scale;html=1;pointerEvents=1;dashed=0;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;verticalLabelPosition=bottom;verticalAlign=top;align=center;outlineConnect=0;fontStyle=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1065" y="460" width="50" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_scale_lbl" value="Weight Scale (Serial)" style="text;html=1;align=center;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="525" width="140" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ext_usb" value="USB Key&#xa;(.weighbridge_key)" style="shape=mxgraph.cisco.computers_and_peripherals.usb_flash_drive;html=1;pointerEvents=1;dashed=0;fillColor=#f8cecc;strokeColor=#b85450;strokeWidth=2;verticalLabelPosition=bottom;verticalAlign=top;align=center;outlineConnect=0;fontStyle=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1065" y="570" width="50" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_usb_lbl" value="USB Key (Guard)" style="text;html=1;align=center;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="635" width="140" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ext_notif" value="Notification Channels&#xa;SMTP · MSG91 · WATI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="680" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows between groups -->
+        <mxCell id="arch_e1" value="REST API + JWT" style="edgeStyle=orthogonalEdgeStyle;dashed=0;" edge="1" source="fe_group" target="be_group" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arch_e2" value="asyncpg" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="be_group" target="ext_db" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arch_e3" value="HTTP XML POST" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="be_group" target="ext_tally_lbl" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arch_e4" value="HTTP snapshot" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="be_group" target="ext_camera_lbl" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arch_e5" value="Serial / WS" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="be_group" target="ext_scale_lbl" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arch_e6" value="UUID verify" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="be_group" target="ext_usb_lbl" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arch_e7" value="API calls" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="be_group" target="ext_notif" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+</mxfile>

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: A4; margin: 15mm 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #222; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 8px; }
+  .company-name { font-size: 18px; font-weight: bold; }
+  .company-sub { font-size: 10px; color: #555; }
+  .inv-title { font-size: 16px; font-weight: bold; text-align: right; color: #1a4f9e; }
+  .inv-meta { text-align: right; font-size: 10px; }
+  .parties { display: flex; gap: 16px; margin-bottom: 8px; }
+  .party-box { flex: 1; border: 1px solid #ccc; padding: 6px 8px; border-radius: 3px; }
+  .party-box strong { font-size: 10px; color: #777; text-transform: uppercase; }
+  .party-name { font-size: 12px; font-weight: bold; margin: 2px 0; }
+  .weight-row { display: flex; gap: 8px; background: #f5f5f5; padding: 6px 10px; border-radius: 3px; margin-bottom: 8px; font-size: 10px; }
+  .weight-cell { flex: 1; text-align: center; }
+  .weight-cell .val { font-size: 13px; font-weight: bold; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+  th { background: #1a4f9e; color: white; padding: 5px 6px; text-align: left; font-size: 10px; }
+  td { padding: 4px 6px; border-bottom: 1px solid #eee; font-size: 10px; }
+  tr:nth-child(even) td { background: #f9f9f9; }
+  .text-right { text-align: right; }
+  .totals-table { width: 280px; margin-left: auto; border: 1px solid #ccc; }
+  .totals-table td { padding: 3px 8px; }
+  .totals-table .grand { font-size: 13px; font-weight: bold; background: #1a4f9e; color: white; }
+  .footer { margin-top: 16px; border-top: 1px solid #ccc; padding-top: 8px; display: flex; justify-content: space-between; font-size: 9px; color: #777; }
+  .stamp { text-align: right; }
+  .stamp .line { border-top: 1px solid #aaa; margin-top: 40px; font-size: 9px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 9px; font-weight: bold; }
+  .badge-draft { background: #fef3c7; color: #92400e; }
+  .badge-final { background: #d1fae5; color: #065f46; }
+  .badge-cancelled { background: #fee2e2; color: #991b1b; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div>
+    <div class="company-name">{{ company.name }}</div>
+    <div class="company-sub">
+      {% if company.gstin %}GSTIN: {{ company.gstin }}{% endif %}
+      {% if company.pan %} &nbsp;|&nbsp; PAN: {{ company.pan }}{% endif %}
+    </div>
+    <div class="company-sub">{{ company.address_line1 }}{% if company.city %}, {{ company.city }}{% endif %}{% if company.state %}, {{ company.state }}{% endif %}{% if company.pincode %} - {{ company.pincode }}{% endif %}</div>
+    {% if company.phone %}<div class="company-sub">Ph: {{ company.phone }}</div>{% endif %}
+  </div>
+  <div>
+    <div class="inv-title">
+      {% if invoice.invoice_type == 'purchase' %}PURCHASE INVOICE{% elif invoice.tax_type == 'non_gst' %}BILL OF SUPPLY{% else %}TAX INVOICE{% endif %}
+      &nbsp;<span class="badge badge-{{ invoice.status }}">{{ invoice.status | upper }}</span>
+    </div>
+    <div class="inv-meta">
+      <strong>Invoice No:</strong> {{ invoice.invoice_no }}<br>
+      <strong>Date:</strong> {{ invoice.invoice_date.strftime('%d-%m-%Y') }}<br>
+      {% if invoice.due_date %}<strong>Due:</strong> {{ invoice.due_date.strftime('%d-%m-%Y') }}<br>{% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Parties -->
+<div class="parties">
+  <div class="party-box">
+    <strong>{{ 'Supplier' if invoice.invoice_type == 'purchase' else 'Bill To' }}</strong>
+    {% if party %}
+    <div class="party-name">{{ party.name }}</div>
+    {% if party.gstin %}<div>GSTIN: {{ party.gstin }}</div>{% endif %}
+    {% if party.billing_city %}<div>{{ party.billing_city }}{% if party.billing_state %}, {{ party.billing_state }}{% endif %}</div>{% endif %}
+    {% if party.phone %}<div>Ph: {{ party.phone }}</div>{% endif %}
+    {% else %}
+    <div class="party-name">{{ invoice.customer_name or 'Walk-in / Cash Customer' }}</div>
+    <div style="color:#aaa; font-size:9px;">B2C / Unregistered</div>
+    {% endif %}
+  </div>
+  <div class="party-box">
+    <strong>Transport Details</strong>
+    {% if invoice.vehicle_no %}<div><b>Vehicle:</b> {{ invoice.vehicle_no }}</div>{% endif %}
+    {% if invoice.transporter_name %}<div><b>Transporter:</b> {{ invoice.transporter_name }}</div>{% endif %}
+    {% if invoice.eway_bill_no %}<div><b>E-way Bill:</b> {{ invoice.eway_bill_no }}</div>{% endif %}
+    {% if not invoice.vehicle_no and not invoice.transporter_name %}<div style="color:#aaa">—</div>{% endif %}
+  </div>
+</div>
+
+<!-- Weight summary (if present) -->
+{% if invoice.net_weight %}
+<div class="weight-row">
+  <div class="weight-cell"><div>Gross Weight</div><div class="val">{{ '%.2f' % invoice.gross_weight }} kg</div></div>
+  <div class="weight-cell"><div>Tare Weight</div><div class="val">{{ '%.2f' % invoice.tare_weight }} kg</div></div>
+  <div class="weight-cell"><div>Net Weight</div><div class="val">{{ '%.2f' % invoice.net_weight }} kg</div></div>
+  <div class="weight-cell"><div>Net Weight (MT)</div><div class="val">{{ '%.3f' % (invoice.net_weight / 1000) }} MT</div></div>
+</div>
+{% endif %}
+
+<!-- Items table -->
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Description / Material</th>
+      <th>HSN</th>
+      <th class="text-right">Qty</th>
+      <th>Unit</th>
+      <th class="text-right">Rate (₹)</th>
+      <th class="text-right">Amount (₹)</th>
+      {% if invoice.tax_type == 'gst' %}
+      <th class="text-right">GST%</th>
+      <th class="text-right">Tax (₹)</th>
+      {% endif %}
+      <th class="text-right">Total (₹)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in invoice.items %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{{ item.description or item.product_id }}</td>
+      <td>{{ item.hsn_code or '' }}</td>
+      <td class="text-right">{{ '%.3f' % item.quantity }}</td>
+      <td>{{ item.unit }}</td>
+      <td class="text-right">{{ '%.2f' % item.rate }}</td>
+      <td class="text-right">{{ '%.2f' % item.amount }}</td>
+      {% if invoice.tax_type == 'gst' %}
+      <td class="text-right">{{ '%.0f' % item.gst_rate }}%</td>
+      <td class="text-right">{{ '%.2f' % (item.cgst_amount + item.sgst_amount + item.igst_amount) }}</td>
+      {% endif %}
+      <td class="text-right">{{ '%.2f' % item.total_amount }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Totals -->
+<div style="display:flex; justify-content: flex-end;">
+<table class="totals-table">
+  <tr><td>Subtotal</td><td class="text-right">₹ {{ '%.2f' % invoice.subtotal }}</td></tr>
+  {% if invoice.discount_amount > 0 %}
+  <tr><td>Discount</td><td class="text-right">- ₹ {{ '%.2f' % invoice.discount_amount }}</td></tr>
+  <tr><td>Taxable Amount</td><td class="text-right">₹ {{ '%.2f' % invoice.taxable_amount }}</td></tr>
+  {% endif %}
+  {% if invoice.tax_type == 'gst' %}
+    {% if invoice.cgst_amount > 0 %}
+    <tr><td>CGST</td><td class="text-right">₹ {{ '%.2f' % invoice.cgst_amount }}</td></tr>
+    <tr><td>SGST</td><td class="text-right">₹ {{ '%.2f' % invoice.sgst_amount }}</td></tr>
+    {% endif %}
+    {% if invoice.igst_amount > 0 %}
+    <tr><td>IGST</td><td class="text-right">₹ {{ '%.2f' % invoice.igst_amount }}</td></tr>
+    {% endif %}
+  {% endif %}
+  {% if invoice.freight > 0 %}
+  <tr><td>Freight</td><td class="text-right">₹ {{ '%.2f' % invoice.freight }}</td></tr>
+  {% endif %}
+  {% if invoice.tcs_amount > 0 %}
+  <tr><td>TCS ({{ '%.2f' % invoice.tcs_rate }}%)</td><td class="text-right">₹ {{ '%.2f' % invoice.tcs_amount }}</td></tr>
+  {% endif %}
+  {% if invoice.round_off != 0 %}
+  <tr><td>Round Off</td><td class="text-right">₹ {{ '%.2f' % invoice.round_off }}</td></tr>
+  {% endif %}
+  <tr class="grand"><td>Grand Total</td><td class="text-right">₹ {{ '%.2f' % invoice.grand_total }}</td></tr>
+  {% if invoice.amount_paid > 0 %}
+  <tr><td>Amount Paid</td><td class="text-right">₹ {{ '%.2f' % invoice.amount_paid }}</td></tr>
+  <tr><td><b>Balance Due</b></td><td class="text-right"><b>₹ {{ '%.2f' % invoice.amount_due }}</b></td></tr>
+  {% endif %}
+</table>
+</div>
+
+{% if invoice.notes %}
+<div style="margin-top:10px; font-size:10px; color:#555;"><b>Notes:</b> {{ invoice.notes }}</div>
+{% endif %}
+
+<!-- Bank details -->
+{% if company.bank_name %}
+<div style="margin-top:8px; font-size:10px; border: 1px solid #ccc; padding: 6px 8px; border-radius:3px;">
+  <b>Bank Details:</b> {{ company.bank_name }} &nbsp;|&nbsp; A/C: {{ company.bank_account_no }} &nbsp;|&nbsp; IFSC: {{ company.bank_ifsc }}
+  {% if company.bank_branch %} &nbsp;|&nbsp; Branch: {{ company.bank_branch }}{% endif %}
+</div>
+{% endif %}
+
+<div class="footer">
+  <div>
+    <div>This is a computer generated invoice.</div>
+    {% if invoice.payment_mode %}<div>Payment Mode: {{ invoice.payment_mode | title }}</div>{% endif %}
+  </div>
+  <div class="stamp">
+    <div>For <b>{{ company.name }}</b></div>
+    <div class="line">Authorised Signatory</div>
+  </div>
+</div>
+
+</body>
+</html>

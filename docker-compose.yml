@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: weighbridge_db
+    environment:
+      POSTGRES_USER: weighbridge
+      POSTGRES_PASSWORD: weighbridge_dev_2024
+      POSTGRES_DB: weighbridge
+    ports:
+      # Bind to localhost ONLY — prevents access from LAN/network even if firewall is disabled
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Restrict PostgreSQL to accept connections from localhost only
+    command: >
+      postgres
+        -c listen_addresses=localhost
+        -c log_connections=on
+        -c log_disconnections=on
+        -c log_failed_authentication_attempts=on
+        -c max_connections=100
+        -c idle_in_transaction_session_timeout=30000
+        -c statement_timeout=60000
+    restart: always
+
+volumes:
+  pgdata:

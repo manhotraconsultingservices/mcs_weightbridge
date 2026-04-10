@@ -1,0 +1,564 @@
+"""
+Camera configuration and snapshot management.
+
+Supports two IP cameras: front view and top view.
+Snapshots are automatically captured (fire-and-forget) when a token's
+second weight is recorded, via BackgroundTasks in tokens.py.
+
+Config stored in app_settings table under key "camera_config" as JSON.
+Snapshots stored in token_snapshots table.
+Files saved under uploads/camera/<token_id>/<camera_id>_<ts>.jpg
+"""
+import asyncio
+import io
+import json
+import logging
+import uuid
+from datetime import datetime
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from jose import jwt
+
+from app.config import get_settings
+from pydantic import BaseModel
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db, async_session
+from app.dependencies import get_current_user, require_role
+from app.models.user import User
+from app.routers.app_settings import _get_raw, _upsert
+from app.integrations.camera.capture import capture_and_save, capture_test_snapshot
+
+logger = logging.getLogger(__name__)
+
+# Two separate routers so we get clean URL prefixes
+router = APIRouter(prefix="/api/v1/cameras", tags=["Cameras"])
+router_tokens = APIRouter(prefix="/api/v1/tokens", tags=["Cameras"])
+
+CAMERA_CONFIG_KEY = "camera_config"
+CAMERA_IDS = ("front", "top")
+
+
+# ── Dev / test: fake camera image endpoint ────────────────────────────────────
+
+@router.get("/fake-snapshot")
+async def fake_snapshot(label: str = "Camera"):
+    """
+    Returns a synthetic JPEG image — no real camera needed.
+
+    Use for testing the full snapshot pipeline:
+      Snapshot URL → http://localhost:9001/api/v1/cameras/fake-snapshot?label=Front+View
+
+    No authentication required (intentionally public for dev/test use).
+    """
+    try:
+        from PIL import Image, ImageDraw
+        from datetime import datetime as dt
+
+        width, height = 640, 480
+        img = Image.new("RGB", (width, height), color=(30, 30, 50))
+        draw = ImageDraw.Draw(img)
+
+        # Gradient-ish background bands
+        for y in range(height):
+            r = int(30 + (y / height) * 40)
+            g = int(30 + (y / height) * 20)
+            b = int(50 + (y / height) * 60)
+            draw.line([(0, y), (width, y)], fill=(r, g, b))
+
+        # Decorative grid lines
+        for x in range(0, width, 80):
+            draw.line([(x, 0), (x, height)], fill=(60, 60, 90), width=1)
+        for y in range(0, height, 60):
+            draw.line([(0, y), (width, y)], fill=(60, 60, 90), width=1)
+
+        # Central "camera view" rectangle
+        box = [80, 60, 560, 420]
+        draw.rectangle(box, outline=(100, 180, 255), width=2)
+        draw.rectangle([box[0]+10, box[1]+10, box[2]-10, box[3]-10],
+                       outline=(60, 120, 200), width=1)
+
+        # Corner markers (like a viewfinder)
+        for cx, cy, dx, dy in [
+            (box[0], box[1],  1,  1),
+            (box[2], box[1], -1,  1),
+            (box[0], box[3],  1, -1),
+            (box[2], box[3], -1, -1),
+        ]:
+            draw.line([(cx, cy), (cx + dx*20, cy)], fill=(0, 220, 180), width=3)
+            draw.line([(cx, cy), (cx, cy + dy*20)], fill=(0, 220, 180), width=3)
+
+        # "LIVE" badge
+        draw.rectangle([box[0]+14, box[1]+14, box[0]+64, box[1]+32],
+                       fill=(200, 30, 30))
+        draw.text((box[0]+18, box[1]+16), "LIVE", fill=(255, 255, 255))
+
+        # Camera label + timestamp
+        now_str = dt.now().strftime("%Y-%m-%d  %H:%M:%S")
+        draw.text((box[0]+14, box[3]-36), label.upper(), fill=(0, 220, 180))
+        draw.text((box[0]+14, box[3]-18), now_str, fill=(180, 180, 180))
+
+        # "TEST MODE" watermark
+        draw.text((width//2 - 50, height//2 - 8), "TEST MODE",
+                  fill=(70, 70, 90))
+
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=85)
+        buf.seek(0)
+        return StreamingResponse(buf, media_type="image/jpeg",
+                                 headers={"Cache-Control": "no-store"})
+
+    except ImportError:
+        # Pillow not installed — return a minimal 1x1 valid JPEG
+        minimal_jpg = bytes([
+            0xFF,0xD8,0xFF,0xE0,0x00,0x10,0x4A,0x46,0x49,0x46,0x00,0x01,
+            0x01,0x00,0x00,0x01,0x00,0x01,0x00,0x00,0xFF,0xDB,0x00,0x43,
+            0x00,0x10,0x0B,0x0C,0x0E,0x0C,0x0A,0x10,0x0E,0x0D,0x0E,0x12,
+            0x11,0x10,0x13,0x18,0x28,0x1A,0x18,0x16,0x16,0x18,0x31,0x23,
+            0x25,0x1D,0x28,0x3A,0x33,0x3D,0x3C,0x39,0x33,0x38,0x37,0x40,
+            0x48,0x5C,0x4E,0x40,0x44,0x57,0x45,0x37,0x38,0x50,0x6D,0x51,
+            0x57,0x5F,0x62,0x67,0x68,0x67,0x3E,0x4D,0x71,0x79,0x70,0x64,
+            0x78,0x5C,0x65,0x67,0x63,0xFF,0xC0,0x00,0x0B,0x08,0x00,0x01,
+            0x00,0x01,0x01,0x01,0x11,0x00,0xFF,0xC4,0x00,0x14,0x00,0x01,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0xFF,0xC4,0x00,0x14,0x10,0x01,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0xFF,0xDA,0x00,0x08,0x01,0x01,0x00,0x00,0x3F,0x00,
+            0x7F,0xFF,0xD9,
+        ])
+        return StreamingResponse(io.BytesIO(minimal_jpg), media_type="image/jpeg")
+
+
+# ── Live MJPEG stream ─────────────────────────────────────────────────────────
+
+async def _mjpeg_frames(stream_url: str, is_rtsp: bool):
+    """
+    Async generator that yields MJPEG boundary frames continuously.
+    RTSP: uses OpenCV (blocking call offloaded to thread pool).
+    HTTP: periodically fetches the snapshot URL via httpx.
+    Reconnects automatically on failure.
+    """
+    import asyncio as _asyncio
+
+    BOUNDARY = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+
+    if is_rtsp:
+        import cv2
+
+        loop = _asyncio.get_event_loop()
+
+        while True:
+            def _open():
+                cap = cv2.VideoCapture(stream_url, cv2.CAP_FFMPEG)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 8000)
+                cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 8000)
+                return cap
+
+            cap = await loop.run_in_executor(None, _open)
+            if not cap.isOpened():
+                cap.release()
+                await _asyncio.sleep(3)
+                continue
+
+            try:
+                while True:
+                    def _read(c):
+                        ret, frame = c.read()
+                        if not ret:
+                            return None
+                        ok, buf = cv2.imencode(
+                            ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75]
+                        )
+                        return buf.tobytes() if ok else None
+
+                    data = await loop.run_in_executor(None, _read, cap)
+                    if data is None:
+                        break
+                    yield BOUNDARY + data + b"\r\n"
+                    await _asyncio.sleep(0.04)   # ~25 fps cap
+            except GeneratorExit:
+                cap.release()
+                return
+            except Exception:
+                pass
+            finally:
+                cap.release()
+
+            await _asyncio.sleep(2)   # pause before reconnect
+
+    else:
+        # HTTP snapshot — poll repeatedly
+        import asyncio as _asyncio
+        while True:
+            try:
+                async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+                    resp = await client.get(stream_url)
+                    if resp.status_code == 200 and len(resp.content) > 100:
+                        yield BOUNDARY + resp.content + b"\r\n"
+            except Exception:
+                pass
+            await _asyncio.sleep(0.5)   # ~2 fps for HTTP snapshots
+
+
+@router.get("/stream/{camera_id}")
+async def stream_camera(
+    camera_id: str,
+    token: str = Query(..., description="JWT access token (Bearer value)"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Live MJPEG stream for a configured camera.
+    Auth via ?token= query param (img tags cannot send Authorization headers).
+
+    Usage in frontend:
+        <img src="/api/v1/cameras/stream/front?token=<jwt>" />
+    """
+    # ── Verify JWT manually (img tags can't send Authorization header) ──────
+    try:
+        _cfg = get_settings()
+        payload = jwt.decode(token, _cfg.SECRET_KEY, algorithms=[_cfg.ALGORITHM])
+        if not payload.get("sub"):
+            raise HTTPException(status_code=401, detail="Token missing subject")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Stream JWT decode failed — token=%s... error=%s(%s)",
+                     token[:20], type(e).__name__, e)
+        raise HTTPException(status_code=401, detail=f"Auth error: {type(e).__name__}: {e}")
+
+    if camera_id not in CAMERA_IDS:
+        raise HTTPException(400, f"camera_id must be one of: {', '.join(CAMERA_IDS)}")
+
+    cfg = await _load_camera_config(db)
+    cam = cfg.get(camera_id)
+    if not cam or not cam.get("snapshot_url", "").strip():
+        raise HTTPException(400, f"Camera '{camera_id}' is not configured")
+
+    url = cam["snapshot_url"].strip()
+    username = cam.get("username", "").strip()
+    password = cam.get("password", "").strip()
+    is_rtsp = url.lower().startswith(("rtsp://", "rtsps://"))
+
+    if is_rtsp:
+        from app.integrations.camera.capture import _build_rtsp_url_with_creds
+        stream_url = _build_rtsp_url_with_creds(url, username, password)
+    else:
+        stream_url = url
+
+    return StreamingResponse(
+        _mjpeg_frames(stream_url, is_rtsp),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+        },
+    )
+
+
+# ── Schemas ──────────────────────────────────────────────────────────────────
+
+class CameraConfig(BaseModel):
+    label: str = ""
+    snapshot_url: str = ""
+    username: str = ""
+    password: str = ""
+    verification_code: str = ""
+    serial_number: str = ""
+    version: str = ""
+    enabled: bool = False
+
+
+class CameraConfigPayload(BaseModel):
+    front: CameraConfig = CameraConfig()
+    top: CameraConfig = CameraConfig()
+
+
+class SnapshotResponse(BaseModel):
+    id: uuid.UUID
+    token_id: uuid.UUID
+    camera_id: str
+    camera_label: Optional[str] = None
+    url: Optional[str] = None
+    capture_status: str
+    attempts: int
+    error_message: Optional[str] = None
+    captured_at: Optional[datetime] = None
+
+
+class TokenSnapshotsResponse(BaseModel):
+    snapshots: list[SnapshotResponse]
+    all_done: bool
+
+
+class TestSnapshotResponse(BaseModel):
+    success: bool
+    url: Optional[str] = None
+    error: Optional[str] = None
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _mask_password(cfg: CameraConfig) -> CameraConfig:
+    """Return a copy with password replaced by sentinel if non-empty."""
+    return CameraConfig(
+        label=cfg.label,
+        snapshot_url=cfg.snapshot_url,
+        username=cfg.username,
+        password="***" if cfg.password else "",
+        verification_code=cfg.verification_code,
+        serial_number=cfg.serial_number,
+        version=cfg.version,
+        enabled=cfg.enabled,
+    )
+
+
+def _build_url(file_path: Optional[str]) -> Optional[str]:
+    if not file_path:
+        return None
+    return "/" + file_path.replace("\\", "/")
+
+
+async def _load_camera_config(db: AsyncSession) -> dict:
+    raw = await _get_raw(db, CAMERA_CONFIG_KEY)
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {}
+
+
+async def _query_snapshots(db: AsyncSession, token_id: str) -> list[dict]:
+    rows = (await db.execute(
+        text("""
+            SELECT id, token_id, camera_id, camera_label, file_path,
+                   capture_status, attempts, error_message, captured_at
+            FROM token_snapshots
+            WHERE token_id = :tid
+            ORDER BY camera_id
+        """),
+        {"tid": token_id},
+    )).fetchall()
+    return [dict(r._mapping) for r in rows]
+
+
+# ── Camera config endpoints ───────────────────────────────────────────────────
+
+@router.get("/config", response_model=CameraConfigPayload)
+async def get_camera_config(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return camera config. Passwords are masked."""
+    cfg = await _load_camera_config(db)
+    front = CameraConfig(**cfg.get("front", {})) if cfg.get("front") else CameraConfig()
+    top = CameraConfig(**cfg.get("top", {})) if cfg.get("top") else CameraConfig()
+    return CameraConfigPayload(front=_mask_password(front), top=_mask_password(top))
+
+
+@router.put("/config", response_model=CameraConfigPayload)
+async def update_camera_config(
+    payload: CameraConfigPayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Save camera config. Admin only. Pass password='***' to keep existing value."""
+    # Load existing so we can preserve passwords when sentinel is sent
+    existing = await _load_camera_config(db)
+
+    def _merge(new: CameraConfig, cam_id: str) -> dict:
+        old = existing.get(cam_id, {})
+        password = old.get("password", "") if new.password == "***" else new.password
+        return {
+            "label": new.label,
+            "snapshot_url": new.snapshot_url,
+            "username": new.username,
+            "password": password,
+            "verification_code": new.verification_code,
+            "serial_number": new.serial_number,
+            "version": new.version,
+            "enabled": new.enabled,
+        }
+
+    merged = {
+        "front": _merge(payload.front, "front"),
+        "top": _merge(payload.top, "top"),
+    }
+    await _upsert(db, CAMERA_CONFIG_KEY, json.dumps(merged))
+
+    # Return masked version
+    return CameraConfigPayload(
+        front=_mask_password(CameraConfig(**merged["front"])),
+        top=_mask_password(CameraConfig(**merged["top"])),
+    )
+
+
+@router.post("/test/{camera_id}", response_model=TestSnapshotResponse)
+async def test_camera_snapshot(
+    camera_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Capture a test snapshot and return a preview URL. Admin only."""
+    if camera_id not in CAMERA_IDS:
+        raise HTTPException(400, f"camera_id must be one of: {', '.join(CAMERA_IDS)}")
+
+    cfg = await _load_camera_config(db)
+    cam = cfg.get(camera_id)
+    if not cam or not cam.get("snapshot_url"):
+        raise HTTPException(400, f"Camera '{camera_id}' is not configured. Save a URL first.")
+
+    success, rel_path, error = await capture_test_snapshot(cam, camera_id)
+    if success:
+        return TestSnapshotResponse(success=True, url=_build_url(rel_path))
+    return TestSnapshotResponse(success=False, error=error)
+
+
+# ── Snapshot query endpoints (under /api/v1/tokens prefix) ───────────────────
+
+@router_tokens.get("/{token_id}/snapshots", response_model=TokenSnapshotsResponse)
+async def get_token_snapshots(
+    token_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return snapshot records for a token. Used by frontend polling."""
+    rows = await _query_snapshots(db, str(token_id))
+    snapshots = [
+        SnapshotResponse(
+            id=r["id"],
+            token_id=r["token_id"],
+            camera_id=r["camera_id"],
+            camera_label=r["camera_label"],
+            url=_build_url(r["file_path"]),
+            capture_status=r["capture_status"],
+            attempts=r["attempts"],
+            error_message=r["error_message"],
+            captured_at=r["captured_at"],
+        )
+        for r in rows
+    ]
+    all_done = all(s.capture_status != "pending" for s in snapshots)
+    return TokenSnapshotsResponse(snapshots=snapshots, all_done=all_done)
+
+
+@router_tokens.post("/{token_id}/snapshots/retry", status_code=202)
+async def retry_token_snapshots(
+    token_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Re-queue failed snapshot captures for a token. Admin only."""
+    rows = await _query_snapshots(db, str(token_id))
+    failed = [r for r in rows if r["capture_status"] == "failed"]
+    if not failed:
+        raise HTTPException(400, "No failed snapshots to retry for this token")
+
+    # Reset failed rows to pending
+    for r in failed:
+        await db.execute(
+            text("""
+                UPDATE token_snapshots
+                SET capture_status = 'pending', attempts = 0, error_message = NULL
+                WHERE token_id = :tid AND camera_id = :cid
+            """),
+            {"tid": str(token_id), "cid": r["camera_id"]},
+        )
+    await db.commit()
+
+    # Fire background capture
+    import asyncio
+    asyncio.create_task(trigger_snapshot_capture(token_id))
+
+    return {"queued": len(failed), "token_id": str(token_id)}
+
+
+# ── Background capture task ───────────────────────────────────────────────────
+
+async def trigger_snapshot_capture(token_id: uuid.UUID) -> None:
+    """
+    Fire-and-forget snapshot capture task.
+    Called from tokens.py via BackgroundTasks after second weight is committed.
+    Opens its own DB session — the request session is already closed.
+    """
+    try:
+        async with async_session() as db:
+            cfg = await _load_camera_config(db)
+            if not cfg:
+                logger.debug("Camera config not set — skipping snapshot capture for token %s", token_id)
+                return
+
+            # Phase 1: insert pending rows for enabled cameras
+            for camera_id in CAMERA_IDS:
+                cam = cfg.get(camera_id, {})
+                if not cam.get("enabled") or not cam.get("snapshot_url", "").strip():
+                    continue
+                await db.execute(
+                    text("""
+                        INSERT INTO token_snapshots
+                            (token_id, camera_id, camera_label, capture_status, attempts)
+                        VALUES (:tid, :cid, :label, 'pending', 0)
+                        ON CONFLICT (token_id, camera_id) DO UPDATE
+                            SET capture_status = 'pending',
+                                attempts = 0,
+                                error_message = NULL,
+                                file_path = NULL
+                    """),
+                    {
+                        "tid": str(token_id),
+                        "cid": camera_id,
+                        "label": cam.get("label", camera_id.capitalize()),
+                    },
+                )
+            await db.commit()
+
+        # Phase 2: capture each camera (separate session per camera for isolation)
+        for camera_id in CAMERA_IDS:
+            async with async_session() as db:
+                cfg = await _load_camera_config(db)
+                cam = cfg.get(camera_id, {})
+                if not cam.get("enabled") or not cam.get("snapshot_url", "").strip():
+                    continue
+
+                logger.info("Capturing snapshot: token=%s camera=%s url=%s",
+                            token_id, camera_id, cam.get("snapshot_url"))
+
+                success, rel_path, error = await capture_and_save(cam, str(token_id), camera_id)
+
+                if success:
+                    await db.execute(
+                        text("""
+                            UPDATE token_snapshots
+                            SET capture_status = 'captured',
+                                file_path = :fp,
+                                captured_at = NOW(),
+                                attempts = attempts + 1,
+                                error_message = NULL
+                            WHERE token_id = :tid AND camera_id = :cid
+                        """),
+                        {"fp": rel_path, "tid": str(token_id), "cid": camera_id},
+                    )
+                    logger.info("Snapshot captured OK: token=%s camera=%s path=%s",
+                                token_id, camera_id, rel_path)
+                else:
+                    await db.execute(
+                        text("""
+                            UPDATE token_snapshots
+                            SET capture_status = 'failed',
+                                attempts = attempts + 1,
+                                error_message = :err
+                            WHERE token_id = :tid AND camera_id = :cid
+                        """),
+                        {"err": error, "tid": str(token_id), "cid": camera_id},
+                    )
+                    logger.warning("Snapshot FAILED: token=%s camera=%s error=%s",
+                                   token_id, camera_id, error)
+
+                await db.commit()
+
+    except Exception as exc:
+        logger.error("Unexpected error in trigger_snapshot_capture(token=%s): %s", token_id, exc, exc_info=True)

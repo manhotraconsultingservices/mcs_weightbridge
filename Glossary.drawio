@@ -1,0 +1,151 @@
+<mxGraphModel dx="1422" dy="762" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="2339" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+
+    <!-- TITLE -->
+    <mxCell id="title" value="Weighbridge Stone Crusher ERP — Glossary of Objects &amp; Attributes" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=22;fontStyle=1;fontColor=#1e3a5f;" vertex="1" parent="1">
+      <mxGeometry x="80" y="20" width="1500" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="subtitle" value="Each table below defines one entity (database table), its attributes (columns), data types, and business meaning." style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=12;fontColor=#555555;" vertex="1" parent="1">
+      <mxGeometry x="80" y="68" width="1500" height="30" as="geometry" />
+    </mxCell>
+
+    <!-- ═══ COLUMN 1 ═════════════════════════════════════════════ -->
+
+    <!-- COMPANY -->
+    <mxCell id="company_hdr" value="COMPANY" style="text;html=1;strokeColor=none;fillColor=#1e3a5f;fontColor=#ffffff;align=center;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="80" y="115" width="460" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="company_body" value="Attribute | Type | Description&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;id | UUID | Primary key (auto-generated)&#xa;name | String(200) | Trading / display name of the company&#xa;legal_name | String(200) | Registered legal name (for invoices)&#xa;gstin | String(15) | GST Identification Number (15 chars)&#xa;pan | String(10) | PAN (Permanent Account Number)&#xa;address_line1 | String | Street address for invoice header&#xa;city | String(100) | City name&#xa;state | String(100) | State name (e.g. Maharashtra)&#xa;state_code | String(2) | GST state code (e.g. 27 for Maharashtra)&#xa;pincode | String(6) | PIN code&#xa;phone | String(20) | Contact phone number&#xa;email | String(200) | Contact email address&#xa;invoice_prefix | String(10) | Prefix for sale invoices (e.g. SI)&#xa;purchase_prefix | String(10) | Prefix for purchase invoices (e.g. PI)&#xa;quotation_prefix | String(10) | Prefix for quotations (e.g. QT)&#xa;bank_name | String(200) | Bank name for payment details on invoice&#xa;bank_account_no | String(50) | Bank account number&#xa;bank_ifsc | String(11) | IFSC code (11 chars)&#xa;bank_branch | String(200) | Branch name" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;fontSize=10;fontFamily=Courier New;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="80" y="147" width="460" height="310" as="geometry" />
+    </mxCell>
+
+    <!-- FINANCIAL YEAR -->
+    <mxCell id="fy_hdr" value="FINANCIAL YEAR" style="text;html=1;strokeColor=none;fillColor=#1e3a5f;fontColor=#ffffff;align=center;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="80" y="475" width="460" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="fy_body" value="Attribute | Type | Description&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;id | UUID | Primary key&#xa;company_id | UUID FK | Links to companies table&#xa;label | String(20) | Display label (e.g. 2025-26)&#xa;start_date | Date | First day of financial year (e.g. 2025-04-01)&#xa;end_date | Date | Last day of financial year (e.g. 2026-03-31)&#xa;is_active | Boolean | Only one FY active at a time; controls invoice numbering" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;fontSize=10;fontFamily=Courier New;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="80" y="507" width="460" height="130" as="geometry" />
+    </mxCell>
+
+    <!-- USER -->
+    <mxCell id="user_hdr" value="USER" style="text;html=1;strokeColor=none;fillColor=#1e3a5f;fontColor=#ffffff;align=center;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="80" y="655" width="460" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="user_body" value="Attribute | Type | Description&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;id | UUID | Primary key&#xa;company_id | UUID FK | Links to companies table&#xa;username | String(50) | Unique login username&#xa;password_hash | String(255) | bcrypt-hashed password (never stored plain)&#xa;full_name | String(200) | Display name shown in UI&#xa;email | String(200) | User email address&#xa;phone | String(20) | User phone number&#xa;role | String(20) | Access role: admin / operator / accountant /&#xa;               | | viewer / private_admin&#xa;is_active | Boolean | False = account disabled, cannot login&#xa;last_login | DateTime | Timestamp of last successful login" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;fontSize=10;fontFamily=Courier New;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="80" y="687" width="460" height="200" as="geometry" />
+    </mxCell>
+
+    <!-- PRODUCT CATEGORY -->
+    <mxCell id="cat_hdr" value="PRODUCT CATEGORY" style="text;html=1;strokeColor=none;fillColor=#1e3a5f;fontColor=#ffffff;align=center;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="80" y="905" width="460" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="cat_body" value="Attribute | Type | Description&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;id | UUID | Primary key&#xa;company_id | UUID FK | Links to companies table&#xa;name | String(200) | Category name (e.g. Coarse Aggregate, Fine Aggregate)&#xa;description | Text | Optional description&#xa;sort_order | Integer | Display order in dropdowns&#xa;is_active | Boolean | Hide inactive categories from UI" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;fontSize=10;fontFamily=Courier New;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="80" y="937" width="460" height="130" as="geometry" />
+    </mxCell>
+
+    <!-- PRODUCT -->
+    <mxCell id="prod_hdr" value="PRODUCT" style="text;html=1;strokeColor=none;fillColor=#1e3a5f;fontColor=#ffffff;align=center;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="80" y="1085" width="460" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="prod_body" value="Attribute | Type | Description&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;id | UUID | Primary key&#xa;company_id | UUID FK | Links to companies table&#xa;category_id | UUID FK | Links to product_categories (nullable)&#xa;name | String(200) | Product name (e.g. Gitti 20mm, Stone Dust)&#xa;code | String(50) | Internal product code (optional)&#xa;hsn_code | String(8) | HSN code for GST (e.g. 2517 for crushed stone)&#xa;unit | String(10) | Unit of measure: MT / CFT / BRASS / CUM / NOS&#xa;default_rate | Numeric(12,2) | Default selling/buying rate per unit (₹)&#xa;gst_rate | Numeric(5,2) | GST % applied (e.g. 5.00 = 5%; CGST+SGST or IGST)&#xa;description | Text | Optional product description&#xa;is_active | Boolean | Hide discontinued products" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;fontSize=10;fontFamily=Courier New;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="80" y="1117" width="460" height="210" as="geometry" />
+    </mxCell>
+
+    <!-- PARTY -->
+    <mxCell id="party_hdr" value="PARTY (Customer / Supplier)" style="text;html=1;strokeColor=none;fillColor=#1e3a5f;fontColor=#ffffff;align=center;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="80" y="1345" width="460" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="party_body" value="Attribute | Type | Description&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;id | UUID | Primary key&#xa;company_id | UUID FK | Links to companies table&#xa;party_type | String(20) | customer / supplier / both&#xa;name | String(200) | Display / trading name&#xa;legal_name | String(200) | Registered legal name&#xa;gstin | String(15) | GST number (determines intra/inter state tax)&#xa;pan | String(10) | PAN number&#xa;phone | String(20) | Primary contact phone&#xa;email | String(200) | Email for invoice delivery&#xa;contact_person | String(200) | Name of contact person&#xa;billing_city | String(100) | City (used in invoice party address)&#xa;billing_state | String(100) | State name&#xa;billing_state_code | String(2) | State code — compared to company state for GST routing&#xa;credit_limit | Numeric(12,2) | Maximum credit allowed (0 = no limit)&#xa;payment_terms_days | Integer | Days to payment due date (e.g. 30)&#xa;opening_balance | Numeric(12,2) | Starting balance when party created&#xa;current_balance | Numeric(12,2) | Running balance (positive = they owe us)&#xa;is_active | Boolean | Inactive parties hidden from new transactions" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;fontSize=10;fontFamily=Courier New;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="80" y="1377" width="460" height="335" as="geometry" />
+    </mxCell>
+
+    <!-- ═══ COLUMN 2 ═════════════════════════════════════════════ -->
+
+    <!-- VEHICLE -->
+    <mxCell id="veh_hdr" value="VEHICLE" style="text;html=1;strokeColor=none;fillColor=#2d6a2d;fontColor=#ffffff;align=center;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="575" y="115" width="460" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="veh_body" value="Attribute | Type | Description&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;id | UUID | Primary key&#xa;company_id | UUID FK | Links to companies&#xa;registration_no | String(20) | Vehicle registration plate (e.g. MH12AB1234)&#xa;vehicle_type | String(50) | Truck / Tipper / Dumper / Trailer (optional)&#xa;owner_name | String(200) | Vehicle owner name&#xa;owner_phone | String(20) | Owner phone number&#xa;default_tare_weight | Numeric(10,2) | Default tare weight in KG (used as fallback)&#xa;is_active | Boolean | Inactive vehicles hidden from token form" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;fontSize=10;fontFamily=Courier New;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="575" y="147" width="460" height="165" as="geometry" />
+    </mxCell>
+
+    <!-- TOKEN -->
+    <mxCell id="token_hdr" value="TOKEN (Weighbridge Transaction)" style="text;html=1;strokeColor=none;fillColor=#2d6a2d;fontColor=#ffffff;align=center;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="575" y="330" width="460" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="token_body" value="Attribute | Type | Description&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;id | UUID | Primary key&#xa;company_id | UUID FK | Links to companies&#xa;token_no | Integer | Sequential number within FY (auto-increment)&#xa;token_date | Date | Date of weighment&#xa;token_type | String(10) | sale / purchase / general&#xa;direction | String(10) | inbound (material in) / outbound (material out)&#xa;vehicle_id | UUID FK | Links to vehicles table&#xa;vehicle_no | String(20) | Reg no (stored directly for quick display)&#xa;party_id | UUID FK | Links to parties (nullable for general)&#xa;product_id | UUID FK | Links to products (nullable for general)&#xa;status | String(20) | OPEN → FIRST_WEIGHT → LOADING →&#xa;                  | | SECOND_WEIGHT → COMPLETED / CANCELLED&#xa;gross_weight | Numeric(10,2) | First weight reading in KG (heavier side)&#xa;tare_weight | Numeric(10,2) | Second weight reading in KG (empty vehicle)&#xa;net_weight | Numeric(10,2) | Calculated: |gross - tare| in KG&#xa;first_weight | Numeric(10,2) | Raw first weighing (may be gross or tare)&#xa;second_weight | Numeric(10,2) | Raw second weighing&#xa;first_weight_type | String(10) | gross / tare (which side was weighed first)&#xa;is_manual_weight | Boolean | True if operator typed weight instead of scale&#xa;remarks | Text | Free-text notes&#xa;created_at | DateTime | Token creation timestamp&#xa;first_weight_at | DateTime | When first weight was captured&#xa;second_weight_at | DateTime | When second weight was captured&#xa;completed_at | DateTime | When status became COMPLETED" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;fontSize=10;fontFamily=Courier New;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="575" y="362" width="460" height="430" as="geometry" />
+    </mxCell>
+
+    <!-- INVOICE -->
+    <mxCell id="inv_hdr" value="INVOICE" style="text;html=1;strokeColor=none;fillColor=#7a5500;fontColor=#ffffff;align=center;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="575" y="810" width="460" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="inv_body" value="Attribute | Type | Description&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;id | UUID | Primary key&#xa;company_id | UUID FK | Links to companies&#xa;fy_id | UUID FK | Financial year this invoice belongs to&#xa;invoice_type | String(10) | sale / purchase&#xa;tax_type | String(10) | gst (Tax Invoice) / non_gst (Bill of Supply)&#xa;invoice_no | String(30) | Auto-generated: SI/25-26/0001 (sale) or PI/25-26/0001&#xa;invoice_date | Date | Date on the invoice&#xa;due_date | Date | Payment due date (invoice_date + payment_terms_days)&#xa;party_id | UUID FK | Links to parties (buyer/seller)&#xa;customer_name | String(200) | Unregistered buyer name (B2C invoices)&#xa;token_id | UUID FK | Links to token (when generated from weighment)&#xa;vehicle_no | String(20) | Vehicle registration for transport details&#xa;transporter_name | String(200) | Transport company name&#xa;eway_bill_no | String(20) | E-Way Bill number (for inter-state movement)&#xa;gross_weight | Numeric | Gross weight from linked token (KG)&#xa;tare_weight | Numeric | Tare weight from linked token (KG)&#xa;net_weight | Numeric | Net weight from linked token (KG)&#xa;subtotal | Numeric(14,2) | Sum of (qty × rate) for all line items&#xa;discount_type | String(10) | percent / amount (optional discount)&#xa;discount_value | Numeric | Discount % or flat amount&#xa;discount_amount | Numeric(14,2) | Calculated discount in ₹&#xa;taxable_amount | Numeric(14,2) | subtotal - discount_amount&#xa;cgst_amount | Numeric(14,2) | CGST tax (intra-state only)&#xa;sgst_amount | Numeric(14,2) | SGST tax (intra-state only)&#xa;igst_amount | Numeric(14,2) | IGST tax (inter-state only; party state ≠ company state)&#xa;tcs_rate | Numeric(5,2) | TCS % (Tax Collected at Source, if applicable)&#xa;tcs_amount | Numeric(14,2) | TCS amount in ₹&#xa;freight | Numeric(14,2) | Freight / transport charges&#xa;total_amount | Numeric(14,2) | taxable + all taxes + tcs + freight&#xa;round_off | Numeric(6,2) | Rounding adjustment (±0.50)&#xa;grand_total | Numeric(14,2) | Final invoice amount (total + round_off)&#xa;payment_mode | String(20) | Cash / Cheque / UPI / NEFT / RTGS&#xa;payment_status | String(10) | unpaid / partial / paid&#xa;amount_paid | Numeric(14,2) | Total payments received against this invoice&#xa;amount_due | Numeric(14,2) | grand_total - amount_paid&#xa;status | String(10) | draft → final → cancelled (final = locked)&#xa;notes | Text | Internal notes / terms on invoice&#xa;tally_synced | Boolean | True once pushed to Tally Prime&#xa;tally_sync_at | DateTime | When Tally sync succeeded" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;fontSize=10;fontFamily=Courier New;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="575" y="842" width="460" height="720" as="geometry" />
+    </mxCell>
+
+    <!-- ═══ COLUMN 3 ═════════════════════════════════════════════ -->
+
+    <!-- INVOICE ITEM -->
+    <mxCell id="invitem_hdr" value="INVOICE ITEM (Line Item)" style="text;html=1;strokeColor=none;fillColor=#7a5500;fontColor=#ffffff;align=center;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="1070" y="115" width="460" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="invitem_body" value="Attribute | Type | Description&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;id | UUID | Primary key&#xa;invoice_id | UUID FK | Links to invoices table&#xa;product_id | UUID FK | Links to products table&#xa;description | String(500) | Override product name on this line (optional)&#xa;hsn_code | String(8) | HSN code (copied from product, can be overridden)&#xa;quantity | Numeric(12,3) | Quantity in product unit (e.g. 12.500 MT)&#xa;unit | String(10) | Unit (MT / CFT / BRASS / CUM)&#xa;rate | Numeric(12,2) | Rate per unit in ₹&#xa;amount | Numeric(14,2) | quantity × rate (before GST)&#xa;gst_rate | Numeric(5,2) | GST % for this line (copied from product)&#xa;cgst_amount | Numeric(12,2) | CGST on this line (amount × gst_rate/2)&#xa;sgst_amount | Numeric(12,2) | SGST on this line (amount × gst_rate/2)&#xa;igst_amount | Numeric(12,2) | IGST on this line (amount × gst_rate)&#xa;total_amount | Numeric(14,2) | amount + all taxes for this line&#xa;sort_order | Integer | Display order of line items on invoice" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;fontSize=10;fontFamily=Courier New;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="1070" y="147" width="460" height="310" as="geometry" />
+    </mxCell>
+
+    <!-- PAYMENT RECEIPT -->
+    <mxCell id="pay_hdr" value="PAYMENT RECEIPT (Incoming)" style="text;html=1;strokeColor=none;fillColor=#8b0000;fontColor=#ffffff;align=center;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="1070" y="475" width="460" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="pay_body" value="Attribute | Type | Description&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;id | UUID | Primary key&#xa;company_id | UUID FK | Links to companies&#xa;receipt_no | String(30) | Auto-numbered (REC/25-26/0001)&#xa;receipt_date | Date | Date payment was received&#xa;party_id | UUID FK | Customer who paid&#xa;amount | Numeric(14,2) | Total amount received&#xa;payment_mode | String(20) | Cash / Cheque / UPI / NEFT / RTGS&#xa;reference_no | String(100) | Cheque no / UTR / transaction reference&#xa;bank_name | String(200) | Bank (for cheque payments)&#xa;notes | Text | Internal notes&#xa;linked_invoices | (via invoice_payments) | Which invoices this payment settles" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=left;fontSize=10;fontFamily=Courier New;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="1070" y="507" width="460" height="210" as="geometry" />
+    </mxCell>
+
+    <!-- PRIVATE INVOICE -->
+    <mxCell id="priv_hdr" value="PRIVATE INVOICE (USB-Gated, Non-GST)" style="text;html=1;strokeColor=none;fillColor=#4a0070;fontColor=#ffffff;align=center;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="1070" y="735" width="460" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="priv_body" value="Attribute | Type | Description&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;id | UUID | Primary key (separate table from invoices)&#xa;company_id | UUID FK | Links to companies&#xa;invoice_no | String(30) | PRIV/0001 (own numbering sequence)&#xa;invoice_date | Date | Date of the private invoice&#xa;customer_name | String(200) | Buyer name (no GSTIN required)&#xa;vehicle_no | String(20) | Vehicle registration&#xa;net_weight | Numeric(10,2) | Net weight in KG&#xa;rate | Numeric(12,2) | Rate per MT (₹)&#xa;amount | Numeric(14,2) | net_weight/1000 × rate&#xa;payment_mode | String(20) | Cash / Other&#xa;notes | Text | Internal notes&#xa;created_by | UUID FK | User who created it&#xa;created_at | DateTime | Creation timestamp&#xa;&#xa;Access Rules:&#xa;• Create / View own: Any user with active USB session&#xa;• View all: private_admin role only (no USB needed)&#xa;• Hidden from sidebar without USB authorization&#xa;• Non-GST option hidden in invoice dialog without USB" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f0e6ff;strokeColor=#7b00d4;align=left;fontSize=10;fontFamily=Courier New;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="1070" y="767" width="460" height="350" as="geometry" />
+    </mxCell>
+
+    <!-- USB KEYS -->
+    <mxCell id="usbkey_hdr" value="USB KEYS (Hardware Auth)" style="text;html=1;strokeColor=none;fillColor=#4a0070;fontColor=#ffffff;align=center;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="1070" y="1135" width="460" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="usbkey_body" value="Attribute | Type | Description&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;id | UUID | Primary key&#xa;key_uuid | String(200) | UUID written to .weighbridge_key file on pendrive&#xa;label | String(200) | Friendly name (e.g. 'Main Office USB')&#xa;is_active | Boolean | Revoke by setting False (without deleting)&#xa;registered_by | UUID FK | Admin who registered this key&#xa;registered_at | DateTime | Registration timestamp&#xa;&#xa;usb_client_sessions:&#xa;id | UUID | Session primary key&#xa;key_uuid | String | UUID that authenticated&#xa;created_by | UUID FK | User who authenticated&#xa;expires_at | DateTime | Session expiry (8 hours from auth)&#xa;created_at | DateTime | When session was created&#xa;&#xa;usb_recovery_sessions:&#xa;id | UUID | Recovery session primary key&#xa;pin_hash | String | bcrypt hash of admin-set PIN&#xa;expires_at | DateTime | PIN expiry time&#xa;created_by | UUID FK | Admin who created recovery&#xa;reason | String | Why recovery was created" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f0e6ff;strokeColor=#7b00d4;align=left;fontSize=10;fontFamily=Courier New;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="1070" y="1167" width="460" height="380" as="geometry" />
+    </mxCell>
+
+    <!-- ═══ COLUMN 4 — BUSINESS TERMS ═══════════════════════════ -->
+
+    <!-- GST TERMS -->
+    <mxCell id="gst_hdr" value="GST TERMINOLOGY" style="text;html=1;strokeColor=none;fillColor=#006600;fontColor=#ffffff;align=center;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="80" y="1730" width="1450" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="gst_body" value="Term | Definition&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;GSTIN | GST Identification Number (15 chars). First 2 digits = state code. Used to determine intra/inter-state routing.&#xa;HSN Code | Harmonized System of Nomenclature. 4-8 digit code classifying goods. Crushed stone = 2517. Mandatory on B2B invoices.&#xa;CGST | Central GST — half of GST rate paid to Central Govt. Applied when supplier and buyer are in same state.&#xa;SGST | State GST — other half of GST rate paid to State Govt. Applied when supplier and buyer are in same state.&#xa;IGST | Integrated GST — full GST rate paid to Central Govt. Applied when supplier and buyer are in different states.&#xa;Tax Invoice | Invoice issued when seller is GST-registered. Shows CGST/SGST or IGST breakdown. Required for Input Tax Credit (ITC).&#xa;Bill of Supply | Invoice when seller is not GST-registered OR when transaction is exempt. No tax breakdown. Non-GST type in this system.&#xa;B2B Invoice | Business-to-Business — buyer has GSTIN. Appears in GSTR-1 B2B section. Buyer can claim ITC.&#xa;B2C Invoice | Business-to-Consumer — buyer has no GSTIN. Appears in GSTR-1 B2C section. ITC not claimable by buyer.&#xa;Input Tax Credit (ITC) | GST paid on purchases that can be offset against GST collected on sales. Reduces net tax liability.&#xa;GSTR-1 | Monthly/quarterly return reporting outward supplies (sales). Filed on GST portal.&#xa;GSTR-3B | Monthly summary return. Reports outward tax (3.1), ITC (4), and net GST payable.&#xa;TCS | Tax Collected at Source — collected by seller from buyer on certain transactions above threshold (e.g. e-commerce).&#xa;E-Way Bill | Electronic Way Bill — mandatory for goods movement &gt; ₹50,000. Generated on NIC portal. Number stored on invoice.&#xa;State Code | 2-digit code: 27=Maharashtra, 06=Haryana, 29=Karnataka, etc. Determines CGST+SGST vs IGST routing." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6ffe6;strokeColor=#006600;align=left;fontSize=10;fontFamily=Courier New;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="80" y="1762" width="1450" height="290" as="geometry" />
+    </mxCell>
+
+    <!-- BUSINESS PROCESS TERMS -->
+    <mxCell id="biz_hdr" value="BUSINESS PROCESS TERMS" style="text;html=1;strokeColor=none;fillColor=#1e3a5f;fontColor=#ffffff;align=center;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="80" y="2070" width="700" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="biz_body" value="Term | Definition&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;Token | Weighbridge transaction record. Created when truck arrives, completed after both weights.&#xa;Gross Weight | Total weight of truck + loaded material (first weighing). In KG.&#xa;Tare Weight | Weight of empty truck (second weighing). In KG.&#xa;Net Weight | Actual material weight = |Gross - Tare|. In KG. Converted to MT (÷1000) for invoicing.&#xa;Two-Stage Weighment | Process: truck enters → first weight → load/unload → second weight → net computed.&#xa;First Weight Type | Whether first reading was gross (loaded) or tare (empty). Depends on direction.&#xa;Inbound | Material coming in (purchase). Truck arrives loaded, leaves empty.&#xa;Outbound | Material going out (sale). Truck arrives empty, leaves loaded.&#xa;Draft Invoice | Invoice being edited. Not yet numbered/locked. Can be modified freely.&#xa;Final Invoice | Locked invoice. Invoice number assigned. Cannot be edited (only cancelled).&#xa;Cancelled Invoice | Invoice voided. No financial effect. Original number preserved for audit.&#xa;Outstanding | Amount due from customer = Grand Total - Amount Paid.&#xa;Ageing | Classification of outstanding by days overdue: Current / 1-30 / 31-60 / 61-90 / 90+ days.&#xa;Running Balance | Cumulative party balance updated after each invoice and payment.&#xa;Quotation | Commercial offer sent to customer before invoice. Has validity date. Can convert to invoice.&#xa;Tally Sync | Process of pushing invoice data as XML to Tally Prime ERP via HTTP port 9002." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;fontSize=10;fontFamily=Courier New;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="80" y="2102" width="700" height="330" as="geometry" />
+    </mxCell>
+
+    <!-- SYSTEM / TECHNICAL TERMS -->
+    <mxCell id="tech_hdr" value="SYSTEM &amp; TECHNICAL TERMS" style="text;html=1;strokeColor=none;fillColor=#333333;fontColor=#ffffff;align=center;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="830" y="2070" width="700" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="tech_body" value="Term | Definition&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;UUID | Universally Unique Identifier. Used as primary key for all records (format: 550e8400-...).&#xa;JWT | JSON Web Token. Used for authentication. Stored in browser localStorage. Expires after 8 hours.&#xa;Bearer Token | HTTP Authorization header value (Authorization: Bearer &lt;jwt&gt;). Sent with every API call.&#xa;RBAC | Role-Based Access Control. Roles: admin / operator / accountant / viewer / private_admin.&#xa;WebSocket | Persistent connection (/ws/weight) used for real-time weight scale readings.&#xa;RS232 / USB-Serial | Hardware protocol connecting weighbridge indicator to server via COM port.&#xa;Protocol Parser | Software that interprets raw bytes from weight scale into KG value.&#xa;Stability Detection | Weight is 'stable' if 5 consecutive readings vary by less than 20 KG.&#xa;xhtml2pdf | Python library that converts Jinja2 HTML templates to PDF invoice files.&#xa;Number Sequence | DB table that locks and increments invoice numbers (prevents duplicate numbering).&#xa;pg_dump | PostgreSQL backup utility. Creates .sql file that can restore entire database.&#xa;Alembic | Database migration tool. Manages schema changes versioned like Git commits.&#xa;USB Guard | System that requires a physical USB pendrive with .weighbridge_key UUID file to unlock&#xa;            | private invoice features. Three auth methods: server USB, client file picker, recovery PIN.&#xa;Audit Log | Immutable record of all actions: who did what to which record and when." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#333333;align=left;fontSize=10;fontFamily=Courier New;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="830" y="2102" width="700" height="330" as="geometry" />
+    </mxCell>
+
+  </root>
+</mxGraphModel>

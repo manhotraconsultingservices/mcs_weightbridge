@@ -1,0 +1,148 @@
+# ============================================================================
+# Weighbridge ERP — .gitignore
+# Only source code, scripts, docs, and config templates should be committed.
+# ============================================================================
+
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+*.dist-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+backend/venv/
+backend/.venv/
+venv/
+.venv/
+ENV/
+env/
+
+# Build artifacts (Nuitka / PyInstaller output)
+backend/dist/
+backend/build/
+*.spec
+
+# ── Node.js / Frontend ─────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.vite/
+*.tsbuildinfo
+
+# ── Executables & Binaries ─────────────────────────────────────────────────
+*.exe
+*.dll
+*.so
+*.dylib
+*.bin
+*.msi
+
+# ── Environment & Secrets (CRITICAL — never commit) ────────────────────────
+.env
+.env.local
+.env.*.local
+.env.bak
+backend/.env
+backend/.env.bak
+!backend/.env.example
+!backend/.env.template
+
+# License keys (hardware-bound, client-specific)
+license.key
+*.key
+!backend/app/**/*.key
+
+# Vendor private keys (license signing)
+tools/license-generator/vendor_private.key
+tools/license-generator/.serial_counter
+
+# Encrypted secrets
+secrets.dpapi
+*.dpapi
+
+# Credentials document (contains plaintext passwords + encryption keys)
+CREDENTIALS_AND_URLS.md
+
+# Hardware fingerprints
+fingerprint.json
+fingerprint_*.json
+
+# ── Logs ────────────────────────────────────────────────────────────────────
+*.log
+logs/
+uvicorn.log
+uvicorn_err.log
+
+# ── Data Directories (user-generated, not source code) ─────────────────────
+uploads/
+backend/uploads/
+backend/backups/
+backups/
+
+# ── Release Packages & Pre-built Bundles ───────────────────────────────────
+mc_weighbridge_erp/
+releases/
+deployment-packages/
+
+# ── Demo & Media Files ─────────────────────────────────────────────────────
+demo/
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# ── Test Reports & Generated Docs ──────────────────────────────────────────
+Weighbridge_Test_Report.xlsx
+Weighbridge_UI_Test_Report.xlsx
+test_results_phase2.pkl
+*.pkl
+deployment-report.json
+backup-status.json
+
+# ── Cloud Backup Config (contains R2 credentials) ─────────────────────────
+cloud-backup-config.json
+rclone.conf
+
+# ── Cloudflare Tunnel (client-specific) ───────────────────────────────────
+cloudflared/
+
+# ── IDE & Editor ───────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.vs/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+*~
+
+# ── OS Files ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ── Claude Code / AI Tooling ──────────────────────────────────────────────
+.claude/
+
+# ── NSSM (Windows service manager binary) ─────────────────────────────────
+tools/nssm.exe
+nssm.exe
+
+# ── Temporary Files ────────────────────────────────────────────────────────
+*.tmp
+*.bak
+*.cache
+.cache/
+*.swp

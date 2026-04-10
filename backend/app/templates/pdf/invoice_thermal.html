@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: 80mm auto; margin: 2mm 3mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Courier New', Courier, monospace; font-size: 10px; width: 74mm; color: #000; }
+  .center { text-align: center; }
+  .bold { font-weight: bold; }
+  .co-name { font-size: 13px; font-weight: bold; text-align: center; }
+  .sep { border: none; border-top: 1px dashed #000; margin: 3px 0; }
+  .row { display: flex; justify-content: space-between; margin: 1px 0; }
+  .row-label { flex: 0 0 auto; }
+  .row-value { flex: 1 1 auto; text-align: right; font-weight: bold; padding-left: 4px; word-break: break-all; }
+  .item-name { font-weight: bold; margin-top: 2px; }
+  .item-calc { text-align: right; font-size: 9px; margin-bottom: 1px; }
+  .total-row { display: flex; justify-content: space-between; margin: 1px 0; }
+  .grand-row { display: flex; justify-content: space-between; margin: 2px 0; font-weight: bold; font-size: 11px; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 2px 0; }
+  .blank { height: 8mm; }
+</style>
+</head>
+<body>
+
+<div class="co-name">{{ company.name }}</div>
+{% if company.gstin %}
+<div class="center" style="font-size:9px;">GSTIN: {{ company.gstin }}</div>
+{% endif %}
+{% if company.address_line1 %}
+<div class="center" style="font-size:9px;">{{ company.address_line1 }}{% if company.city %}, {{ company.city }}{% endif %}</div>
+{% endif %}
+{% if company.phone %}
+<div class="center" style="font-size:9px;">Ph: {{ company.phone }}</div>
+{% endif %}
+<hr class="sep">
+
+<div class="center bold">
+  {% if invoice.invoice_type == 'purchase' %}PURCHASE INVOICE{% elif invoice.tax_type == 'non_gst' %}BILL OF SUPPLY{% else %}TAX INVOICE{% endif %}
+</div>
+<hr class="sep">
+
+<div class="row">
+  <span class="row-label">INVOICE NO</span>
+  <span class="row-value">{{ invoice.invoice_no or 'DRAFT' }}</span>
+</div>
+<div class="row">
+  <span class="row-label">DATE</span>
+  <span class="row-value">{{ invoice.invoice_date.strftime('%d-%m-%Y') if invoice.invoice_date else '—' }}</span>
+</div>
+<hr class="sep">
+
+{% if party %}
+<div class="row">
+  <span class="row-label">PARTY</span>
+  <span class="row-value">{{ party.name }}</span>
+</div>
+{% if party.gstin %}
+<div class="row">
+  <span class="row-label">GSTIN</span>
+  <span class="row-value" style="font-size:9px;">{{ party.gstin }}</span>
+</div>
+{% endif %}
+{% if party.billing_city %}
+<div class="row">
+  <span class="row-label">CITY</span>
+  <span class="row-value">{{ party.billing_city }}{% if party.billing_state %}, {{ party.billing_state }}{% endif %}</span>
+</div>
+{% endif %}
+{% elif invoice.customer_name %}
+<div class="row">
+  <span class="row-label">PARTY</span>
+  <span class="row-value">{{ invoice.customer_name }}</span>
+</div>
+{% endif %}
+{% if invoice.vehicle_no %}
+<div class="row">
+  <span class="row-label">VEHICLE</span>
+  <span class="row-value">{{ invoice.vehicle_no }}</span>
+</div>
+{% endif %}
+<hr class="sep">
+
+<!-- Items -->
+{% for item in invoice.items %}
+<div class="item-name">{{ item.description or 'Item' }}</div>
+{% if item.hsn_code %}
+<div style="font-size:9px; color:#444;">HSN: {{ item.hsn_code }}</div>
+{% endif %}
+<div class="item-calc">{{ '%.3f' % item.quantity|float }} {{ item.unit }} x {{ '%.2f' % item.rate|float }} = {{ '%.2f' % item.amount|float }}</div>
+{% if invoice.tax_type == 'gst' and item.gst_rate %}
+<div class="item-calc">GST {{ '%.0f' % item.gst_rate|float }}% = {{ '%.2f' % (item.cgst_amount|float + item.sgst_amount|float + item.igst_amount|float) }}</div>
+{% endif %}
+{% if not loop.last %}<hr class="sep">{% endif %}
+{% endfor %}
+<hr class="sep">
+
+<!-- Totals -->
+<div class="total-row">
+  <span>SUBTOTAL</span>
+  <span>Rs. {{ '%.2f' % invoice.subtotal|float }}</span>
+</div>
+{% if invoice.discount_amount and invoice.discount_amount|float > 0 %}
+<div class="total-row">
+  <span>DISCOUNT</span>
+  <span>- Rs. {{ '%.2f' % invoice.discount_amount|float }}</span>
+</div>
+<div class="total-row">
+  <span>TAXABLE AMT</span>
+  <span>Rs. {{ '%.2f' % invoice.taxable_amount|float }}</span>
+</div>
+{% endif %}
+{% if invoice.freight and invoice.freight|float > 0 %}
+<div class="total-row">
+  <span>FREIGHT</span>
+  <span>Rs. {{ '%.2f' % invoice.freight|float }}</span>
+</div>
+{% endif %}
+{% if invoice.tax_type == 'gst' %}
+  {% if invoice.cgst_amount and invoice.cgst_amount|float > 0 %}
+  <div class="total-row">
+    <span>CGST</span>
+    <span>Rs. {{ '%.2f' % invoice.cgst_amount|float }}</span>
+  </div>
+  <div class="total-row">
+    <span>SGST</span>
+    <span>Rs. {{ '%.2f' % invoice.sgst_amount|float }}</span>
+  </div>
+  {% endif %}
+  {% if invoice.igst_amount and invoice.igst_amount|float > 0 %}
+  <div class="total-row">
+    <span>IGST</span>
+    <span>Rs. {{ '%.2f' % invoice.igst_amount|float }}</span>
+  </div>
+  {% endif %}
+{% endif %}
+{% if invoice.tcs_amount and invoice.tcs_amount|float > 0 %}
+<div class="total-row">
+  <span>TCS ({{ '%.2f' % invoice.tcs_rate|float }}%)</span>
+  <span>Rs. {{ '%.2f' % invoice.tcs_amount|float }}</span>
+</div>
+{% endif %}
+{% if invoice.round_off and invoice.round_off|float != 0 %}
+<div class="total-row">
+  <span>ROUND OFF</span>
+  <span>Rs. {{ '%.2f' % invoice.round_off|float }}</span>
+</div>
+{% endif %}
+
+<div class="grand-row">
+  <span>GRAND TOTAL</span>
+  <span>Rs. {{ '%.2f' % invoice.grand_total|float }}</span>
+</div>
+
+{% if invoice.payment_mode %}
+<div class="total-row" style="margin-top: 2px;">
+  <span>PAYMENT</span>
+  <span>{{ invoice.payment_mode | title }}</span>
+</div>
+{% endif %}
+<hr class="sep">
+
+<div class="center" style="margin-top: 3px;">Thank You for your business</div>
+
+<div class="blank"></div>
+<div class="blank"></div>
+
+<script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; };</script>
+</body>
+</html>

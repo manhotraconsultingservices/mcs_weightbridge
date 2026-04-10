@@ -1,0 +1,1607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WeighBridge Pro — Sales Pitch | Manhotra Consulting</title>
+  <style>
+    /* ── RESET & BASE ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 15px; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      color: #1a1a2e;
+      background: #fff;
+      line-height: 1.6;
+    }
+
+    /* ── PRINT SETUP ── */
+    @media print {
+      @page { size: A4; margin: 8mm 10mm; }
+      body { font-size: 12px; max-width: none; margin: 0; }
+      .no-break { break-inside: avoid; }
+      .hero { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+      /* Prevent individual rows/cards from splitting across pages */
+      tr { break-inside: avoid; }
+      .price-card { break-inside: avoid; }
+      .pricing-notes { break-inside: avoid; }
+      .intro-card { break-inside: avoid; }
+      .uc-card { break-inside: avoid; }
+      .why-card { break-inside: avoid; }
+      .future-banner { break-inside: avoid; }
+
+      /* Allow large containers to flow naturally across pages (no blank pages) */
+      table, thead, tbody { break-inside: auto; }
+      .pricing-wrap { break-inside: auto; }
+      .uc-grid { break-inside: auto; }
+      .feature-matrix { break-inside: auto; }
+      .deploy-table { break-inside: auto; }
+      .founder-inner { break-inside: auto; }
+      .why-grid { break-inside: auto; }
+    }
+
+    /* ── SCREEN ── */
+
+    /* ── COLOUR PALETTE ── */
+    :root {
+      --primary:   #0f3460;
+      --accent:    #e94560;
+      --gold:      #f5a623;
+      --teal:      #16213e;
+      --light-bg:  #f4f7fc;
+      --border:    #d0d9e8;
+      --text-muted:#5a6a85;
+      --white:     #ffffff;
+      --green:     #1a7f5a;
+      --orange:    #c0531d;
+      --purple:    #5b4fcf;
+    }
+
+    /* ── UTILITY ── */
+    .container  { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+    .text-center{ text-align: center; }
+    .bold       { font-weight: 700; }
+    .small      { font-size: 0.82rem; }
+    .muted      { color: var(--text-muted); }
+    .tag        { display: inline-block; background: var(--accent); color:#fff; font-size:0.7rem; font-weight:700; padding:2px 8px; border-radius:20px; text-transform:uppercase; letter-spacing:.5px; }
+
+    /* ══════════════════════════════════════════
+       HERO
+    ══════════════════════════════════════════ */
+    .hero {
+      background: linear-gradient(135deg, var(--primary) 0%, #1a4a8a 45%, var(--teal) 100%);
+      color: #fff;
+      padding: 60px 24px 50px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -60px; right: -60px;
+      width: 340px; height: 340px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.05);
+    }
+    .hero::after {
+      content: '';
+      position: absolute;
+      bottom: -80px; left: -40px;
+      width: 260px; height: 260px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.04);
+    }
+    .hero-inner { position: relative; z-index: 1; }
+    .hero-badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 4px 14px;
+      border-radius: 20px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 18px;
+    }
+    .hero h1 {
+      font-size: 2.8rem;
+      font-weight: 800;
+      line-height: 1.15;
+      margin-bottom: 10px;
+      letter-spacing: -0.5px;
+    }
+    .hero h1 span { color: var(--gold); }
+    .hero-sub {
+      font-size: 1.15rem;
+      color: rgba(255,255,255,0.85);
+      max-width: 640px;
+      margin-bottom: 28px;
+    }
+    .hero-stats {
+      display: flex;
+      gap: 36px;
+      flex-wrap: wrap;
+    }
+    .hero-stat { text-align: center; }
+    .hero-stat .num { font-size: 1.9rem; font-weight: 800; color: var(--gold); }
+    .hero-stat .lbl { font-size: 0.72rem; color: rgba(255,255,255,0.75); text-transform: uppercase; letter-spacing:.5px; }
+    .hero-company {
+      position: absolute;
+      top: 28px; right: 28px;
+      text-align: right;
+      z-index: 2;
+    }
+    .hero-company .company-name {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: 0.3px;
+    }
+    .hero-company .company-sub {
+      font-size: 0.72rem;
+      color: rgba(255,255,255,0.65);
+    }
+    .hero-divider {
+      width: 60px; height: 4px;
+      background: linear-gradient(90deg, var(--gold), var(--accent));
+      border-radius: 2px;
+      margin: 16px 0;
+    }
+
+    /* ══════════════════════════════════════════
+       SECTION HEADERS
+    ══════════════════════════════════════════ */
+    .section { padding: 48px 24px; }
+    .section-alt { background: var(--light-bg); }
+    .section-title {
+      font-size: 1.7rem;
+      font-weight: 800;
+      color: var(--primary);
+      margin-bottom: 6px;
+    }
+    .section-title span { color: var(--accent); }
+    .section-sub {
+      color: var(--text-muted);
+      font-size: 0.92rem;
+      margin-bottom: 32px;
+    }
+    .section-rule {
+      width: 50px; height: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--gold));
+      border-radius: 2px;
+      margin: 8px 0 28px;
+    }
+
+    /* ══════════════════════════════════════════
+       INTRO — WHAT IS IT?
+    ══════════════════════════════════════════ */
+    .intro-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 20px;
+    }
+    .intro-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      border-top: 4px solid var(--primary);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    .intro-card .ic-icon {
+      font-size: 2rem;
+      margin-bottom: 12px;
+    }
+    .intro-card h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 6px;
+    }
+    .intro-card p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    /* ══════════════════════════════════════════
+       PRICING TABLE
+    ══════════════════════════════════════════ */
+    .pricing-wrap {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 22px;
+      margin-top: 8px;
+    }
+    .price-card {
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      border: 2px solid transparent;
+      transition: transform 0.2s;
+    }
+    .price-card.featured {
+      border-color: var(--accent);
+      transform: scale(1.03);
+      box-shadow: 0 8px 30px rgba(233,69,96,0.25);
+    }
+    .price-header {
+      padding: 24px 24px 18px;
+      color: #fff;
+      position: relative;
+    }
+    .price-header.blue  { background: linear-gradient(135deg, #0f3460, #1a4a8a); }
+    .price-header.teal  { background: linear-gradient(135deg, #1a4a8a, #0f6680); }
+    .price-header.accent{ background: linear-gradient(135deg, #c0531d, #e94560); }
+    .price-tier-badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.18);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 12px;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      margin-bottom: 10px;
+    }
+    .price-header h3 {
+      font-size: 1.15rem;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+    .price-header p {
+      font-size: 0.78rem;
+      color: rgba(255,255,255,0.8);
+      line-height: 1.4;
+    }
+    .price-amount {
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .price-main {
+      font-size: 2.1rem;
+      font-weight: 800;
+      color: var(--primary);
+      line-height: 1;
+    }
+    .price-main .currency { font-size: 1.2rem; font-weight: 600; color: var(--text-muted); }
+    .price-main .period { font-size: 0.8rem; font-weight: 400; color: var(--text-muted); }
+    .price-note {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    .price-note strong { color: var(--accent); }
+    .price-body {
+      padding: 18px 24px;
+      flex: 1;
+    }
+    .price-feature {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 9px;
+      font-size: 0.83rem;
+    }
+    .price-feature .chk { color: var(--green); font-weight: 700; flex-shrink:0; margin-top:1px; }
+    .price-feature .cross { color: #cc2222; font-weight: 700; flex-shrink:0; margin-top:1px; }
+    .price-footer {
+      padding: 16px 24px;
+      background: var(--light-bg);
+      border-top: 1px solid var(--border);
+    }
+    .price-amc {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .price-amc strong { color: var(--primary); }
+
+    /* POPULAR badge */
+    .popular-badge {
+      position: absolute;
+      top: 16px; right: 16px;
+      background: var(--gold);
+      color: #fff;
+      font-size: 0.62rem;
+      font-weight: 800;
+      padding: 3px 9px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+
+    /* ══════════════════════════════════════════
+       PRICING NOTES BAND
+    ══════════════════════════════════════════ */
+    .pricing-notes {
+      background: var(--primary);
+      color: #fff;
+      border-radius: 12px;
+      padding: 20px 28px;
+      margin-top: 24px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      text-align: center;
+    }
+    .pn-item .pn-val { font-size: 1.35rem; font-weight: 800; color: var(--gold); }
+    .pn-item .pn-lbl { font-size: 0.72rem; color: rgba(255,255,255,0.75); margin-top: 2px; }
+
+    /* ══════════════════════════════════════════
+       FEATURE MATRIX TABLE
+    ══════════════════════════════════════════ */
+    .feature-matrix {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.83rem;
+    }
+    .feature-matrix thead tr {
+      background: var(--primary);
+      color: #fff;
+    }
+    .feature-matrix thead th {
+      padding: 12px 14px;
+      text-align: left;
+      font-weight: 700;
+      font-size: 0.82rem;
+    }
+    .feature-matrix thead th.center { text-align: center; }
+    .feature-matrix tbody tr:nth-child(even) { background: var(--light-bg); }
+    .feature-matrix tbody tr:hover { background: #e8eff9; }
+    .feature-matrix tbody td {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .feature-matrix tbody td.center { text-align: center; }
+    .fm-yes  { color: var(--green); font-weight: 700; font-size: 1rem; }
+    .fm-no   { color: #cc2222; font-weight: 700; font-size: 1rem; }
+    .fm-cat {
+      background: var(--primary) !important;
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.8rem;
+      letter-spacing: .3px;
+      padding: 6px 14px !important;
+    }
+    .fm-cat td { color: #fff !important; }
+    .fm-note { font-size: 0.72rem; color: var(--text-muted); }
+
+    /* ══════════════════════════════════════════
+       USE CASE CARDS
+    ══════════════════════════════════════════ */
+    .uc-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    .uc-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      border-left: 4px solid var(--primary);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+    }
+    .uc-card.alt { border-left-color: var(--accent); }
+    .uc-card.gold { border-left-color: var(--gold); }
+    .uc-card.green { border-left-color: var(--green); }
+    .uc-card.purple { border-left-color: var(--purple); }
+    .uc-card.orange { border-left-color: var(--orange); }
+    .uc-card h4 {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .uc-card h4 .icon { font-size: 1rem; }
+    .uc-card ul {
+      list-style: none;
+      padding: 0;
+    }
+    .uc-card ul li {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      padding: 2px 0;
+      padding-left: 14px;
+      position: relative;
+    }
+    .uc-card ul li::before {
+      content: '›';
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    /* ══════════════════════════════════════════
+       DEPLOYMENT COMPARISON
+    ══════════════════════════════════════════ */
+    .deploy-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .deploy-table thead tr { background: var(--primary); color: #fff; }
+    .deploy-table thead th { padding: 14px 16px; font-weight: 700; text-align: left; }
+    .deploy-table tbody tr:nth-child(even) { background: var(--light-bg); }
+    .deploy-table tbody td { padding: 11px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .deploy-table tbody td:first-child { font-weight: 600; color: var(--primary); }
+    .pill {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 12px;
+      font-size: 0.7rem;
+      font-weight: 700;
+    }
+    .pill-green  { background:#d4f0e3; color: var(--green); }
+    .pill-blue   { background:#d6e6f9; color: var(--primary); }
+    .pill-orange { background:#fde6d5; color: var(--orange); }
+    .pill-red    { background:#fdddd8; color: #c0392b; }
+
+    /* ══════════════════════════════════════════
+       FUTURE COMMITMENT BANNER
+    ══════════════════════════════════════════ */
+    .future-banner {
+      background: linear-gradient(135deg, var(--green), #0e6b47);
+      color: #fff;
+      border-radius: 14px;
+      padding: 30px 36px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      margin: 0 24px;
+    }
+    .future-banner .fb-icon { font-size: 2.8rem; }
+    .future-banner h3 { font-size: 1.25rem; font-weight: 800; margin-bottom: 6px; }
+    .future-banner p { font-size: 0.88rem; color: rgba(255,255,255,0.88); line-height: 1.55; }
+    .fb-highlights {
+      display: flex;
+      gap: 12px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+    .fb-hl {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.25);
+      color: #fff;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 20px;
+    }
+
+    /* ══════════════════════════════════════════
+       FOUNDER CARD
+    ══════════════════════════════════════════ */
+    .founder-section {
+      background: linear-gradient(135deg, #0f3460 0%, #16213e 60%, #1a1a2e 100%);
+      color: #fff;
+      padding: 56px 24px;
+    }
+    .founder-section .section-title { color: #fff; }
+    .founder-section .section-title span { color: var(--gold); }
+    .founder-inner {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 48px;
+      align-items: start;
+      margin-top: 32px;
+    }
+    .founder-avatar-wrap {
+      text-align: center;
+    }
+    .founder-avatar {
+      width: 160px; height: 160px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--gold), var(--accent));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 4rem;
+      font-weight: 800;
+      color: #fff;
+      margin: 0 auto 16px;
+      border: 4px solid rgba(255,255,255,0.2);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      overflow: hidden;
+    }
+    .founder-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .founder-name {
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+    .founder-title {
+      font-size: 0.78rem;
+      color: var(--gold);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .founder-company {
+      font-size: 0.82rem;
+      color: rgba(255,255,255,0.65);
+      margin-top: 2px;
+    }
+    .founder-info h2 {
+      font-size: 1.55rem;
+      font-weight: 800;
+      margin-bottom: 6px;
+      line-height: 1.25;
+    }
+    .founder-info h2 span { color: var(--gold); }
+    .founder-tagline {
+      color: rgba(255,255,255,0.75);
+      font-size: 0.92rem;
+      margin-bottom: 20px;
+      line-height: 1.55;
+    }
+    .founder-stats {
+      display: flex;
+      gap: 28px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+    .fs-item {
+      text-align: center;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      padding: 14px 20px;
+      min-width: 100px;
+    }
+    .fs-item .fs-num { font-size: 1.65rem; font-weight: 800; color: var(--gold); }
+    .fs-item .fs-lbl { font-size: 0.68rem; color: rgba(255,255,255,0.65); text-transform: uppercase; letter-spacing: .4px; margin-top: 2px; }
+    .founder-countries {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .country-pill {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #fff;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 5px 14px;
+      border-radius: 20px;
+    }
+    .founder-expertise {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      padding: 16px 20px;
+    }
+    .founder-expertise h4 {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--gold);
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      margin-bottom: 10px;
+    }
+    .expertise-tags {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .exp-tag {
+      background: rgba(255,255,255,0.1);
+      color: rgba(255,255,255,0.9);
+      font-size: 0.75rem;
+      padding: 3px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+
+    /* ══════════════════════════════════════════
+       WHY US STRIP
+    ══════════════════════════════════════════ */
+    .why-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+    .why-card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 22px 18px;
+      text-align: center;
+      border: 1px solid var(--border);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    .why-card .wi { font-size: 2rem; margin-bottom: 10px; }
+    .why-card h4 { font-size: 0.88rem; font-weight: 700; color: var(--primary); margin-bottom: 6px; }
+    .why-card p  { font-size: 0.78rem; color: var(--text-muted); line-height: 1.45; }
+
+    /* ══════════════════════════════════════════
+       TECH STACK STRIP
+    ══════════════════════════════════════════ */
+    .tech-strip {
+      background: var(--primary);
+      color: #fff;
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .tech-strip .ts-label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing:.5px; color: var(--gold); white-space: nowrap; }
+    .tech-pill {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #fff;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 20px;
+    }
+
+    /* ══════════════════════════════════════════
+       FOOTER / CTA
+    ══════════════════════════════════════════ */
+    .cta-section {
+      background: var(--accent);
+      color: #fff;
+      padding: 40px 24px;
+      text-align: center;
+    }
+    .cta-section h2 { font-size: 1.65rem; font-weight: 800; margin-bottom: 8px; }
+    .cta-section p  { font-size: 0.92rem; color: rgba(255,255,255,0.88); margin-bottom: 24px; }
+    .cta-grid {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+    .cta-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.25);
+      color: #fff;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 10px 20px;
+      border-radius: 8px;
+    }
+    .footer-bar {
+      background: #0c1a2e;
+      color: rgba(255,255,255,0.5);
+      text-align: center;
+      padding: 14px 24px;
+      font-size: 0.72rem;
+    }
+    .footer-bar strong { color: rgba(255,255,255,0.8); }
+
+    /* ══════════════════════════════════════════
+       PRINT-SPECIFIC OVERRIDES
+    ══════════════════════════════════════════ */
+    @media print {
+      /* Shrink everything to fit A4 comfortably */
+      html { font-size: 11px; }
+      body { font-size: 11px; line-height: 1.45; }
+
+      /* Layout grids — tighter for A4 */
+      .pricing-wrap { grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+      .price-card.featured { transform: none; box-shadow: none; }
+      .price-card { box-shadow: none; border: 1.5px solid var(--border); }
+      .price-header { padding: 14px 14px 12px; }
+      .price-header h3 { font-size: 0.95rem; }
+      .price-amount { padding: 12px 14px 10px; }
+      .price-main { font-size: 1.6rem; }
+      .price-body { padding: 10px 14px; }
+      .price-feature { margin-bottom: 5px; font-size: 0.75rem; }
+      .price-footer { padding: 10px 14px; }
+      .price-amc { font-size: 0.68rem; }
+
+      .uc-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .uc-card { padding: 12px; }
+      .uc-card h4 { font-size: 0.78rem; }
+      .uc-card ul li { font-size: 0.7rem; }
+      .founder-inner { grid-template-columns: 180px 1fr; gap: 24px; }
+      .founder-avatar { width: 120px; height: 120px; }
+      .intro-grid { grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+      .intro-card { padding: 14px; }
+      .why-grid { grid-template-columns: repeat(4, 1fr); gap: 10px; }
+      .why-card { padding: 14px 12px; }
+      .founder-stats { gap: 10px; }
+      .pricing-notes { grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 14px 18px; }
+
+      /* Section padding — tighter */
+      .section { padding: 28px 16px; }
+      .hero { padding: 36px 16px 30px; }
+      .hero h1 { font-size: 2rem; }
+      .hero-sub { font-size: 0.9rem; }
+      .hero-stats { gap: 20px; }
+      .hero-stat .num { font-size: 1.4rem; }
+      .section-title { font-size: 1.25rem; margin-bottom: 4px; }
+      .section-sub { font-size: 0.78rem; margin-bottom: 18px; }
+      .section-rule { margin: 6px 0 16px; }
+
+      /* Feature matrix & deploy tables — smaller for A4 */
+      .feature-matrix { font-size: 0.72rem; }
+      .feature-matrix thead th { padding: 7px 8px; font-size: 0.72rem; }
+      .feature-matrix tbody td { padding: 5px 8px; }
+      .fm-cat td { padding: 4px 8px !important; font-size: 0.7rem; }
+      .deploy-table { font-size: 0.72rem; }
+      .deploy-table thead th { padding: 8px 10px; }
+      .deploy-table tbody td { padding: 7px 10px; }
+
+      /* CTA / footer — compact */
+      .cta-section { padding: 24px 16px; }
+      .cta-section h2 { font-size: 1.2rem; }
+      .footer-bar { padding: 8px 16px; font-size: 0.65rem; }
+      .tech-strip { padding: 12px 16px; }
+      .future-banner { padding: 18px 22px; margin: 0 16px; }
+      .future-banner h3 { font-size: 1rem; }
+      .future-banner p { font-size: 0.75rem; }
+
+      /* Founder section */
+      .founder-section { padding: 32px 16px; }
+      .founder-info h2 { font-size: 1.2rem; }
+      .founder-tagline { font-size: 0.78rem; }
+      .fs-item { padding: 8px 12px; min-width: 70px; }
+      .fs-item .fs-num { font-size: 1.2rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════
+     HERO
+══════════════════════════════════════════ -->
+<div class="hero">
+  <div class="hero-company">
+    <div class="company-name">Manhotra Consulting</div>
+    <div class="company-sub">Enterprise Technology Solutions</div>
+  </div>
+  <div class="hero-inner container">
+    <div class="hero-badge">⚡ Product Brochure — 2025–26</div>
+    <h1>WeighBridge <span>Pro</span><br/>Management Suite</h1>
+    <div class="hero-divider"></div>
+    <p class="hero-sub">
+      India's most comprehensive digital weighbridge platform for stone crushers, quarries,
+      and aggregates businesses — GST-compliant, Tally-integrated, and built for the shop floor.
+    </p>
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="num">19+</div><div class="lbl">Business Modules</div></div>
+      <div class="hero-stat"><div class="num">7</div><div class="lbl">User Roles</div></div>
+      <div class="hero-stat"><div class="num">100%</div><div class="lbl">GST Compliant</div></div>
+      <div class="hero-stat"><div class="num">2</div><div class="lbl">Camera Integration</div></div>
+      <div class="hero-stat"><div class="num">∞</div><div class="lbl">Future Updates*</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     WHAT IS IT?
+══════════════════════════════════════════ -->
+<div class="section">
+  <div class="container">
+    <div class="section-title">What is <span>WeighBridge Pro?</span></div>
+    <div class="section-rule"></div>
+    <p class="section-sub">An end-to-end digital operations platform purpose-built for stone crushers, quarry operators, and aggregate suppliers in India.</p>
+    <div class="intro-grid">
+      <div class="intro-card">
+        <div class="ic-icon">⚖️</div>
+        <h3>Smart Weighbridge Operations</h3>
+        <p>Two-stage digital weighment with real-time scale integration, automatic token generation, and IP camera snapshot capture — eliminating manual recording errors.</p>
+      </div>
+      <div class="intro-card">
+        <div class="ic-icon">🧾</div>
+        <h3>GST-Compliant Invoicing</h3>
+        <p>Automatic invoice creation from tokens, B2B/B2C GST invoices, GSTR-1 and GSTR-3B reports, gap-free invoice numbering, and full Tally Prime integration.</p>
+      </div>
+      <div class="intro-card">
+        <div class="ic-icon">📊</div>
+        <h3>Business Intelligence</h3>
+        <p>Real-time dashboard, P&amp;L reports, stock summaries, outstanding ageing analysis, compliance tracking, and multi-channel notification system — all in one platform.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     PRICING
+══════════════════════════════════════════ -->
+<div class="section section-alt">
+  <div class="container">
+    <div class="section-title">Flexible <span>Deployment &amp; Pricing</span></div>
+    <div class="section-rule"></div>
+    <p class="section-sub">Choose the deployment model that fits your business size, IT capability, and budget. All tiers include the complete feature set.</p>
+
+    <div class="pricing-wrap">
+
+      <!-- Tier 1: On-Prem -->
+      <div class="price-card no-break">
+        <div class="price-header blue">
+          <div class="price-tier-badge">Tier 1</div>
+          <h3>On-Premises</h3>
+          <p>Installed on your own Windows server. You own the software, your data never leaves your premises.</p>
+        </div>
+        <div class="price-amount">
+          <div class="price-main">
+            <span class="currency">₹</span>1,25,000
+          </div>
+          <div class="price-note">One-time license fee &nbsp;·&nbsp; <strong>+18% GST extra</strong></div>
+          <div class="price-note" style="margin-top:8px;">
+            AMC: <strong>₹18,750 / year</strong> (15% of license) + 18% GST
+          </div>
+        </div>
+        <div class="price-body">
+          <div class="price-feature"><span class="chk">✔</span><span>All features included — forever</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>All future releases at no extra charge</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>Data resides on your own server</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>Tally Prime &amp; IP Camera integration</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>LAN access for all workstations</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>On-site installation &amp; training</span></div>
+          <div class="price-feature"><span class="cross">✗</span><span>Remote access requires VPN/setup</span></div>
+          <div class="price-feature"><span class="cross">✗</span><span>Client manages server hardware</span></div>
+        </div>
+        <div class="price-footer">
+          <div class="price-amc">
+            <strong>Annual Maintenance (AMC)</strong><br/>
+            ₹18,750/year + 18% GST<br/>
+            Includes priority support, bug fixes &amp; all software updates
+          </div>
+        </div>
+      </div>
+
+      <!-- Tier 2: Cloud -->
+      <div class="price-card no-break">
+        <div class="price-header teal">
+          <div class="price-tier-badge">Tier 2</div>
+          <h3>Cloud-Hosted</h3>
+          <p>Same software deployed on a cloud VM of your choice — AWS, Azure, or any provider. Cloud storage cost paid directly by client.</p>
+        </div>
+        <div class="price-amount">
+          <div class="price-main">
+            <span class="currency">₹</span>1,65,000
+          </div>
+          <div class="price-note">One-time license fee &nbsp;·&nbsp; <strong>+18% GST extra</strong></div>
+          <div class="price-note" style="margin-top:8px;">
+            AMC: <strong>₹24,750 / year</strong> (15% of license) + 18% GST
+          </div>
+          <div class="price-note">
+            Cloud storage: <strong>Paid by client directly</strong> to cloud provider
+          </div>
+        </div>
+        <div class="price-body">
+          <div class="price-feature"><span class="chk">✔</span><span>All features included — forever</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>All future releases at no extra charge</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>Access from anywhere via browser</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>Full data ownership &amp; control</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>Tally Prime &amp; IP Camera integration</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>Scalable cloud VM (2–4 vCPU, 8 GB RAM)</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>Manhotra Consulting sets up deployment</span></div>
+          <div class="price-feature"><span class="cross">✗</span><span>Cloud storage billed separately by provider</span></div>
+        </div>
+        <div class="price-footer">
+          <div class="price-amc">
+            <strong>Annual Maintenance (AMC)</strong><br/>
+            ₹24,750/year + 18% GST (15% of license fee)<br/>
+            Cloud storage cost billed separately by your cloud provider
+          </div>
+        </div>
+      </div>
+
+      <!-- Tier 3: SaaS — RECOMMENDED -->
+      <div class="price-card featured no-break">
+        <div class="price-header accent">
+          <div class="popular-badge">⭐ Recommended</div>
+          <div class="price-tier-badge">Tier 3</div>
+          <h3>SaaS — Fully Managed</h3>
+          <p>Zero IT overhead. Manhotra Consulting manages everything — servers, updates, backups, monitoring, and support.</p>
+        </div>
+        <div class="price-amount">
+          <div class="price-main">
+            <span class="currency">₹</span>1,85,000
+          </div>
+          <div class="price-note">One-time license fee &nbsp;·&nbsp; <strong>+18% GST extra</strong></div>
+          <div class="price-note" style="margin-top:8px;">
+            AMC: <strong>₹27,750 / year</strong> (15% of license) + 18% GST
+          </div>
+          <div class="price-note">
+            Infrastructure &amp; management: <strong>Managed by Manhotra Consulting</strong>
+          </div>
+        </div>
+        <div class="price-body">
+          <div class="price-feature"><span class="chk">✔</span><span>All features included — forever</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>All updates automatically deployed</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>Fully managed by Manhotra Consulting</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>99.9% uptime SLA commitment</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>Daily automated backups</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>Priority support with 4-hour response</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>Multi-site, multi-user ready</span></div>
+          <div class="price-feature"><span class="chk">✔</span><span>Cloud infrastructure included</span></div>
+        </div>
+        <div class="price-footer">
+          <div class="price-amc">
+            <strong>Annual Maintenance (AMC)</strong><br/>
+            ₹27,750/year + 18% GST (15% of license fee)<br/>
+            Infrastructure, updates &amp; dedicated account manager included
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /pricing-wrap -->
+
+    <!-- Pricing notes band -->
+    <div class="pricing-notes">
+      <div class="pn-item">
+        <div class="pn-val">₹1,25,000</div>
+        <div class="pn-lbl">On-Prem License</div>
+      </div>
+      <div class="pn-item">
+        <div class="pn-val">₹1,65,000</div>
+        <div class="pn-lbl">Cloud License</div>
+      </div>
+      <div class="pn-item">
+        <div class="pn-val">₹1,85,000</div>
+        <div class="pn-lbl">SaaS License</div>
+      </div>
+      <div class="pn-item">
+        <div class="pn-val">15% + 18%</div>
+        <div class="pn-lbl">AMC Rate + GST</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     DEPLOYMENT COMPARISON
+══════════════════════════════════════════ -->
+<div class="section">
+  <div class="container">
+    <div class="section-title">Deployment <span>Comparison</span></div>
+    <div class="section-rule"></div>
+    <table class="deploy-table">
+      <thead>
+        <tr>
+          <th style="width:22%">Criteria</th>
+          <th>On-Premises (Tier 1)</th>
+          <th>Cloud — Client Managed (Tier 2)</th>
+          <th>SaaS — Fully Managed (Tier 3)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>License Model</td>
+          <td>One-time perpetual</td>
+          <td>One-time perpetual</td>
+          <td>One-time perpetual</td>
+        </tr>
+        <tr>
+          <td>License Fee</td>
+          <td><strong>₹1,25,000</strong> + 18% GST</td>
+          <td><strong>₹1,65,000</strong> + 18% GST</td>
+          <td><strong>₹1,85,000</strong> + 18% GST</td>
+        </tr>
+        <tr>
+          <td>Infrastructure Cost</td>
+          <td>Client's server hardware</td>
+          <td>Cloud storage paid by client</td>
+          <td><span class="pill pill-green">Managed by MC</span></td>
+        </tr>
+        <tr>
+          <td>AMC (15%)</td>
+          <td>₹18,750/yr + 18% GST</td>
+          <td>₹24,750/yr + 18% GST</td>
+          <td>₹27,750/yr + 18% GST</td>
+        </tr>
+        <tr>
+          <td>Remote Access</td>
+          <td><span class="pill pill-orange">VPN / Port forward</span></td>
+          <td><span class="pill pill-green">Browser anywhere</span></td>
+          <td><span class="pill pill-green">Browser anywhere</span></td>
+        </tr>
+        <tr>
+          <td>Data Ownership</td>
+          <td><span class="pill pill-green">100% client</span></td>
+          <td><span class="pill pill-green">100% client</span></td>
+          <td><span class="pill pill-blue">Client data, MC servers</span></td>
+        </tr>
+        <tr>
+          <td>Updates &amp; Patches</td>
+          <td><span class="pill pill-green">Free (all future)</span></td>
+          <td><span class="pill pill-green">Free (all future)</span></td>
+          <td><span class="pill pill-green">Auto-deployed</span></td>
+        </tr>
+        <tr>
+          <td>IT Expertise Needed</td>
+          <td><span class="pill pill-orange">Medium (server admin)</span></td>
+          <td><span class="pill pill-orange">Low (cloud portal)</span></td>
+          <td><span class="pill pill-green">None (fully managed)</span></td>
+        </tr>
+        <tr>
+          <td>Uptime Responsibility</td>
+          <td>Client</td>
+          <td>Shared (client + cloud provider)</td>
+          <td>Manhotra Consulting (99.9% SLA)</td>
+        </tr>
+        <tr>
+          <td>Best Suited For</td>
+          <td>Businesses with existing IT &amp; server room</td>
+          <td>Teams wanting cloud flexibility (own storage)</td>
+          <td>Businesses wanting zero IT overhead</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     FUTURE COMMITMENT BANNER
+══════════════════════════════════════════ -->
+<div class="no-break">
+  <div class="future-banner">
+    <div class="fb-icon">🚀</div>
+    <div>
+      <h3>On-Premises Promise: All Future Features Deployed at No Extra Charge</h3>
+      <p>
+        When you purchase the On-Premises or Cloud-Hosted license, every feature we build in the future —
+        new reports, integrations, UI improvements, GST rule changes — is delivered to you at zero additional cost
+        during your active AMC period. Your investment is protected for the long term.
+      </p>
+      <div class="fb-highlights">
+        <span class="fb-hl">✔ Vehicle Analytics Report</span>
+        <span class="fb-hl">✔ Customer Portal</span>
+        <span class="fb-hl">✔ Tally Auto-Sync on Finalise</span>
+        <span class="fb-hl">✔ Scheduled Email Reports</span>
+        <span class="fb-hl">✔ Multi-Company Support</span>
+        <span class="fb-hl">✔ GST Law Updates</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     FEATURE MATRIX (PLAN COMPARISON)
+══════════════════════════════════════════ -->
+<div class="section">
+  <div class="container">
+    <div class="section-title">Complete <span>Feature Matrix</span></div>
+    <div class="section-rule"></div>
+    <p class="section-sub">All tiers include 100% of the features listed below. Differences are only in deployment, infrastructure, and managed services.</p>
+
+    <table class="feature-matrix">
+      <thead>
+        <tr>
+          <th style="width:38%">Feature</th>
+          <th class="center" style="width:21%">On-Prem</th>
+          <th class="center" style="width:21%">Cloud (Client)</th>
+          <th class="center" style="width:20%">SaaS</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="fm-cat"><td colspan="4">🏗️ &nbsp; Weighbridge Operations</td></tr>
+        <tr><td>Two-stage digital weighment (Gross + Tare)</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Real-time weight scale integration (Serial/COM)</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>IP Camera snapshot — Front &amp; Top View</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Token management: cancel, search, filter</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Auto-assigned gap-free token numbers</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+
+        <tr class="fm-cat"><td colspan="4">🧾 &nbsp; Sales &amp; Purchase Invoicing</td></tr>
+        <tr><td>GST Sales Invoice — B2B (Registered parties)</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>GST Sales Invoice — B2C (Walk-in customers)</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Non-GST / Bill of Supply (USB-gated)</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Purchase Invoices with token linkage</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Gap-free invoice numbering (FY-based)</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Auto-invoice creation on token completion</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>PDF invoice generation (A4)</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Quotations — full lifecycle, PDF, convert to invoice</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+
+        <tr class="fm-cat"><td colspan="4">💰 &nbsp; Payments &amp; Ledger</td></tr>
+        <tr><td>Payment receipts (sales) — Cash, Cheque, UPI, Bank</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Payment vouchers (purchase) — outgoing</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Partial payment support with running balance</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Party ledger with full transaction history</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Outstanding ageing analysis (30/60/90 day buckets)</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+
+        <tr class="fm-cat"><td colspan="4">📊 &nbsp; GST &amp; Business Reports</td></tr>
+        <tr><td>GSTR-1 — B2B, B2C, HSN Summary + CSV &amp; JSON export</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>GSTR-3B — Outward Tax, ITC, Net Tax Payable</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Sales / Purchase Register with CSV export</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Weight Register — token-wise, date range</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Profit &amp; Loss — monthly revenue vs COGS</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Stock Summary — product-wise in/out/closing</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+
+        <tr class="fm-cat"><td colspan="4">🔗 &nbsp; Integrations</td></tr>
+        <tr><td>Tally Prime — Sales &amp; Purchase voucher sync</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Tally — Bulk multi-select sync</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Tally — Bill-wise aging (BILLALLOCATIONS)</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>IP Camera — STQC/Hikvision/Dahua snapshot</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Notifications — SMTP Email, SMS (MSG91), WhatsApp (WATI)</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+
+        <tr class="fm-cat"><td colspan="4">🔐 &nbsp; Security &amp; Compliance</td></tr>
+        <tr><td>USB Guard system (hardware key authentication)</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>AES-256-GCM encrypted private invoices</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Insurance / Cert / License / Permit tracker</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Full audit trail (who, what, when)</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Role-based access (7 roles, configurable per page)</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+
+        <tr class="fm-cat"><td colspan="4">⚙️ &nbsp; Administration</td></tr>
+        <tr><td>Multi-user management with password reset</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Data import — Excel/CSV for parties, products, vehicles</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Database backup &amp; restore (pg_dump)</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+        <tr><td>Multi-financial year support</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td><td class="center fm-yes">✔</td></tr>
+
+        <tr class="fm-cat"><td colspan="4">☁️ &nbsp; Deployment &amp; Infrastructure</td></tr>
+        <tr>
+          <td>Infrastructure managed by Manhotra Consulting</td>
+          <td class="center fm-no">✗</td>
+          <td class="center fm-no">✗</td>
+          <td class="center fm-yes">✔</td>
+        </tr>
+        <tr>
+          <td>Daily automated cloud backups</td>
+          <td class="center fm-no">✗</td>
+          <td class="center"><span class="fm-note">Client's responsibility</span></td>
+          <td class="center fm-yes">✔</td>
+        </tr>
+        <tr>
+          <td>99.9% uptime SLA</td>
+          <td class="center fm-no">✗</td>
+          <td class="center fm-no">✗</td>
+          <td class="center fm-yes">✔</td>
+        </tr>
+        <tr>
+          <td>All future features at no extra charge (AMC active)</td>
+          <td class="center fm-yes">✔</td>
+          <td class="center fm-yes">✔</td>
+          <td class="center fm-yes">✔</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     BUSINESS USE CASES (DETAILED)
+══════════════════════════════════════════ -->
+<div class="section section-alt">
+  <div class="container">
+    <div class="section-title">19+ Business <span>Use Cases</span></div>
+    <div class="section-rule"></div>
+    <p class="section-sub">WeighBridge Pro covers every workflow from the weighbridge to the boardroom — no third-party tools needed.</p>
+
+    <div class="uc-grid">
+
+      <div class="uc-card no-break">
+        <h4><span class="icon">⚖️</span>Weighbridge Operations</h4>
+        <ul>
+          <li>Sale token: Gross → Tare → auto net weight</li>
+          <li>Purchase token: Loaded → Unloaded → net weight</li>
+          <li>Real-time serial scale integration</li>
+          <li>Manual weight entry fallback</li>
+          <li>Token search by vehicle, party, date</li>
+          <li>Cancel / supplement token workflow</li>
+        </ul>
+      </div>
+
+      <div class="uc-card alt no-break">
+        <h4><span class="icon">📷</span>IP Camera Capture</h4>
+        <ul>
+          <li>Front View + Top View cameras at weighment</li>
+          <li>Auto-capture on second weight — non-blocking</li>
+          <li>3-retry logic with 5-second timeout</li>
+          <li>Per-camera status in real-time dialog</li>
+          <li>Lightbox image viewer on completed tokens</li>
+          <li>Admin: configure URL, credentials, live test</li>
+        </ul>
+      </div>
+
+      <div class="uc-card gold no-break">
+        <h4><span class="icon">🧾</span>Sales Invoicing</h4>
+        <ul>
+          <li>B2B GST invoice with CGST/SGST or IGST</li>
+          <li>B2C walk-in (no GSTIN required)</li>
+          <li>Auto-created from token on completion</li>
+          <li>Gap-free invoice numbering per FY</li>
+          <li>Discount (flat or percentage), TCS, freight</li>
+          <li>PDF generation, cancel, finalise workflow</li>
+        </ul>
+      </div>
+
+      <div class="uc-card green no-break">
+        <h4><span class="icon">🛒</span>Purchase Invoicing</h4>
+        <ul>
+          <li>Auto-created from purchase token</li>
+          <li>Manual purchase invoice (no token)</li>
+          <li>Separate purchase numbering sequence</li>
+          <li>Party-specific product rates</li>
+          <li>ITC tracking for GSTR-3B</li>
+          <li>Tally sync as Purchase voucher</li>
+        </ul>
+      </div>
+
+      <div class="uc-card purple no-break">
+        <h4><span class="icon">📋</span>Quotations</h4>
+        <ul>
+          <li>Create, send, accept, reject quotations</li>
+          <li>Valid-to date with expiry tracking</li>
+          <li>One-click conversion to sales invoice</li>
+          <li>PDF download and share</li>
+          <li>Date range filter and status tracking</li>
+          <li>Configurable quotation prefix</li>
+        </ul>
+      </div>
+
+      <div class="uc-card orange no-break">
+        <h4><span class="icon">💵</span>Payment Management</h4>
+        <ul>
+          <li>Sales payment receipts (Cash, UPI, NEFT, Cheque)</li>
+          <li>Purchase payment vouchers (outgoing)</li>
+          <li>Partial payment support per invoice</li>
+          <li>Running party balance updated in real-time</li>
+          <li>Payment status: Unpaid → Partial → Paid</li>
+          <li>Link multiple payments to one invoice</li>
+        </ul>
+      </div>
+
+      <div class="uc-card no-break">
+        <h4><span class="icon">📈</span>Outstanding &amp; Ledger</h4>
+        <ul>
+          <li>Party-wise running debit/credit ledger</li>
+          <li>Outstanding ageing: Current, 1–30, 31–60, 61–90, 90+ days</li>
+          <li>Credit limit breach alerts</li>
+          <li>Payment terms tracking</li>
+          <li>Drill-down from outstanding to invoice</li>
+          <li>CSV export for finance team</li>
+        </ul>
+      </div>
+
+      <div class="uc-card alt no-break">
+        <h4><span class="icon">🔗</span>Tally Prime Integration</h4>
+        <ul>
+          <li>Sales &amp; Purchase XML voucher push</li>
+          <li>Multi-select bulk sync with progress</li>
+          <li>Configurable 9 ledger names in settings</li>
+          <li>Vehicle, token &amp; weight in narration</li>
+          <li>Bill-wise aging (BILLALLOCATIONS) for Tally reports</li>
+          <li>Per-party ledger name override</li>
+        </ul>
+      </div>
+
+      <div class="uc-card gold no-break">
+        <h4><span class="icon">📑</span>GST Reports</h4>
+        <ul>
+          <li>GSTR-1: B2B invoices with GSTIN details</li>
+          <li>GSTR-1: B2C summary &amp; HSN-wise summary</li>
+          <li>GSTR-1 JSON export (GSTN portal format)</li>
+          <li>GSTR-3B: Section 3.1 outward supplies</li>
+          <li>GSTR-3B: Section 4 — eligible ITC</li>
+          <li>GSTR-3B: Net tax payable computation</li>
+        </ul>
+      </div>
+
+      <div class="uc-card green no-break">
+        <h4><span class="icon">💹</span>Business Reports</h4>
+        <ul>
+          <li>Sales &amp; Purchase register (date/party filter)</li>
+          <li>Weight register — token-wise tonnage</li>
+          <li>Profit &amp; Loss — monthly revenue vs COGS</li>
+          <li>Stock summary — product-wise in/out/closing</li>
+          <li>Gross margin % per product</li>
+          <li>CSV export for all reports</li>
+        </ul>
+      </div>
+
+      <div class="uc-card purple no-break">
+        <h4><span class="icon">👥</span>Party &amp; Product Master</h4>
+        <ul>
+          <li>Customer / Supplier / Both party types</li>
+          <li>GSTIN, PAN, credit limit, payment terms</li>
+          <li>Party-specific product price overrides</li>
+          <li>Product categories, HSN codes, GST rates</li>
+          <li>Vehicle master with tare weight history</li>
+          <li>Driver &amp; transporter management</li>
+        </ul>
+      </div>
+
+      <div class="uc-card orange no-break">
+        <h4><span class="icon">📊</span>Live Dashboard</h4>
+        <ul>
+          <li>Today's token count &amp; revenue widget</li>
+          <li>Total tonnage processed today</li>
+          <li>Outstanding balance across all parties</li>
+          <li>Top 5 customers by revenue</li>
+          <li>Recent tokens feed with status</li>
+          <li>Compliance alerts banner</li>
+        </ul>
+      </div>
+
+      <div class="uc-card no-break">
+        <h4><span class="icon">🔐</span>Private Invoice System (USB)</h4>
+        <ul>
+          <li>USB hardware key authentication</li>
+          <li>AES-256-GCM encrypted private invoices</li>
+          <li>Separate SE/NNNNN gap-free sequence</li>
+          <li>Non-GST invoices excluded from GST reports</li>
+          <li>Hourly auto-backup to USB drive</li>
+          <li>Private admin audit console</li>
+        </ul>
+      </div>
+
+      <div class="uc-card alt no-break">
+        <h4><span class="icon">📁</span>Compliance Tracker</h4>
+        <ul>
+          <li>Insurance, certification, license, permit records</li>
+          <li>Expiry date alerts: OK → Warning → Critical → Expired</li>
+          <li>Configurable warning &amp; critical day thresholds</li>
+          <li>File upload (PDF/image) with browser preview</li>
+          <li>Clickable alert cards filter the table</li>
+          <li>Dashboard compliance banner</li>
+        </ul>
+      </div>
+
+      <div class="uc-card gold no-break">
+        <h4><span class="icon">🔔</span>Notifications</h4>
+        <ul>
+          <li>SMTP email notifications</li>
+          <li>SMS via MSG91 gateway</li>
+          <li>WhatsApp via WATI integration</li>
+          <li>Jinja2 templates per event type</li>
+          <li>Test send from settings panel</li>
+          <li>Delivery log with error tracking</li>
+        </ul>
+      </div>
+
+      <div class="uc-card green no-break">
+        <h4><span class="icon">👤</span>User &amp; Access Control</h4>
+        <ul>
+          <li>7 roles: Admin, Operator, Sales Executive,<br/>Purchase Executive, Accountant, Viewer, Private Admin</li>
+          <li>Configurable per-role page permissions</li>
+          <li>Create / edit / deactivate users</li>
+          <li>Admin password reset for any user</li>
+          <li>JWT token security (8-hour expiry)</li>
+          <li>Full audit trail per user action</li>
+        </ul>
+      </div>
+
+      <div class="uc-card purple no-break">
+        <h4><span class="icon">🗂️</span>Audit Trail</h4>
+        <ul>
+          <li>All create/update/delete actions logged</li>
+          <li>Filter by action type, entity, user, date</li>
+          <li>Stats cards: actions by type &amp; entity</li>
+          <li>Immutable record (cannot be deleted)</li>
+        </ul>
+      </div>
+
+      <div class="uc-card orange no-break">
+        <h4><span class="icon">💾</span>Backup &amp; Data Import</h4>
+        <ul>
+          <li>One-click pg_dump database backup</li>
+          <li>Download backup files to local machine</li>
+          <li>Restore from any previous backup</li>
+          <li>Bulk import parties/products/vehicles from Excel/CSV</li>
+          <li>10-row preview before confirm</li>
+          <li>Blank template download</li>
+        </ul>
+      </div>
+
+      <div class="uc-card no-break">
+        <h4><span class="icon">🏢</span>Company &amp; FY Setup</h4>
+        <ul>
+          <li>Company profile: name, GSTIN, PAN, bank details</li>
+          <li>Customizable invoice/quotation/purchase prefixes</li>
+          <li>Multiple financial years (activate/switch)</li>
+          <li>Custom wallpaper branding</li>
+          <li>State-wise GST (CGST+SGST vs IGST auto-detection)</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     WHY CHOOSE US
+══════════════════════════════════════════ -->
+<div class="section">
+  <div class="container">
+    <div class="section-title">Why <span>Manhotra Consulting?</span></div>
+    <div class="section-rule"></div>
+    <div class="why-grid">
+      <div class="why-card no-break">
+        <div class="wi">🎯</div>
+        <h4>Built for India</h4>
+        <p>Designed specifically for Indian stone crushers and quarry operators — GST rates, HSN codes, GSTR reports, Indian state codes, and INR formatting built-in.</p>
+      </div>
+      <div class="why-card no-break">
+        <div class="wi">🔒</div>
+        <h4>Enterprise Security</h4>
+        <p>AES-256-GCM encryption for sensitive data, USB hardware key authentication, role-based access, JWT security, and full audit trail — enterprise-grade at SME price.</p>
+      </div>
+      <div class="why-card no-break">
+        <div class="wi">⚡</div>
+        <h4>Shop-Floor Ready</h4>
+        <p>Real-time serial weight scale, IP camera integration, manual weight fallback — designed to work reliably in dusty, high-throughput weighbridge environments.</p>
+      </div>
+      <div class="why-card no-break">
+        <div class="wi">🌐</div>
+        <h4>International Expertise</h4>
+        <p>Built by a team with 15+ years of supply chain expertise across US, Canada, Germany, Netherlands, and India — global best practices, local implementation.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     TECH STACK
+══════════════════════════════════════════ -->
+<div class="tech-strip">
+  <div class="ts-label">Tech Stack:</div>
+  <span class="tech-pill">Python 3.11 + FastAPI</span>
+  <span class="tech-pill">React 19 + TypeScript</span>
+  <span class="tech-pill">PostgreSQL 16</span>
+  <span class="tech-pill">Windows Server / Linux</span>
+  <span class="tech-pill">Tally Prime XML</span>
+  <span class="tech-pill">AES-256-GCM</span>
+  <span class="tech-pill">WebSocket Scale</span>
+  <span class="tech-pill">STQC IP Cameras</span>
+  <span class="tech-pill">SMTP · MSG91 · WATI</span>
+</div>
+
+<!-- ══════════════════════════════════════════
+     FOUNDER
+══════════════════════════════════════════ -->
+<div class="founder-section">
+  <div class="container">
+    <div class="section-title">Meet the <span>Founder</span></div>
+    <div class="section-rule"></div>
+
+    <div class="founder-inner">
+      <!-- Avatar -->
+      <div class="founder-avatar-wrap no-break">
+        <div class="founder-avatar"><img src="https://media.licdn.com/dms/image/v2/D5603AQHnIJ6SccpjhQ/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1732695515398?e=2147483647&v=beta&t=KGjsyUDl_0bqXj-LBnbwUjU9YSKYGmZYVsyyfzaC5qw" alt="Ankush Manhotra" /></div>
+        <div class="founder-name">Ankush Manhotra</div>
+        <div class="founder-title">Founder &amp; CEO</div>
+        <div class="founder-company">Manhotra Consulting</div>
+        <div style="margin-top:14px;">
+          <span class="tag">Supply Chain Leader</span>
+        </div>
+        <div style="margin-top:10px; font-size:0.75rem; color:rgba(255,255,255,0.55); line-height:1.6;">
+          15+ Years · International<br/>
+          US · Canada · Germany<br/>
+          Netherlands · India
+        </div>
+      </div>
+
+      <!-- Bio -->
+      <div class="founder-info">
+        <h2>Industry Leader in <span>Global Supply Chain</span></h2>
+        <p class="founder-tagline">
+          Ankush Manhotra brings over <strong style="color:var(--gold)">15 years of international experience</strong> in supply chain
+          management, enterprise technology, and digital transformation — having worked with leading organisations
+          across the United States, Canada, Germany, the Netherlands, and India.
+          His deep domain expertise bridges the gap between complex operational realities
+          and elegant, purpose-built software solutions.
+        </p>
+
+        <div class="founder-stats">
+          <div class="fs-item">
+            <div class="fs-num">15+</div>
+            <div class="fs-lbl">Years Experience</div>
+          </div>
+          <div class="fs-item">
+            <div class="fs-num">5</div>
+            <div class="fs-lbl">Countries</div>
+          </div>
+          <div class="fs-item">
+            <div class="fs-num">3</div>
+            <div class="fs-lbl">Continents</div>
+          </div>
+          <div class="fs-item">
+            <div class="fs-num">∞</div>
+            <div class="fs-lbl">Commitment</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:14px;">
+          <div style="font-size:0.72rem; font-weight:700; color:rgba(255,255,255,0.55); text-transform:uppercase; letter-spacing:.4px; margin-bottom:8px;">International Experience</div>
+          <div class="founder-countries">
+            <span class="country-pill">🇺🇸 United States</span>
+            <span class="country-pill">🇨🇦 Canada</span>
+            <span class="country-pill">🇩🇪 Germany</span>
+            <span class="country-pill">🇳🇱 Netherlands</span>
+            <span class="country-pill">🇮🇳 India</span>
+          </div>
+        </div>
+
+        <div class="founder-expertise">
+          <h4>Core Areas of Expertise</h4>
+          <div class="expertise-tags">
+            <span class="exp-tag">Supply Chain Management</span>
+            <span class="exp-tag">Enterprise Software Architecture</span>
+            <span class="exp-tag">Digital Transformation</span>
+            <span class="exp-tag">Logistics &amp; Operations</span>
+            <span class="exp-tag">ERP &amp; Tally Integration</span>
+            <span class="exp-tag">GST Compliance</span>
+            <span class="exp-tag">Weighbridge Technology</span>
+            <span class="exp-tag">Cloud &amp; SaaS Platforms</span>
+            <span class="exp-tag">Process Optimisation</span>
+            <span class="exp-tag">SME Technology Consulting</span>
+          </div>
+        </div>
+
+        <div style="margin-top:20px; background:rgba(245,166,35,0.12); border:1px solid rgba(245,166,35,0.25); border-radius:10px; padding:16px 20px;">
+          <p style="font-size:0.88rem; color:rgba(255,255,255,0.88); line-height:1.65; font-style:italic;">
+            "At Manhotra Consulting, we believe that every stone crusher and quarry operator in India
+            deserves the same quality of enterprise software that Fortune 500 companies use.
+            WeighBridge Pro is our commitment — a world-class system built for the Indian shop floor,
+            at a price that makes business sense."
+          </p>
+          <p style="font-size:0.78rem; color:var(--gold); font-weight:700; margin-top:10px;">— Ankush Manhotra, Founder, Manhotra Consulting</p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     CTA
+══════════════════════════════════════════ -->
+<div class="cta-section">
+  <h2>Ready to Digitise Your Weighbridge?</h2>
+  <p>Talk to our team today. Free demo available. On-site visit can be arranged across Maharashtra, Gujarat, Karnataka, Rajasthan &amp; Madhya Pradesh.</p>
+  <div class="cta-grid">
+    <div class="cta-item">📞 &nbsp; Contact Manhotra Consulting</div>
+    <div class="cta-item">🖥️ &nbsp; Schedule a Live Demo</div>
+    <div class="cta-item">📧 &nbsp; Request a Custom Quote</div>
+    <div class="cta-item">🚚 &nbsp; On-Site Visit Available</div>
+  </div>
+</div>
+
+<div class="footer-bar">
+  <strong>WeighBridge Pro</strong> by <strong>Manhotra Consulting</strong> &nbsp;·&nbsp;
+  Confidential Sales Document — For Authorised Recipients Only &nbsp;·&nbsp;
+  All prices in INR exclusive of 18% GST · AMC at 15% of license &nbsp;·&nbsp;
+  Specifications subject to change without notice &nbsp;·&nbsp;
+  © 2025–26 Manhotra Consulting. All rights reserved.
+</div>
+
+<!-- Print instruction (visible on screen only) -->
+<div class="print-hint" style="
+  text-align:center; padding:20px; background:#fff3cd; border-top:2px solid #ffc107;
+  font-size:13px; color:#856404; font-family:'Segoe UI',sans-serif;
+">
+  <strong>To save as A4 PDF:</strong> Press <kbd style="background:#fff;border:1px solid #ccc;padding:2px 8px;border-radius:3px;font-size:12px;">Ctrl + P</kbd> &rarr;
+  Destination: <strong>"Save as PDF"</strong> &rarr;
+  Under <strong>"More settings"</strong> uncheck <strong>"Headers and footers"</strong> &rarr;
+  Click <strong>Save</strong>
+</div>
+
+<style>
+  @media print { .print-hint { display: none !important; } }
+</style>
+
+</body>
+</html>

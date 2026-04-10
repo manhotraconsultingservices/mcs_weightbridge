@@ -1,0 +1,106 @@
+================================================================================
+  WEIGHBRIDGE ERP — INSTALLER CHECKLIST
+  Keep this with the USB drive at all times
+================================================================================
+
+BEFORE YOU START
+─────────────────
+  □ Client PC is Windows 10 or Windows 11 (64-bit)
+  □ You are logged in as Administrator
+  □ This USB drive is inserted in the PC
+  □ PC has at least 8 GB RAM and 5 GB free on C:\
+
+STEP 1 — Install Docker Desktop
+────────────────────────────────
+  □ Run "DockerDesktopInstaller.exe" from this USB drive (as Administrator)
+  □ Follow the installer — accept all defaults
+  □ Restart the PC when prompted
+  □ After restart: wait for Docker whale icon in taskbar to turn GREEN
+  □ Verify: open CMD → type "docker ps" → should show a table (no error)
+
+  SKIP THIS STEP if "docker --version" in CMD already shows a version number.
+
+STEP 2 — Run the Automated Installer
+──────────────────────────────────────
+  □ Open the folder: weighbridge-full-1.0.0\scripts\
+  □ Right-click "Install-Client.ps1" → "Run with PowerShell"
+  □ If asked about execution policy: type Y and press Enter
+  □ Watch the numbered steps [01/16] through [16/16]
+  □ DO NOT close the window — wait 15-25 minutes
+  □ Confirm you see: "INSTALLATION COMPLETE" at the end
+
+STEP 3 — Verify It Worked
+──────────────────────────
+  □ Open browser → go to: http://localhost:9000
+  □ Login with: admin / admin123
+  □ You should see the Weighbridge dashboard
+
+STEP 4 — Change Admin Password (Do With Client)
+─────────────────────────────────────────────────
+  □ Click user icon (top-right) → Change Password
+  □ Client owner chooses and enters new password themselves
+  □ YOU should not know this password after today
+
+STEP 5 — Enter Company Details
+────────────────────────────────
+  □ Settings → Company → enter:
+      - Company legal name (exactly as on GST certificate)
+      - GSTIN (15 digits)
+      - PAN (10 digits)
+      - Full address
+      - Phone, Email
+  □ Settings → Company → Bank Details → enter:
+      - Bank name, Account number, IFSC code
+
+STEP 6 — Configure Weighing Scale
+────────────────────────────────────
+  □ Connect scale RS-232 cable to PC COM port
+  □ Settings → Scale → select COM port (check Device Manager if unsure)
+  □ Set baud rate (commonly 9600 — check scale manual)
+  □ Click Save → Test → confirm live weight appears
+
+STEP 7 — Create Financial Year
+────────────────────────────────
+  □ Settings → Financial Year → Create New
+  □ Start: 01 Apr 2025    End: 31 Mar 2026
+  □ Click Activate
+
+STEP 8 — Create User Accounts
+───────────────────────────────
+  □ Admin → Users → Create User for each staff member
+      - Operator role: for weighbridge operators
+      - Accountant role: for accounts staff
+
+STEP 9 — Test the System
+──────────────────────────
+  □ Tokens → Create Token → complete a test weighment
+  □ Invoices → find auto-created invoice → Finalise
+  □ Download PDF → verify it shows correct company info and weights
+
+STEP 10 — Secure the USB
+──────────────────────────
+  □ This USB now contains the backup folder "weighbridge-backup-HOSTNAME"
+  □ Tell the owner: "This USB is your disaster recovery backup"
+  □ Owner locks it in a SAFE / DRAWER — NOT left plugged in
+  □ You do NOT take this USB with you
+
+================================================================================
+  DONE! Hand over the checklist card to the owner.
+================================================================================
+
+QUICK REFERENCE FOR OWNER
+───────────────────────────
+  App URL  : http://localhost:9000
+  Also from other PCs on same network:
+             http://THIS_PC_IP_ADDRESS:9000
+             (find IP: open CMD → type "ipconfig" → look for IPv4 Address)
+
+  If app stops working:
+    1. Check "Docker Desktop" is open (whale icon in taskbar)
+    2. Open Services (Win+R → services.msc)
+    3. Find "Weighbridge Backend" and "Weighbridge Frontend"
+    4. If stopped: right-click → Start
+
+  For support: Call [YOUR PHONE NUMBER]
+
+================================================================================

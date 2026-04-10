@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: A4; margin: 15mm 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #222; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 8px; }
+  .company-name { font-size: 18px; font-weight: bold; }
+  .company-sub { font-size: 10px; color: #555; }
+  .doc-title { font-size: 16px; font-weight: bold; text-align: right; color: #1a4f9e; }
+  .doc-meta { text-align: right; font-size: 10px; }
+  .parties { display: flex; gap: 16px; margin-bottom: 8px; }
+  .party-box { flex: 1; border: 1px solid #ccc; padding: 6px 8px; border-radius: 3px; }
+  .party-box strong { font-size: 10px; color: #777; text-transform: uppercase; }
+  .party-name { font-size: 12px; font-weight: bold; margin: 2px 0; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+  th { background: #1a4f9e; color: white; padding: 5px 6px; text-align: left; font-size: 10px; }
+  td { padding: 4px 6px; border-bottom: 1px solid #eee; font-size: 10px; }
+  tr:nth-child(even) td { background: #f9f9f9; }
+  .text-right { text-align: right; }
+  .totals-table { width: 280px; margin-left: auto; border: 1px solid #ccc; }
+  .totals-table td { padding: 3px 8px; }
+  .totals-table .grand { font-size: 13px; font-weight: bold; background: #1a4f9e; color: white; }
+  .footer { margin-top: 16px; border-top: 1px solid #ccc; padding-top: 8px; display: flex; justify-content: space-between; font-size: 9px; color: #777; }
+  .stamp { text-align: right; }
+  .stamp .line { border-top: 1px solid #aaa; margin-top: 40px; font-size: 9px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 9px; font-weight: bold; background: #dbeafe; color: #1e40af; }
+  .terms-box { margin-top: 10px; font-size: 10px; border: 1px solid #eee; padding: 6px 8px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div>
+    <div class="company-name">{{ company.name }}</div>
+    <div class="company-sub">
+      {% if company.gstin %}GSTIN: {{ company.gstin }}{% endif %}
+      {% if company.pan %} &nbsp;|&nbsp; PAN: {{ company.pan }}{% endif %}
+    </div>
+    <div class="company-sub">{{ company.address_line1 }}{% if company.city %}, {{ company.city }}{% endif %}{% if company.state %}, {{ company.state }}{% endif %}{% if company.pincode %} - {{ company.pincode }}{% endif %}</div>
+    {% if company.phone %}<div class="company-sub">Ph: {{ company.phone }}</div>{% endif %}
+  </div>
+  <div>
+    <div class="doc-title">QUOTATION &nbsp;<span class="badge">{{ quotation.status | upper }}</span></div>
+    <div class="doc-meta">
+      <strong>Quotation No:</strong> {{ quotation.quotation_no }}<br>
+      <strong>Date:</strong> {{ quotation.quotation_date.strftime('%d-%m-%Y') }}<br>
+      {% if quotation.valid_to %}<strong>Valid Until:</strong> {{ quotation.valid_to.strftime('%d-%m-%Y') }}<br>{% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Party -->
+<div class="parties">
+  <div class="party-box">
+    <strong>Bill To</strong>
+    <div class="party-name">{{ party.name }}</div>
+    {% if party.gstin %}<div>GSTIN: {{ party.gstin }}</div>{% endif %}
+    {% if party.billing_city %}<div>{{ party.billing_city }}{% if party.billing_state %}, {{ party.billing_state }}{% endif %}</div>{% endif %}
+    {% if party.phone %}<div>Ph: {{ party.phone }}</div>{% endif %}
+  </div>
+  <div class="party-box">
+    <strong>Subject to acceptance</strong>
+    <div style="color:#888;font-size:10px;margin-top:4px;">This quotation is valid until the date mentioned. Prices are subject to change after expiry.</div>
+  </div>
+</div>
+
+<!-- Items table -->
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Description / Material</th>
+      <th>HSN</th>
+      <th class="text-right">Qty</th>
+      <th>Unit</th>
+      <th class="text-right">Rate (₹)</th>
+      <th class="text-right">Amount (₹)</th>
+      <th class="text-right">GST%</th>
+      <th class="text-right">Total (₹)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in quotation.items %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{{ item.description or item.product_id }}</td>
+      <td>{{ item.hsn_code or '' }}</td>
+      <td class="text-right">{{ '%.3f' % item.quantity }}</td>
+      <td>{{ item.unit }}</td>
+      <td class="text-right">{{ '%.2f' % item.rate }}</td>
+      <td class="text-right">{{ '%.2f' % item.amount }}</td>
+      <td class="text-right">{{ '%.0f' % item.gst_rate }}%</td>
+      <td class="text-right">{{ '%.2f' % item.total_amount }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Totals -->
+<div style="display:flex; justify-content: flex-end;">
+<table class="totals-table">
+  <tr><td>Subtotal</td><td class="text-right">₹ {{ '%.2f' % quotation.subtotal }}</td></tr>
+  {% if quotation.discount_amount > 0 %}
+  <tr><td>Discount</td><td class="text-right">- ₹ {{ '%.2f' % quotation.discount_amount }}</td></tr>
+  <tr><td>Taxable Amount</td><td class="text-right">₹ {{ '%.2f' % quotation.taxable_amount }}</td></tr>
+  {% endif %}
+  {% if quotation.cgst_amount > 0 %}
+  <tr><td>CGST</td><td class="text-right">₹ {{ '%.2f' % quotation.cgst_amount }}</td></tr>
+  <tr><td>SGST</td><td class="text-right">₹ {{ '%.2f' % quotation.sgst_amount }}</td></tr>
+  {% endif %}
+  {% if quotation.igst_amount > 0 %}
+  <tr><td>IGST</td><td class="text-right">₹ {{ '%.2f' % quotation.igst_amount }}</td></tr>
+  {% endif %}
+  {% if quotation.round_off != 0 %}
+  <tr><td>Round Off</td><td class="text-right">₹ {{ '%.2f' % quotation.round_off }}</td></tr>
+  {% endif %}
+  <tr class="grand"><td>Grand Total</td><td class="text-right">₹ {{ '%.2f' % quotation.grand_total }}</td></tr>
+</table>
+</div>
+
+{% if quotation.notes %}
+<div style="margin-top:10px; font-size:10px; color:#555;"><b>Notes:</b> {{ quotation.notes }}</div>
+{% endif %}
+
+{% if quotation.terms_and_conditions %}
+<div class="terms-box">
+  <b>Terms & Conditions:</b><br>{{ quotation.terms_and_conditions }}
+</div>
+{% endif %}
+
+{% if company.bank_name %}
+<div style="margin-top:8px; font-size:10px; border: 1px solid #ccc; padding: 6px 8px; border-radius:3px;">
+  <b>Bank Details:</b> {{ company.bank_name }} &nbsp;|&nbsp; A/C: {{ company.bank_account_no }} &nbsp;|&nbsp; IFSC: {{ company.bank_ifsc }}
+  {% if company.bank_branch %} &nbsp;|&nbsp; Branch: {{ company.bank_branch }}{% endif %}
+</div>
+{% endif %}
+
+<div class="footer">
+  <div>
+    <div>This is a computer generated quotation.</div>
+  </div>
+  <div class="stamp">
+    <div>For <b>{{ company.name }}</b></div>
+    <div class="line">Authorised Signatory</div>
+  </div>
+</div>
+
+</body>
+</html>
