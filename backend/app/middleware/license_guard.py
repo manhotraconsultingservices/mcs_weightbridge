@@ -20,6 +20,11 @@ EXEMPT_PATHS = frozenset({
 
 class LicenseGuardMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        # Skip license check entirely in multi-tenant SaaS mode
+        from app.config import get_settings
+        if get_settings().MULTI_TENANT:
+            return await call_next(request)
+
         # Only gate API paths
         path = request.url.path
 
