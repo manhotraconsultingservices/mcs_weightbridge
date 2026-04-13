@@ -1,15 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
-  Building2, Users, Plus, Search, Shield, Eye, UserPlus, UserMinus,
+  Building2, Plus, Search, Shield, UserPlus, UserMinus,
   AlertTriangle, CheckCircle, PauseCircle, Calendar, ExternalLink,
-  Palette, LogOut, Settings, Pencil, Loader2,
+  LogOut, Pencil, Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import platformApi from '@/services/platformApi';
@@ -402,7 +402,7 @@ export default function PlatformDashboard() {
                             </Badge>
                           ))}
                           {isPlatformAdmin && (
-                            <Select onValueChange={v => v && assignRep(t.slug, v)}>
+                            <Select onValueChange={(v: string | null) => { if (v) assignRep(t.slug, v); }}>
                               <SelectTrigger className="h-6 w-6 p-0 border-0 bg-transparent text-slate-500 hover:text-blue-400">
                                 <UserPlus className="h-3.5 w-3.5" />
                               </SelectTrigger>

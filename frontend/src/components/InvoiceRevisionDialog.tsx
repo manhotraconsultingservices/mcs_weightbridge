@@ -9,12 +9,9 @@
 import { useEffect, useState } from 'react';
 import { Loader2, GitFork, ArrowRight, Plus, Minus, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import api from '@/services/api';
 import type { Invoice, InvoiceRevisionChain, InvoiceCompare, DiffChange, DiffItem } from '@/types';
-
-const INR = (v: number) => '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2 });
 
 // ── Helper: render a single field change row ──────────────────────────────────
 function ChangeRow({ change }: { change: DiffChange }) {
