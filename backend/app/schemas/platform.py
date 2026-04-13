@@ -15,7 +15,7 @@ class PlatformUserCreate(BaseModel):
     full_name: str | None = None
     email: str | None = None
     phone: str | None = None
-    role: str = Field(default="sales_rep", pattern=r"^(platform_admin|sales_rep)$")
+    role: str = Field(default="sales_rep", pattern=r"^(platform_admin|sales_rep|marketing|cto|support)$")
 
 
 class PlatformUserUpdate(BaseModel):
