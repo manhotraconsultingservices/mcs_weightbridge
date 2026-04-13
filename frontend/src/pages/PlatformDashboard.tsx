@@ -193,7 +193,7 @@ function EditTenantDialog({ tenant, open, onClose, onSaved, salesReps }: {
           </div>
           <div>
             <Label>Status</Label>
-            <Select value={status} onValueChange={setStatus}>
+            <Select value={status} onValueChange={v => setStatus(v ?? 'active')}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="active">Active</SelectItem>
@@ -402,7 +402,7 @@ export default function PlatformDashboard() {
                             </Badge>
                           ))}
                           {isPlatformAdmin && (
-                            <Select onValueChange={v => assignRep(t.slug, v)}>
+                            <Select onValueChange={v => v && assignRep(t.slug, v)}>
                               <SelectTrigger className="h-6 w-6 p-0 border-0 bg-transparent text-slate-500 hover:text-blue-400">
                                 <UserPlus className="h-3.5 w-3.5" />
                               </SelectTrigger>
