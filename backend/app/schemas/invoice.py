@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 from pydantic import BaseModel, model_validator
 
@@ -127,6 +127,16 @@ class InvoiceResponse(BaseModel):
     tally_synced: bool
     tally_sync_at: Optional[datetime]
     tally_needs_sync: bool = False   # computed: True when not yet synced or modified after last sync
+    # eInvoice (GST IRN)
+    irn: Optional[str] = None
+    irn_ack_no: Optional[str] = None
+    irn_ack_date: Optional[datetime] = None
+    einvoice_status: str = "none"    # none, success, failed, cancelled
+    einvoice_error: Optional[str] = None
+    irn_cancelled_at: Optional[datetime] = None
+    # Revision tracking
+    revision_no: int = 1
+    original_invoice_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
     items: list[ItemResponse]
@@ -149,3 +159,39 @@ class InvoiceListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# ── Revision / amendment schemas ──────────────────────────────────────────────
+
+class CreateRevisionRequest(BaseModel):
+    reason: Optional[str] = None  # Optional reason/notes for this revision
+
+
+class RevisionHistoryItem(BaseModel):
+    id: UUID
+    original_invoice_id: UUID
+    from_revision_no: int
+    to_revision_no: int
+    from_invoice_id: UUID
+    to_invoice_id: UUID
+    change_summary: Optional[str]
+    revised_by_name: Optional[str] = None
+    created_at: datetime
+    finalized_at: Optional[datetime]
+    model_config = {"from_attributes": True}
+
+
+class InvoiceRevisionChain(BaseModel):
+    """All revisions for an invoice, plus metadata about the chain."""
+    original_invoice_id: UUID
+    current_revision_no: int
+    invoices: list[InvoiceResponse]       # all versions, oldest first
+    history: list[RevisionHistoryItem]    # revision events
+
+
+class InvoiceCompare(BaseModel):
+    """Side-by-side comparison of two invoice versions."""
+    invoice_a: InvoiceResponse
+    invoice_b: InvoiceResponse
+    diff: Any                              # structured diff from invoice_diff.compute_invoice_diff
+    revision_record: Optional[RevisionHistoryItem] = None

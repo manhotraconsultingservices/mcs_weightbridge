@@ -2,10 +2,12 @@
 Application settings router — generic key/value store for admin-configurable params.
 
 Current keys:
-  weighbridge_urgency  JSON: {"green_max": 30, "amber_max": 60, "orange_max": 120}
-                       Values are in MINUTES. Used by the Token page for color urgency.
-  role_permissions     JSON: {"role": ["/path", ...], ...}
-  app_wallpaper_path   Relative path: "uploads/wallpaper/wallpaper_<uuid>.jpg"
+  weighbridge_urgency       JSON: {"green_max": 30, "amber_max": 60, "orange_max": 120}
+                            Values are in MINUTES. Used by the Token page for color urgency.
+  role_permissions          JSON: {"role": ["/path", ...], ...}
+  app_wallpaper_path        Relative path: "uploads/wallpaper/wallpaper_<uuid>.jpg"
+  vehicle_types             JSON array: ["truck", "tractor", "trailer", ...]
+  invoice_print_settings    JSON: toggleable fields/sections for printed PDF invoices
 """
 import json
 import os
@@ -20,6 +22,7 @@ from sqlalchemy import text
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
 from app.models.user import User
+from app.utils.pdf_generator import DEFAULT_INVOICE_PRINT_SETTINGS
 
 router = APIRouter(prefix="/api/v1/app-settings", tags=["App Settings"])
 
@@ -136,6 +139,60 @@ async def update_role_permissions(
     return payload
 
 
+# ── Invoice Action Permissions ────────────────────────────────────────────────
+
+INVOICE_ACTIONS_KEY = "invoice_action_permissions"
+
+# All available invoice actions
+INVOICE_ACTIONS = [
+    "edit_draft",
+    "finalize",
+    "cancel_draft",
+    "record_payment",
+    "tally_sync",
+    "einvoice",
+    "create_revision",
+    "move_to_supplement",
+]
+
+# Defaults: which roles get which actions
+DEFAULT_INVOICE_ACTION_PERMS: dict[str, list[str]] = {
+    "admin":              INVOICE_ACTIONS,  # all actions
+    "accountant":         ["edit_draft", "finalize", "cancel_draft", "record_payment", "tally_sync", "einvoice", "create_revision"],
+    "sales_executive":    ["edit_draft", "finalize"],
+    "purchase_executive": ["edit_draft", "finalize"],
+    "store_manager":      [],
+    "operator":           [],
+    "viewer":             [],
+}
+
+
+@router.get("/invoice-action-permissions")
+async def get_invoice_action_permissions(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Return role→invoice_actions map. Any user (frontend needs it on load)."""
+    raw = await _get_raw(db, INVOICE_ACTIONS_KEY)
+    if raw:
+        try:
+            return json.loads(raw)
+        except Exception:
+            pass
+    return DEFAULT_INVOICE_ACTION_PERMS
+
+
+@router.put("/invoice-action-permissions")
+async def update_invoice_action_permissions(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Save role→invoice_actions map. Admin only."""
+    await _upsert(db, INVOICE_ACTIONS_KEY, json.dumps(payload))
+    return payload
+
+
 # ── Wallpaper ─────────────────────────────────────────────────────────────────
 
 WALLPAPER_KEY = "app_wallpaper_path"
@@ -210,6 +267,46 @@ async def upload_wallpaper(
     return {"url": f"/{rel}"}
 
 
+# ── Vehicle Types ─────────────────────────────────────────────────────────────
+
+VEHICLE_TYPES_KEY = "vehicle_types"
+VEHICLE_TYPES_DEFAULTS = ["truck", "tractor", "trailer", "tipper", "mini_truck", "tanker", "dumper"]
+
+
+@router.get("/vehicle-types")
+async def get_vehicle_types(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Return the list of vehicle types. Any authenticated user."""
+    raw = await _get_raw(db, VEHICLE_TYPES_KEY)
+    if raw:
+        try:
+            return json.loads(raw)
+        except Exception:
+            pass
+    return VEHICLE_TYPES_DEFAULTS
+
+
+@router.put("/vehicle-types")
+async def update_vehicle_types(
+    payload: list[str],
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Save custom vehicle types list. Admin only."""
+    if not payload:
+        raise HTTPException(400, "At least one vehicle type is required")
+    # Deduplicate, lowercase, strip whitespace, remove blanks
+    cleaned = list(dict.fromkeys(
+        t.strip().lower().replace(" ", "_") for t in payload if t.strip()
+    ))
+    if not cleaned:
+        raise HTTPException(400, "At least one vehicle type is required")
+    await _upsert(db, VEHICLE_TYPES_KEY, json.dumps(cleaned))
+    return cleaned
+
+
 @router.delete("/wallpaper")
 async def delete_wallpaper(
     db: AsyncSession = Depends(get_db),
@@ -228,3 +325,147 @@ async def delete_wallpaper(
         await db.execute(text(f"DELETE FROM {TABLE} WHERE key = :k"), {"k": WALLPAPER_KEY})
         await db.commit()
     return {"message": "Wallpaper removed"}
+
+
+# ── eInvoice Config ──────────────────────────────────────────────────────────
+
+EINVOICE_CONFIG_KEY = "einvoice_config"
+
+_EINVOICE_DEFAULTS = {
+    "provider": "nic",
+    "base_url": "https://einv-apisandbox.nic.in",
+    "client_id": "",
+    "client_secret": "",
+    "gstin": "",
+    "username": "",
+    "password": "",
+    "is_sandbox": True,
+    "is_enabled": False,
+    "auto_generate_on_finalize": True,
+}
+
+_MASK = "***"
+
+
+def _mask_secrets(cfg: dict) -> dict:
+    """Return config with sensitive fields masked for GET responses."""
+    out = dict(cfg)
+    for key in ("client_secret", "password"):
+        if out.get(key):
+            out[key] = _MASK
+    return out
+
+
+@router.get("/einvoice-config")
+async def get_einvoice_config(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Return eInvoice config (passwords masked). Admin only."""
+    raw = await _get_raw(db, EINVOICE_CONFIG_KEY)
+    if raw:
+        try:
+            cfg = json.loads(raw)
+            return _mask_secrets({**_EINVOICE_DEFAULTS, **cfg})
+        except Exception:
+            pass
+    return _mask_secrets(_EINVOICE_DEFAULTS)
+
+
+@router.put("/einvoice-config")
+async def update_einvoice_config(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Save eInvoice config. Admin only. Masked fields preserve existing values."""
+    # Load existing to preserve masked secrets
+    existing = {}
+    raw = await _get_raw(db, EINVOICE_CONFIG_KEY)
+    if raw:
+        try:
+            existing = json.loads(raw)
+        except Exception:
+            pass
+
+    # Merge — preserve secrets if masked sentinel sent
+    merged = {**_EINVOICE_DEFAULTS, **existing}
+    for key, val in payload.items():
+        if key in ("client_secret", "password") and val == _MASK:
+            continue  # keep existing
+        if key in _EINVOICE_DEFAULTS:
+            merged[key] = val
+
+    # Auto-set base_url from sandbox toggle
+    if merged.get("is_sandbox"):
+        merged["base_url"] = "https://einv-apisandbox.nic.in"
+    else:
+        merged["base_url"] = "https://einvoice1.gst.gov.in"
+
+    await _upsert(db, EINVOICE_CONFIG_KEY, json.dumps(merged))
+    return _mask_secrets(merged)
+
+
+@router.post("/einvoice-config/test")
+async def test_einvoice_connection(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Test NIC eInvoice authentication. Admin only."""
+    from app.integrations.einvoice import EInvoiceClient, EInvoiceConfig
+
+    raw = await _get_raw(db, EINVOICE_CONFIG_KEY)
+    if not raw:
+        raise HTTPException(400, "eInvoice not configured yet")
+
+    try:
+        cfg_dict = json.loads(raw)
+        config = EInvoiceConfig.from_dict(cfg_dict)
+    except Exception as e:
+        raise HTTPException(400, f"Invalid config: {e}")
+
+    if not config.client_id or not config.username:
+        raise HTTPException(400, "Client ID and Username are required")
+
+    client = EInvoiceClient(config)
+    result = await client.test_connection()
+    return result
+
+
+# ── Invoice Print Settings ────────────────────────────────────────────────────
+
+INVOICE_PRINT_SETTINGS_KEY = "invoice_print_settings"
+
+
+@router.get("/invoice-print-settings")
+async def get_invoice_print_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Return invoice PDF print settings. Any authenticated user."""
+    raw = await _get_raw(db, INVOICE_PRINT_SETTINGS_KEY)
+    if raw:
+        try:
+            stored = json.loads(raw)
+            # Deep merge with defaults so new keys are always present
+            merged = {**DEFAULT_INVOICE_PRINT_SETTINGS}
+            for section, defaults in DEFAULT_INVOICE_PRINT_SETTINGS.items():
+                if isinstance(defaults, dict) and section in stored and isinstance(stored[section], dict):
+                    merged[section] = {**defaults, **stored[section]}
+                elif section in stored:
+                    merged[section] = stored[section]
+            return merged
+        except Exception:
+            pass
+    return DEFAULT_INVOICE_PRINT_SETTINGS
+
+
+@router.put("/invoice-print-settings")
+async def save_invoice_print_settings(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Save invoice PDF print settings. Admin only."""
+    await _upsert(db, INVOICE_PRINT_SETTINGS_KEY, json.dumps(payload))
+    return payload

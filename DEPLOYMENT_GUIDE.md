@@ -313,13 +313,25 @@ If the login page loads and login works → Phase B is complete.
 
 ### C3. Configure the weighing scale
 
+**Recommended: Use the auto-detect utility** (handles COM port, baud rate, parity automatically):
+
 1. Connect the scale's RS-232 cable to the PC's COM port (or USB-to-serial adapter)
-2. In the application: **Settings** → **Scale**
-3. Select the **COM Port** from the dropdown
-   - If you don't know which port: open **Device Manager** (right-click Start → Device Manager → Ports (COM & LPT))
-   - The scale will appear as "USB Serial Port (COM3)" or similar
-4. Set **Baud Rate** (check the scale manual — commonly 9600 or 2400)
-5. Click **Save**, then **Test** — the live weight should appear
+2. Open **PowerShell as Administrator**:
+   ```powershell
+   cd C:\weighbridge\backend
+   python setup_weight_scale.py
+   ```
+3. The utility scans all COM ports with all baud rates and serial configs
+4. When it finds the scale, it writes `weight_bridge.json` automatically
+5. It then runs a 5-second validation test showing live weight values
+6. Restart the backend: `Restart-Service WeighbridgeBackend`
+7. Check Dashboard — weight should show ONLINE
+
+**If auto-detect fails**, try manual configuration:
+1. Check **Device Manager** → Ports (COM & LPT) for the COM port number
+2. Try: `python setup_weight_scale.py --port COM3 --scan-only` (replace COM3)
+3. Common settings: 9600 baud, 8N1 (Leo/Contech) or 7E1 (Essae/Avery/Systec)
+4. If no COM port appears in Device Manager, check the USB-to-Serial adapter driver
 
 ### C4. Create financial year
 
@@ -483,9 +495,18 @@ Restart the PC when prompted. Then start Docker Desktop again.
 
 **Fix:**
 1. Check the cable is securely connected at both ends
-2. Go to **Settings** → **Scale**, try a different COM port
-3. Try baud rate 9600, then 2400, then 4800
-4. Check if the scale has a "Print" or "Serial" mode that needs to be enabled
+2. Run the auto-detect utility:
+   ```powershell
+   cd C:\weighbridge\backend
+   python setup_weight_scale.py
+   ```
+3. If auto-detect finds nothing, try scan-only to see raw data:
+   ```powershell
+   python setup_weight_scale.py --scan-only
+   ```
+4. Check Device Manager → Ports (COM & LPT) — a COM port must be visible
+5. Check if the scale indicator has a "Continuous Output" or "PC" mode that needs to be enabled
+6. After fixing, restart: `Restart-Service WeighbridgeBackend`
 
 ---
 
@@ -587,4 +608,4 @@ docker restart weighbridge_db
 	- Scale → 100%
 	- Uncheck Headers and footers
 
-*Document maintained by the development team. Last updated: 2026-04-09*
+*Document maintained by the development team. Last updated: 2026-04-13*

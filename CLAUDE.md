@@ -51,9 +51,11 @@ workspace_Weighbridge/
 │   │   ├── utils/pdf_generator.py   # WeasyPrint → xhtml2pdf fallback
 │   │   ├── utils/hardware_fingerprint.py  # CPU/MB/Disk/Registry fingerprint for license binding
 │   │   ├── utils/secrets_manager.py       # Windows DPAPI encrypt/decrypt wrapper
+│   │   ├── utils/invoice_diff.py          # compute_invoice_diff() + invoice_to_snapshot() for revision system
 │   │   └── integrations/
 │   │       ├── serial_port/         # Weight scale WebSocket
 │   │       ├── tally/               # Tally Prime sync
+│   │       ├── einvoice/            # NIC GST eInvoice API (builder.py + client.py)
 │   │       └── notifications/
 │   │           └── telegram.py      # Telegram Bot API sender (httpx) + daily report builder
 │   ├── alembic/                     # DB migrations
@@ -130,9 +132,10 @@ require_role("admin")  # Role guard — returns 403 if not matching
 | `tare_weight_history` | id, vehicle_id, tare_weight, recorded_at | |
 | `drivers` | id, company_id, name, license_no, phone | |
 | `transporters` | id, company_id, name, gstin | |
-| `tokens` | id, company_id, token_no (nullable), token_type, vehicle_id, party_id, product_id, gross_weight, tare_weight, net_weight, status, is_supplement | token_no assigned at COMPLETED; is_supplement=TRUE when moved to supplement |
-| `invoices` | id, company_id, fy_id, invoice_type, tax_type, invoice_no (nullable), party_id, token_id, total_amount, grand_total, payment_status, status | invoice_no assigned at FINALISE; draft may be auto-created from token |
+| `tokens` | id, company_id, token_no (nullable), token_type, vehicle_id, party_id, product_id, vehicle_no, vehicle_type, gross_weight, tare_weight, net_weight, status, is_supplement | token_no assigned at COMPLETED; vehicle_type from admin-configurable list; is_supplement=TRUE when moved to supplement |
+| `invoices` | id, company_id, fy_id, invoice_type, tax_type, invoice_no (nullable), party_id, token_id, total_amount, grand_total, payment_status, status, revision_no, original_invoice_id, irn, irn_ack_no, irn_ack_date, irn_qr_code, irn_signed_invoice, einvoice_status, einvoice_error, irn_cancelled_at | invoice_no assigned at FINALISE; revision_no starts at 1; original_invoice_id NULL for v1, points to root for all revisions; eInvoice columns for NIC IRN integration |
 | `invoice_items` | id, invoice_id, product_id, quantity, rate, gst_rate, amounts | Line items |
+| `invoice_revisions` | id, original_invoice_id, from_revision_no, to_revision_no, from_invoice_id, to_invoice_id, snapshot (JSONB), diff (JSONB), change_summary, revised_by, created_at, finalized_at | Revision chain records; snapshot = full from-invoice at creation time; diff computed at finalization |
 | `quotations` | id, company_id, fy_id, quotation_no, party_id, status, grand_total | |
 | `quotation_items` | id, quotation_id, product_id, quantity, rate | |
 | `payment_receipts` | id, company_id, receipt_no, party_id, amount, payment_mode | Incoming payments (sales) |
@@ -162,6 +165,17 @@ require_role("admin")  # Role guard — returns 403 if not matching
 ## Backend API Endpoints
 
 All endpoints prefixed `/api/v1` unless noted.
+
+### Tenant Management — `/api/v1/admin` (multi-tenant only)
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/tenants` | X-Super-Admin | Create tenant (DB + DDL + seed) |
+| GET | `/tenants` | X-Super-Admin | List all tenants |
+| GET | `/tenants/{slug}` | X-Super-Admin | Get tenant detail |
+| PUT | `/tenants/{slug}` | X-Super-Admin | Update tenant (name, active, config) |
+| POST | `/tenants/{slug}/backup` | X-Super-Admin | Backup tenant database |
+| POST | `/tenants/backup-all` | X-Super-Admin | Backup all active tenants |
+| POST | `/tenants/{slug}/rotate-key` | X-Super-Admin | Regenerate agent API key |
 
 ### Auth — `/api/v1/auth`
 | Method | Path | Role | Description |
@@ -231,6 +245,11 @@ All endpoints prefixed `/api/v1` unless noted.
 | POST | `/{id}/move-to-supplement` | USB-gated. Migrates draft+token to supplementary_entries, deletes from normal tables |
 | GET | `/{id}/pdf` | Download PDF |
 | POST | `/{id}/cancel` | Cancel invoice |
+| POST | `/{id}/generate-irn` | Manual IRN generation/retry (finalized B2B invoices with GSTIN) |
+| POST | `/{id}/cancel-irn` | Cancel IRN within 24 hours (reason + remark) |
+| POST | `/{id}/create-revision` | admin/accountant — creates a draft copy (revision_no+1, original_invoice_id set) |
+| GET | `/{id}/revisions` | List all versions in the revision chain (original + all amendments) |
+| GET | `/{id}/compare/{other_id}` | Side-by-side diff between any two invoice versions |
 
 ### Quotations — `/api/v1/quotations`
 | Method | Path | Description |
@@ -378,8 +397,13 @@ All endpoints prefixed `/api/v1` unless noted.
 | GET | `/wallpaper/info` | Any | Get wallpaper URL (`{"url": "/uploads/wallpaper/filename.jpg"}` or `{"url": null}`) |
 | POST | `/wallpaper` | admin | Upload wallpaper (multipart `file` field, image/*, max 5 MB) |
 | DELETE | `/wallpaper` | admin | Remove wallpaper (deletes file from disk + app_settings row) |
+| GET | `/vehicle-types` | Any | List vehicle types (default: truck, tractor, trailer, tipper, mini_truck, tanker, dumper) |
+| PUT | `/vehicle-types` | admin | Save custom vehicle types list (deduplicated, lowercased, underscore-spaced) |
+| GET | `/einvoice-config` | admin | Get eInvoice config (passwords masked) |
+| PUT | `/einvoice-config` | admin | Save eInvoice config (masked fields preserve existing) |
+| POST | `/einvoice-config/test` | admin | Test NIC eInvoice authentication |
 
-**Stored keys:** `role_permissions` (JSON), `app_wallpaper_path` (relative path string)
+**Stored keys:** `role_permissions` (JSON), `app_wallpaper_path` (relative path string), `vehicle_types` (JSON array), `einvoice_config` (JSON object with NIC credentials)
 **Uploaded files:** saved to `<project_root>/uploads/wallpaper/` served via `/uploads` static mount
 **Live update:** admin pages dispatch `new CustomEvent('appsettings:updated')` after save; `useAppSettings` hook listens and re-fetches without page reload
 
@@ -389,15 +413,20 @@ All endpoints prefixed `/api/v1` unless noted.
 | GET | `/api/v1/cameras/config` | Any | Get camera config (passwords masked) |
 | PUT | `/api/v1/cameras/config` | admin | Save camera config; password `"***"` preserves existing |
 | POST | `/api/v1/cameras/test/{camera_id}` | admin | Capture test snapshot → return preview URL |
+| GET | `/api/v1/cameras/search` | Any | Search snapshots by token number, vehicle number, date range |
+| GET | `/api/v1/cameras/stream/{camera_id}` | Any | Live MJPEG stream (auth via `?token=` query param) |
+| POST | `/api/v1/cameras/mock-snapshots/{token_id}` | admin | Seed fake camera images for testing (dev only) |
 | GET | `/api/v1/tokens/{token_id}/snapshots` | Any | Poll snapshot status for a token |
 | POST | `/api/v1/tokens/{token_id}/snapshots/retry` | admin | Re-trigger failed camera captures |
 
 **Config key:** `camera_config` in `app_settings` table (JSON: `{"front": {...}, "top": {...}}`)
-**Trigger:** Automatically fires after second weight commit via `BackgroundTasks` — non-blocking
+**Trigger:** Automatically fires after both first and second weight commits via `BackgroundTasks` — non-blocking
+**Dual-stage capture:** `weight_stage` column (`first_weight` | `second_weight`) tracks which weighment triggered the snapshot
 **Retry logic:** 3 attempts × 5s timeout per camera; failures tracked in `token_snapshots` table
-**File storage:** `uploads/camera/<token_id>/<camera_id>_<timestamp>.jpg` served via `/uploads`
-**Frontend:** Capturing spinner + per-camera status in WeightCaptureDialog; lightbox via Camera icon on completed token rows; Camera tab in Settings for URL config + test snapshot
-**Table:** `token_snapshots` — columns: id, token_id, camera_id, camera_label, file_path, capture_status (pending|captured|failed), attempts, error_message, captured_at
+**File storage:** `uploads/camera/<token_id>/<camera_id>_<stage>_<timestamp>.jpg` served via `/uploads`
+**Frontend:** Capturing spinner + per-camera status in WeightCaptureDialog; lightbox via Camera icon on completed token rows; Camera tab in Settings for URL config + test snapshot; SnapshotSearchPage for image search
+**Table:** `token_snapshots` — columns: id, token_id, camera_id, camera_label, file_path, capture_status (pending|captured|failed), attempts, error_message, captured_at, weight_stage
+**Unique constraint:** `(token_id, camera_id, weight_stage)` — allows separate snapshots per weight stage
 
 ### Inventory — `/api/v1/inventory`
 | Method | Path | Role | Description |
@@ -470,6 +499,7 @@ All endpoints prefixed `/api/v1` unless noted.
 | `PermissionsPage` | `/admin/permissions` | Admin-only. Tabs per role; checklist of pages per role; save → live sidebar update |
 | `WallpaperSettingsPage` | `/admin/wallpaper` | Admin-only. Upload/preview/remove wallpaper image for main content area background |
 | `InventoryPage` | `/inventory` | Store Inventory — 5 tabs: Stock (cards with colour-coded levels + Use Stock dialog), Orders (PO workflow with approve/reject/receive), History (paginated transaction log), Analytics (trend/pie/top-consumed charts with date presets), Settings (Telegram config + custom categories) |
+| `SnapshotSearchPage` | `/snapshot-search` | Search camera snapshots by token number, vehicle number, or date range. Results grouped by token with 1st/2nd weight sections. Lightbox image viewer. Date presets (Today/7 Days/30 Days). Pagination. |
 
 ---
 
@@ -598,6 +628,12 @@ All endpoints prefixed `/api/v1` unless noted.
 | Inventory Analytics | 📈 Analytics tab with preset date ranges, daily/weekly/monthly granularity, item drill-down, 4 summary cards, 3 recharts charts (consumption trend, category pie, top consumed) |
 | Security hardening | Hardware fingerprint license binding (CPU/MB/Disk/Registry, 2-of-4 tolerance) · login brute-force lockout (5 fails=15 min, login_audit table) · CSP + HSTS security headers · DPAPI machine-locked secrets (secrets_manager.py + setup_dpapi.py) · license_guard default-False fix · Nuitka binary build (build_dist.ps1) · OS hardening script (hardening/secure_setup.ps1) · Vite sourcemap:false + hash filenames |
 | Build documentation | BUILD_GUIDE.md — 12-section guide: prerequisites, frontend build, Nuitka binary, packaging, client install, DPAPI setup, license generation, updates, troubleshooting |
+| Vehicle Type dropdown | Admin-configurable vehicle types via Settings; GET/PUT `/api/v1/app-settings/vehicle-types`; VehiclesPage dynamic dropdown + Badge per vehicle; admin gear icon → manage dialog |
+| GST eInvoice (IRN) | NIC eInvoice API integration: auto-generate IRN on finalize (B2B+GSTIN); manual retry/cancel; IRN+QR in PDF; `integrations/einvoice/` module (builder+client); Settings → eInvoice tab; InvoicesPage IRN status badges + action buttons; non-blocking (failure doesn't block finalization) |
+| Invoice Revision/Versioning | Admin/accountant can create revision of finalized invoice → new draft with revision_no+1; finalization assigns `INV/24-25/0001/Rv2` number; `invoice_revisions` table stores JSONB snapshot + structured diff; InvoiceRevisionDialog: revision timeline + side-by-side diff (header/amounts/items/eInvoice sections); `invoice_revised` notification event; compare any two versions via GET compare endpoint |
+| Multi-Tenant SaaS | Separate database per client within single PG container; `MULTI_TENANT=true` activates; `weighbridge_master` DB for tenant registry; `wb_<slug>` databases per client; TenantMiddleware extracts tenant from JWT ContextVar; tenant-aware background tasks; per-tenant WeightScaleManager; Super-admin API for tenant CRUD; Docker + init scripts; parallel Windows (PowerShell) + Linux (bash) management scripts; frontend Company Code login field; zero data interchange risk |
+| Dual-stage camera capture | Snapshots captured at both 1st and 2nd weight events; `weight_stage` column on `token_snapshots`; unique constraint `(token_id, camera_id, weight_stage)`; mock snapshot seeding endpoint for dev/test |
+| Snapshot Search | SnapshotSearchPage: search camera images by token number, vehicle number, or date range; results grouped by token with 1st/2nd weight sections; lightbox viewer; date presets; pagination; `GET /api/v1/cameras/search` endpoint |
 
 ### ❌ Pending
 
@@ -612,7 +648,6 @@ All endpoints prefixed `/api/v1` unless noted.
 |---|---|
 | Tally auto-sync on finalise (auto_sync flag) | 6 |
 | Customer portal (read-only party view) | 6 |
-| Multi-company support | 7 |
 | Scheduled email reports | 7 |
 
 ---
@@ -626,6 +661,12 @@ DATABASE_URL_SYNC=postgresql+psycopg://weighbridge:weighbridge_dev_2024@localhos
 SECRET_KEY=dev-secret-key-change-in-production
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=480
+
+# Multi-tenant (set to true for cloud SaaS deployment)
+MULTI_TENANT=false
+MASTER_DATABASE_URL=postgresql+asyncpg://weighbridge:weighbridge_dev_2024@localhost:5432/weighbridge_master
+MASTER_DATABASE_URL_SYNC=postgresql+psycopg://weighbridge:weighbridge_dev_2024@localhost:5432/weighbridge_master
+SUPER_ADMIN_SECRET=change-this-to-a-strong-secret
 ```
 
 ---
@@ -719,3 +760,21 @@ ACCESS_TOKEN_EXPIRE_MINUTES=480
 | 2026-04-10 | Deployment: Generate-DeploymentConfig.ps1 — vendor-side config generator with CHECKLIST.txt + DEPLOY.bat |
 | 2026-04-10 | Backup API: GET /api/v1/backup/cloud-status — reads backup-status.json written by scheduled task |
 | 2026-04-10 | BackupPage: cloud backup status card (healthy/error badge, last backup time/size, next scheduled, R2 location) |
+| 2026-04-13 | Vehicle Type dropdown: admin-configurable vehicle types via app_settings; GET/PUT endpoints; VehiclesPage dynamic dropdown with Badge; admin manage dialog (add/remove types) |
+| 2026-04-13 | GST eInvoice: NIC API integration module (builder.py + client.py) in integrations/einvoice/; 8 new DB columns on invoices (irn, ack_no, ack_date, qr_code, signed_invoice, einvoice_status, einvoice_error, irn_cancelled_at) |
+| 2026-04-13 | eInvoice: auto-IRN on finalize (non-blocking), manual generate-irn + cancel-irn endpoints; config endpoints in app_settings; IRN/QR section in invoice PDF template |
+| 2026-04-13 | eInvoice: InvoicesPage IRN status badges (green/red/grey) + retry/cancel action buttons; SettingsPage eInvoice config tab (environment, credentials, test connection, auto-generate toggle) |
+| 2026-04-13 | PDF template: IRN section (IRN hash + Ack No/Date + QR code image) at top of each copy; "Computer Generated Invoice" footer |
+| 2026-04-13 | Dependencies: qrcode[pil]>=7.4 added to requirements.txt for eInvoice QR code generation |
+| 2026-04-13 | Invoice Revision system: invoice_revisions table (JSONB snapshot + structured diff); revision_no + original_invoice_id columns on invoices |
+| 2026-04-13 | Invoice Revision: POST /{id}/create-revision (admin/accountant); GET /{id}/revisions (chain); GET /{id}/compare/{other_id} (diff); revision invoice_no format: INV/24-25/0001/Rv2 |
+| 2026-04-13 | Invoice Revision: compute_invoice_diff() utility in utils/invoice_diff.py — structured diff covering header, amounts, items (added/removed/modified by product_id), eInvoice fields |
+| 2026-04-13 | Invoice Revision: InvoiceRevisionDialog component — collapsible timeline + version compare selectors + DiffView with ChangeRow/ItemBadge sub-components |
+| 2026-04-13 | Invoice Revision: InvoicesPage — purple Rv{n} badge on revision invoices; Create Revision (GitFork) button for final invoices; View History (History) button for multi-version invoices |
+| 2026-04-13 | Invoice Revision: invoice_revised notification event (email/SMS/Telegram templates); dual-fires invoice_finalized+invoice_revised on revision finalization |
+| 2026-04-13 | Token vehicle_type field: operator can select vehicle type (truck/tractor/etc.) at token creation; auto-fills from vehicle master when registered vehicle selected; shown in token list, weight dialog, and TokenDetailModal; uses admin-configurable vehicle types list |
+| 2026-04-13 | Multi-Tenant SaaS: separate database per client (wb_<slug>) within single PG Docker container; backward-compatible (MULTI_TENANT=false keeps single-DB); TenantMiddleware + ContextVar routing; tenant-aware background tasks (notifications, cameras); per-tenant WeightScaleManager; Super-admin API (/api/v1/admin/tenants); docker-compose.yml with PG tuning (shared_buffers=2GB, max_connections=300); init-multi-db.sh Docker entrypoint; 4 management scripts (setup-docker.sh/ps1, manage-tenant.sh/ps1); frontend: Company Code field on login + tenant_slug in sessionStorage + WebSocket tenant param |
+| 2026-04-13 | Multi-Tenant: 11 new files (multitenancy package: context/models/master_db/registry/middleware/router, schemas/tenant, ddl.py, docker/init-multi-db.sh, scripts/*); 14 modified files (config, database, dependencies, auth, main, weight, tokens, invoices, payments, cameras, docker-compose, LoginPage, useAuth, useWeight) |
+| 2026-04-14 | Dual-stage camera capture: `weight_stage` column on token_snapshots; snapshots captured at both 1st and 2nd weight; unique constraint `(token_id, camera_id, weight_stage)`; DDL migration; tokens.py triggers capture for all token types at both weight events |
+| 2026-04-14 | Snapshot Search page: `GET /api/v1/cameras/search` endpoint (search by token_no/vehicle_no + date range); SnapshotSearchPage.tsx with grouped results, 1st/2nd weight sections, lightbox viewer, date presets, pagination; sidebar entry under Daily Work |
+| 2026-04-14 | Mock snapshot seeding: `POST /api/v1/cameras/mock-snapshots/{token_id}` generates PIL test images for both weight stages and cameras (4 images per token) |

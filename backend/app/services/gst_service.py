@@ -73,7 +73,8 @@ def calculate_invoice_totals(
 
     taxable_amount = _round2(subtotal - discount_amount)
 
-    # 3. GST per item
+    # 3. GST per item (GST is on post-discount taxable amount per GST rules:
+    #    invoice-level discounts reflected in the invoice reduce taxable value)
     total_cgst = Decimal("0")
     total_sgst = Decimal("0")
     total_igst = Decimal("0")
@@ -85,8 +86,16 @@ def calculate_invoice_totals(
         gst_rate = Decimal(str(item.get("gst_rate", 0)))
         line_amount = _round2(qty * rate)
 
+        # Apportion invoice-level discount proportionally across items
+        # GST must be on taxable base (post-discount) per Indian GST law
+        if discount_amount > 0 and subtotal > 0:
+            item_discount = _round2(line_amount * discount_amount / subtotal)
+        else:
+            item_discount = Decimal("0")
+        taxable_line_amount = line_amount - item_discount
+
         if tax_type == "gst":
-            gst = calculate_item_gst(line_amount, gst_rate, intra_state)
+            gst = calculate_item_gst(taxable_line_amount, gst_rate, intra_state)
         else:
             gst = {"cgst": Decimal("0"), "sgst": Decimal("0"), "igst": Decimal("0")}
 
@@ -96,11 +105,11 @@ def calculate_invoice_totals(
 
         computed_items.append({
             **item,
-            "amount": line_amount,
+            "amount": line_amount,               # line subtotal before discount (for display)
             "cgst_amount": gst["cgst"],
             "sgst_amount": gst["sgst"],
             "igst_amount": gst["igst"],
-            "total_amount": line_amount + gst["cgst"] + gst["sgst"] + gst["igst"],
+            "total_amount": taxable_line_amount + gst["cgst"] + gst["sgst"] + gst["igst"],
         })
 
     total_cgst = _round2(total_cgst)

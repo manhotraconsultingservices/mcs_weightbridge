@@ -75,6 +75,31 @@ DEFAULT_TEMPLATES = [
         "body": "📄 <b>Invoice Finalized</b>\n\nParty: {{ party_name }}\nInvoice: <b>{{ invoice_no }}</b>\nDate: {{ invoice_date }}\nAmount: <b>₹{{ grand_total }}</b>\n\n— {{ company_name }}",
     },
     {
+        "event_type": "invoice_revised",
+        "channel": "email",
+        "name": "Invoice Revised (Email)",
+        "subject": "Invoice {{ invoice_no }} (Revision {{ revision_no }}) - {{ company_name }}",
+        "body": """<p>Dear {{ party_name }},</p>
+<p>Invoice <strong>{{ invoice_no }}</strong> has been revised (Revision {{ revision_no }}) on {{ invoice_date }}.</p>
+<p><strong>Revised Amount: ₹{{ grand_total }}</strong></p>
+<p>Please review the updated invoice.</p>
+<p>Regards,<br>{{ company_name }}</p>""",
+    },
+    {
+        "event_type": "invoice_revised",
+        "channel": "sms",
+        "name": "Invoice Revised (SMS)",
+        "subject": None,
+        "body": "Dear {{ party_name }}, Invoice {{ invoice_no }} has been revised (Rv{{ revision_no }}). Updated amount: Rs.{{ grand_total }}. - {{ company_name }}",
+    },
+    {
+        "event_type": "invoice_revised",
+        "channel": "telegram",
+        "name": "Invoice Revised (Telegram)",
+        "subject": None,
+        "body": "✏️ <b>Invoice Revised</b>\n\nParty: {{ party_name }}\nInvoice: <b>{{ invoice_no }}</b> (Revision {{ revision_no }})\nDate: {{ invoice_date }}\nRevised Amount: <b>₹{{ grand_total }}</b>\n\n— {{ company_name }}",
+    },
+    {
         "event_type": "payment_received",
         "channel": "email",
         "name": "Payment Received (Email)",

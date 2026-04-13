@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
-import { Plus, Search, FileText, Loader2, Download, CheckCircle, XCircle, Banknote, Send, CheckCircle2, Ticket, Lock, Pencil, RefreshCw } from 'lucide-react';
+import { Plus, Search, FileText, Loader2, Download, CheckCircle, XCircle, Banknote, Send, CheckCircle2, Ticket, Lock, Pencil, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, RotateCcw, GitFork, History } from 'lucide-react';
 import { TokenDetailModal } from '@/components/TokenDetailModal';
 import { PrintButton } from '@/components/PrintButton';
+import { InvoiceRevisionDialog } from '@/components/InvoiceRevisionDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,17 +18,6 @@ import { useAuth } from '@/hooks/useAuth';
 import type { Invoice, InvoiceListResponse, Party, Product, Token } from '@/types';
 
 const INR = (v: number) => '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2 });
-
-const STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-amber-100 text-amber-700',
-  final: 'bg-green-100 text-green-700',
-  cancelled: 'bg-red-100 text-red-700',
-};
-const PAY_COLORS: Record<string, string> = {
-  unpaid: 'bg-red-100 text-red-600',
-  partial: 'bg-orange-100 text-orange-600',
-  paid: 'bg-green-100 text-green-700',
-};
 
 // ── Invoice Pipeline visual (Draft → Final → Paid) ────────────────────────────
 function InvoicePipeline({ status, paymentStatus }: { status: string; paymentStatus: string }) {
@@ -79,6 +69,34 @@ function InvoicePipeline({ status, paymentStatus }: { status: string; paymentSta
       ))}
     </div>
   );
+}
+
+// ── eInvoice IRN Status Badge ─────────────────────────────────────────────────
+function EInvoiceBadge({ inv }: { inv: Invoice }) {
+  if (inv.status !== 'final' || inv.einvoice_status === 'none') return null;
+  const s = inv.einvoice_status;
+  if (s === 'success') {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[9px] font-medium text-green-700 bg-green-50 rounded px-1.5 py-0.5" title={`IRN: ${inv.irn}\nAck: ${inv.irn_ack_no}`}>
+        <ShieldCheck className="h-2.5 w-2.5" /> IRN
+      </span>
+    );
+  }
+  if (s === 'failed') {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[9px] font-medium text-red-700 bg-red-50 rounded px-1.5 py-0.5" title={inv.einvoice_error || 'IRN generation failed'}>
+        <ShieldAlert className="h-2.5 w-2.5" /> IRN Failed
+      </span>
+    );
+  }
+  if (s === 'cancelled') {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[9px] font-medium text-gray-600 bg-gray-100 rounded px-1.5 py-0.5" title="IRN cancelled">
+        <ShieldX className="h-2.5 w-2.5" /> IRN Cancelled
+      </span>
+    );
+  }
+  return null;
 }
 
 // ------------------------------------------------------------------ //
@@ -986,11 +1004,50 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
   const { authorized: usbAuthorized } = useUsbGuard();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const isSalesExec = user?.role === 'sales_executive';
+  const isPurchaseExec = user?.role === 'purchase_executive';
+
+  // ── Role-based action permissions (fetched from API) ──────────────
+  const [actionPerms, setActionPerms] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      // Admin always has all actions
+      setActionPerms(['edit_draft','finalize','cancel_draft','record_payment','tally_sync','einvoice','create_revision','move_to_supplement']);
+      return;
+    }
+    api.get<Record<string, string[]>>('/api/v1/app-settings/invoice-action-permissions')
+      .then(({ data }) => {
+        const role = user?.role ?? '';
+        setActionPerms(data[role] ?? []);
+      })
+      .catch(() => {
+        // Fallback defaults
+        const defaults: Record<string, string[]> = {
+          accountant: ['edit_draft','finalize','cancel_draft','record_payment','tally_sync','einvoice','create_revision'],
+          sales_executive: ['edit_draft','finalize'],
+          purchase_executive: ['edit_draft','finalize'],
+        };
+        setActionPerms(defaults[user?.role ?? ''] ?? []);
+      });
+  }, [user?.role, isAdmin]);
+
+  const canTallySync = actionPerms.includes('tally_sync');
+  const canEInvoice = actionPerms.includes('einvoice');
+  const canRecordPayment = actionPerms.includes('record_payment');
+  const canRevise = actionPerms.includes('create_revision');
+  const canFinalize = actionPerms.includes('finalize');
+  const canEditDraft = actionPerms.includes('edit_draft');
+  const canCancelDraft = actionPerms.includes('cancel_draft');
+  const canMoveToSupplement = actionPerms.includes('move_to_supplement');
   const PAGE_SIZE = 50;
 
   // Multi-select for bulk Tally sync
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set());
+  const [irnLoadingIds, setIrnLoadingIds] = useState<Set<string>>(new Set());
+  const [revisionLoadingIds, setRevisionLoadingIds] = useState<Set<string>>(new Set());
+  const [revisionInvoice, setRevisionInvoice] = useState<Invoice | null>(null);
 
   // Sort state
   const [sortCol, setSortCol] = useState<SortCol>('invoice_date');
@@ -1168,6 +1225,58 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
       toast.error(`Tally sync error: ${msg}`);
     } finally {
       setSyncingIds(prev => { const n = new Set(prev); n.delete(inv.id); return n; });
+    }
+  }
+
+  async function generateIrn(inv: Invoice) {
+    setIrnLoadingIds(prev => new Set([...prev, inv.id]));
+    try {
+      const { data } = await api.post<Invoice>(`/api/v1/invoices/${inv.id}/generate-irn`);
+      setInvoices(prev => prev.map(i => i.id === inv.id ? data : i));
+      if (data.einvoice_status === 'success') {
+        toast.success(`IRN generated for ${inv.invoice_no}`);
+      } else {
+        toast.error(`IRN failed: ${data.einvoice_error || 'Unknown error'}`);
+      }
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to generate IRN';
+      toast.error(msg);
+    } finally {
+      setIrnLoadingIds(prev => { const n = new Set(prev); n.delete(inv.id); return n; });
+    }
+  }
+
+  async function cancelIrn(inv: Invoice) {
+    if (!confirm(`Cancel IRN for ${inv.invoice_no}? This can only be done within 24 hours of generation.`)) return;
+    setIrnLoadingIds(prev => new Set([...prev, inv.id]));
+    try {
+      const { data } = await api.post<Invoice>(`/api/v1/invoices/${inv.id}/cancel-irn`, { reason: '2', remark: 'Cancelled by admin' });
+      setInvoices(prev => prev.map(i => i.id === inv.id ? data : i));
+      toast.success(`IRN cancelled for ${inv.invoice_no}`);
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to cancel IRN';
+      toast.error(msg);
+    } finally {
+      setIrnLoadingIds(prev => { const n = new Set(prev); n.delete(inv.id); return n; });
+    }
+  }
+
+  async function createRevision(inv: Invoice) {
+    const reason = prompt(`Create revision of ${inv.invoice_no}?\n\nEnter a brief reason for this amendment (optional):`);
+    if (reason === null) return; // user cancelled
+    setRevisionLoadingIds(prev => new Set([...prev, inv.id]));
+    try {
+      const { data } = await api.post<Invoice>(
+        `/api/v1/invoices/${inv.id}/create-revision`,
+        { reason: reason.trim() || null }
+      );
+      setInvoices(prev => [data, ...prev]);
+      toast.success(`Revision Rv${data.revision_no} created as draft — edit and finalize it`);
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to create revision';
+      toast.error(msg);
+    } finally {
+      setRevisionLoadingIds(prev => { const n = new Set(prev); n.delete(inv.id); return n; });
     }
   }
 
@@ -1360,7 +1469,14 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                         )}
                       </td>
                       <td className="px-3 py-2 font-mono text-xs font-semibold whitespace-nowrap">
-                        {inv.invoice_no ?? <span className="text-amber-600 italic text-[10px]">Draft — not assigned</span>}
+                        <div className="flex items-center gap-1.5">
+                          <span>{inv.invoice_no ?? <span className="text-amber-600 italic text-[10px] font-normal">Draft — not assigned</span>}</span>
+                          {inv.revision_no > 1 && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 font-mono">
+                              Rv{inv.revision_no}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{inv.invoice_date}</td>
                       <td className="px-3 py-2 max-w-[200px]">
@@ -1401,7 +1517,10 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                       </td>
                       <td className="px-3 py-2 text-right font-semibold whitespace-nowrap">{INR(inv.grand_total)}</td>
                       <td className="px-3 py-2 text-center">
-                        <InvoicePipeline status={inv.status} paymentStatus={inv.payment_status} />
+                        <div className="flex flex-col items-center gap-0.5">
+                          <InvoicePipeline status={inv.status} paymentStatus={inv.payment_status} />
+                          <EInvoiceBadge inv={inv} />
+                        </div>
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex gap-0.5 justify-end">
@@ -1413,7 +1532,8 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                           <Button size="icon" variant="ghost" className="h-7 w-7" title="Download PDF" onClick={() => downloadPdf(inv)}>
                             <Download className="h-3.5 w-3.5" />
                           </Button>
-                          {inv.status === 'final' && (
+                          {/* ── Finalized invoice actions (role-gated) ── */}
+                          {inv.status === 'final' && canTallySync && (
                             <Button
                               size="icon" variant="ghost" className="h-7 w-7"
                               disabled={!inv.tally_needs_sync || syncingIds.has(inv.id)}
@@ -1432,26 +1552,74 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                                 : !inv.tally_needs_sync
                                   ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
                                   : inv.tally_synced
-                                    ? <RefreshCw className="h-3.5 w-3.5 text-amber-500" title="Re-sync" />
+                                    ? <RefreshCw className="h-3.5 w-3.5 text-amber-500" />
                                     : <Send className="h-3.5 w-3.5 text-orange-500" />}
                             </Button>
                           )}
-                          {inv.status === 'final' && inv.payment_status !== 'paid' && inv.party && (
+                          {inv.status === 'final' && canEInvoice && (inv.einvoice_status === 'failed' || inv.einvoice_status === 'none') && inv.party && (inv.party as { gstin?: string | null })?.gstin && (
+                            <Button
+                              size="icon" variant="ghost" className="h-7 w-7"
+                              title={inv.einvoice_status === 'failed' ? 'Retry IRN Generation' : 'Generate IRN'}
+                              disabled={irnLoadingIds.has(inv.id)}
+                              onClick={() => generateIrn(inv)}
+                            >
+                              {irnLoadingIds.has(inv.id)
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                : <RotateCcw className="h-3.5 w-3.5 text-amber-600" />}
+                            </Button>
+                          )}
+                          {inv.status === 'final' && canEInvoice && inv.einvoice_status === 'success' && (
+                            <Button
+                              size="icon" variant="ghost" className="h-7 w-7"
+                              title="Cancel IRN"
+                              disabled={irnLoadingIds.has(inv.id)}
+                              onClick={() => cancelIrn(inv)}
+                            >
+                              {irnLoadingIds.has(inv.id)
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                : <ShieldX className="h-3.5 w-3.5 text-red-400" />}
+                            </Button>
+                          )}
+                          {inv.status === 'final' && canRecordPayment && inv.payment_status !== 'paid' && inv.party && (
                             <Button size="icon" variant="ghost" className="h-7 w-7" title="Record Payment" onClick={() => setPaymentInvoice(inv)}>
                               <Banknote className="h-3.5 w-3.5 text-blue-600" />
                             </Button>
                           )}
+                          {inv.status === 'final' && canRevise && (
+                            <Button
+                              size="icon" variant="ghost" className="h-7 w-7"
+                              title="Create Revision / Amendment"
+                              disabled={revisionLoadingIds.has(inv.id)}
+                              onClick={() => createRevision(inv)}
+                            >
+                              {revisionLoadingIds.has(inv.id)
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                : <GitFork className="h-3.5 w-3.5 text-purple-600" />}
+                            </Button>
+                          )}
+                          {(inv.revision_no > 1 || inv.original_invoice_id) && (
+                            <Button
+                              size="icon" variant="ghost" className="h-7 w-7"
+                              title="View Revision History & Compare"
+                              onClick={() => setRevisionInvoice(inv)}
+                            >
+                              <History className="h-3.5 w-3.5 text-indigo-500" />
+                            </Button>
+                          )}
+                          {/* ── Draft invoice actions (role-gated) ── */}
                           {inv.status === 'draft' && (
                             <>
-                              {isAdmin && (
+                              {canEditDraft && (!isSalesExec && !isPurchaseExec || (isSalesExec && inv.invoice_type !== 'purchase') || (isPurchaseExec && inv.invoice_type === 'purchase')) && (
                                 <Button size="icon" variant="ghost" className="h-7 w-7" title="Edit Draft Invoice" onClick={() => setEditInvoice(inv)}>
                                   <Pencil className="h-3.5 w-3.5 text-blue-500" />
                                 </Button>
                               )}
-                              <Button size="icon" variant="ghost" className="h-7 w-7" title="Finalise as Sales Invoice" onClick={() => finalise(inv.id)}>
-                                <CheckCircle className="h-3.5 w-3.5 text-green-600" />
-                              </Button>
-                              {usbAuthorized && (
+                              {canFinalize && (!isSalesExec && !isPurchaseExec || (isSalesExec && inv.invoice_type !== 'purchase') || (isPurchaseExec && inv.invoice_type === 'purchase')) && (
+                                <Button size="icon" variant="ghost" className="h-7 w-7" title="Finalise Invoice" onClick={() => finalise(inv.id)}>
+                                  <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                                </Button>
+                              )}
+                              {canMoveToSupplement && usbAuthorized && (
                                 <Button
                                   size="icon" variant="ghost" className="h-7 w-7"
                                   title="Move to Supplement (requires USB)"
@@ -1463,9 +1631,11 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                                     : <Lock className="h-3.5 w-3.5 text-purple-600" />}
                                 </Button>
                               )}
-                              <Button size="icon" variant="ghost" className="h-7 w-7" title="Cancel" onClick={() => cancel(inv.id)}>
-                                <XCircle className="h-3.5 w-3.5 text-red-500" />
-                              </Button>
+                              {canCancelDraft && (
+                                <Button size="icon" variant="ghost" className="h-7 w-7" title="Cancel" onClick={() => cancel(inv.id)}>
+                                  <XCircle className="h-3.5 w-3.5 text-red-500" />
+                                </Button>
+                              )}
                             </>
                           )}
                         </div>
@@ -1519,6 +1689,14 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
         tokenId={tokenModalId}
         onClose={() => setTokenModalId(null)}
       />
+
+      {revisionInvoice && (
+        <InvoiceRevisionDialog
+          open={!!revisionInvoice}
+          invoice={revisionInvoice}
+          onClose={() => setRevisionInvoice(null)}
+        />
+      )}
     </div>
   );
 }

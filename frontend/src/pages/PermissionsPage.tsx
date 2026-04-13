@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Save, RotateCcw, Info } from 'lucide-react';
+import { Save, RotateCcw, Info, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
@@ -20,11 +20,13 @@ const PAGE_GROUPS = [
   {
     group: 'Operations',
     pages: [
-      { path: '/tokens',       label: 'Tokens (Weighing)' },
-      { path: '/camera-scale', label: 'Camera & Scale' },
-      { path: '/inventory',    label: 'Store Inventory' },
-      { path: '/invoices',     label: 'Invoices (Sales & Purchase)' },
-      { path: '/quotations',   label: 'Quotations' },
+      { path: '/tokens-v1',       label: 'Token (Weighing)' },
+      { path: '/tokens',          label: 'Token Dashboard (Analytics)' },
+      { path: '/camera-scale',    label: 'Camera & Scale' },
+      { path: '/snapshot-search', label: 'Snapshot Search' },
+      { path: '/inventory',       label: 'Store Inventory' },
+      { path: '/invoices',        label: 'Invoices (Sales & Purchase)' },
+      { path: '/quotations',      label: 'Quotations' },
     ],
   },
   {
@@ -57,6 +59,29 @@ const PAGE_GROUPS = [
   },
 ];
 
+// ── Invoice action catalogue ─────────────────────────────────────────────── //
+
+const INVOICE_ACTION_ITEMS = [
+  { key: 'edit_draft',         label: 'Edit Draft Invoice',           icon: '✏️' },
+  { key: 'finalize',           label: 'Finalize Invoice',             icon: '✅' },
+  { key: 'cancel_draft',       label: 'Cancel Draft Invoice',         icon: '❌' },
+  { key: 'record_payment',     label: 'Record Payment',               icon: '💰' },
+  { key: 'tally_sync',         label: 'Tally Sync',                   icon: '📤' },
+  { key: 'einvoice',           label: 'eInvoice (IRN Generate/Cancel)', icon: '🔐' },
+  { key: 'create_revision',    label: 'Create Revision / Amendment',  icon: '🔀' },
+  { key: 'move_to_supplement', label: 'Move to Supplement (USB)',      icon: '🔒' },
+];
+
+const DEFAULT_INVOICE_ACTION_PERMS: Record<string, string[]> = {
+  admin:              INVOICE_ACTION_ITEMS.map(a => a.key),
+  accountant:         ['edit_draft', 'finalize', 'cancel_draft', 'record_payment', 'tally_sync', 'einvoice', 'create_revision'],
+  sales_executive:    ['edit_draft', 'finalize'],
+  purchase_executive: ['edit_draft', 'finalize'],
+  store_manager:      [],
+  operator:           [],
+  viewer:             [],
+};
+
 
 // ── Role definitions for the tabs ─────────────────────────────────────────── //
 
@@ -74,19 +99,29 @@ const ROLE_TABS = [
 interface RoleTabProps {
   allowed: string[];
   onChange: (paths: string[]) => void;
+  invoiceActions: string[];
+  onInvoiceActionsChange: (actions: string[]) => void;
 }
 
-function RoleTab({ allowed, onChange }: RoleTabProps) {
+function RoleTab({ allowed, onChange, invoiceActions, onInvoiceActionsChange }: RoleTabProps) {
   function toggle(path: string) {
     onChange(allowed.includes(path) ? allowed.filter(p => p !== path) : [...allowed, path]);
+  }
+
+  function toggleAction(key: string) {
+    onInvoiceActionsChange(
+      invoiceActions.includes(key) ? invoiceActions.filter(a => a !== key) : [...invoiceActions, key]
+    );
   }
 
   return (
     <div className="space-y-4 py-4">
       <div className="flex items-center gap-2 rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
         <Info className="h-3.5 w-3.5 shrink-0" />
-        Dashboard access is controlled here. By default only Admin can view the Dashboard. Admin always sees all pages regardless of this configuration.
+        Admin always has full access regardless of this configuration.
       </div>
+
+      {/* ── Page access ── */}
       {PAGE_GROUPS.map(group => (
         <div key={group.group}>
           <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{group.group}</p>
@@ -115,6 +150,41 @@ function RoleTab({ allowed, onChange }: RoleTabProps) {
           </div>
         </div>
       ))}
+
+      {/* ── Invoice action permissions ── */}
+      <div className="mt-6 pt-4 border-t">
+        <div className="flex items-center gap-2 mb-3">
+          <FileText className="h-4 w-4 text-blue-500" />
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Invoice Actions</p>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          Control which invoice action buttons this role can use. Print &amp; Download are always available.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {INVOICE_ACTION_ITEMS.map(action => {
+            const isChecked = invoiceActions.includes(action.key);
+            return (
+              <label
+                key={action.key}
+                className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm cursor-pointer transition-colors ${
+                  isChecked
+                    ? 'border-orange-300/60 bg-orange-50'
+                    : 'border-transparent bg-muted/40 hover:bg-muted/70'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={() => toggleAction(action.key)}
+                  className="accent-orange-500"
+                />
+                <span className="mr-1">{action.icon}</span>
+                <span>{action.label}</span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -125,9 +195,13 @@ export default function PermissionsPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [permissions, setPermissions] = useState<Record<string, string[]>>(() => {
-    // Start with defaults
     const result: Record<string, string[]> = {};
     ROLE_TABS.forEach(r => { result[r.value] = DEFAULT_PERMISSIONS[r.value] ?? []; });
+    return result;
+  });
+  const [invoicePerms, setInvoicePerms] = useState<Record<string, string[]>>(() => {
+    const result: Record<string, string[]> = {};
+    ROLE_TABS.forEach(r => { result[r.value] = DEFAULT_INVOICE_ACTION_PERMS[r.value] ?? []; });
     return result;
   });
   const [saving, setSaving] = useState(false);
@@ -141,11 +215,21 @@ export default function PermissionsPage() {
   // Fetch current permissions
   const fetchPerms = useCallback(async () => {
     try {
-      const { data } = await api.get<Record<string, string[]>>('/api/v1/app-settings/role-permissions');
+      const [pageRes, actionRes] = await Promise.all([
+        api.get<Record<string, string[]>>('/api/v1/app-settings/role-permissions'),
+        api.get<Record<string, string[]>>('/api/v1/app-settings/invoice-action-permissions'),
+      ]);
       setPermissions(prev => {
         const updated = { ...prev };
         ROLE_TABS.forEach(r => {
-          if (data[r.value]) updated[r.value] = data[r.value];
+          if (pageRes.data[r.value]) updated[r.value] = pageRes.data[r.value];
+        });
+        return updated;
+      });
+      setInvoicePerms(prev => {
+        const updated = { ...prev };
+        ROLE_TABS.forEach(r => {
+          if (actionRes.data[r.value]) updated[r.value] = actionRes.data[r.value];
         });
         return updated;
       });
@@ -162,19 +246,28 @@ export default function PermissionsPage() {
     setPermissions(prev => ({ ...prev, [role]: paths }));
   }
 
+  function setRoleInvoicePerms(role: string, actions: string[]) {
+    setInvoicePerms(prev => ({ ...prev, [role]: actions }));
+  }
+
   function resetToDefault(role: string) {
     setPermissions(prev => ({ ...prev, [role]: DEFAULT_PERMISSIONS[role] ?? [] }));
+    setInvoicePerms(prev => ({ ...prev, [role]: DEFAULT_INVOICE_ACTION_PERMS[role] ?? [] }));
     toast.info(`Reset ${ROLE_TABS.find(r => r.value === role)?.label} to defaults`);
   }
 
   async function save() {
     setSaving(true);
     try {
-      const payload = {
-        admin: ['*'],
-        ...permissions,
+      const pagePayload = { admin: ['*'], ...permissions };
+      const actionPayload = {
+        admin: INVOICE_ACTION_ITEMS.map(a => a.key),
+        ...invoicePerms,
       };
-      await api.put('/api/v1/app-settings/role-permissions', payload);
+      await Promise.all([
+        api.put('/api/v1/app-settings/role-permissions', pagePayload),
+        api.put('/api/v1/app-settings/invoice-action-permissions', actionPayload),
+      ]);
       window.dispatchEvent(new CustomEvent('appsettings:updated'));
       toast.success('Role permissions saved');
     } catch {
@@ -189,7 +282,7 @@ export default function PermissionsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Role Permissions</h1>
-          <p className="text-sm text-muted-foreground">Configure which pages each role can access</p>
+          <p className="text-sm text-muted-foreground">Configure page access and invoice actions per role</p>
         </div>
         <Button onClick={save} disabled={saving}>
           <Save className="h-4 w-4 mr-1" />
@@ -221,6 +314,8 @@ export default function PermissionsPage() {
               <RoleTab
                 allowed={permissions[r.value] ?? []}
                 onChange={paths => setRolePerms(r.value, paths)}
+                invoiceActions={invoicePerms[r.value] ?? []}
+                onInvoiceActionsChange={actions => setRoleInvoicePerms(r.value, actions)}
               />
             </TabsContent>
           ))}

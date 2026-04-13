@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db, async_session
+from app.database import get_db
 from app.dependencies import get_current_user, require_role
 from app.models.user import User
 from app.routers.app_settings import _get_raw, _upsert
@@ -130,6 +130,87 @@ async def fake_snapshot(label: str = "Camera"):
             0x7F,0xFF,0xD9,
         ])
         return StreamingResponse(io.BytesIO(minimal_jpg), media_type="image/jpeg")
+
+
+# ── Dev: seed mock snapshots for a token ──────────────────────────────────────
+
+@router.post("/mock-snapshots/{token_id}")
+async def seed_mock_snapshots(
+    token_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """
+    Create fake camera snapshot images for a token (both weight stages).
+    Uses the fake-snapshot generator (PIL) to create realistic test images.
+    Saves files locally under uploads/camera/<token_id>/.
+    """
+    import os
+    from pathlib import Path
+    from datetime import datetime as dt
+
+    base_dir = Path(__file__).parent.parent.parent / "uploads" / "camera" / str(token_id)
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    stages = ["first_weight", "second_weight"]
+    cameras = [("front", "Front View"), ("top", "Top View")]
+    created = 0
+
+    for stage in stages:
+        for cam_id, cam_label in cameras:
+            ts = dt.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{cam_id}_{stage}_{ts}.jpg"
+            filepath = base_dir / filename
+            rel_path = f"uploads/camera/{token_id}/{filename}"
+
+            # Generate a fake camera image with PIL
+            try:
+                from PIL import Image, ImageDraw
+                w, h = 640, 480
+                img = Image.new("RGB", (w, h), color=(30, 30, 50))
+                draw = ImageDraw.Draw(img)
+                for y in range(h):
+                    r = int(30 + (y / h) * 40)
+                    g = int(30 + (y / h) * 20)
+                    b = int(50 + (y / h) * 60)
+                    draw.line([(0, y), (w, y)], fill=(r, g, b))
+                # Grid
+                for x in range(0, w, 80):
+                    draw.line([(x, 0), (x, h)], fill=(60, 60, 90))
+                for y2 in range(0, h, 60):
+                    draw.line([(0, y2), (w, y2)], fill=(60, 60, 90))
+                # Viewfinder box
+                box = [80, 60, 560, 420]
+                draw.rectangle(box, outline=(100, 180, 255), width=2)
+                # LIVE badge
+                draw.rectangle([box[0]+14, box[1]+14, box[0]+64, box[1]+32], fill=(200, 30, 30))
+                draw.text((box[0]+18, box[1]+16), "LIVE", fill=(255, 255, 255))
+                # Stage + Camera label
+                stage_label = "1ST WEIGHT" if stage == "first_weight" else "2ND WEIGHT"
+                draw.text((box[0]+14, box[3]-56), stage_label, fill=(255, 200, 0))
+                draw.text((box[0]+14, box[3]-36), cam_label.upper(), fill=(0, 220, 180))
+                draw.text((box[0]+14, box[3]-18), dt.now().strftime("%Y-%m-%d  %H:%M:%S"), fill=(180, 180, 180))
+                draw.text((w//2 - 50, h//2 - 8), "MOCK DATA", fill=(70, 70, 90))
+                img.save(str(filepath), "JPEG", quality=85)
+            except ImportError:
+                # No PIL — create minimal placeholder
+                filepath.write_bytes(b'\xff\xd8\xff\xe0' + b'\x00' * 100 + b'\xff\xd9')
+
+            # Upsert into token_snapshots
+            await db.execute(
+                text("""
+                    INSERT INTO token_snapshots
+                        (token_id, camera_id, camera_label, file_path, capture_status, attempts, weight_stage, captured_at)
+                    VALUES (:tid, :cid, :label, :fp, 'captured', 1, :ws, NOW())
+                    ON CONFLICT (token_id, camera_id, weight_stage) DO UPDATE
+                        SET file_path = :fp, capture_status = 'captured', captured_at = NOW()
+                """),
+                {"tid": str(token_id), "cid": cam_id, "label": cam_label, "fp": rel_path, "ws": stage},
+            )
+            created += 1
+
+    await db.commit()
+    return {"created": created, "token_id": str(token_id), "stages": stages}
 
 
 # ── Live MJPEG stream ─────────────────────────────────────────────────────────
@@ -287,6 +368,7 @@ class SnapshotResponse(BaseModel):
     attempts: int
     error_message: Optional[str] = None
     captured_at: Optional[datetime] = None
+    weight_stage: str = "second_weight"
 
 
 class TokenSnapshotsResponse(BaseModel):
@@ -336,10 +418,11 @@ async def _query_snapshots(db: AsyncSession, token_id: str) -> list[dict]:
     rows = (await db.execute(
         text("""
             SELECT id, token_id, camera_id, camera_label, file_path,
-                   capture_status, attempts, error_message, captured_at
+                   capture_status, attempts, error_message, captured_at,
+                   COALESCE(weight_stage, 'second_weight') AS weight_stage
             FROM token_snapshots
             WHERE token_id = :tid
-            ORDER BY camera_id
+            ORDER BY weight_stage, camera_id
         """),
         {"tid": token_id},
     )).fetchall()
@@ -418,6 +501,98 @@ async def test_camera_snapshot(
     return TestSnapshotResponse(success=False, error=error)
 
 
+# ── Snapshot search endpoint ──────────────────────────────────────────────────
+
+class SnapshotSearchItem(BaseModel):
+    token_id: uuid.UUID
+    token_no: Optional[str] = None
+    token_date: Optional[datetime] = None
+    vehicle_no: Optional[str] = None
+    party_name: Optional[str] = None
+    weight_stage: str
+    camera_id: str
+    camera_label: Optional[str] = None
+    url: Optional[str] = None
+    capture_status: str
+    captured_at: Optional[datetime] = None
+
+
+class SnapshotSearchResponse(BaseModel):
+    items: list[SnapshotSearchItem]
+    total: int
+
+
+@router.get("/search", response_model=SnapshotSearchResponse)
+async def search_snapshots(
+    search: str = Query("", description="Token number or vehicle number"),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Search camera snapshots by token number, vehicle number, or date range."""
+    conditions = ["ts.capture_status = 'captured'"]
+    params: dict = {}
+
+    if search.strip():
+        conditions.append("(CAST(t.token_no AS TEXT) ILIKE :q OR t.vehicle_no ILIKE :q)")
+        params["q"] = f"%{search.strip()}%"
+
+    if date_from:
+        conditions.append("t.token_date >= :df")
+        params["df"] = date_from
+    if date_to:
+        conditions.append("t.token_date <= :dt")
+        params["dt"] = date_to
+
+    where = " AND ".join(conditions)
+
+    count_row = (await db.execute(
+        text(f"""
+            SELECT COUNT(*) FROM token_snapshots ts
+            JOIN tokens t ON t.id = ts.token_id
+            WHERE {where}
+        """), params
+    )).scalar() or 0
+
+    offset = (page - 1) * page_size
+    rows = (await db.execute(
+        text(f"""
+            SELECT ts.token_id, t.token_no, t.token_date, t.vehicle_no,
+                   p.name AS party_name,
+                   COALESCE(ts.weight_stage, 'second_weight') AS weight_stage,
+                   ts.camera_id, ts.camera_label, ts.file_path,
+                   ts.capture_status, ts.captured_at
+            FROM token_snapshots ts
+            JOIN tokens t ON t.id = ts.token_id
+            LEFT JOIN parties p ON p.id = t.party_id
+            WHERE {where}
+            ORDER BY t.token_date DESC, t.token_no DESC, ts.weight_stage, ts.camera_id
+            LIMIT :lim OFFSET :off
+        """), {**params, "lim": page_size, "off": offset}
+    )).fetchall()
+
+    items = [
+        SnapshotSearchItem(
+            token_id=r._mapping["token_id"],
+            token_no=str(r._mapping["token_no"]) if r._mapping.get("token_no") is not None else None,
+            token_date=r._mapping.get("token_date"),
+            vehicle_no=r._mapping.get("vehicle_no"),
+            party_name=r._mapping.get("party_name"),
+            weight_stage=r._mapping.get("weight_stage", "second_weight"),
+            camera_id=r._mapping["camera_id"],
+            camera_label=r._mapping.get("camera_label"),
+            url=_build_url(r._mapping.get("file_path")),
+            capture_status=r._mapping["capture_status"],
+            captured_at=r._mapping.get("captured_at"),
+        )
+        for r in rows
+    ]
+    return SnapshotSearchResponse(items=items, total=count_row)
+
+
 # ── Snapshot query endpoints (under /api/v1/tokens prefix) ───────────────────
 
 @router_tokens.get("/{token_id}/snapshots", response_model=TokenSnapshotsResponse)
@@ -439,6 +614,7 @@ async def get_token_snapshots(
             attempts=r["attempts"],
             error_message=r["error_message"],
             captured_at=r["captured_at"],
+            weight_stage=r.get("weight_stage", "second_weight"),
         )
         for r in rows
     ]
@@ -464,29 +640,39 @@ async def retry_token_snapshots(
             text("""
                 UPDATE token_snapshots
                 SET capture_status = 'pending', attempts = 0, error_message = NULL
-                WHERE token_id = :tid AND camera_id = :cid
+                WHERE token_id = :tid AND camera_id = :cid AND weight_stage = :ws
             """),
-            {"tid": str(token_id), "cid": r["camera_id"]},
+            {"tid": str(token_id), "cid": r["camera_id"], "ws": r.get("weight_stage", "second_weight")},
         )
     await db.commit()
 
-    # Fire background capture
+    # Fire background capture for each stage that had failures
     import asyncio
-    asyncio.create_task(trigger_snapshot_capture(token_id))
+    stages = set(r.get("weight_stage", "second_weight") for r in failed)
+    for stage in stages:
+        asyncio.create_task(trigger_snapshot_capture(token_id, weight_stage=stage))
 
     return {"queued": len(failed), "token_id": str(token_id)}
 
 
 # ── Background capture task ───────────────────────────────────────────────────
 
-async def trigger_snapshot_capture(token_id: uuid.UUID) -> None:
+async def trigger_snapshot_capture(
+    token_id: uuid.UUID,
+    tenant_slug: str | None = None,
+    weight_stage: str = "second_weight",
+) -> None:
     """
     Fire-and-forget snapshot capture task.
-    Called from tokens.py via BackgroundTasks after second weight is committed.
+    Called from tokens.py via BackgroundTasks after first or second weight.
     Opens its own DB session — the request session is already closed.
+    tenant_slug: passed explicitly for multi-tenant background task routing.
+    weight_stage: 'first_weight' or 'second_weight' — determines which capture event.
     """
     try:
-        async with async_session() as db:
+        from app.database import get_tenant_session
+        _session_cm = await get_tenant_session(tenant_slug)
+        async with _session_cm as db:
             cfg = await _load_camera_config(db)
             if not cfg:
                 logger.debug("Camera config not set — skipping snapshot capture for token %s", token_id)
@@ -500,9 +686,9 @@ async def trigger_snapshot_capture(token_id: uuid.UUID) -> None:
                 await db.execute(
                     text("""
                         INSERT INTO token_snapshots
-                            (token_id, camera_id, camera_label, capture_status, attempts)
-                        VALUES (:tid, :cid, :label, 'pending', 0)
-                        ON CONFLICT (token_id, camera_id) DO UPDATE
+                            (token_id, camera_id, camera_label, capture_status, attempts, weight_stage)
+                        VALUES (:tid, :cid, :label, 'pending', 0, :ws)
+                        ON CONFLICT (token_id, camera_id, weight_stage) DO UPDATE
                             SET capture_status = 'pending',
                                 attempts = 0,
                                 error_message = NULL,
@@ -512,13 +698,15 @@ async def trigger_snapshot_capture(token_id: uuid.UUID) -> None:
                         "tid": str(token_id),
                         "cid": camera_id,
                         "label": cam.get("label", camera_id.capitalize()),
+                        "ws": weight_stage,
                     },
                 )
             await db.commit()
 
         # Phase 2: capture each camera (separate session per camera for isolation)
         for camera_id in CAMERA_IDS:
-            async with async_session() as db:
+            _session_cm2 = await get_tenant_session(tenant_slug)
+            async with _session_cm2 as db:
                 cfg = await _load_camera_config(db)
                 cam = cfg.get(camera_id, {})
                 if not cam.get("enabled") or not cam.get("snapshot_url", "").strip():
@@ -527,7 +715,11 @@ async def trigger_snapshot_capture(token_id: uuid.UUID) -> None:
                 logger.info("Capturing snapshot: token=%s camera=%s url=%s",
                             token_id, camera_id, cam.get("snapshot_url"))
 
-                success, rel_path, error = await capture_and_save(cam, str(token_id), camera_id)
+                # Include weight_stage in file path for separation
+                file_suffix = f"_{weight_stage}" if weight_stage != "second_weight" else ""
+                success, rel_path, error = await capture_and_save(
+                    cam, str(token_id), f"{camera_id}{file_suffix}"
+                )
 
                 if success:
                     await db.execute(
@@ -538,12 +730,12 @@ async def trigger_snapshot_capture(token_id: uuid.UUID) -> None:
                                 captured_at = NOW(),
                                 attempts = attempts + 1,
                                 error_message = NULL
-                            WHERE token_id = :tid AND camera_id = :cid
+                            WHERE token_id = :tid AND camera_id = :cid AND weight_stage = :ws
                         """),
-                        {"fp": rel_path, "tid": str(token_id), "cid": camera_id},
+                        {"fp": rel_path, "tid": str(token_id), "cid": camera_id, "ws": weight_stage},
                     )
-                    logger.info("Snapshot captured OK: token=%s camera=%s path=%s",
-                                token_id, camera_id, rel_path)
+                    logger.info("Snapshot captured OK: token=%s camera=%s stage=%s path=%s",
+                                token_id, camera_id, weight_stage, rel_path)
                 else:
                     await db.execute(
                         text("""
@@ -551,12 +743,12 @@ async def trigger_snapshot_capture(token_id: uuid.UUID) -> None:
                             SET capture_status = 'failed',
                                 attempts = attempts + 1,
                                 error_message = :err
-                            WHERE token_id = :tid AND camera_id = :cid
+                            WHERE token_id = :tid AND camera_id = :cid AND weight_stage = :ws
                         """),
-                        {"err": error, "tid": str(token_id), "cid": camera_id},
+                        {"err": error, "tid": str(token_id), "cid": camera_id, "ws": weight_stage},
                     )
-                    logger.warning("Snapshot FAILED: token=%s camera=%s error=%s",
-                                   token_id, camera_id, error)
+                    logger.warning("Snapshot FAILED: token=%s camera=%s stage=%s error=%s",
+                                   token_id, camera_id, weight_stage, error)
 
                 await db.commit()
 

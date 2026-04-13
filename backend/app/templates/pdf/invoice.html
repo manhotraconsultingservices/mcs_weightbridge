@@ -3,191 +3,540 @@
 <head>
 <meta charset="UTF-8">
 <style>
-  @page { size: A4; margin: 15mm 12mm; }
+  @page { size: A5 portrait; margin: 5mm 6mm 5mm 6mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; font-size: 11px; color: #222; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 8px; }
-  .company-name { font-size: 18px; font-weight: bold; }
-  .company-sub { font-size: 10px; color: #555; }
-  .inv-title { font-size: 16px; font-weight: bold; text-align: right; color: #1a4f9e; }
-  .inv-meta { text-align: right; font-size: 10px; }
-  .parties { display: flex; gap: 16px; margin-bottom: 8px; }
-  .party-box { flex: 1; border: 1px solid #ccc; padding: 6px 8px; border-radius: 3px; }
-  .party-box strong { font-size: 10px; color: #777; text-transform: uppercase; }
-  .party-name { font-size: 12px; font-weight: bold; margin: 2px 0; }
-  .weight-row { display: flex; gap: 8px; background: #f5f5f5; padding: 6px 10px; border-radius: 3px; margin-bottom: 8px; font-size: 10px; }
-  .weight-cell { flex: 1; text-align: center; }
-  .weight-cell .val { font-size: 13px; font-weight: bold; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-  th { background: #1a4f9e; color: white; padding: 5px 6px; text-align: left; font-size: 10px; }
-  td { padding: 4px 6px; border-bottom: 1px solid #eee; font-size: 10px; }
-  tr:nth-child(even) td { background: #f9f9f9; }
-  .text-right { text-align: right; }
-  .totals-table { width: 280px; margin-left: auto; border: 1px solid #ccc; }
-  .totals-table td { padding: 3px 8px; }
-  .totals-table .grand { font-size: 13px; font-weight: bold; background: #1a4f9e; color: white; }
-  .footer { margin-top: 16px; border-top: 1px solid #ccc; padding-top: 8px; display: flex; justify-content: space-between; font-size: 9px; color: #777; }
-  .stamp { text-align: right; }
-  .stamp .line { border-top: 1px solid #aaa; margin-top: 40px; font-size: 9px; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 9px; font-weight: bold; }
-  .badge-draft { background: #fef3c7; color: #92400e; }
-  .badge-final { background: #d1fae5; color: #065f46; }
-  .badge-cancelled { background: #fee2e2; color: #991b1b; }
+  body { font-family: Arial, sans-serif; font-size: 7.5px; color: #1a1a1a; line-height: 1.35; }
+
+  .invoice-copy { display: block; width: 100%; page-break-after: always; }
+  .invoice-copy.last-copy { page-break-after: auto; }
+
+  /* ── Company Header ─────────────────────────────── */
+  .hdr-tbl { width: 100%; border-collapse: collapse; border: 1px solid #1a3c5e; }
+  .hdr-tbl td { padding: 4px 7px; vertical-align: middle; }
+  .hdr-left  { width: 68%; border-right: 0.5px solid #bbb; }
+  .hdr-right { width: 32%; text-align: right; }
+  .hdr-name  { font-size: 11.5px; font-weight: bold; color: #1a3c5e; line-height: 1.2; }
+  .hdr-addr  { font-size: 6.5px; color: #444; margin-top: 1.5px; }
+  .hdr-gstin { font-size: 7px; font-weight: bold; color: #1a3c5e; }
+
+  /* ── Banner ─────────────────────────────────────── */
+  .banner-tbl { width: 100%; border-collapse: collapse;
+    border-left: 1px solid #1a3c5e; border-right: 1px solid #1a3c5e; border-bottom: 1px solid #1a3c5e; }
+  .banner-tbl td { padding: 2px 7px; vertical-align: middle; }
+  .banner-type { width: 38%; font-size: 8px; font-weight: bold; color: #1a3c5e;
+    text-transform: uppercase; letter-spacing: 0.5px; }
+  .banner-copy { width: 38%; text-align: center; font-size: 6px; color: #666; font-style: italic; }
+  .banner-einv { width: 24%; text-align: right; }
+  .badge-einv  { border: 0.5px solid #1a3c5e; color: #1a3c5e; font-size: 5.5px; font-weight: bold; padding: 1px 3px; }
+
+  /* ── IRN ────────────────────────────────────────── */
+  .irn-tbl { width: 100%; border-collapse: collapse;
+    border-left: 1px solid #1a3c5e; border-right: 1px solid #1a3c5e; border-bottom: 0.5px solid #ccc; }
+  .irn-tbl td { padding: 2px 6px; font-size: 6px; color: #333; vertical-align: top; line-height: 1.6; }
+
+  /* ── Party + Metadata ───────────────────────────── */
+  .info-tbl { width: 100%; border-collapse: collapse;
+    border-left: 1px solid #1a3c5e; border-right: 1px solid #1a3c5e; border-bottom: 1px solid #1a3c5e; }
+  .info-party { width: 52%; border-right: 0.5px solid #bbb; padding: 4px 6px; vertical-align: top; }
+  .info-meta  { width: 48%; vertical-align: top; padding: 0; }
+  .section-label { font-size: 5.5px; color: #1a3c5e; font-weight: bold; text-transform: uppercase;
+    letter-spacing: 0.5px; border-bottom: 0.5px solid #ddd; padding-bottom: 1px; margin-bottom: 2px; }
+  .party-name   { font-size: 9px; font-weight: bold; color: #111; line-height: 1.2; margin-bottom: 1px; }
+  .party-addr   { font-size: 6.5px; color: #333; line-height: 1.4; }
+  .party-gstin  { font-size: 6.5px; font-weight: bold; color: #1a3c5e; margin-top: 1.5px; }
+
+  /* ── Meta grid ──────────────────────────────────── */
+  .meta-tbl { width: 100%; border-collapse: collapse; }
+  .meta-tbl td { padding: 2.5px 6px; border-bottom: 0.5px solid #e8e8e8; vertical-align: top; }
+  .meta-tbl tr:last-child td { border-bottom: none; }
+  .meta-tbl .left  { width: 50%; border-right: 0.5px solid #e8e8e8; }
+  .meta-tbl .right { width: 50%; }
+  .m-label { font-size: 5.5px; color: #888; display: block; line-height: 1.2; }
+  .m-val   { font-size: 7.5px; font-weight: bold; color: #1a3c5e; display: block; margin-top: 0.5px; }
+  .m-val-sm { font-size: 7px; font-weight: bold; color: #111; display: block; margin-top: 0.5px; }
+
+  /* ── Items table ────────────────────────────────── */
+  /*  Fixed 5 cols: Sl | Description+HSN | Qty | Rate | Amount
+      NOTE: Use ps['items'] (subscript) in Jinja, NOT ps.items
+            because Python dict.items() method shadows the key.
+      Width planning (A5 = 136mm effective):
+        Sl=5% (6.8mm)  Desc=auto (~54%)  Qty=11% (15mm)
+        Rate=10% (13.6mm)  Amount=20% (27mm → fits "1,722,000.00")       */
+  .items-tbl { width: 100%; border-collapse: collapse;
+    border-left: 1px solid #1a3c5e; border-right: 1px solid #1a3c5e; border-bottom: 1px solid #1a3c5e; }
+  .items-tbl thead tr { border-bottom: 1.5px solid #1a3c5e; }
+  .items-tbl thead th { padding: 2px 3px; font-size: 7px; font-weight: bold; color: #1a3c5e;
+    text-align: center; border-right: 0.5px solid #ccc; white-space: nowrap; }
+  .items-tbl thead th.tl { text-align: left; white-space: normal; }
+  .items-tbl thead th:last-child { border-right: none; }
+  .items-tbl tbody td { padding: 2px 3px; font-size: 7.5px; border-right: 0.5px solid #e5e5e5;
+    border-bottom: 0.5px solid #e8e8e8; vertical-align: top; }
+  .items-tbl tbody td:last-child { border-right: none; }
+  .items-tbl tbody tr:last-child td { border-bottom: none; }
+  .num-cell { white-space: nowrap; }
+  .desc-main { font-size: 7.5px; font-weight: bold; color: #111; }
+  .desc-hsn  { font-size: 6.5px; color: #1a3c5e; font-weight: bold; margin-top: 1px; }
+
+  /* inline tax rows */
+  .tax-row td { font-size: 6.5px; color: #555; font-style: italic; padding: 1px 3px;
+    border-bottom: none; border-right: 0.5px solid #e5e5e5; vertical-align: middle; }
+  .tax-row td:last-child { border-right: none; }
+
+  /* total + ftr rows */
+  .total-row { border-top: 1.5px solid #1a3c5e; }
+  .total-row td { padding: 2px 3px; font-size: 7.5px; font-weight: bold; color: #1a3c5e;
+    border-right: 0.5px solid #ccc; white-space: nowrap; }
+  .total-row td:last-child { border-right: none; }
+  .ftr-row td { padding: 1.5px 3px; font-size: 6.5px; border-right: 0.5px solid #e5e5e5;
+    border-bottom: 0.5px solid #eee; vertical-align: middle; }
+  .ftr-row td:last-child { border-right: none; }
+
+  /* ── Amount in words ────────────────────────────── */
+  .amt-words { border-left: 1px solid #1a3c5e; border-right: 1px solid #1a3c5e;
+    border-bottom: 0.5px solid #ddd; padding: 2px 6px; }
+  .amt-lbl  { font-size: 5.5px; color: #888; }
+  .amt-text { font-size: 7px; font-weight: bold; margin-top: 1px; }
+  .eoe { float: right; font-size: 5.5px; color: #aaa; }
+
+  /* ── HSN Summary ────────────────────────────────── */
+  /*  Compact 6-col layout (intra-state):
+      HSN/SAC | Taxable Value | GST Rate | CGST (Rs.) | SGST (Rs.) | Total Tax
+      Compact 5-col layout (inter-state):
+      HSN/SAC | Taxable Value | IGST Rate | IGST (Rs.) | Total Tax           */
+  .hsn-wrap { border-left: 1px solid #1a3c5e; border-right: 1px solid #1a3c5e; border-bottom: 0.5px solid #ddd; }
+  .hsn-tbl  { width: 100%; border-collapse: collapse; }
+  .hsn-tbl thead tr { border-bottom: 1px solid #1a3c5e; }
+  .hsn-tbl thead th { padding: 2.5px 3px; font-size: 6px; font-weight: bold; color: #1a3c5e;
+    text-align: center; border-right: 0.5px solid #ccc; line-height: 1.4; }
+  .hsn-tbl thead th:last-child { border-right: none; }
+  .hsn-tbl tbody td { padding: 2px 3px; font-size: 6.5px; text-align: center;
+    border-right: 0.5px solid #e5e5e5; border-bottom: 0.5px solid #e5e5e5; }
+  .hsn-tbl tbody td:last-child { border-right: none; }
+  .hsn-tbl tfoot tr { border-top: 1px solid #1a3c5e; }
+  .hsn-tbl tfoot td { padding: 2.5px 3px; font-size: 6.5px; text-align: center;
+    font-weight: bold; color: #1a3c5e; border-right: 0.5px solid #ccc; }
+  .hsn-tbl tfoot td:last-child { border-right: none; }
+
+  /* ── Tax words ──────────────────────────────────── */
+  .tax-words { border-left: 1px solid #1a3c5e; border-right: 1px solid #1a3c5e;
+    border-bottom: 0.5px solid #ddd; padding: 1.5px 6px; font-size: 6.5px; }
+
+  /* ── Footer ─────────────────────────────────────── */
+  .footer-tbl { width: 100%; border-collapse: collapse; border: 1px solid #1a3c5e; }
+  .footer-tbl td { padding: 4px 6px; vertical-align: top; }
+  .footer-bank { width: 58%; border-right: 0.5px solid #bbb; }
+  .footer-sign { width: 42%; text-align: right; }
+  .f-label  { font-size: 5.5px; color: #1a3c5e; font-weight: bold; text-transform: uppercase;
+    letter-spacing: 0.3px; margin-bottom: 1.5px; }
+  .f-text   { font-size: 6.5px; color: #333; line-height: 1.5; }
+  .sign-line { border-top: 0.5px solid #999; margin-top: 18px; padding-top: 2px;
+    font-size: 6.5px; color: #333; text-align: center; }
+
+  .comp-gen { text-align: center; font-size: 5.5px; color: #aaa; font-style: italic; margin-top: 2px; }
+  .divider  { border-top: 0.5px solid #e0e0e0; margin: 2px 0; }
+  .tr { text-align: right; }
+  .tc { text-align: center; }
+  .tl { text-align: left; }
+  .bold { font-weight: bold; }
 </style>
 </head>
 <body>
 
-<!-- Header -->
-<div class="header">
-  <div>
-    <div class="company-name">{{ company.name }}</div>
-    <div class="company-sub">
-      {% if company.gstin %}GSTIN: {{ company.gstin }}{% endif %}
-      {% if company.pan %} &nbsp;|&nbsp; PAN: {{ company.pan }}{% endif %}
-    </div>
-    <div class="company-sub">{{ company.address_line1 }}{% if company.city %}, {{ company.city }}{% endif %}{% if company.state %}, {{ company.state }}{% endif %}{% if company.pincode %} - {{ company.pincode }}{% endif %}</div>
-    {% if company.phone %}<div class="company-sub">Ph: {{ company.phone }}</div>{% endif %}
-  </div>
-  <div>
-    <div class="inv-title">
-      {% if invoice.invoice_type == 'purchase' %}PURCHASE INVOICE{% elif invoice.tax_type == 'non_gst' %}BILL OF SUPPLY{% else %}TAX INVOICE{% endif %}
-      &nbsp;<span class="badge badge-{{ invoice.status }}">{{ invoice.status | upper }}</span>
-    </div>
-    <div class="inv-meta">
-      <strong>Invoice No:</strong> {{ invoice.invoice_no }}<br>
-      <strong>Date:</strong> {{ invoice.invoice_date.strftime('%d-%m-%Y') }}<br>
-      {% if invoice.due_date %}<strong>Due:</strong> {{ invoice.due_date.strftime('%d-%m-%Y') }}<br>{% endif %}
-    </div>
-  </div>
-</div>
+{% macro fmt(v) %}{{ '{:,.2f}'.format(v) }}{% endmacro %}
+{% macro fmt3(v) %}{{ '{:,.3f}'.format(v) }}{% endmacro %}
 
-<!-- Parties -->
-<div class="parties">
-  <div class="party-box">
-    <strong>{{ 'Supplier' if invoice.invoice_type == 'purchase' else 'Bill To' }}</strong>
-    {% if party %}
-    <div class="party-name">{{ party.name }}</div>
-    {% if party.gstin %}<div>GSTIN: {{ party.gstin }}</div>{% endif %}
-    {% if party.billing_city %}<div>{{ party.billing_city }}{% if party.billing_state %}, {{ party.billing_state }}{% endif %}</div>{% endif %}
-    {% if party.phone %}<div>Ph: {{ party.phone }}</div>{% endif %}
-    {% else %}
-    <div class="party-name">{{ invoice.customer_name or 'Walk-in / Cash Customer' }}</div>
-    <div style="color:#aaa; font-size:9px;">B2C / Unregistered</div>
-    {% endif %}
-  </div>
-  <div class="party-box">
-    <strong>Transport Details</strong>
-    {% if invoice.vehicle_no %}<div><b>Vehicle:</b> {{ invoice.vehicle_no }}</div>{% endif %}
-    {% if invoice.transporter_name %}<div><b>Transporter:</b> {{ invoice.transporter_name }}</div>{% endif %}
-    {% if invoice.eway_bill_no %}<div><b>E-way Bill:</b> {{ invoice.eway_bill_no }}</div>{% endif %}
-    {% if not invoice.vehicle_no and not invoice.transporter_name %}<div style="color:#aaa">—</div>{% endif %}
-  </div>
-</div>
+{#
+  IMPORTANT: Use ps['items'] NOT ps.items in Jinja2.
+  Python dict.items() method shadows the 'items' key when using dot notation.
+  ps['items'] uses __getitem__ and correctly returns the settings dict.
+#}
 
-<!-- Weight summary (if present) -->
-{% if invoice.net_weight %}
-<div class="weight-row">
-  <div class="weight-cell"><div>Gross Weight</div><div class="val">{{ '%.2f' % invoice.gross_weight }} kg</div></div>
-  <div class="weight-cell"><div>Tare Weight</div><div class="val">{{ '%.2f' % invoice.tare_weight }} kg</div></div>
-  <div class="weight-cell"><div>Net Weight</div><div class="val">{{ '%.2f' % invoice.net_weight }} kg</div></div>
-  <div class="weight-cell"><div>Net Weight (MT)</div><div class="val">{{ '%.3f' % (invoice.net_weight / 1000) }} MT</div></div>
-</div>
-{% endif %}
+{% macro invoice_copy(copy_label, is_last) %}
+{% set psi = ps['items'] %}
+{% set psp = ps['party'] %}
+{% set psm = ps['metadata'] %}
+{% set pss = ps['sections'] %}
+{% set psc = ps['company'] %}
+{% set show_rate = psi['show_rate'] if 'show_rate' in psi else true %}
+<div class="invoice-copy{% if is_last %} last-copy{% endif %}">
 
-<!-- Items table -->
-<table>
-  <thead>
+  {# ═══ HEADER ════════════════════════════════════ #}
+  <table class="hdr-tbl">
     <tr>
-      <th>#</th>
-      <th>Description / Material</th>
-      <th>HSN</th>
-      <th class="text-right">Qty</th>
-      <th>Unit</th>
-      <th class="text-right">Rate (₹)</th>
-      <th class="text-right">Amount (₹)</th>
-      {% if invoice.tax_type == 'gst' %}
-      <th class="text-right">GST%</th>
-      <th class="text-right">Tax (₹)</th>
-      {% endif %}
-      <th class="text-right">Total (₹)</th>
+      <td class="hdr-left">
+        <div class="hdr-name">{{ company.name }}</div>
+        {% if psc.show_tagline and psc.tagline %}
+        <div class="hdr-addr" style="font-style:italic;">{{ psc.tagline }}</div>
+        {% endif %}
+        {% if psc.show_address %}
+        <div class="hdr-addr">
+          {% if company.address_line1 %}{{ company.address_line1 }}{% if company.address_line2 %}, {{ company.address_line2 }}{% endif %}{% if company.city %}, {{ company.city }}, {{ company.state }}{% if company.pincode %} - {{ company.pincode }}{% endif %}{% endif %}{% endif %}
+        </div>
+        {% endif %}
+        <div class="hdr-addr">
+          {% if psc.show_phone and company.phone %}Ph: {{ company.phone }}{% endif %}
+          {% if psc.show_email and company.email %}&nbsp;&nbsp;{{ company.email }}{% endif %}
+        </div>
+      </td>
+      <td class="hdr-right">
+        {% if psc.show_gstin and company.gstin %}
+        <div class="hdr-addr" style="font-size:5.5px; color:#888;">GSTIN</div>
+        <div class="hdr-gstin">{{ company.gstin }}</div>
+        {% endif %}
+        {% if psc.show_state and company.state %}
+        <div class="hdr-addr">State: {{ company.state }}{% if company.state_code %} ({{ company.state_code }}){% endif %}</div>
+        {% endif %}
+      </td>
     </tr>
-  </thead>
-  <tbody>
-    {% for item in invoice.items %}
+  </table>
+
+  {# ═══ BANNER ═════════════════════════════════════ #}
+  <table class="banner-tbl">
     <tr>
-      <td>{{ loop.index }}</td>
-      <td>{{ item.description or item.product_id }}</td>
-      <td>{{ item.hsn_code or '' }}</td>
-      <td class="text-right">{{ '%.3f' % item.quantity }}</td>
-      <td>{{ item.unit }}</td>
-      <td class="text-right">{{ '%.2f' % item.rate }}</td>
-      <td class="text-right">{{ '%.2f' % item.amount }}</td>
-      {% if invoice.tax_type == 'gst' %}
-      <td class="text-right">{{ '%.0f' % item.gst_rate }}%</td>
-      <td class="text-right">{{ '%.2f' % (item.cgst_amount + item.sgst_amount + item.igst_amount) }}</td>
-      {% endif %}
-      <td class="text-right">{{ '%.2f' % item.total_amount }}</td>
+      <td class="banner-type">
+        {% if invoice.invoice_type == 'purchase' %}Purchase Invoice
+        {% elif invoice.tax_type == 'non_gst' %}Bill of Supply
+        {% else %}Tax Invoice{% endif %}
+      </td>
+      <td class="banner-copy">( {{ copy_label }} )</td>
+      <td class="banner-einv">
+        {% if invoice.irn %}<span class="badge-einv">e-Invoice</span>{% endif %}
+      </td>
     </tr>
-    {% endfor %}
-  </tbody>
-</table>
+  </table>
 
-<!-- Totals -->
-<div style="display:flex; justify-content: flex-end;">
-<table class="totals-table">
-  <tr><td>Subtotal</td><td class="text-right">₹ {{ '%.2f' % invoice.subtotal }}</td></tr>
-  {% if invoice.discount_amount > 0 %}
-  <tr><td>Discount</td><td class="text-right">- ₹ {{ '%.2f' % invoice.discount_amount }}</td></tr>
-  <tr><td>Taxable Amount</td><td class="text-right">₹ {{ '%.2f' % invoice.taxable_amount }}</td></tr>
+  {# ═══ IRN ════════════════════════════════════════ #}
+  {% if invoice.irn %}
+  <table class="irn-tbl">
+    <tr>
+      <td>
+        <b>IRN:</b> {{ invoice.irn }}<br>
+        <b>Ack No:</b> {{ invoice.irn_ack_no or '' }} &nbsp;&nbsp;
+        <b>Ack Date:</b> {{ invoice.irn_ack_date.strftime('%d-%b-%Y') if invoice.irn_ack_date else '' }}
+      </td>
+      {% if qr_code_img %}
+      <td style="width:48px; text-align:right;">
+        <img src="data:image/png;base64,{{ qr_code_img }}" style="width:44px;height:44px;" alt="QR"/>
+      </td>
+      {% endif %}
+    </tr>
+  </table>
   {% endif %}
-  {% if invoice.tax_type == 'gst' %}
-    {% if invoice.cgst_amount > 0 %}
-    <tr><td>CGST</td><td class="text-right">₹ {{ '%.2f' % invoice.cgst_amount }}</td></tr>
-    <tr><td>SGST</td><td class="text-right">₹ {{ '%.2f' % invoice.sgst_amount }}</td></tr>
-    {% endif %}
-    {% if invoice.igst_amount > 0 %}
-    <tr><td>IGST</td><td class="text-right">₹ {{ '%.2f' % invoice.igst_amount }}</td></tr>
-    {% endif %}
-  {% endif %}
-  {% if invoice.freight > 0 %}
-  <tr><td>Freight</td><td class="text-right">₹ {{ '%.2f' % invoice.freight }}</td></tr>
-  {% endif %}
-  {% if invoice.tcs_amount > 0 %}
-  <tr><td>TCS ({{ '%.2f' % invoice.tcs_rate }}%)</td><td class="text-right">₹ {{ '%.2f' % invoice.tcs_amount }}</td></tr>
-  {% endif %}
-  {% if invoice.round_off != 0 %}
-  <tr><td>Round Off</td><td class="text-right">₹ {{ '%.2f' % invoice.round_off }}</td></tr>
-  {% endif %}
-  <tr class="grand"><td>Grand Total</td><td class="text-right">₹ {{ '%.2f' % invoice.grand_total }}</td></tr>
-  {% if invoice.amount_paid > 0 %}
-  <tr><td>Amount Paid</td><td class="text-right">₹ {{ '%.2f' % invoice.amount_paid }}</td></tr>
-  <tr><td><b>Balance Due</b></td><td class="text-right"><b>₹ {{ '%.2f' % invoice.amount_due }}</b></td></tr>
-  {% endif %}
-</table>
-</div>
 
-{% if invoice.notes %}
-<div style="margin-top:10px; font-size:10px; color:#555;"><b>Notes:</b> {{ invoice.notes }}</div>
-{% endif %}
+  {# ═══ BILL-TO + METADATA ═════════════════════════ #}
+  <table class="info-tbl">
+    <tr>
+      <td class="info-party">
+        <div class="section-label">Bill To</div>
+        {% if party %}
+          <div class="party-name">{{ party.name }}</div>
+          {% if psp.show_address %}
+            {% if party.billing_address %}<div class="party-addr">{{ party.billing_address }}</div>{% endif %}
+            {% if party.billing_city %}
+            <div class="party-addr">{{ party.billing_city }}{% if party.billing_state %}, {{ party.billing_state }}{% endif %}{% if party.billing_pincode %} - {{ party.billing_pincode }}{% endif %}</div>
+            {% endif %}
+          {% endif %}
+          {% if psp.show_gstin and party.gstin %}<div class="party-gstin">GSTIN: {{ party.gstin }}</div>{% endif %}
+          {% if psp.show_state and party.billing_state %}<div class="party-addr">State: {{ party.billing_state }}{% if party.billing_state_code %} ({{ party.billing_state_code }}){% endif %}</div>{% endif %}
+        {% else %}
+          <div class="party-name">{{ invoice.customer_name or 'Walk-in / Cash Customer' }}</div>
+        {% endif %}
+        {% if psp.show_consignee and party %}
+        <div class="divider"></div>
+        <div class="section-label" style="margin-top:2px;">Ship To (Consignee)</div>
+        <div style="font-size:7px; font-weight:bold;">{{ party.name }}</div>
+        {% if party.billing_city %}<div class="party-addr">{{ party.billing_city | upper }}</div>{% endif %}
+        {% endif %}
+      </td>
+      <td class="info-meta">
+        <table class="meta-tbl">
+          <tr>
+            <td class="left">
+              <span class="m-label">Invoice No.</span>
+              <span class="m-val">{{ invoice.invoice_no or 'DRAFT' }}</span>
+            </td>
+            <td class="right">
+              <span class="m-label">Date</span>
+              <span class="m-val">{{ invoice.invoice_date.strftime('%d-%b-%Y') }}</span>
+            </td>
+          </tr>
+          <tr>
+            <td class="left">
+              <span class="m-label">Vehicle No.</span>
+              <span class="m-val-sm">{{ invoice.vehicle_no or '—' }}</span>
+            </td>
+            <td class="right">
+              <span class="m-label">Token / D.Note</span>
+              <span class="m-val-sm">{% if token and token.token_no %}{{ token.token_no }}{% else %}—{% endif %}</span>
+            </td>
+          </tr>
+          <tr>
+            <td class="left">
+              <span class="m-label">Place of Supply</span>
+              <span class="m-val-sm">{% if party and party.billing_state %}{{ party.billing_state }}{% if party.billing_state_code %} ({{ party.billing_state_code }}){% endif %}{% else %}—{% endif %}</span>
+            </td>
+            <td class="right">
+              <span class="m-label">Destination</span>
+              <span class="m-val-sm">{% if party and party.billing_city %}{{ party.billing_city | upper }}{% else %}—{% endif %}</span>
+            </td>
+          </tr>
+          {% if psm.show_other_ref and invoice.eway_bill_no %}
+          <tr>
+            <td colspan="2">
+              <span class="m-label">E-Way Bill No.</span>
+              <span class="m-val-sm">{{ invoice.eway_bill_no }}</span>
+            </td>
+          </tr>
+          {% endif %}
+        </table>
+      </td>
+    </tr>
+  </table>
 
-<!-- Bank details -->
-{% if company.bank_name %}
-<div style="margin-top:8px; font-size:10px; border: 1px solid #ccc; padding: 6px 8px; border-radius:3px;">
-  <b>Bank Details:</b> {{ company.bank_name }} &nbsp;|&nbsp; A/C: {{ company.bank_account_no }} &nbsp;|&nbsp; IFSC: {{ company.bank_ifsc }}
-  {% if company.bank_branch %} &nbsp;|&nbsp; Branch: {{ company.bank_branch }}{% endif %}
-</div>
-{% endif %}
+  {# ═══ ITEMS TABLE ════════════════════════════════ #}
+  {#
+    Columns (5 or 4):
+      1. Sl (5%)
+      2. Description + HSN/SAC inline (auto)
+      3. Qty (15%)
+      4. Rate/MT (13%, if show_rate)
+      5. Amount (14%)
 
-<div class="footer">
-  <div>
-    <div>This is a computer generated invoice.</div>
-    {% if invoice.payment_mode %}<div>Payment Mode: {{ invoice.payment_mode | title }}</div>{% endif %}
+    Tax rows: Sl(empty) | label(colspan=2) | Rate(empty) | Amount
+    ── colspan=2 spans Description+Qty cols — always correct ──
+  #}
+  <table class="items-tbl">
+    <colgroup>
+      <col style="width:6%;"/>    {# Sl — fits "99" #}
+      <col/>                      {# Description+HSN (auto ≈ 52%) #}
+      <col style="width:11%;"/>   {# Qty #}
+      {% if show_rate %}<col style="width:12%;"/>{% endif %}  {# Rate #}
+      <col style="width:15%;"/>   {# Amount — fits "99,999.00" lakh-range #}
+    </colgroup>
+    <thead>
+      <tr>
+        <th class="tc">Sl.No</th>
+        <th class="tl">Description of Goods / HSN-SAC</th>
+        <th class="tc">Qty</th>
+        {% if show_rate %}<th class="tc">Rate</th>{% endif %}
+        <th class="tr" style="padding-right:4px;">Amount<br><span style="font-size:5px; font-weight:normal; color:#666;">(Rs.)</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in invoice.items %}
+      <tr>
+        <td class="tc" style="vertical-align:middle;">{{ loop.index }}</td>
+        <td class="tl">
+          <div class="desc-main">{{ item.description or '' }}</div>
+          {% if item.hsn_code %}<div class="desc-hsn">HSN: {{ item.hsn_code }}</div>{% endif %}
+        </td>
+        <td class="tc">
+          <div class="bold">{{ fmt3(item.quantity) }}</div>
+          <div style="font-size:6px; color:#888;">{{ item.unit }}</div>
+        </td>
+        {% if show_rate %}<td class="tr num-cell">{{ fmt(item.rate) }}</td>{% endif %}
+        <td class="tr bold num-cell" style="padding-right:4px;">{{ fmt(item.amount) }}</td>
+      </tr>
+      {# GST inline rows — colspan=2 always covers Description+Qty #}
+      {% if psi['show_tax_inline'] and invoice.tax_type == 'gst' %}
+        {% if item.cgst_amount > 0 %}
+        <tr class="tax-row">
+          <td></td>
+          <td class="tr" colspan="2" style="padding-right:4px;">CGST @ {{ '%.2f' % (item.gst_rate / 2) }}%</td>
+          {% if show_rate %}<td></td>{% endif %}
+          <td class="tr" style="padding-right:4px;">{{ fmt(item.cgst_amount) }}</td>
+        </tr>
+        <tr class="tax-row">
+          <td></td>
+          <td class="tr" colspan="2" style="padding-right:4px;">SGST @ {{ '%.2f' % (item.gst_rate / 2) }}%</td>
+          {% if show_rate %}<td></td>{% endif %}
+          <td class="tr" style="padding-right:4px;">{{ fmt(item.sgst_amount) }}</td>
+        </tr>
+        {% endif %}
+        {% if item.igst_amount > 0 %}
+        <tr class="tax-row">
+          <td></td>
+          <td class="tr" colspan="2" style="padding-right:4px;">IGST @ {{ '%.2f' % item.gst_rate }}%</td>
+          {% if show_rate %}<td></td>{% endif %}
+          <td class="tr" style="padding-right:4px;">{{ fmt(item.igst_amount) }}</td>
+        </tr>
+        {% endif %}
+      {% endif %}
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      {% if invoice.freight > 0 %}
+      <tr class="ftr-row">
+        <td></td>
+        <td class="tr" colspan="2" style="padding-right:4px; color:#555;">Freight Charges</td>
+        {% if show_rate %}<td></td>{% endif %}
+        <td class="tr" style="padding-right:4px; color:#555;">{{ fmt(invoice.freight) }}</td>
+      </tr>
+      {% endif %}
+      {% if invoice.discount_amount > 0 %}
+      <tr class="ftr-row">
+        <td></td>
+        <td class="tr" colspan="2" style="padding-right:4px; color:#c0392b;">
+          Discount ({{ invoice.discount_type | title }} {{ invoice.discount_value }}{% if invoice.discount_type == 'percentage' %}%{% endif %})
+        </td>
+        {% if show_rate %}<td></td>{% endif %}
+        <td class="tr" style="padding-right:4px; color:#c0392b;">({{ fmt(invoice.discount_amount) }})</td>
+      </tr>
+      {% endif %}
+      {% if invoice.tcs_amount > 0 %}
+      <tr class="ftr-row">
+        <td></td>
+        <td class="tr" colspan="2" style="padding-right:4px;">TCS @ {{ '%.2f' % invoice.tcs_rate }}%</td>
+        {% if show_rate %}<td></td>{% endif %}
+        <td class="tr" style="padding-right:4px;">{{ fmt(invoice.tcs_amount) }}</td>
+      </tr>
+      {% endif %}
+      {% if invoice.round_off != 0 %}
+      <tr class="ftr-row">
+        <td></td>
+        <td class="tr" colspan="2" style="padding-right:4px; color:#777;">Round Off</td>
+        {% if show_rate %}<td></td>{% endif %}
+        <td class="tr" style="padding-right:4px; color:#777;">{{ fmt(invoice.round_off) }}</td>
+      </tr>
+      {% endif %}
+      <tr class="total-row">
+        <td class="tc">{{ invoice.items | length }}</td>
+        <td class="tl bold">TOTAL</td>
+        <td class="tc" style="font-size:6.5px;">
+          {% if psi['show_qty_total'] and invoice.items %}
+          <div>{{ fmt3(invoice.items | sum(attribute='quantity')) }}</div>
+          <div style="font-size:5.5px; color:#555;">{{ invoice.items[0].unit }}</div>
+          {% endif %}
+        </td>
+        {% if show_rate %}<td></td>{% endif %}
+        <td class="tr num-cell" style="font-size:8.5px; padding-right:4px;">Rs. {{ fmt(invoice.grand_total) }}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  {# ═══ AMOUNT IN WORDS ════════════════════════════ #}
+  {% if pss['show_amount_words'] %}
+  <div class="amt-words">
+    <span class="eoe">E. &amp; O.E</span>
+    <div class="amt-lbl">Amount Chargeable (in words)</div>
+    <div class="amt-text">{{ amount_in_words(invoice.grand_total) }}</div>
   </div>
-  <div class="stamp">
-    <div>For <b>{{ company.name }}</b></div>
-    <div class="line">Authorised Signatory</div>
+  {% endif %}
+
+  {# ═══ HSN / TAX SUMMARY ══════════════════════════ #}
+  {#
+    Compact 6-col layout for intra-state:
+      HSN/SAC | Taxable Value (Rs.) | GST Rate | CGST (Rs.) | SGST (Rs.) | Total Tax (Rs.)
+    Compact 5-col layout for inter-state:
+      HSN/SAC | Taxable Value (Rs.) | IGST Rate | IGST (Rs.) | Total Tax (Rs.)
+  #}
+  {% if pss['show_hsn_summary'] and invoice.tax_type == 'gst' %}
+  {% set use_igst = invoice.igst_amount > 0 %}
+  {% set use_cgst = invoice.cgst_amount > 0 or invoice.sgst_amount > 0 %}
+  <div class="hsn-wrap">
+    <table class="hsn-tbl">
+      <colgroup>
+        <col style="width:10%;"/>   {# HSN #}
+        <col style="width:22%;"/>   {# Taxable Value #}
+        <col style="width:9%;"/>    {# GST Rate % #}
+        {% if use_cgst %}
+        <col style="width:16%;"/>   {# CGST (Rs.) #}
+        <col style="width:16%;"/>   {# SGST (Rs.) #}
+        {% endif %}
+        {% if use_igst %}
+        <col style="width:20%;"/>   {# IGST (Rs.) #}
+        {% endif %}
+        <col/>                      {# Total Tax (auto ≈ 27%) #}
+      </colgroup>
+      <thead>
+        <tr>
+          <th style="text-align:left; padding-left:5px;">HSN/SAC</th>
+          <th>Taxable<br>Value (Rs.)</th>
+          <th>GST<br>Rate</th>
+          {% if use_cgst %}<th>CGST<br>(Rs.)</th><th>SGST<br>(Rs.)</th>{% endif %}
+          {% if use_igst %}<th>IGST<br>(Rs.)</th>{% endif %}
+          <th>Total<br>Tax (Rs.)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in invoice.items %}
+        <tr>
+          <td style="text-align:left; padding-left:5px; font-weight:bold; color:#1a3c5e;">{{ item.hsn_code or '' }}</td>
+          <td class="tr">{{ fmt(item.amount) }}</td>
+          <td class="tc">{{ '%.0f' % item.gst_rate }}%</td>
+          {% if use_cgst %}
+          <td class="tr">{% if item.cgst_amount > 0 %}{{ fmt(item.cgst_amount) }}{% endif %}</td>
+          <td class="tr">{% if item.sgst_amount > 0 %}{{ fmt(item.sgst_amount) }}{% endif %}</td>
+          {% endif %}
+          {% if use_igst %}
+          <td class="tr">{% if item.igst_amount > 0 %}{{ fmt(item.igst_amount) }}{% endif %}</td>
+          {% endif %}
+          <td class="tr bold">{{ fmt(item.cgst_amount + item.sgst_amount + item.igst_amount) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td style="text-align:left; padding-left:5px;">Total</td>
+          <td class="tr">{{ fmt(invoice.taxable_amount) }}</td>
+          <td></td>
+          {% if use_cgst %}
+          <td class="tr">{{ fmt(invoice.cgst_amount) }}</td>
+          <td class="tr">{{ fmt(invoice.sgst_amount) }}</td>
+          {% endif %}
+          {% if use_igst %}
+          <td class="tr">{{ fmt(invoice.igst_amount) }}</td>
+          {% endif %}
+          <td class="tr">{{ fmt(invoice.cgst_amount + invoice.sgst_amount + invoice.igst_amount) }}</td>
+        </tr>
+      </tfoot>
+    </table>
   </div>
+  {% if pss['show_tax_words'] %}
+  <div class="tax-words">
+    <b>Tax Amount (in words):</b> {{ amount_in_words(invoice.cgst_amount + invoice.sgst_amount + invoice.igst_amount) }}
+  </div>
+  {% endif %}
+  {% endif %}
+
+  {# ═══ FOOTER ═════════════════════════════════════ #}
+  <table class="footer-tbl">
+    <tr>
+      <td class="footer-bank">
+        {% if pss['show_bank_details'] and company.bank_name %}
+        <div class="f-label">Bank Details</div>
+        <div class="f-text">
+          <b>{{ company.bank_name }}</b>{% if company.bank_branch %}, {{ company.bank_branch }}{% endif %}<br>
+          A/C: <b>{{ company.bank_account_no }}</b>&nbsp;|&nbsp;IFSC: <b>{{ company.bank_ifsc }}</b>
+        </div>
+        {% if pss['show_declaration'] %}<div class="divider" style="margin-top:3px;"></div>{% endif %}
+        {% endif %}
+        {% if pss['show_declaration'] %}
+        <div class="f-label">Declaration</div>
+        <div class="f-text">We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.</div>
+        {% endif %}
+      </td>
+      {% if pss['show_signature'] %}
+      <td class="footer-sign">
+        <div class="f-label" style="text-align:right;">For {{ company.name }}</div>
+        <div class="sign-line">Authorised Signatory</div>
+      </td>
+      {% endif %}
+    </tr>
+  </table>
+
+  {% if pss['show_computer_generated'] %}
+  <div class="comp-gen">This is a Computer Generated Invoice</div>
+  {% endif %}
+
 </div>
+{% endmacro %}
+
+{% set copies = ps['copies'] if 'copies' in ps else 1 %}
+{% set labels = ps['copy_labels'] if 'copy_labels' in ps else ["ORIGINAL FOR RECIPIENT", "DUPLICATE FOR TRANSPORTER", "TRIPLICATE FOR SUPPLIER"] %}
+{% for i in range(copies) %}
+{{ invoice_copy(labels[i] if i < labels | length else 'COPY ' ~ (i + 1), loop.last) }}
+{% endfor %}
 
 </body>
 </html>

@@ -110,13 +110,14 @@ async def _send_notification_bg(
     context: dict,
     entity_type: str | None = None,
     entity_id: str | None = None,
+    tenant_slug: str | None = None,
 ) -> None:
     """Background-task wrapper: opens its own DB session and fires a notification."""
     import logging as _logging
     try:
-        from app.database import async_session
-        from app.integrations.notifications.service import send_notification
-        async with async_session() as db:
+        from app.database import get_tenant_session
+        async with await get_tenant_session(tenant_slug) as db:
+            from app.integrations.notifications.service import send_notification
             await send_notification(db, company_id, event_type, context, entity_type, entity_id)
     except Exception as exc:
         _logging.getLogger(__name__).warning("Background notification failed [%s]: %s", event_type, exc)
@@ -325,6 +326,7 @@ async def create_token(
         product_id=payload.product_id,
         vehicle_no=payload.vehicle_no.upper().strip(),
         vehicle_id=payload.vehicle_id,
+        vehicle_type=payload.vehicle_type,
         driver_id=payload.driver_id,
         transporter_id=payload.transporter_id,
         remarks=payload.remarks,
@@ -484,10 +486,15 @@ async def record_first_weight(
 
     await db.commit()
 
-    # Purchase tokens: capture snapshot at 1st weight (loaded truck arriving — gross weight)
-    if token.token_type == "purchase":
-        from app.routers.cameras import trigger_snapshot_capture
-        background_tasks.add_task(trigger_snapshot_capture, token_id)
+    # Capture snapshot at 1st weight for ALL token types
+    _bg_tenant_1w = None
+    try:
+        from app.multitenancy.context import current_tenant_slug
+        _bg_tenant_1w = current_tenant_slug.get()
+    except Exception:
+        pass
+    from app.routers.cameras import trigger_snapshot_capture
+    background_tasks.add_task(trigger_snapshot_capture, token_id, _bg_tenant_1w, "first_weight")
 
     return await _load_token(db, token_id)
 
@@ -528,6 +535,14 @@ async def record_second_weight(
     await db.commit()
 
     # ── Fire token_completed notification (background, non-blocking) ──────────
+    # Capture tenant slug BEFORE dispatching background task
+    _bg_tenant = None
+    try:
+        from app.multitenancy.context import current_tenant_slug
+        _bg_tenant = current_tenant_slug.get()
+    except Exception:
+        pass
+
     _notify_ctx = {
         "token_no": token.token_no or "PENDING",
         "vehicle_no": token.vehicle_no or "—",
@@ -539,14 +554,12 @@ async def record_second_weight(
     }
     background_tasks.add_task(
         _send_notification_bg,
-        company.id, "token_completed", _notify_ctx, "token", str(token.id),
+        company.id, "token_completed", _notify_ctx, "token", str(token.id), _bg_tenant,
     )
 
-    # Sale tokens: capture snapshot at 2nd weight (loaded truck departing — gross weight)
-    # Purchase tokens: already captured at 1st weight, skip here
-    if token.token_type == "sale":
-        from app.routers.cameras import trigger_snapshot_capture
-        background_tasks.add_task(trigger_snapshot_capture, token_id)
+    # Capture snapshot at 2nd weight for ALL token types
+    from app.routers.cameras import trigger_snapshot_capture
+    background_tasks.add_task(trigger_snapshot_capture, token_id, _bg_tenant, "second_weight")
 
     return await _load_token(db, token_id)
 

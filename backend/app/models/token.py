@@ -27,6 +27,7 @@ class Token(Base):
     product_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("products.id"))
 
     vehicle_no: Mapped[str | None] = mapped_column(String(20))  # quick entry without vehicle master
+    vehicle_type: Mapped[str | None] = mapped_column(String(50))  # truck, tractor, etc.
 
     gross_weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     tare_weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
@@ -40,6 +41,7 @@ class Token(Base):
     second_weight_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     is_manual_weight: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    gate_pass: Mapped[str | None] = mapped_column(String(100))
     remarks: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

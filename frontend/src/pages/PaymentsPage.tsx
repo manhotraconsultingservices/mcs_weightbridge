@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, Search, CreditCard, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { PrintButton } from '@/components/PrintButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -325,6 +326,11 @@ function PaymentList({ type, refreshKey }: { type: 'receipt' | 'voucher'; refres
                     <p className={`font-semibold text-sm shrink-0 ${type === 'receipt' ? 'text-green-700' : 'text-orange-700'}`}>
                       {type === 'receipt' ? '+' : '−'}₹{Number(r.amount).toLocaleString('en-IN')}
                     </p>
+                    <PrintButton
+                      url={`/api/v1/payments/${type === 'receipt' ? 'receipts' : 'vouchers'}/${r.id}/pdf`}
+                      a4Url={`/api/v1/payments/${type === 'receipt' ? 'receipts' : 'vouchers'}/${r.id}/pdf`}
+                      iconOnly
+                    />
                   </div>
                 );
               })}

@@ -14,8 +14,10 @@ class TokenCreate(BaseModel):
     product_id: Optional[UUID] = None
     vehicle_no: str
     vehicle_id: Optional[UUID] = None
+    vehicle_type: Optional[str] = None
     driver_id: Optional[UUID] = None
     transporter_id: Optional[UUID] = None
+    gate_pass: Optional[str] = None
     remarks: Optional[str] = None
 
 
@@ -34,6 +36,7 @@ class TokenUpdate(BaseModel):
     product_id: Optional[UUID] = None
     vehicle_no: Optional[str] = None
     vehicle_id: Optional[UUID] = None
+    vehicle_type: Optional[str] = None
     driver_id: Optional[UUID] = None
     transporter_id: Optional[UUID] = None
     remarks: Optional[str] = None
@@ -55,6 +58,7 @@ class ProductBrief(BaseModel):
 class VehicleBrief(BaseModel):
     id: UUID
     registration_no: str
+    default_tare_weight: Optional[Decimal] = None
     model_config = {"from_attributes": True}
 
 
@@ -89,6 +93,7 @@ class TokenResponse(BaseModel):
     direction: str
     token_type: str
     vehicle_no: str
+    vehicle_type: Optional[str] = None
     party: Optional[PartyBrief] = None
     product: Optional[ProductBrief] = None
     vehicle: Optional[VehicleBrief] = None
@@ -103,6 +108,7 @@ class TokenResponse(BaseModel):
     first_weight_type: Optional[str] = None
     is_manual_weight: bool = False
     is_supplement: bool = False
+    gate_pass: Optional[str] = None
     remarks: Optional[str] = None
     created_at: datetime
     first_weight_at: Optional[datetime] = None

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Package, Plus, ShoppingCart, History, Settings,
-  Edit, X, Check, AlertTriangle, ChevronDown, SlidersHorizontal, TrendingUp,
+  Edit, X, Check, AlertTriangle, SlidersHorizontal, TrendingUp,
   LayoutGrid, List,
 } from 'lucide-react';
 import {
@@ -26,7 +26,7 @@ import { Switch } from '@/components/ui/switch';
 import api from '@/services/api';
 import type {
   InventoryItem, InventoryTransaction, PurchaseOrder, POItem,
-  InventoryDashboard, TelegramSettings, StockStatus, ItemSupplier, MasterSupplier,
+  InventoryDashboard, TelegramSettings, StockStatus, ItemSupplier,
 } from '@/types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -480,7 +480,7 @@ function AddItemDialog({ categories, editing, onClose, onDone }: AddItemDialogPr
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Category</Label>
-              <Select value={form.category} onValueChange={v => set('category', v)}>
+              <Select value={form.category ?? ''} onValueChange={(v) => set('category', v ?? '')}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {categories.map(c => (
@@ -493,7 +493,7 @@ function AddItemDialog({ categories, editing, onClose, onDone }: AddItemDialogPr
             </div>
             <div className="space-y-1.5">
               <Label>Unit</Label>
-              <Select value={form.unit} onValueChange={v => set('unit', v)}>
+              <Select value={form.unit ?? ''} onValueChange={(v) => set('unit', v ?? '')}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {UNITS.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
@@ -1085,7 +1085,7 @@ function EditPODialog({ po, items: propItems, onClose, onDone }: EditPODialogPro
                     {/* Item picker — full width */}
                     <div className="flex items-center gap-2">
                       <div className="flex-1">
-                        <Select value={line.item_id} onValueChange={v => handleItemSelect(i, v)}>
+                        <Select value={line.item_id ?? ''} onValueChange={(v) => handleItemSelect(i, v ?? '')}>
                           <SelectTrigger className="h-9">
                             <SelectValue placeholder="Select item…" />
                           </SelectTrigger>
@@ -1302,7 +1302,7 @@ function NewPODialog({ items, onClose, onDone }: NewPODialogProps) {
                   {/* Item select + remove */}
                   <div className="flex items-center gap-2">
                     <div className="flex-1">
-                      <Select value={line.item_id} onValueChange={v => handleItemSelect(i, v)}>
+                      <Select value={line.item_id ?? ''} onValueChange={(v) => handleItemSelect(i, v ?? '')}>
                         <SelectTrigger className="h-9">
                           <SelectValue placeholder="Select item…" />
                         </SelectTrigger>
@@ -1925,7 +1925,7 @@ function AnalyticsTab({ items }: AnalyticsTabProps) {
         <div className="flex-1" />
 
         {/* Item drill-down filter */}
-        <Select value={itemFilter || '_all'} onValueChange={v => setItemFilter(v === '_all' ? '' : v)}>
+        <Select value={itemFilter || '_all'} onValueChange={(v) => setItemFilter(v === '_all' ? '' : v ?? '')}>
           <SelectTrigger className="w-44 h-8 text-xs">
             <SelectValue>
               {itemFilter ? (items.find(i => i.id === itemFilter)?.name ?? 'All Items') : 'All Items'}
@@ -2525,7 +2525,7 @@ export default function InventoryPage() {
               placeholder="Search PO#, item, supplier, requested by…"
               className="w-64"
             />
-            <Select value={orderStatusFilter} onValueChange={setOrderStatusFilter}>
+            <Select value={orderStatusFilter} onValueChange={(v) => setOrderStatusFilter(v ?? 'all')}>
               <SelectTrigger className="w-44">
                 <SelectValue placeholder="All statuses" />
               </SelectTrigger>
@@ -2755,7 +2755,7 @@ export default function InventoryPage() {
               className="w-36"
               placeholder="To"
             />
-            <Select value={txItemFilter || '_all'} onValueChange={v => { setTxItemFilter(v === '_all' ? '' : v); setTxPage(1); }}>
+            <Select value={txItemFilter || '_all'} onValueChange={(v) => { setTxItemFilter(v === '_all' ? '' : v ?? ''); setTxPage(1); }}>
               <SelectTrigger className="w-44">
                 <SelectValue>
                   {txItemFilter ? (items.find(i => i.id === txItemFilter)?.name ?? 'All Items') : 'All Items'}
@@ -2766,7 +2766,7 @@ export default function InventoryPage() {
                 {items.map(it => <SelectItem key={it.id} value={it.id}>{it.name}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select value={txTypeFilter || '_all'} onValueChange={v => { setTxTypeFilter(v === '_all' ? '' : v); setTxPage(1); }}>
+            <Select value={txTypeFilter || '_all'} onValueChange={(v) => { setTxTypeFilter(v === '_all' ? '' : v ?? ''); setTxPage(1); }}>
               <SelectTrigger className="w-36">
                 <SelectValue>
                   {txTypeFilter === 'issue' ? 'Issue (OUT)' : txTypeFilter === 'receipt' ? 'Receipt (IN)' : txTypeFilter === 'adjustment' ? 'Adjustment' : 'All Types'}

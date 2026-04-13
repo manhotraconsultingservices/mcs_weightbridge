@@ -3,209 +3,111 @@
 <head>
 <meta charset="UTF-8">
 <style>
-  @page { size: A4; margin: 15mm 12mm; }
+  @page { size: A5 landscape; margin: 4mm 5mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; font-size: 11px; color: #222; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #1a4f9e; padding-bottom: 10px; margin-bottom: 12px; }
-  .company-name { font-size: 20px; font-weight: bold; color: #1a4f9e; }
-  .company-sub { font-size: 10px; color: #555; margin-top: 2px; }
-  .slip-title { font-size: 18px; font-weight: bold; text-align: right; color: #1a4f9e; letter-spacing: 1px; }
-  .slip-meta { text-align: right; font-size: 10px; margin-top: 4px; }
-  .token-no-box { text-align: right; margin-top: 6px; }
-  .token-no-label { font-size: 10px; color: #777; text-transform: uppercase; }
-  .token-no-val { font-size: 28px; font-weight: bold; color: #1a4f9e; line-height: 1.1; }
+  body { font-family: "Times New Roman", Times, serif; font-size: 12px; color: #000; }
 
-  .section { border: 1px solid #ddd; border-radius: 4px; margin-bottom: 10px; }
-  .section-header { background: #1a4f9e; color: white; font-size: 10px; font-weight: bold; padding: 4px 10px; text-transform: uppercase; letter-spacing: 0.5px; border-radius: 3px 3px 0 0; }
-  .section-body { padding: 8px 10px; }
-  .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; }
-  .field-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px 12px; }
-  .field { display: flex; flex-direction: column; gap: 1px; }
-  .field-label { font-size: 9px; color: #888; text-transform: uppercase; letter-spacing: 0.3px; }
-  .field-value { font-size: 11px; font-weight: 600; color: #111; }
+  .page { display: flex; gap: 0; width: 100%; height: 100%; }
+  .copy { flex: 1; padding: 6px 10px 4px; border-right: 1px dashed #999; }
+  .copy:last-child { border-right: none; }
 
-  .weight-table { width: 100%; border-collapse: collapse; }
-  .weight-table th { background: #1a4f9e; color: white; padding: 6px 10px; text-align: center; font-size: 10px; border: 1px solid #1a4f9e; }
-  .weight-table td { padding: 10px; text-align: center; border: 1px solid #ddd; }
-  .weight-kg { font-size: 18px; font-weight: bold; color: #1a4f9e; }
-  .weight-mt { font-size: 10px; color: #666; margin-top: 2px; }
+  .title { text-align: center; font-size: 14px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 1px; }
+  .company { text-align: center; font-size: 16px; font-weight: bold; text-transform: uppercase; margin-bottom: 1px; }
+  .address { text-align: center; font-size: 11px; margin-bottom: 6px; }
 
-  .status-badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
-  .badge-completed { background: #d1fae5; color: #065f46; }
-  .badge-open { background: #dbeafe; color: #1e40af; }
-  .badge-first_weight { background: #fef3c7; color: #92400e; }
-  .badge-loading { background: #ffedd5; color: #9a3412; }
-  .badge-cancelled { background: #fee2e2; color: #991b1b; }
+  .sep { border-top: 1px dashed #000; margin: 4px 0; }
 
-  .timestamps { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
-  .ts-box { text-align: center; border: 1px solid #eee; border-radius: 3px; padding: 6px; }
-  .ts-label { font-size: 9px; color: #888; text-transform: uppercase; }
-  .ts-val { font-size: 10px; font-weight: 600; color: #222; margin-top: 2px; }
+  .row { display: flex; margin-bottom: 1px; line-height: 1.5; }
+  .row .lbl { font-weight: bold; min-width: 80px; white-space: nowrap; }
+  .row .val { flex: 1; }
 
-  .footer { margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
-  .sig-box { border-top: 1px solid #aaa; padding-top: 6px; font-size: 9px; color: #777; text-align: center; }
-  .sig-line { height: 36px; }
+  .row-split { display: flex; justify-content: space-between; margin-bottom: 1px; line-height: 1.5; }
+  .row-split .left { display: flex; }
+  .row-split .right { display: flex; }
+  .row-split .lbl { font-weight: bold; margin-right: 6px; }
 
-  .type-badge { font-size: 10px; font-weight: bold; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 10px; display: inline-block; }
-  .divider { border: none; border-top: 1px dashed #ccc; margin: 8px 0; }
-  .watermark { text-align: center; font-size: 8px; color: #bbb; margin-top: 16px; }
+  .wt-tbl { width: 100%; border-collapse: collapse; margin-top: 2px; }
+  .wt-tbl thead td { font-weight: bold; padding: 2px 0; border-bottom: 1px dashed #000; }
+  .wt-tbl tbody td { padding: 2px 0; font-size: 12px; }
+  .wt-tbl .col-label { width: 35%; }
+  .wt-tbl .col-wt { width: 20%; text-align: right; padding-right: 10px; }
+  .wt-tbl .col-dt { width: 45%; text-align: right; }
+  .wt-tbl .net td { font-weight: bold; }
+
+  .footer { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 12px; padding-top: 4px; border-top: 1px solid #000; }
+  .footer .timestamp { font-size: 10px; }
+  .footer .sig { font-weight: bold; font-size: 12px; }
 </style>
 </head>
 <body>
 
-<!-- Header -->
-<div class="header">
-  <div>
-    <div class="company-name">{{ company.name }}</div>
-    <div class="company-sub">
-      {% if company.gstin %}GSTIN: {{ company.gstin }}{% endif %}
-      {% if company.pan %} &nbsp;|&nbsp; PAN: {{ company.pan }}{% endif %}
-    </div>
-    <div class="company-sub">
-      {{ company.address_line1 or '' }}{% if company.city %}, {{ company.city }}{% endif %}{% if company.state %}, {{ company.state }}{% endif %}{% if company.pincode %} - {{ company.pincode }}{% endif %}
-    </div>
-    {% if company.phone %}<div class="company-sub">Ph: {{ company.phone }}</div>{% endif %}
+{% macro format_dt(dt) %}{% if dt %}{{ dt.strftime('%d-%b-%Y %H:%M:%S') }}{% endif %}{% endmacro %}
+{% macro format_date(dt) %}{% if dt %}{{ dt.strftime('%d-%b-%Y') }}{% endif %}{% endmacro %}
+{% macro format_wt(w) %}{% if w %}{{ '%.2f' % (w|float) }}{% else %}—{% endif %}{% endmacro %}
+
+{% macro token_copy(label) %}
+<div class="copy">
+  <div class="title">Weight Slip</div>
+  <div class="company">{{ company.name }}</div>
+  <div class="address">
+    {{ company.address_line1 or '' }}{% if company.city %}, {{ company.city }}{% endif %}{% if company.state %}, {{ company.state }}{% endif %}{% if company.pincode %} - {{ company.pincode }}{% endif %}
   </div>
-  <div>
-    <div class="slip-title">WEIGHMENT SLIP</div>
-    <div class="slip-meta">
-      <strong>Date:</strong> {{ token.token_date.strftime('%d-%m-%Y') if token.token_date else '—' }}<br>
-      <strong>Type:</strong>
-      <span class="type-badge">{{ (token.token_type or 'SALE') | upper }}</span>
-      &nbsp;
-      <span class="status-badge badge-{{ token.status | lower }}">{{ token.status }}</span>
-    </div>
-    <div class="token-no-box">
-      <div class="token-no-label">Token No.</div>
-      <div class="token-no-val">{{ token.token_no or '—' }}</div>
-    </div>
+
+  <div class="sep"></div>
+
+  <div class="row-split">
+    <div class="left"><span class="lbl">TNO:</span> <span>{{ token.token_no or '—' }}</span></div>
+    <div class="right"><span class="lbl">DATE:</span> <span>{{ format_date(token.token_date) }}</span></div>
+  </div>
+  {% if token.gate_pass %}
+  <div class="row"><span class="lbl">Gate Pass:</span><span class="val">{{ token.gate_pass }}</span></div>
+  {% endif %}
+  <div class="row"><span class="lbl">VEHICLE:</span><span class="val">{{ token.vehicle_no or '—' }}{% if token.vehicle_type %} ({{ token.vehicle_type | upper }}){% endif %}</span></div>
+  <div class="row"><span class="lbl">PARTY:</span><span class="val">{{ token.party.name if token.party else 'Cash' }}</span></div>
+  <div class="row"><span class="lbl">ITEM:</span><span class="val">{{ token.product.name if token.product else '—' }}</span></div>
+
+  <div class="sep" style="margin-top:4px;"></div>
+
+  <table class="wt-tbl">
+    <thead>
+      <tr>
+        <td class="col-label">PARTICULARS</td>
+        <td class="col-wt">WEIGHT</td>
+        <td class="col-dt">Date Time</td>
+      </tr>
+    </thead>
+    <tbody>
+      {# first_weight_type = 'gross' or 'tare' — determines which timestamp goes where #}
+      {% set gross_first = (token.first_weight_type or 'gross') == 'gross' %}
+      <tr>
+        <td>Gross Weight</td>
+        <td class="col-wt">{{ format_wt(token.gross_weight) }}</td>
+        <td class="col-dt">{{ format_dt(token.first_weight_at if gross_first else token.second_weight_at) }}</td>
+      </tr>
+      <tr>
+        <td>Tare Weight</td>
+        <td class="col-wt">{{ format_wt(token.tare_weight) }}</td>
+        <td class="col-dt">{{ format_dt(token.second_weight_at if gross_first else token.first_weight_at) }}</td>
+      </tr>
+      <tr class="net">
+        <td>Net Weight</td>
+        <td class="col-wt">{{ format_wt(token.net_weight) }}</td>
+        <td class="col-dt">{{ format_dt(token.completed_at) }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <div class="timestamp">{{ format_dt(token.completed_at if token.completed_at else token.first_weight_at) }}</div>
+    <div class="sig">Signature</div>
   </div>
 </div>
+{% endmacro %}
 
-<!-- Vehicle & Party -->
-<div class="section">
-  <div class="section-header">Transaction Details</div>
-  <div class="section-body">
-    <div class="field-grid">
-      <div class="field">
-        <span class="field-label">Vehicle No.</span>
-        <span class="field-value" style="font-size:14px;">{{ token.vehicle_no or '—' }}</span>
-      </div>
-      <div class="field">
-        <span class="field-label">Party / Customer</span>
-        <span class="field-value">{{ token.party.name if token.party else '—' }}</span>
-      </div>
-      <div class="field">
-        <span class="field-label">Product / Material</span>
-        <span class="field-value">{{ token.product.name if token.product else '—' }}</span>
-      </div>
-      <div class="field">
-        <span class="field-label">HSN Code</span>
-        <span class="field-value">{{ token.product.hsn_code if token.product and token.product.hsn_code else '—' }}</span>
-      </div>
-      <div class="field">
-        <span class="field-label">Driver</span>
-        <span class="field-value">{{ token.driver.name if token.driver else '—' }}</span>
-      </div>
-      <div class="field">
-        <span class="field-label">Transporter</span>
-        <span class="field-value">{{ token.transporter.name if token.transporter else '—' }}</span>
-      </div>
-    </div>
-    {% if token.party and token.party.gstin %}
-    <hr class="divider">
-    <div class="field">
-      <span class="field-label">Party GSTIN</span>
-      <span class="field-value">{{ token.party.gstin }}</span>
-    </div>
-    {% endif %}
-  </div>
+<div class="page">
+  {{ token_copy("Customer Copy") }}
+  {{ token_copy("Office Copy") }}
 </div>
-
-<!-- Weight Table -->
-<div class="section">
-  <div class="section-header">Weight Details</div>
-  <div class="section-body" style="padding: 6px;">
-    <table class="weight-table">
-      <thead>
-        <tr>
-          <th>Gross Weight</th>
-          <th>Tare Weight</th>
-          <th>Net Weight</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>
-            <div class="weight-kg">
-              {% if token.gross_weight %}{{ '%.2f' % token.gross_weight|float }} kg{% else %}—{% endif %}
-            </div>
-            {% if token.gross_weight %}
-            <div class="weight-mt">{{ '%.3f' % (token.gross_weight|float / 1000) }} MT</div>
-            {% endif %}
-          </td>
-          <td>
-            <div class="weight-kg">
-              {% if token.tare_weight %}{{ '%.2f' % token.tare_weight|float }} kg{% else %}—{% endif %}
-            </div>
-            {% if token.tare_weight %}
-            <div class="weight-mt">{{ '%.3f' % (token.tare_weight|float / 1000) }} MT</div>
-            {% endif %}
-          </td>
-          <td>
-            <div class="weight-kg" style="color: #065f46;">
-              {% if token.net_weight %}{{ '%.2f' % token.net_weight|float }} kg{% else %}—{% endif %}
-            </div>
-            {% if token.net_weight %}
-            <div class="weight-mt" style="color: #065f46; font-weight: bold;">{{ '%.3f' % (token.net_weight|float / 1000) }} MT</div>
-            {% endif %}
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<!-- Timestamps -->
-<div class="section">
-  <div class="section-header">Timing</div>
-  <div class="section-body">
-    <div class="timestamps">
-      <div class="ts-box">
-        <div class="ts-label">First Weight (IN)</div>
-        <div class="ts-val">
-          {% if token.first_weight_at %}{{ token.first_weight_at.strftime('%d-%m-%Y %H:%M') }}{% else %}—{% endif %}
-        </div>
-      </div>
-      <div class="ts-box">
-        <div class="ts-label">Second Weight (OUT)</div>
-        <div class="ts-val">
-          {% if token.second_weight_at %}{{ token.second_weight_at.strftime('%d-%m-%Y %H:%M') }}{% else %}—{% endif %}
-        </div>
-      </div>
-      <div class="ts-box">
-        <div class="ts-label">Completed At</div>
-        <div class="ts-val">
-          {% if token.completed_at %}{{ token.completed_at.strftime('%d-%m-%Y %H:%M') }}{% else %}—{% endif %}
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Signature -->
-<div class="footer">
-  <div class="sig-box">
-    <div class="sig-line"></div>
-    <div>Vehicle Driver Signature</div>
-  </div>
-  <div class="sig-box">
-    <div class="sig-line"></div>
-    <div>Authorised Signatory — {{ company.name }}</div>
-  </div>
-</div>
-
-<div class="watermark">This is a computer generated Weighment Slip.</div>
 
 <script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; };</script>
 </body>

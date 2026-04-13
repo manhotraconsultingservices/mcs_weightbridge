@@ -13,17 +13,26 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-    # Restrict PostgreSQL to accept connections from localhost only
+      # Multi-tenant init script: creates weighbridge_master DB on first run
+      - ./docker/init-multi-db.sh:/docker-entrypoint-initdb.d/01-multi-db.sh
+    shm_size: '256mb'
     command: >
       postgres
-        -c listen_addresses=localhost
+        -c listen_addresses='*'
+        -c shared_buffers=2GB
+        -c effective_cache_size=3GB
+        -c work_mem=16MB
+        -c maintenance_work_mem=256MB
+        -c wal_buffers=16MB
+        -c max_connections=300
+        -c random_page_cost=1.1
+        -c checkpoint_completion_target=0.9
         -c log_connections=on
         -c log_disconnections=on
         -c log_failed_authentication_attempts=on
-        -c max_connections=100
         -c idle_in_transaction_session_timeout=30000
         -c statement_timeout=60000
-    restart: always
+    restart: unless-stopped
 
 volumes:
   pgdata:

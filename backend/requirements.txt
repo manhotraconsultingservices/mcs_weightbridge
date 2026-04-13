@@ -20,3 +20,4 @@ python-dotenv==1.0.1
 cryptography>=42.0
 Pillow>=10.0
 opencv-python-headless>=4.8
+qrcode[pil]>=7.4

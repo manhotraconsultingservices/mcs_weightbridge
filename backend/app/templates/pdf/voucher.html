@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: A5 landscape; margin: 3mm 4mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 7px; color: #222; }
+
+  .page-wrap { display: flex; gap: 0; height: 100%; }
+  .copy { width: 49.5%; padding: 2px 4px; }
+  .divider { width: 1%; display: flex; align-items: center; justify-content: center; }
+  .divider-line { border-left: 2px dashed #999; height: 95%; position: relative; }
+  .divider-text { position: absolute; top: 50%; left: -8px; transform: rotate(-90deg) translateX(-50%); font-size: 5px; color: #aaa; white-space: nowrap; letter-spacing: 2px; }
+
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1.5px solid #333; padding-bottom: 2px; margin-bottom: 3px; }
+  .company-name { font-size: 9px; font-weight: bold; }
+  .company-sub { font-size: 5.5px; color: #555; }
+  .doc-title { font-size: 8px; font-weight: bold; text-align: right; color: #1a4f9e; }
+  .doc-meta { text-align: right; font-size: 6px; }
+
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; margin-bottom: 3px; }
+  .detail-label { font-size: 5px; color: #888; text-transform: uppercase; }
+  .detail-value { font-size: 7.5px; font-weight: 600; color: #111; }
+
+  .amount-box { background: #1a4f9e; color: white; text-align: center; padding: 4px; border-radius: 2px; margin-bottom: 3px; }
+  .amount-label { font-size: 5.5px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.8; }
+  .amount-value { font-size: 14px; font-weight: bold; margin-top: 1px; }
+  .amount-words { font-size: 5.5px; font-style: italic; margin-top: 1px; opacity: 0.9; }
+
+  table { width: 100%; border-collapse: collapse; margin-bottom: 3px; }
+  th { background: #f0f0f0; padding: 1px 3px; text-align: left; font-size: 5.5px; font-weight: bold; border: 1px solid #ddd; }
+  td { padding: 1px 3px; font-size: 5.5px; border: 1px solid #eee; }
+  .text-right { text-align: right; }
+
+  .footer-sigs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 3px; }
+  .sig-box { text-align: center; }
+  .sig-line { border-top: 1px solid #aaa; margin-top: 10px; font-size: 5.5px; color: #777; padding-top: 1px; }
+
+  .copy-label { text-align: center; font-size: 5px; color: #bbb; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 1px; }
+
+  .badge { display: inline-block; padding: 0px 4px; border-radius: 3px; font-size: 5.5px; font-weight: bold; }
+  .badge-receipt { background: #d1fae5; color: #065f46; }
+  .badge-voucher { background: #dbeafe; color: #1e40af; }
+
+  .narration { font-size: 6px; color: #555; border: 1px solid #eee; padding: 2px 4px; border-radius: 2px; margin-bottom: 3px; }
+</style>
+</head>
+<body>
+
+{% macro voucher_copy(label) %}
+<div class="copy">
+  <div class="copy-label">{{ label }}</div>
+
+  <div class="header">
+    <div>
+      <div class="company-name">{{ company.name }}</div>
+      <div class="company-sub">
+        {% if company.gstin %}GSTIN: {{ company.gstin }}{% endif %}
+        {% if company.pan %} | PAN: {{ company.pan }}{% endif %}
+      </div>
+      <div class="company-sub">{{ company.address_line1 }}{% if company.city %}, {{ company.city }}{% endif %}{% if company.state %}, {{ company.state }}{% endif %}</div>
+      {% if company.phone %}<div class="company-sub">Ph: {{ company.phone }}</div>{% endif %}
+    </div>
+    <div>
+      <div class="doc-title">
+        {% if voucher_type == 'receipt' %}PAYMENT RECEIPT{% else %}PAYMENT VOUCHER{% endif %}
+      </div>
+      <div class="doc-meta">
+        <strong>{{ voucher_no }}</strong> | {{ voucher_date }}
+        <span class="badge {% if voucher_type == 'receipt' %}badge-receipt{% else %}badge-voucher{% endif %}">
+          {{ voucher_type | upper }}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="detail-grid">
+    <div><div class="detail-label">{% if voucher_type == 'receipt' %}Received From{% else %}Paid To{% endif %}</div><div class="detail-value">{{ party_name }}</div></div>
+    <div><div class="detail-label">Payment Mode</div><div class="detail-value">{{ payment_mode | title }}</div></div>
+    {% if party_gstin %}<div><div class="detail-label">GSTIN</div><div class="detail-value">{{ party_gstin }}</div></div>{% endif %}
+    {% if reference_no %}<div><div class="detail-label">Ref / Cheque No</div><div class="detail-value">{{ reference_no }}</div></div>{% endif %}
+  </div>
+
+  <div class="amount-box">
+    <div class="amount-label">Amount</div>
+    <div class="amount-value">₹{{ amount }}</div>
+    {% if amount_words %}<div class="amount-words">{{ amount_words }}</div>{% endif %}
+  </div>
+
+  {% if linked_invoices and linked_invoices | length > 0 %}
+  <table>
+    <thead><tr><th>Invoice No</th><th>Date</th><th class="text-right">Inv Amt</th><th class="text-right">Applied</th></tr></thead>
+    <tbody>
+      {% for inv in linked_invoices %}
+      <tr><td>{{ inv.invoice_no or '—' }}</td><td>{{ inv.invoice_date or '—' }}</td><td class="text-right">₹{{ inv.invoice_amount }}</td><td class="text-right">₹{{ inv.applied_amount }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if narration %}
+  <div class="narration"><strong style="font-size:5px;color:#888;text-transform:uppercase;">Narration:</strong> {{ narration }}</div>
+  {% endif %}
+
+  <div class="footer-sigs">
+    <div class="sig-box"><div class="sig-line">Received By</div></div>
+    <div class="sig-box"><div class="sig-line">Authorized Signatory</div></div>
+  </div>
+</div>
+{% endmacro %}
+
+<div class="page-wrap">
+  {{ voucher_copy("Customer Copy") }}
+
+  <div class="divider">
+    <div class="divider-line">
+      <div class="divider-text">✂ CUT HERE ✂</div>
+    </div>
+  </div>
+
+  {{ voucher_copy("Office Copy") }}
+</div>
+
+<script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; };</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Save, Loader2, Plus, CheckCircle2, Usb, Shield, Trash2, Mail, Phone, MessageSquare, TestTube, Send, RefreshCw, CheckCircle, XCircle, Server, Scale, ScanLine, Play, RotateCcw, Camera } from 'lucide-react';
+import { Save, Loader2, Plus, CheckCircle2, Usb, Shield, Trash2, Mail, Phone, MessageSquare, TestTube, Send, RefreshCw, CheckCircle, XCircle, Server, Scale, ScanLine, Play, RotateCcw, Camera, Truck, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import api from '@/services/api';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
 
@@ -546,6 +547,15 @@ interface WeightConfig {
 interface TestFrame { hex: string; ascii: string; bytes: number; }
 interface TestResult { port: string; baud_rate: number; frames_captured: number; frames: TestFrame[]; error: string | null; }
 
+interface AutoDetectResult {
+  port: string | null;
+  baud_rate: number | null;
+  description?: string;
+  bytes_received?: number;
+  printable_pct?: number;
+  error: string | null;
+}
+
 function WeightScaleTab() {
   const [ports, setPorts] = useState<PortInfo[]>([]);
   const [protocols, setProtocols] = useState<ProtocolInfo[]>([]);
@@ -555,6 +565,8 @@ function WeightScaleTab() {
     protocol_config: {},
   });
   const [scanningPorts, setScanningPorts] = useState(false);
+  const [autoDetecting, setAutoDetecting] = useState(false);
+  const [autoDetectResult, setAutoDetectResult] = useState<AutoDetectResult | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [saving, setSaving] = useState(false);
@@ -582,6 +594,27 @@ function WeightScaleTab() {
       setPorts(data.ports);
     } catch { setPorts([]); }
     finally { setScanningPorts(false); }
+  }, []);
+
+  const runAutoDetect = useCallback(async () => {
+    setAutoDetecting(true);
+    setAutoDetectResult(null);
+    setTestResult(null);
+    try {
+      const { data } = await api.post<AutoDetectResult>('/api/v1/weight/auto-detect', {});
+      setAutoDetectResult(data);
+      if (data.port && data.baud_rate) {
+        // Apply detected port + baud to the form
+        setCfg(c => ({ ...c, port_name: data.port!, baud_rate: data.baud_rate! }));
+        // Re-scan so the dropdown shows the detected port
+        const { data: pd } = await api.get<{ ports: PortInfo[] }>('/api/v1/weight/ports');
+        setPorts(pd.ports);
+      }
+    } catch {
+      setAutoDetectResult({ port: null, baud_rate: null, error: 'Auto-detect request failed — check backend is running' });
+    } finally {
+      setAutoDetecting(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -632,16 +665,51 @@ function WeightScaleTab() {
 
   return (
     <div className="space-y-5 max-w-2xl">
-      {/* Info banner */}
+      {/* Auto-detect banner */}
       <Card className="border-blue-200 bg-blue-50">
         <CardContent className="pt-4 pb-3">
           <div className="flex gap-3 items-start">
             <Scale className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
-            <div className="text-sm text-blue-800">
+            <div className="flex-1 text-sm text-blue-800">
               <p className="font-semibold mb-1">Weighbridge Scale Integration</p>
-              <p>Connects to your weighbridge indicator via RS232 / RS485. Select the COM port, protocol for your indicator brand, and test before saving.</p>
+              <p className="mb-3">Connects via RS232 / RS485. Use <strong>Auto-Detect</strong> to let the system find your indicator automatically (takes ~15–30 seconds), or manually select the COM port below.</p>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={runAutoDetect}
+                disabled={autoDetecting}
+                className="bg-blue-700 hover:bg-blue-800 text-white"
+              >
+                {autoDetecting
+                  ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Scanning all ports...</>
+                  : <><ScanLine className="mr-2 h-4 w-4" /> Auto-Detect Scale</>
+                }
+              </Button>
+              {autoDetecting && (
+                <p className="mt-2 text-xs text-blue-700">Probing each port at 1200 / 2400 / 4800 / 9600 / 19200 baud — please wait...</p>
+              )}
             </div>
           </div>
+          {/* Auto-detect result */}
+          {autoDetectResult && (
+            <div className={`mt-3 p-3 rounded-md text-sm border ${autoDetectResult.port ? 'bg-green-50 border-green-300 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+              {autoDetectResult.port ? (
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 shrink-0" />
+                  <span>
+                    Detected: <strong>{autoDetectResult.port}</strong> @ <strong>{autoDetectResult.baud_rate} baud</strong>
+                    {autoDetectResult.description && <span className="text-xs ml-1 opacity-75">({autoDetectResult.description})</span>}
+                    {' '}— applied to form below. Click <strong>Save &amp; Restart Scale</strong> to activate.
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <XCircle className="h-4 w-4 shrink-0" />
+                  <span>{autoDetectResult.error || 'No scale detected'}</span>
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -920,12 +988,47 @@ function WeighbridgeTab() {
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
 
+  // Vehicle Types state
+  const [vehicleTypes, setVehicleTypes] = useState<string[]>([]);
+  const [vtLoading, setVtLoading] = useState(true);
+  const [vtSaving, setVtSaving] = useState(false);
+  const [vtMsg, setVtMsg] = useState('');
+  const [newType, setNewType] = useState('');
+
   useEffect(() => {
     api.get<{ green_max: number; amber_max: number; orange_max: number }>('/api/v1/app-settings/weighbridge-urgency')
       .then(r => setForm(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
+
+    api.get<string[]>('/api/v1/app-settings/vehicle-types')
+      .then(r => setVehicleTypes(r.data))
+      .catch(() => setVehicleTypes(['truck', 'tractor', 'trailer', 'tipper', 'mini_truck', 'tanker', 'dumper']))
+      .finally(() => setVtLoading(false));
   }, []);
+
+  function addVehicleType() {
+    const t = newType.trim().toLowerCase().replace(/\s+/g, '_');
+    if (!t || vehicleTypes.includes(t)) return;
+    setVehicleTypes(v => [...v, t]);
+    setNewType('');
+  }
+
+  function removeVehicleType(t: string) {
+    setVehicleTypes(v => v.filter(x => x !== t));
+  }
+
+  async function saveVehicleTypes() {
+    setVtMsg(''); setVtSaving(true);
+    try {
+      const { data } = await api.put<string[]>('/api/v1/app-settings/vehicle-types', vehicleTypes);
+      setVehicleTypes(data);
+      setVtMsg('Vehicle types saved.');
+      setTimeout(() => setVtMsg(''), 3000);
+    } catch {
+      setVtMsg('Failed to save.');
+    } finally { setVtSaving(false); }
+  }
 
   async function save() {
     setMsg(''); setError('');
@@ -946,6 +1049,65 @@ function WeighbridgeTab() {
   if (loading) return <div className="py-8 text-center text-sm text-muted-foreground">Loading…</div>;
 
   return (
+    <div className="space-y-6">
+    {/* ── Vehicle Types ───────────────────────────────── */}
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Truck className="h-4 w-4" /> Vehicle Types
+        </CardTitle>
+        <p className="text-sm text-muted-foreground mt-1">
+          Manage the list of vehicle types available when creating tokens and vehicles.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {vtLoading ? (
+          <div className="text-sm text-muted-foreground">Loading…</div>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-2">
+              {vehicleTypes.map(t => (
+                <span key={t} className="inline-flex items-center gap-1 rounded-full border bg-muted px-3 py-1 text-sm font-medium">
+                  {t.replace(/_/g, ' ')}
+                  <button
+                    type="button"
+                    onClick={() => removeVehicleType(t)}
+                    className="ml-1 text-muted-foreground hover:text-destructive transition-colors"
+                    aria-label={`Remove ${t}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              {vehicleTypes.length === 0 && (
+                <span className="text-sm text-muted-foreground italic">No vehicle types defined.</span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                placeholder="e.g. bulker, dumper truck"
+                value={newType}
+                onChange={e => setNewType(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addVehicleType())}
+                className="max-w-xs"
+              />
+              <Button type="button" variant="outline" onClick={addVehicleType} disabled={!newType.trim()}>
+                <Plus className="h-4 w-4 mr-1" /> Add
+              </Button>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button onClick={saveVehicleTypes} disabled={vtSaving}>
+                {vtSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <Save className="mr-2 h-4 w-4" /> Save Vehicle Types
+              </Button>
+              {vtMsg && <p className="text-sm text-muted-foreground">{vtMsg}</p>}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+
+    {/* ── Token Urgency Colour Thresholds ─────────────── */}
     <Card>
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
@@ -1040,6 +1202,7 @@ function WeighbridgeTab() {
         </div>
       </CardContent>
     </Card>
+    </div>
   );
 }
 
@@ -1283,6 +1446,162 @@ const DEFAULT_CAM: CameraCfg = {
   label: '', snapshot_url: '', username: '', password: '',
   verification_code: '', serial_number: '', version: '', enabled: false,
 };
+
+// ------------------------------------------------------------------ //
+// eInvoice Settings Tab
+// ------------------------------------------------------------------ //
+interface EInvoiceConfig {
+  provider: string;
+  base_url: string;
+  client_id: string;
+  client_secret: string;
+  gstin: string;
+  username: string;
+  password: string;
+  is_sandbox: boolean;
+  is_enabled: boolean;
+  auto_generate_on_finalize: boolean;
+}
+
+const DEFAULT_EINVOICE: EInvoiceConfig = {
+  provider: 'nic',
+  base_url: 'https://einv-apisandbox.nic.in',
+  client_id: '',
+  client_secret: '',
+  gstin: '',
+  username: '',
+  password: '',
+  is_sandbox: true,
+  is_enabled: false,
+  auto_generate_on_finalize: true,
+};
+
+function EInvoiceSettingsTab() {
+  const [cfg, setCfg] = useState<EInvoiceConfig>({ ...DEFAULT_EINVOICE });
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  useEffect(() => {
+    api.get<EInvoiceConfig>('/api/v1/app-settings/einvoice-config')
+      .then(r => setCfg({ ...DEFAULT_EINVOICE, ...r.data }))
+      .catch(() => {});
+  }, []);
+
+  const set = (k: keyof EInvoiceConfig, v: string | boolean) => setCfg(prev => ({ ...prev, [k]: v }));
+
+  async function save() {
+    setSaving(true); setSaveMsg('');
+    try {
+      const { data } = await api.put<EInvoiceConfig>('/api/v1/app-settings/einvoice-config', cfg);
+      setCfg({ ...DEFAULT_EINVOICE, ...data });
+      setSaveMsg('Saved!');
+      setTimeout(() => setSaveMsg(''), 3000);
+    } catch {
+      setSaveMsg('Failed to save');
+    } finally { setSaving(false); }
+  }
+
+  async function testConnection() {
+    setTesting(true); setTestResult(null);
+    try {
+      const { data } = await api.post<{ success: boolean; message: string }>('/api/v1/app-settings/einvoice-config/test');
+      setTestResult(data);
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Test failed';
+      setTestResult({ success: false, message: msg });
+    } finally { setTesting(false); }
+  }
+
+  return (
+    <Card>
+      <div className="p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold">GST eInvoice (IRN) Configuration</h3>
+            <p className="text-xs text-muted-foreground">Configure NIC eInvoice portal credentials for automatic IRN generation</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Label className="text-xs">Enabled</Label>
+            <input type="checkbox" checked={cfg.is_enabled} onChange={e => set('is_enabled', e.target.checked)} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label className="text-xs">Environment</Label>
+            <Select value={cfg.is_sandbox ? 'sandbox' : 'production'} onValueChange={v => set('is_sandbox', v === 'sandbox')}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sandbox">Sandbox (Testing)</SelectItem>
+                <SelectItem value="production">Production</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">GSTIN</Label>
+            <Input value={cfg.gstin} onChange={e => set('gstin', e.target.value.toUpperCase())} maxLength={15} placeholder="29AABCT1332L1ZN" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label className="text-xs">Client ID</Label>
+            <Input value={cfg.client_id} onChange={e => set('client_id', e.target.value)} placeholder="From NIC portal" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Client Secret</Label>
+            <Input type="password" value={cfg.client_secret} onChange={e => set('client_secret', e.target.value)} placeholder="From NIC portal" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label className="text-xs">NIC Username</Label>
+            <Input value={cfg.username} onChange={e => set('username', e.target.value)} placeholder="API username" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">NIC Password</Label>
+            <Input type="password" value={cfg.password} onChange={e => set('password', e.target.value)} placeholder="API password" />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <input type="checkbox" checked={cfg.auto_generate_on_finalize} onChange={e => set('auto_generate_on_finalize', e.target.checked)} id="auto-irn" />
+          <Label htmlFor="auto-irn" className="text-xs cursor-pointer">Auto-generate IRN when invoice is finalized (B2B with GSTIN only)</Label>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button onClick={save} disabled={saving} size="sm">
+            {saving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+            <Save className="mr-2 h-3.5 w-3.5" /> Save eInvoice Config
+          </Button>
+          <Button variant="outline" onClick={testConnection} disabled={testing} size="sm">
+            {testing ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-2 h-3.5 w-3.5" />}
+            Test Connection
+          </Button>
+          {saveMsg && <span className="text-xs text-muted-foreground">{saveMsg}</span>}
+        </div>
+
+        {testResult && (
+          <div className={`p-3 rounded text-sm ${testResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+            {testResult.success ? <CheckCircle className="inline h-4 w-4 mr-1" /> : <XCircle className="inline h-4 w-4 mr-1" />}
+            {testResult.message}
+          </div>
+        )}
+
+        <div className="border-t pt-3 mt-3">
+          <p className="text-[10px] text-muted-foreground leading-relaxed">
+            <b>How it works:</b> When enabled, the system will automatically call the NIC eInvoice API to generate an IRN (Invoice Reference Number) for B2B invoices with party GSTIN upon finalization.
+            Failed IRN generation does NOT block invoice finalization — you can retry manually using the retry button on the invoice row.
+            IRN can be cancelled within 24 hours of generation.
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+}
 
 function CameraSettingsTab() {
   const [front, setFront] = useState<CameraCfg>({ ...DEFAULT_CAM, label: 'Front View' });
@@ -1535,6 +1854,312 @@ function CameraSettingsTab() {
   );
 }
 
+// ── Invoice Print Settings Tab ────────────────────────────────────────────────
+
+interface InvoicePrintSettings {
+  copies: number;
+  copy_labels: string[];
+  company: {
+    show_tagline: boolean;
+    tagline: string;
+    show_address: boolean;
+    show_gstin: boolean;
+    show_state: boolean;
+    show_phone: boolean;
+    show_email: boolean;
+    show_pan: boolean;
+  };
+  party: {
+    show_consignee: boolean;
+    show_buyer: boolean;
+    show_gstin: boolean;
+    show_address: boolean;
+    show_state: boolean;
+    show_phone: boolean;
+  };
+  metadata: {
+    show_delivery_note: boolean;
+    show_payment_mode: boolean;
+    show_suppliers_ref: boolean;
+    show_other_ref: boolean;
+    show_buyers_order: boolean;
+    show_royalty_no: boolean;
+    show_driver_name: boolean;
+    show_destination: boolean;
+    show_lr_no: boolean;
+    show_vehicle_no: boolean;
+    show_terms_delivery: boolean;
+  };
+  items: {
+    show_hsn: boolean;
+    show_rate: boolean;
+    show_per: boolean;
+    show_tax_inline: boolean;
+    show_qty_total: boolean;
+  };
+  sections: {
+    show_weight: boolean;
+    show_bank_details: boolean;
+    show_amount_words: boolean;
+    show_hsn_summary: boolean;
+    show_tax_words: boolean;
+    show_declaration: boolean;
+    show_signature: boolean;
+    show_notes: boolean;
+    show_place_of_supply: boolean;
+    show_computer_generated: boolean;
+  };
+}
+
+const DEFAULT_PRINT_SETTINGS: InvoicePrintSettings = {
+  copies: 3,
+  copy_labels: ['ORIGINAL FOR RECIPIENT', 'DUPLICATE FOR TRANSPORTER', 'TRIPLICATE FOR SUPPLIER'],
+  company: {
+    show_tagline: false,
+    tagline: '',
+    show_address: true,
+    show_gstin: true,
+    show_state: true,
+    show_phone: true,
+    show_email: true,
+    show_pan: false,
+  },
+  party: {
+    show_consignee: true,
+    show_buyer: true,
+    show_gstin: true,
+    show_address: true,
+    show_state: true,
+    show_phone: false,
+  },
+  metadata: {
+    show_delivery_note: true,
+    show_payment_mode: true,
+    show_suppliers_ref: true,
+    show_other_ref: true,
+    show_buyers_order: true,
+    show_royalty_no: true,
+    show_driver_name: true,
+    show_destination: true,
+    show_lr_no: true,
+    show_vehicle_no: true,
+    show_terms_delivery: true,
+  },
+  items: {
+    show_hsn: true,
+    show_rate: true,
+    show_per: true,
+    show_tax_inline: true,
+    show_qty_total: true,
+  },
+  sections: {
+    show_weight: true,
+    show_bank_details: true,
+    show_amount_words: true,
+    show_hsn_summary: true,
+    show_tax_words: true,
+    show_declaration: true,
+    show_signature: true,
+    show_notes: true,
+    show_place_of_supply: false,
+    show_computer_generated: true,
+  },
+};
+
+function ToggleRow({ label, checked, onCheckedChange }: { label: string; checked: boolean; onCheckedChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between py-2 border-b last:border-0">
+      <span className="text-sm">{label}</span>
+      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+    </div>
+  );
+}
+
+function PrintSettingsTab() {
+  const [ps, setPs] = useState<InvoicePrintSettings>(DEFAULT_PRINT_SETTINGS);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    api.get<InvoicePrintSettings>('/api/v1/app-settings/invoice-print-settings')
+      .then(r => setPs({ ...DEFAULT_PRINT_SETTINGS, ...r.data }))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  function setCompany<K extends keyof InvoicePrintSettings['company']>(key: K, value: InvoicePrintSettings['company'][K]) {
+    setPs(p => ({ ...p, company: { ...p.company, [key]: value } }));
+  }
+  function setParty<K extends keyof InvoicePrintSettings['party']>(key: K, value: InvoicePrintSettings['party'][K]) {
+    setPs(p => ({ ...p, party: { ...p.party, [key]: value } }));
+  }
+  function setMeta<K extends keyof InvoicePrintSettings['metadata']>(key: K, value: boolean) {
+    setPs(p => ({ ...p, metadata: { ...p.metadata, [key]: value } }));
+  }
+  function setItems<K extends keyof InvoicePrintSettings['items']>(key: K, value: boolean) {
+    setPs(p => ({ ...p, items: { ...p.items, [key]: value } }));
+  }
+  function setSections<K extends keyof InvoicePrintSettings['sections']>(key: K, value: boolean) {
+    setPs(p => ({ ...p, sections: { ...p.sections, [key]: value } }));
+  }
+
+  function updateCopyLabel(index: number, value: string) {
+    setPs(p => {
+      const labels = [...p.copy_labels];
+      labels[index] = value;
+      return { ...p, copy_labels: labels };
+    });
+  }
+
+  async function save() {
+    setSaving(true); setMsg('');
+    try {
+      await api.put('/api/v1/app-settings/invoice-print-settings', ps);
+      setMsg('Saved successfully');
+      setTimeout(() => setMsg(''), 3000);
+    } catch {
+      setMsg('Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <div className="py-8 text-center text-sm text-muted-foreground">Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+
+      {/* Copies */}
+      <Card>
+        <CardHeader><CardTitle className="text-base">Print Copies</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-4">
+            <Label className="w-32 shrink-0">Number of copies</Label>
+            <Select value={String(ps.copies)} onValueChange={v => setPs(p => ({ ...p, copies: Number(v) }))}>
+              <SelectTrigger className="w-24">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">1</SelectItem>
+                <SelectItem value="2">2</SelectItem>
+                <SelectItem value="3">3</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm text-muted-foreground">Copy labels</Label>
+            {Array.from({ length: ps.copies }).map((_, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground w-16 shrink-0">Copy {i + 1}</span>
+                <Input
+                  value={ps.copy_labels[i] ?? ''}
+                  onChange={e => updateCopyLabel(i, e.target.value)}
+                  placeholder={`Copy ${i + 1} label`}
+                  className="text-sm"
+                />
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Company Info */}
+      <Card>
+        <CardHeader><CardTitle className="text-base">Company Header</CardTitle></CardHeader>
+        <CardContent>
+          <ToggleRow label="Show Tagline" checked={ps.company.show_tagline} onCheckedChange={v => setCompany('show_tagline', v)} />
+          {ps.company.show_tagline && (
+            <div className="py-2 border-b">
+              <Label className="text-xs text-muted-foreground">Tagline text</Label>
+              <Input
+                className="mt-1 text-sm"
+                value={ps.company.tagline}
+                onChange={e => setCompany('tagline', e.target.value)}
+                placeholder="e.g. Quality Stone Products Since 1990"
+              />
+            </div>
+          )}
+          <ToggleRow label="Show Address" checked={ps.company.show_address} onCheckedChange={v => setCompany('show_address', v)} />
+          <ToggleRow label="Show GSTIN / UIN" checked={ps.company.show_gstin} onCheckedChange={v => setCompany('show_gstin', v)} />
+          <ToggleRow label="Show State & Code" checked={ps.company.show_state} onCheckedChange={v => setCompany('show_state', v)} />
+          <ToggleRow label="Show Phone" checked={ps.company.show_phone} onCheckedChange={v => setCompany('show_phone', v)} />
+          <ToggleRow label="Show Email" checked={ps.company.show_email} onCheckedChange={v => setCompany('show_email', v)} />
+          <ToggleRow label="Show PAN" checked={ps.company.show_pan} onCheckedChange={v => setCompany('show_pan', v)} />
+        </CardContent>
+      </Card>
+
+      {/* Party / Customer */}
+      <Card>
+        <CardHeader><CardTitle className="text-base">Party / Customer</CardTitle></CardHeader>
+        <CardContent>
+          <ToggleRow label="Show Consignee (Ship to) section" checked={ps.party.show_consignee} onCheckedChange={v => setParty('show_consignee', v)} />
+          <ToggleRow label="Show Buyer (Bill to) section" checked={ps.party.show_buyer} onCheckedChange={v => setParty('show_buyer', v)} />
+          <ToggleRow label="Show GSTIN / UIN" checked={ps.party.show_gstin} onCheckedChange={v => setParty('show_gstin', v)} />
+          <ToggleRow label="Show Address" checked={ps.party.show_address} onCheckedChange={v => setParty('show_address', v)} />
+          <ToggleRow label="Show State & Code" checked={ps.party.show_state} onCheckedChange={v => setParty('show_state', v)} />
+          <ToggleRow label="Show Phone" checked={ps.party.show_phone} onCheckedChange={v => setParty('show_phone', v)} />
+        </CardContent>
+      </Card>
+
+      {/* Invoice Metadata Fields */}
+      <Card>
+        <CardHeader><CardTitle className="text-base">Invoice Metadata Fields</CardTitle></CardHeader>
+        <CardContent>
+          <ToggleRow label="Delivery Note" checked={ps.metadata.show_delivery_note} onCheckedChange={v => setMeta('show_delivery_note', v)} />
+          <ToggleRow label="Payment Mode" checked={ps.metadata.show_payment_mode} onCheckedChange={v => setMeta('show_payment_mode', v)} />
+          <ToggleRow label="Supplier's Ref." checked={ps.metadata.show_suppliers_ref} onCheckedChange={v => setMeta('show_suppliers_ref', v)} />
+          <ToggleRow label="Other Reference(s)" checked={ps.metadata.show_other_ref} onCheckedChange={v => setMeta('show_other_ref', v)} />
+          <ToggleRow label="Buyer's Order No." checked={ps.metadata.show_buyers_order} onCheckedChange={v => setMeta('show_buyers_order', v)} />
+          <ToggleRow label="Royalty No." checked={ps.metadata.show_royalty_no} onCheckedChange={v => setMeta('show_royalty_no', v)} />
+          <ToggleRow label="Driver Name" checked={ps.metadata.show_driver_name} onCheckedChange={v => setMeta('show_driver_name', v)} />
+          <ToggleRow label="Destination" checked={ps.metadata.show_destination} onCheckedChange={v => setMeta('show_destination', v)} />
+          <ToggleRow label="Bill of Lading / LR-RR No." checked={ps.metadata.show_lr_no} onCheckedChange={v => setMeta('show_lr_no', v)} />
+          <ToggleRow label="Motor Vehicle No." checked={ps.metadata.show_vehicle_no} onCheckedChange={v => setMeta('show_vehicle_no', v)} />
+          <ToggleRow label="Terms of Delivery" checked={ps.metadata.show_terms_delivery} onCheckedChange={v => setMeta('show_terms_delivery', v)} />
+        </CardContent>
+      </Card>
+
+      {/* Items Table */}
+      <Card>
+        <CardHeader><CardTitle className="text-base">Items Table</CardTitle></CardHeader>
+        <CardContent>
+          <ToggleRow label="HSN / SAC column" checked={ps.items.show_hsn} onCheckedChange={v => setItems('show_hsn', v)} />
+          <ToggleRow label="Rate column" checked={ps.items.show_rate} onCheckedChange={v => setItems('show_rate', v)} />
+          <ToggleRow label="Per column" checked={ps.items.show_per} onCheckedChange={v => setItems('show_per', v)} />
+          <ToggleRow label="Tax rows inline (CGST / SGST / IGST)" checked={ps.items.show_tax_inline} onCheckedChange={v => setItems('show_tax_inline', v)} />
+          <ToggleRow label="Qty total in footer" checked={ps.items.show_qty_total} onCheckedChange={v => setItems('show_qty_total', v)} />
+        </CardContent>
+      </Card>
+
+      {/* Sections */}
+      <Card>
+        <CardHeader><CardTitle className="text-base">Sections</CardTitle></CardHeader>
+        <CardContent>
+          <ToggleRow label="Weight details (Gross / Tare / Net)" checked={ps.sections.show_weight} onCheckedChange={v => setSections('show_weight', v)} />
+          <ToggleRow label="Bank details" checked={ps.sections.show_bank_details} onCheckedChange={v => setSections('show_bank_details', v)} />
+          <ToggleRow label="Amount in words" checked={ps.sections.show_amount_words} onCheckedChange={v => setSections('show_amount_words', v)} />
+          <ToggleRow label="HSN / SAC tax summary table" checked={ps.sections.show_hsn_summary} onCheckedChange={v => setSections('show_hsn_summary', v)} />
+          <ToggleRow label="Tax amount in words" checked={ps.sections.show_tax_words} onCheckedChange={v => setSections('show_tax_words', v)} />
+          <ToggleRow label="Declaration text" checked={ps.sections.show_declaration} onCheckedChange={v => setSections('show_declaration', v)} />
+          <ToggleRow label="Authorised Signatory" checked={ps.sections.show_signature} onCheckedChange={v => setSections('show_signature', v)} />
+          <ToggleRow label="Notes / Remarks" checked={ps.sections.show_notes} onCheckedChange={v => setSections('show_notes', v)} />
+          <ToggleRow label="Place of Supply" checked={ps.sections.show_place_of_supply} onCheckedChange={v => setSections('show_place_of_supply', v)} />
+          <ToggleRow label="Computer Generated Invoice footer" checked={ps.sections.show_computer_generated} onCheckedChange={v => setSections('show_computer_generated', v)} />
+        </CardContent>
+      </Card>
+
+      <div className="flex items-center gap-3">
+        <Button onClick={save} disabled={saving}>
+          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          <Save className="mr-2 h-4 w-4" /> Save Print Settings
+        </Button>
+        {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [tab, setTab] = useState('company');
   const [company, setCompany] = useState<Company | null>(null);
@@ -1613,6 +2238,10 @@ export default function SettingsPage() {
           <TabsTrigger value="cameras" className="flex items-center gap-1">
             <Camera className="h-3.5 w-3.5" />Cameras
           </TabsTrigger>
+          <TabsTrigger value="einvoice" className="flex items-center gap-1">
+            <Shield className="h-3.5 w-3.5" />eInvoice
+          </TabsTrigger>
+          <TabsTrigger value="print">Print</TabsTrigger>
         </TabsList>
 
         {/* Company Info */}
@@ -1744,10 +2373,20 @@ export default function SettingsPage() {
         <TabsContent value="cameras" className="mt-4">
           <CameraSettingsTab />
         </TabsContent>
+
+        {/* eInvoice */}
+        <TabsContent value="einvoice" className="mt-4">
+          <EInvoiceSettingsTab />
+        </TabsContent>
+
+        {/* Print Settings */}
+        <TabsContent value="print" className="mt-4">
+          <PrintSettingsTab />
+        </TabsContent>
       </Tabs>
 
-      {/* Save button (not on FY, USB Guard, Scale, Tally, Weighbridge, or Notifications tabs) */}
-      {tab !== 'fy' && tab !== 'usb' && tab !== 'scale' && tab !== 'tally' && tab !== 'weighbridge' && tab !== 'notifications' && tab !== 'cameras' && (
+      {/* Save button (not on FY, USB Guard, Scale, Tally, Weighbridge, Notifications, or Print tabs) */}
+      {tab !== 'fy' && tab !== 'usb' && tab !== 'scale' && tab !== 'tally' && tab !== 'weighbridge' && tab !== 'notifications' && tab !== 'cameras' && tab !== 'einvoice' && tab !== 'print' && (
         <div className="flex items-center gap-3">
           <Button onClick={saveCompany} disabled={saving}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

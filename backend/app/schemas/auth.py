@@ -11,6 +11,7 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: "UserResponse"
+    tenant_slug: str | None = None
 
 
 class UserCreate(BaseModel):

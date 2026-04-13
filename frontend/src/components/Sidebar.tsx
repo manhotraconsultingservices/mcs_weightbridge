@@ -1,9 +1,9 @@
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard, Ticket, FileText, ShoppingCart, Package,
+  LayoutDashboard, Ticket, FileText, Package,
   Users, Truck, Settings, BarChart3, BookOpen, CreditCard,
   Receipt, FileBarChart, LogOut, Usb, Bell, Shield, HardDrive,
-  Upload, Scale, ShieldCheck, UserCog, ImageIcon, Lock, MonitorPlay, Warehouse,
+  Upload, Scale, ShieldCheck, UserCog, ImageIcon, Lock, MonitorPlay, Warehouse, ScanSearch,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { User } from '@/types';
@@ -27,8 +27,10 @@ const navGroups: { label: string | null; items: NavItem[] }[] = [
   {
     label: '📦 Daily Work',
     items: [
-      { to: '/tokens', icon: Ticket, label: 'Tokens' },
+      { to: '/tokens-v1', icon: Ticket, label: 'Token' },
+      { to: '/tokens', icon: BarChart3, label: 'Token Dashboard' },
       { to: '/camera-scale', icon: MonitorPlay, label: 'Camera & Scale' },
+      { to: '/snapshot-search', icon: ScanSearch, label: 'Snapshot Search' },
       { to: '/inventory', icon: Warehouse, label: 'Store Inventory' },
       { to: '/invoices', icon: FileText, label: 'Invoices' },
       { to: '/quotations', icon: Receipt, label: 'Quotations' },

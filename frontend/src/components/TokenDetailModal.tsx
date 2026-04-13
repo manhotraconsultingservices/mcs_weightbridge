@@ -59,7 +59,6 @@ function Lightbox({ src, label, onClose }: { src: string; label: string; onClose
 function SnapshotCard({
   snap,
   label,
-  cameraId,
   tokenId,
   onLightbox,
 }: {
@@ -185,9 +184,10 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
     return () => clearInterval(t);
   }, [snapshots, tokenId, fetchSnapshots]);
 
-  const frontSnap = snapshots.find(s => s.camera_id === 'front');
-  const topSnap   = snapshots.find(s => s.camera_id === 'top');
-  const hasAnyCamera = snapshots.length > 0 || token?.status === 'COMPLETED';
+  // Group snapshots by weight stage
+  const firstWeightSnaps = snapshots.filter(s => s.weight_stage === 'first_weight');
+  const secondWeightSnaps = snapshots.filter(s => s.weight_stage === 'second_weight');
+  const hasAnyCamera = snapshots.length > 0 || token?.status === 'COMPLETED' || token?.status === 'FIRST_WEIGHT';
 
   const open = !!tokenId;
 
@@ -236,7 +236,7 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                   </p>
                   <p className="font-bold font-mono">{token.vehicle_no}</p>
                   <p className="text-xs text-muted-foreground capitalize mt-0.5">
-                    {token.direction} · {token.token_type}
+                    {token.vehicle_type ? `${token.vehicle_type.replace(/_/g, ' ')} · ` : ''}{token.direction} · {token.token_type}
                   </p>
                 </div>
                 <div className="rounded-lg border p-3">
@@ -345,27 +345,57 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                       </button>
                     )}
                   </div>
-                  <div className="p-3 grid grid-cols-2 gap-3">
-                    <SnapshotCard
-                      snap={frontSnap}
-                      label="Front View"
-                      cameraId="front"
-                      tokenId={token.id}
-                      onLightbox={(src, lbl) => setLightbox({ src, label: lbl })}
-                    />
-                    <SnapshotCard
-                      snap={topSnap}
-                      label="Top View"
-                      cameraId="top"
-                      tokenId={token.id}
-                      onLightbox={(src, lbl) => setLightbox({ src, label: lbl })}
-                    />
-                  </div>
-                  {snapshots.some(s => s.capture_status === 'captured') && (
-                    <p className="text-[10px] text-muted-foreground text-center pb-2">
-                      Click image to enlarge
-                    </p>
+                  {/* 1st Weight snapshots */}
+                  {(firstWeightSnaps.length > 0 || token.status !== 'OPEN') && (
+                    <div className="px-3 pt-3">
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">1st Weight</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <SnapshotCard
+                          snap={firstWeightSnaps.find(s => s.camera_id === 'front')}
+                          label="Front View"
+                          cameraId="front"
+                          tokenId={token.id}
+                          onLightbox={(src, lbl) => setLightbox({ src, label: '1st Weight — ' + lbl })}
+                        />
+                        <SnapshotCard
+                          snap={firstWeightSnaps.find(s => s.camera_id === 'top')}
+                          label="Top View"
+                          cameraId="top"
+                          tokenId={token.id}
+                          onLightbox={(src, lbl) => setLightbox({ src, label: '1st Weight — ' + lbl })}
+                        />
+                      </div>
+                    </div>
                   )}
+                  {/* 2nd Weight snapshots */}
+                  {(secondWeightSnaps.length > 0 || token.status === 'COMPLETED') && (
+                    <div className="px-3 pt-3 pb-1">
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">2nd Weight</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <SnapshotCard
+                          snap={secondWeightSnaps.find(s => s.camera_id === 'front')}
+                          label="Front View"
+                          cameraId="front"
+                          tokenId={token.id}
+                          onLightbox={(src, lbl) => setLightbox({ src, label: '2nd Weight — ' + lbl })}
+                        />
+                        <SnapshotCard
+                          snap={secondWeightSnaps.find(s => s.camera_id === 'top')}
+                          label="Top View"
+                          cameraId="top"
+                          tokenId={token.id}
+                          onLightbox={(src, lbl) => setLightbox({ src, label: '2nd Weight — ' + lbl })}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <div className="pb-2">
+                    {snapshots.some(s => s.capture_status === 'captured') && (
+                      <p className="text-[10px] text-muted-foreground text-center">
+                        Click image to enlarge
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 

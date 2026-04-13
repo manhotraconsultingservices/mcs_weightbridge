@@ -14,9 +14,14 @@ export function useAuth() {
 
   const [token, setToken] = useState<string | null>(() => STORE.getItem('token'));
 
-  const login = useCallback((accessToken: string, userData: User) => {
+  const login = useCallback((accessToken: string, userData: User, tenantSlug?: string) => {
     STORE.setItem('token', accessToken);
     STORE.setItem('user', JSON.stringify(userData));
+    if (tenantSlug) {
+      STORE.setItem('tenant_slug', tenantSlug);
+    } else {
+      STORE.removeItem('tenant_slug');
+    }
     setToken(accessToken);
     setUser(userData);
   }, []);
@@ -24,6 +29,7 @@ export function useAuth() {
   const logout = useCallback(() => {
     STORE.removeItem('token');
     STORE.removeItem('user');
+    STORE.removeItem('tenant_slug');
     setToken(null);
     setUser(null);
   }, []);
@@ -38,4 +44,9 @@ export function useAuth() {
   const isAuthenticated = !!token && !!user;
 
   return { user, token, isAuthenticated, login, logout };
+}
+
+/** Get the current tenant slug from session storage (for WebSocket connections). */
+export function getTenantSlug(): string | null {
+  return sessionStorage.getItem('tenant_slug');
 }

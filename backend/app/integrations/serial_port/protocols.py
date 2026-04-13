@@ -757,6 +757,24 @@ PROTOCOL_DEFAULT_CONFIG: dict[str, dict] = {
 }
 
 
+# Default serial port settings per protocol (data_bits, parity, stop_bits)
+# Most Indian weighbridge indicators use 7E1; international brands use 8N1
+PROTOCOL_DEFAULT_SERIAL: dict[str, dict] = {
+    "generic":      {"data_bits": 8, "parity": "N", "stop_bits": 1},
+    "leo":          {"data_bits": 7, "parity": "E", "stop_bits": 1},
+    "essae":        {"data_bits": 7, "parity": "E", "stop_bits": 1},
+    "avery":        {"data_bits": 7, "parity": "E", "stop_bits": 1},
+    "mettler":      {"data_bits": 8, "parity": "N", "stop_bits": 1},
+    "rice_lake":    {"data_bits": 8, "parity": "N", "stop_bits": 1},
+    "systec":       {"data_bits": 7, "parity": "E", "stop_bits": 1},
+    "tp_loadcell":  {"data_bits": 7, "parity": "E", "stop_bits": 1},
+    "ci_series":    {"data_bits": 7, "parity": "E", "stop_bits": 1},
+    "kern":         {"data_bits": 8, "parity": "N", "stop_bits": 1},
+    "rs485_modbus": {"data_bits": 8, "parity": "N", "stop_bits": 1},
+    "digi_sm":      {"data_bits": 8, "parity": "N", "stop_bits": 1},
+}
+
+
 def get_protocol(name: str, config: dict) -> WeightProtocol:
     cls = PROTOCOL_MAP.get(name.lower(), GenericContinuousProtocol)
     merged = {**PROTOCOL_DEFAULT_CONFIG.get(name.lower(), {}), **config}

@@ -12,6 +12,7 @@ export interface LoginResponse {
   access_token: string;
   token_type: string;
   user: User;
+  tenant_slug?: string;
 }
 
 export interface Company {
@@ -106,6 +107,7 @@ export interface TokenProduct {
 export interface TokenVehicle {
   id: string;
   registration_no: string;
+  default_tare_weight: number | null;
 }
 
 export interface TokenDriver {
@@ -137,6 +139,7 @@ export interface Token {
   direction: 'inbound' | 'outbound';
   token_type: 'sale' | 'purchase' | 'general';
   vehicle_no: string;
+  vehicle_type: string | null;
   party: TokenParty | null;
   product: TokenProduct | null;
   vehicle: TokenVehicle | null;
@@ -232,9 +235,82 @@ export interface Invoice {
   tally_synced: boolean;
   tally_sync_at: string | null;
   tally_needs_sync: boolean;
+  // eInvoice (GST IRN)
+  irn: string | null;
+  irn_ack_no: string | null;
+  irn_ack_date: string | null;
+  einvoice_status: 'none' | 'success' | 'failed' | 'cancelled';
+  einvoice_error: string | null;
+  irn_cancelled_at: string | null;
+  // Revision / amendment tracking
+  revision_no: number;
+  original_invoice_id: string | null;
   created_at: string;
   updated_at: string;
   items: InvoiceItem[];
+}
+
+// ── Invoice Revision types ────────────────────────────────────────────────────
+
+export interface RevisionHistoryItem {
+  id: string;
+  original_invoice_id: string;
+  from_revision_no: number;
+  to_revision_no: number;
+  from_invoice_id: string;
+  to_invoice_id: string;
+  change_summary: string | null;
+  revised_by_name: string | null;
+  created_at: string;
+  finalized_at: string | null;
+}
+
+export interface InvoiceRevisionChain {
+  original_invoice_id: string;
+  current_revision_no: number;
+  invoices: Invoice[];
+  history: RevisionHistoryItem[];
+}
+
+export interface DiffChange {
+  field: string;
+  label: string;
+  old: string | number | null;
+  new: string | number | null;
+  old_str?: string | null;
+  new_str?: string | null;
+}
+
+export interface DiffItem {
+  product_id: string;
+  description: string;
+  hsn_code?: string | null;
+  quantity?: number;
+  unit?: string;
+  rate?: number;
+  gst_rate?: number;
+  total_amount?: number;
+  changes?: DiffChange[];
+}
+
+export interface InvoiceDiff {
+  header: DiffChange[];
+  amounts: DiffChange[];
+  items: {
+    added: DiffItem[];
+    removed: DiffItem[];
+    modified: DiffItem[];
+  };
+  einvoice: DiffChange[];
+  summary_text: string;
+  has_changes: boolean;
+}
+
+export interface InvoiceCompare {
+  invoice_a: Invoice;
+  invoice_b: Invoice;
+  diff: InvoiceDiff;
+  revision_record: RevisionHistoryItem | null;
 }
 
 export interface InvoiceListResponse {
@@ -299,11 +375,31 @@ export interface SnapshotResult {
   attempts: number;
   error_message: string | null;
   captured_at: string | null;
+  weight_stage: 'first_weight' | 'second_weight';
 }
 
 export interface TokenSnapshotsResponse {
   snapshots: SnapshotResult[];
   all_done: boolean;
+}
+
+export interface SnapshotSearchItem {
+  token_id: string;
+  token_no: string | null;
+  token_date: string | null;
+  vehicle_no: string | null;
+  party_name: string | null;
+  weight_stage: 'first_weight' | 'second_weight';
+  camera_id: string;
+  camera_label: string | null;
+  url: string | null;
+  capture_status: string;
+  captured_at: string | null;
+}
+
+export interface SnapshotSearchResponse {
+  items: SnapshotSearchItem[];
+  total: number;
 }
 
 // ── Inventory ─────────────────────────────────────────────────────────────────

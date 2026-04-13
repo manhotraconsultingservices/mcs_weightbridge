@@ -23,6 +23,15 @@ class Settings(BaseSettings):
     TALLY_HOST: str = "localhost"
     TALLY_PORT: int = 9000
 
+    # Multi-tenant
+    MULTI_TENANT: bool = False
+    MASTER_DATABASE_URL: str = "postgresql+asyncpg://weighbridge:weighbridge_dev_2024@localhost:5432/weighbridge_master"
+    MASTER_DATABASE_URL_SYNC: str = "postgresql+psycopg://weighbridge:weighbridge_dev_2024@localhost:5432/weighbridge_master"
+    TENANT_DB_PREFIX: str = "wb_"
+    TENANT_POOL_SIZE: int = 3          # Per-tenant connection pool size
+    TENANT_MAX_OVERFLOW: int = 5       # Per-tenant max overflow connections
+    SUPER_ADMIN_SECRET: str = ""       # Secret for tenant management API auth
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Search, Pencil, Loader2, Truck } from 'lucide-react';
+import { Plus, Search, Pencil, Loader2, Truck, Settings2, X, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -28,10 +29,90 @@ interface Transporter {
 
 
 // ------------------------------------------------------------------ //
+// Vehicle Type Manager Dialog (Admin only)
+// ------------------------------------------------------------------ //
+function VehicleTypeManagerDialog({ open, types, onClose, onSaved }: {
+  open: boolean; types: string[];
+  onClose: () => void; onSaved: (types: string[]) => void;
+}) {
+  const [items, setItems] = useState<string[]>([]);
+  const [newType, setNewType] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (open) { setItems([...types]); setNewType(''); setError(''); }
+  }, [open, types]);
+
+  const addType = () => {
+    const val = newType.trim().toLowerCase().replace(/\s+/g, '_');
+    if (!val) return;
+    if (items.includes(val)) { setError(`"${val}" already exists`); return; }
+    setItems(prev => [...prev, val]);
+    setNewType('');
+    setError('');
+  };
+
+  const removeType = (t: string) => {
+    if (items.length <= 1) { setError('At least one vehicle type is required'); return; }
+    setItems(prev => prev.filter(x => x !== t));
+  };
+
+  async function handleSave() {
+    setSaving(true); setError('');
+    try {
+      const { data } = await api.put<string[]>('/api/v1/app-settings/vehicle-types', items);
+      onSaved(data);
+      onClose();
+    } catch {
+      setError('Failed to save vehicle types');
+    } finally { setSaving(false); }
+  }
+
+  const fmt = (t: string) => t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Manage Vehicle Types</DialogTitle></DialogHeader>
+        <div className="space-y-4">
+          {error && <p className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
+          <div className="flex flex-wrap gap-2">
+            {items.map(t => (
+              <Badge key={t} variant="secondary" className="gap-1 text-sm py-1 px-3">
+                {fmt(t)}
+                <button onClick={() => removeType(t)} className="ml-1 hover:text-destructive">
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <Input placeholder="New type name…" value={newType}
+              onChange={e => setNewType(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addType())} />
+            <Button variant="outline" size="icon" onClick={addType} disabled={!newType.trim()}>
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving || items.length === 0}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+            Save Types
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ------------------------------------------------------------------ //
 // Vehicle Dialog
 // ------------------------------------------------------------------ //
-function VehicleDialog({ open, editing, onClose, onSaved }: {
-  open: boolean; editing: Vehicle | null;
+function VehicleDialog({ open, editing, vehicleTypes, onClose, onSaved }: {
+  open: boolean; editing: Vehicle | null; vehicleTypes: string[];
   onClose: () => void; onSaved: (v: Vehicle) => void;
 }) {
   const [form, setForm] = useState({
@@ -91,10 +172,11 @@ function VehicleDialog({ open, editing, onClose, onSaved }: {
               <Select value={form.vehicle_type} onValueChange={v => set('vehicle_type', v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="truck">Truck</SelectItem>
-                  <SelectItem value="tractor">Tractor</SelectItem>
-                  <SelectItem value="trailer">Trailer</SelectItem>
-                  <SelectItem value="tipper">Tipper</SelectItem>
+                  {vehicleTypes.map(t => (
+                    <SelectItem key={t} value={t}>
+                      {t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -254,6 +336,21 @@ export default function VehiclesPage() {
   const [editD, setEditD] = useState<Driver | null>(null);
   const [editT, setEditT] = useState<Transporter | null>(null);
 
+  // Vehicle types (admin-configurable)
+  const [vehicleTypes, setVehicleTypes] = useState<string[]>([]);
+  const [typeDialog, setTypeDialog] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Fetch vehicle types + admin role on mount
+  useEffect(() => {
+    api.get<string[]>('/api/v1/app-settings/vehicle-types')
+      .then(r => setVehicleTypes(r.data))
+      .catch(() => setVehicleTypes(['truck', 'tractor', 'trailer', 'tipper', 'mini_truck', 'tanker', 'dumper']));
+    api.get<{ role: string }>('/api/v1/auth/me')
+      .then(r => setIsAdmin(r.data.role === 'admin'))
+      .catch(() => {});
+  }, []);
+
   const fetch = useCallback(async () => {
     setLoading(true);
     try {
@@ -286,9 +383,16 @@ export default function VehiclesPage() {
           <p className="text-muted-foreground">Manage vehicles, drivers and transporters</p>
         </div>
         {tab === 'vehicles' && (
-          <Button onClick={() => { setEditV(null); setVDialog(true); }}>
-            <Plus className="mr-2 h-4 w-4" /> Add Vehicle
-          </Button>
+          <div className="flex gap-2">
+            {isAdmin && (
+              <Button variant="outline" size="icon" onClick={() => setTypeDialog(true)} title="Manage Vehicle Types">
+                <Settings2 className="h-4 w-4" />
+              </Button>
+            )}
+            <Button onClick={() => { setEditV(null); setVDialog(true); }}>
+              <Plus className="mr-2 h-4 w-4" /> Add Vehicle
+            </Button>
+          </div>
         )}
         {tab === 'drivers' && (
           <Button onClick={() => { setEditD(null); setDDialog(true); }}>
@@ -337,9 +441,16 @@ export default function VehiclesPage() {
                     <div key={v.id} className="flex items-center gap-4 px-4 py-3 hover:bg-muted/30">
                       <Truck className="h-5 w-5 text-muted-foreground shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm">{v.registration_no}</p>
-                        <p className="text-xs text-muted-foreground capitalize">
-                          {v.vehicle_type} {v.owner_name ? `· ${v.owner_name}` : ''}
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-sm">{v.registration_no}</p>
+                          {v.vehicle_type && (
+                            <Badge variant="outline" className="text-[10px] capitalize">
+                              {v.vehicle_type.replace(/_/g, ' ')}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {v.owner_name ? v.owner_name : ''}
                         </p>
                       </div>
                       <div className="text-right">
@@ -448,8 +559,10 @@ export default function VehiclesPage() {
         </TabsContent>
       </Tabs>
 
-      <VehicleDialog open={vDialog} editing={editV} onClose={() => setVDialog(false)}
-        onSaved={() => fetch()} />
+      <VehicleDialog open={vDialog} editing={editV} vehicleTypes={vehicleTypes}
+        onClose={() => setVDialog(false)} onSaved={() => fetch()} />
+      <VehicleTypeManagerDialog open={typeDialog} types={vehicleTypes}
+        onClose={() => setTypeDialog(false)} onSaved={setVehicleTypes} />
       <DriverDialog open={dDialog} editing={editD} onClose={() => setDDialog(false)}
         onSaved={() => fetch()} />
       <TransporterDialog open={tDialog} editing={editT} onClose={() => setTDialog(false)}

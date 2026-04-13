@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { getTenantSlug } from './useAuth';
 
 export interface WeightReading {
   weight_kg: number;
@@ -28,7 +29,11 @@ export function useWeight() {
 
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const host = window.location.host;
-    const ws = new WebSocket(`${protocol}://${host}/ws/weight`);
+
+    // Append tenant slug as query param in multi-tenant mode
+    const tenant = getTenantSlug();
+    const tenantParam = tenant ? `?tenant=${encodeURIComponent(tenant)}` : '';
+    const ws = new WebSocket(`${protocol}://${host}/ws/weight${tenantParam}`);
     wsRef.current = ws;
 
     ws.onopen = () => {

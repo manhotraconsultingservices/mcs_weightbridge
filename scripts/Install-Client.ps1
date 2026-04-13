@@ -59,7 +59,7 @@ $DbName       = "weighbridge"
 $DbUser       = "weighbridge"
 $DbContainer  = "weighbridge_db"
 $BackendPort  = 9001
-$FrontendPort = 9000
+$FrontendPort = 3000
 
 # Determine where the release package is (same folder as this script's parent)
 $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path

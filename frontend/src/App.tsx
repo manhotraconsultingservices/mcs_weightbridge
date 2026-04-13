@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
@@ -30,6 +30,8 @@ import UserManagementPage from '@/pages/UserManagementPage';
 import PermissionsPage from '@/pages/PermissionsPage';
 import WallpaperSettingsPage from '@/pages/WallpaperSettingsPage';
 import CameraScalePage from '@/pages/CameraScalePage';
+import SnapshotSearchPage from '@/pages/SnapshotSearchPage';
+import TokenPageV1 from '@/pages/TokenPageV1';
 import Sidebar from '@/components/Sidebar';
 import type { User } from '@/types';
 
@@ -66,6 +68,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
           <Routes>
             <Route path="/" element={<HomeRedirect permissions={permissions} />} />
             <Route path="/tokens" element={<TokenPage />} />
+            <Route path="/tokens-v1" element={<TokenPageV1 />} />
             <Route path="/invoices" element={<InvoicesPage defaultType="sale" />} />
             <Route path="/purchase-invoices" element={<InvoicesPage defaultType="purchase" />} />
             <Route path="/quotations" element={<QuotationsPage />} />
@@ -85,6 +88,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/compliance" element={<CompliancePage />} />
             <Route path="/inventory" element={<InventoryPage />} />
             <Route path="/camera-scale" element={<CameraScalePage />} />
+            <Route path="/snapshot-search" element={<SnapshotSearchPage />} />
             {/* Administration — admin only (each page self-guards via role check) */}
             <Route path="/admin/users" element={<UserManagementPage />} />
             <Route path="/admin/permissions" element={<PermissionsPage />} />
@@ -105,12 +109,24 @@ interface LicenseStatus {
   expires: string | null;
 }
 
-function Root() {
+/** Wrapper that injects ?tenant= into the URL so LoginPage picks it up from the path segment */
+function TenantLoginRoute({ login }: { login: ReturnType<typeof useAuth>['login'] }) {
+  const { tenant } = useParams<{ tenant: string }>();
+  // Rewrite the URL to ?tenant=<slug> so resolveTenantFromUrl() works uniformly
+  useEffect(() => {
+    if (tenant && !window.location.search.includes('tenant=')) {
+      const newUrl = `/login?tenant=${encodeURIComponent(tenant)}`;
+      window.history.replaceState(null, '', newUrl);
+    }
+  }, [tenant]);
+  return <LoginPage onLogin={login} />;
+}
+
+function RootRoutes() {
   const { user, isAuthenticated, login, logout } = useAuth();
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
   const [licenseChecked, setLicenseChecked] = useState(false);
 
-  // Check license on mount
   useEffect(() => {
     fetch('/api/v1/license/status')
       .then(r => r.json())
@@ -119,12 +135,10 @@ function Root() {
         setLicenseChecked(true);
       })
       .catch(() => {
-        // If we can't reach the server at all, allow — server will enforce anyway
         setLicenseChecked(true);
       });
   }, []);
 
-  // Show nothing while checking license
   if (!licenseChecked) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -133,7 +147,6 @@ function Root() {
     );
   }
 
-  // Block if license is invalid
   if (licenseStatus && !licenseStatus.valid) {
     return (
       <LicenseExpiredPage
@@ -145,23 +158,28 @@ function Root() {
     );
   }
 
-  // Private admin console — renders outside the main layout (no sidebar)
-  if (window.location.pathname === '/priv-admin') {
-    if (!isAuthenticated || !user) return <LoginPage onLogin={login} />;
-    return <PrivateAdminPage />;
-  }
-
-  if (!isAuthenticated || !user) {
-    return <LoginPage onLogin={login} />;
-  }
-
-  return <AppLayout user={user} logout={logout} />;
+  return (
+    <Routes>
+      {/* Dedicated per-tenant login URL: /login/alpha, /login/beta, etc. */}
+      <Route path="/login/:tenant" element={<TenantLoginRoute login={login} />} />
+      <Route path="/priv-admin" element={
+        (!isAuthenticated || !user)
+          ? <LoginPage onLogin={login} />
+          : <PrivateAdminPage />
+      } />
+      <Route path="*" element={
+        (!isAuthenticated || !user)
+          ? <LoginPage onLogin={login} />
+          : <AppLayout user={user} logout={logout} />
+      } />
+    </Routes>
+  );
 }
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Root />
+      <RootRoutes />
       <Toaster richColors position="top-right" closeButton />
     </BrowserRouter>
   );

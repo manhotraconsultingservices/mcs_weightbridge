@@ -100,8 +100,10 @@ Write-Host "`n[3/3] Packaging release..." -ForegroundColor Green
 
 # Copy supporting files
 $FilesToCopy = @(
-    @{ Src = (Join-Path $RootDir "docker-compose.yml"); Dst = "docker-compose.yml" },
-    @{ Src = (Join-Path $RootDir "SETUP_GUIDE.md"); Dst = "SETUP_GUIDE.md" },
+    @{ Src = (Join-Path $RootDir "docker-compose.yml");                           Dst = "docker-compose.yml" },
+    @{ Src = (Join-Path $RootDir "SETUP_GUIDE.md");                               Dst = "SETUP_GUIDE.md" },
+    @{ Src = (Join-Path $RootDir "instructions\CLIENT_INSTALLATION_GUIDE.md");    Dst = "CLIENT_INSTALLATION_GUIDE.md" },
+    @{ Src = (Join-Path $RootDir "backend\show_fingerprint.py");                  Dst = "show_fingerprint.py" },
 )
 foreach ($f in $FilesToCopy) {
     $src = $f.Src
@@ -113,7 +115,13 @@ foreach ($f in $FilesToCopy) {
 # Copy scripts
 $ScriptsDir = Join-Path $ReleaseDir "scripts"
 New-Item -ItemType Directory -Path $ScriptsDir -Force | Out-Null
-$ScriptFiles = @("install-services.ps1", "manage-services.ps1")
+$ScriptFiles = @(
+    "Install-Client.ps1",
+    "install-services.ps1",
+    "manage-services.ps1",
+    "Get-Fingerprint.ps1",
+    "Get-Fingerprint.bat"
+)
 foreach ($s in $ScriptFiles) {
     $src = Join-Path $RootDir "scripts\$s"
     if (Test-Path $src) {
@@ -147,7 +155,8 @@ Write-Host "  Release: $ReleaseDir" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow
-Write-Host "  1. Generate a license.key for the client machine"
-Write-Host "  2. Copy .env.template to .env and configure"
-Write-Host "  3. Ship the entire weighbridge-v$Version folder to the client"
-Write-Host "  4. Run scripts\install-services.ps1 at the client site"
+Write-Host "  1. Run Get-Fingerprint.bat/ps1 on the client machine to capture fingerprint"
+Write-Host "  2. Run: python generate_license.py --fingerprint fingerprint.json --customer 'Name' --serial WB-XXXX --expires YYYY-MM-DD"
+Write-Host "  3. Copy license.key to the root of the weighbridge-v$Version folder"
+Write-Host "  4. Copy the entire weighbridge-v$Version folder to a USB drive"
+Write-Host "  5. On the client machine: right-click scripts\Install-Client.ps1 → Run with PowerShell"

@@ -1,19 +1,12 @@
 import { useState } from 'react';
 import { Printer, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import api from '@/services/api';
 import { toast } from 'sonner';
 
 interface PrintButtonProps {
   /** API URL for the print endpoint, e.g. /api/v1/tokens/{id}/print */
   url: string;
-  /** Separate URL for A4 if different (e.g. /api/v1/invoices/{id}/pdf → downloads as PDF blob) */
+  /** Separate URL for A4/PDF if different */
   a4Url?: string;
   label?: string;
   size?: 'sm' | 'default';
@@ -29,74 +22,73 @@ export function PrintButton({
   variant = 'ghost',
   iconOnly = false,
 }: PrintButtonProps) {
-  const [loading, setLoading] = useState<'a4' | 'thermal' | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  async function doPrint(format: 'a4' | 'thermal') {
-    setLoading(format);
+  async function doPrint() {
+    setLoading(true);
     try {
-      const printUrl =
-        format === 'a4' && a4Url ? a4Url : `${url}?format=${format}`;
-      const mimeType =
-        format === 'a4' && a4Url ? 'application/pdf' : 'text/html';
-
+      const printUrl = a4Url ?? `${url}?format=a5`;
       const res = await api.get(printUrl, { responseType: 'blob' });
-      const blob = new Blob([res.data], { type: mimeType });
-      const blobUrl = URL.createObjectURL(blob);
 
-      const popup = window.open(
-        blobUrl,
-        '_blank',
-        format === 'thermal'
-          ? 'width=320,height=650,scrollbars=yes,resizable=no'
-          : 'width=900,height=750,scrollbars=yes',
-      );
+      const contentType = res.headers['content-type'] || '';
+      const blob = res.data as Blob;
 
+      // If response is HTML (e.g. token weighment slip), open as HTML page
+      // which has its own window.print() script embedded
+      if (contentType.includes('text/html')) {
+        const htmlBlob = new Blob([blob], { type: 'text/html' });
+        const blobUrl = URL.createObjectURL(htmlBlob);
+        const popup = window.open(blobUrl, '_blank', 'width=620,height=900,scrollbars=yes');
+        if (!popup) {
+          toast.error('Popup was blocked. Please allow popups for this site.');
+          URL.revokeObjectURL(blobUrl);
+          return;
+        }
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+        return;
+      }
+
+      // Default: treat as PDF
+      const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+      const blobUrl = URL.createObjectURL(pdfBlob);
+
+      const popup = window.open(blobUrl, '_blank', 'width=620,height=900,scrollbars=yes');
       if (!popup) {
         toast.error('Popup was blocked. Please allow popups for this site.');
         URL.revokeObjectURL(blobUrl);
         return;
       }
 
-      // Revoke the blob URL after 60 seconds to free memory
       setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
     } catch {
       toast.error('Could not open print preview. Please try again.');
     } finally {
-      setLoading(null);
+      setLoading(false);
     }
   }
 
-  const isLoading = loading !== null;
-
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          size={size === 'sm' ? 'icon' : 'default'}
-          variant={variant}
-          className={size === 'sm' ? 'h-7 w-7' : ''}
-          disabled={isLoading}
-          title="Print"
-        >
-          {isLoading ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Printer className="h-3.5 w-3.5" />
-          )}
-          {!iconOnly && label && <span className="ml-1">{label}</span>}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => doPrint('a4')} disabled={isLoading}>
-          <span className="mr-2">📄</span> A4 Print
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => doPrint('thermal')}
-          disabled={isLoading}
-        >
-          <span className="mr-2">🧾</span> Thermal Print (80mm)
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <button
+      onClick={doPrint}
+      disabled={loading}
+      title="Print"
+      className={[
+        'inline-flex items-center justify-center rounded-md transition-colors',
+        'disabled:pointer-events-none disabled:opacity-50 cursor-pointer',
+        size === 'sm' ? 'h-7 w-7' : 'h-9 px-3 gap-1.5 text-sm font-medium',
+        variant === 'outline'
+          ? 'border border-input bg-background hover:bg-accent hover:text-accent-foreground'
+          : variant === 'default'
+          ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+          : 'hover:bg-accent hover:text-accent-foreground',
+      ].join(' ')}
+    >
+      {loading ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <Printer className="h-3.5 w-3.5" />
+      )}
+      {!iconOnly && label && <span>{label}</span>}
+    </button>
   );
 }

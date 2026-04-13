@@ -121,9 +121,15 @@ async def create_receipt(
         "party_phone": party.phone or "",
         "company_name": co.name,
     }
+    _bg_tenant = None
+    try:
+        from app.multitenancy.context import current_tenant_slug
+        _bg_tenant = current_tenant_slug.get()
+    except Exception:
+        pass
     background_tasks.add_task(
         _send_notification_bg,
-        co.id, "payment_received", _notify_ctx, "receipt", str(rec.id),
+        co.id, "payment_received", _notify_ctx, "receipt", str(rec.id), _bg_tenant,
     )
 
     return PaymentReceiptResponse(
@@ -141,13 +147,14 @@ async def _send_notification_bg(
     context: dict,
     entity_type: str | None = None,
     entity_id: str | None = None,
+    tenant_slug: str | None = None,
 ) -> None:
     """Background-task wrapper: opens its own DB session and fires a notification."""
     import logging as _logging
     try:
-        from app.database import async_session
+        from app.database import get_tenant_session
         from app.integrations.notifications.service import send_notification
-        async with async_session() as db:
+        async with await get_tenant_session(tenant_slug) as db:
             await send_notification(db, company_id, event_type, context, entity_type, entity_id)
     except Exception as exc:
         _logging.getLogger(__name__).warning("Background notification failed [%s]: %s", event_type, exc)
@@ -415,3 +422,138 @@ async def outstanding(
 
     return OutstandingResponse(items=items, total_outstanding=total_outstanding,
                                total_overdue=total_overdue)
+
+
+# ── Voucher / Receipt PDF ────────────────────────────────────────────────────
+
+def _amount_to_words(amount: float) -> str:
+    """Simple INR amount-to-words (handles up to crores)."""
+    ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+            'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+            'Seventeen', 'Eighteen', 'Nineteen']
+    tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
+
+    def _two_digits(n: int) -> str:
+        if n < 20: return ones[n]
+        return tens[n // 10] + (' ' + ones[n % 10] if n % 10 else '')
+
+    n = int(round(amount))
+    if n == 0: return 'Zero Rupees'
+    parts = []
+    if n >= 10000000:
+        parts.append(_two_digits(n // 10000000) + ' Crore')
+        n %= 10000000
+    if n >= 100000:
+        parts.append(_two_digits(n // 100000) + ' Lakh')
+        n %= 100000
+    if n >= 1000:
+        parts.append(_two_digits(n // 1000) + ' Thousand')
+        n %= 1000
+    if n >= 100:
+        parts.append(ones[n // 100] + ' Hundred')
+        n %= 100
+    if n > 0:
+        parts.append(_two_digits(n))
+    return ' '.join(parts) + ' Rupees Only'
+
+
+@router.get("/receipts/{receipt_id}/pdf")
+async def receipt_pdf(
+    receipt_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate PDF for a payment receipt."""
+    rec = (await db.execute(select(PaymentReceipt).where(PaymentReceipt.id == receipt_id))).scalar_one_or_none()
+    if not rec:
+        raise HTTPException(404, "Receipt not found")
+
+    party = (await db.execute(select(Party).where(Party.id == rec.party_id))).scalar_one_or_none()
+    company = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
+
+    # Get linked invoices
+    linked = []
+    links = (await db.execute(
+        select(InvoicePayment).where(InvoicePayment.receipt_id == rec.id)
+    )).scalars().all()
+    for link in links:
+        inv = (await db.execute(select(Invoice).where(Invoice.id == link.invoice_id))).scalar_one_or_none()
+        if inv:
+            linked.append({
+                "invoice_no": inv.invoice_no or "Draft",
+                "invoice_date": inv.invoice_date.strftime("%d-%m-%Y") if inv.invoice_date else "",
+                "invoice_amount": f"{float(inv.grand_total):,.2f}",
+                "applied_amount": f"{float(link.amount):,.2f}",
+            })
+
+    from app.utils.pdf_generator import generate_pdf
+    context = {
+        "company": company,
+        "voucher_type": "receipt",
+        "voucher_no": rec.receipt_no or "—",
+        "voucher_date": rec.receipt_date.strftime("%d-%m-%Y") if rec.receipt_date else "",
+        "party_name": party.name if party else "—",
+        "party_gstin": party.gstin if party else "",
+        "payment_mode": rec.payment_mode or "cash",
+        "reference_no": rec.reference_no or "",
+        "amount": f"{float(rec.amount):,.2f}",
+        "amount_words": _amount_to_words(float(rec.amount)),
+        "narration": rec.narration if hasattr(rec, 'narration') else "",
+        "linked_invoices": linked,
+    }
+
+    from fastapi.responses import Response
+    pdf_bytes = generate_pdf("voucher.html", context)
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                    headers={"Content-Disposition": f"inline; filename=Receipt_{rec.receipt_no or 'draft'}.pdf"})
+
+
+@router.get("/vouchers/{voucher_id}/pdf")
+async def voucher_pdf(
+    voucher_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate PDF for a payment voucher."""
+    rec = (await db.execute(select(PaymentVoucher).where(PaymentVoucher.id == voucher_id))).scalar_one_or_none()
+    if not rec:
+        raise HTTPException(404, "Voucher not found")
+
+    party = (await db.execute(select(Party).where(Party.id == rec.party_id))).scalar_one_or_none()
+    company = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
+
+    # Get linked invoices
+    linked = []
+    links = (await db.execute(
+        select(InvoicePayment).where(InvoicePayment.voucher_id == rec.id)
+    )).scalars().all()
+    for link in links:
+        inv = (await db.execute(select(Invoice).where(Invoice.id == link.invoice_id))).scalar_one_or_none()
+        if inv:
+            linked.append({
+                "invoice_no": inv.invoice_no or "Draft",
+                "invoice_date": inv.invoice_date.strftime("%d-%m-%Y") if inv.invoice_date else "",
+                "invoice_amount": f"{float(inv.grand_total):,.2f}",
+                "applied_amount": f"{float(link.amount):,.2f}",
+            })
+
+    from app.utils.pdf_generator import generate_pdf
+    context = {
+        "company": company,
+        "voucher_type": "voucher",
+        "voucher_no": rec.voucher_no or "—",
+        "voucher_date": rec.voucher_date.strftime("%d-%m-%Y") if rec.voucher_date else "",
+        "party_name": party.name if party else "—",
+        "party_gstin": party.gstin if party else "",
+        "payment_mode": rec.payment_mode or "cash",
+        "reference_no": rec.reference_no if hasattr(rec, 'reference_no') else "",
+        "amount": f"{float(rec.amount):,.2f}",
+        "amount_words": _amount_to_words(float(rec.amount)),
+        "narration": rec.narration if hasattr(rec, 'narration') else "",
+        "linked_invoices": linked,
+    }
+
+    from fastapi.responses import Response
+    pdf_bytes = generate_pdf("voucher.html", context)
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                    headers={"Content-Disposition": f"inline; filename=Voucher_{rec.voucher_no or 'draft'}.pdf"})

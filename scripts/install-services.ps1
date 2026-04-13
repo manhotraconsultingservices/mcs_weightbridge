@@ -288,10 +288,10 @@ if (-not $BackendOnly) {
     }
 
     & $nssm install $SvcFrontend "cmd.exe"
-    & $nssm set $SvcFrontend AppParameters    "/c `"$serveAppPath`" -s `"$FrontendDist`" -l 9000 --no-clipboard"
+    & $nssm set $SvcFrontend AppParameters    "/c `"$serveAppPath`" -s `"$FrontendDist`" -l 3000 --no-clipboard"
     & $nssm set $SvcFrontend AppDirectory     $FrontendDir
     & $nssm set $SvcFrontend DisplayName      "Weighbridge - Frontend (Static)"
-    & $nssm set $SvcFrontend Description      "Weighbridge Invoice Software frontend. Serves built React app on port 9000."
+    & $nssm set $SvcFrontend Description      "Weighbridge Invoice Software frontend. Serves built React app on port 3000."
     & $nssm set $SvcFrontend Start            SERVICE_AUTO_START
     & $nssm set $SvcFrontend AppStdout        (Join-Path $LogDir "frontend_stdout.log")
     & $nssm set $SvcFrontend AppStderr        (Join-Path $LogDir "frontend_stderr.log")
@@ -343,7 +343,7 @@ Write-Host "                  Services Registered!                      " -Foreg
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Backend  URL : http://localhost:9001"
-Write-Host "  Frontend URL : http://localhost:9000"
+Write-Host "  Frontend URL : http://localhost:3000"
 Write-Host "  API Docs     : http://localhost:9001/docs"
 Write-Host "  Log files    : $LogDir"
 Write-Host ""

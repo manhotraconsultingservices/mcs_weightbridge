@@ -63,6 +63,20 @@ class Invoice(Base):
     tally_synced: Mapped[bool] = mapped_column(Boolean, default=False)
     tally_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Revision / amendment tracking
+    revision_no: Mapped[int] = mapped_column(Integer, default=1)
+    original_invoice_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("invoices.id"), nullable=True)
+
+    # eInvoice (GST IRN)
+    irn: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    irn_ack_no: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    irn_ack_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    irn_qr_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    irn_signed_invoice: Mapped[str | None] = mapped_column(Text, nullable=True)
+    einvoice_status: Mapped[str] = mapped_column(String(20), default="none")  # none, success, failed, cancelled
+    einvoice_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    irn_cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

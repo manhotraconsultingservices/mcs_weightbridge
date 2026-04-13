@@ -30,6 +30,14 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
+    # In multi-tenant mode, the ContextVar is already set by TenantMiddleware
+    # before this dependency is resolved, so get_db() routes correctly.
+    # We validate the tenant claim exists in the JWT for safety.
+    if settings.MULTI_TENANT:
+        tenant_slug = payload.get("tenant")
+        if not tenant_slug:
+            raise credentials_exception
+
     result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
     user = result.scalar_one_or_none()
     if user is None or not user.is_active:

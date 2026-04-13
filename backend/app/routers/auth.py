@@ -1,12 +1,13 @@
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Form
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
+from app.config import get_settings
 from app.models.user import User
 from app.schemas.auth import (
     LoginRequest, TokenResponse, UserCreate, UserUpdate,
@@ -25,17 +26,20 @@ _LOCKOUT_WINDOW    = 30         # minutes window to count failures in
 from fastapi import Request
 from sqlalchemy import text as _sql
 
-@router.post("/login", response_model=TokenResponse)
-async def login(
-    request: Request,
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: AsyncSession = Depends(get_db),
-):
+
+# ── Internal auth helper (shared by single-tenant and multi-tenant) ──────────
+
+async def _authenticate_user(
+    db: AsyncSession, form_data, request: Request
+) -> User:
+    """Validate credentials against a tenant database. Returns User on success.
+    Raises HTTPException on lockout / bad credentials / disabled account.
+    """
     client_ip = (request.client.host if request.client else "unknown")
     scope     = f"ip:{client_ip}"
     now       = datetime.now(timezone.utc)
 
-    # ── 1. Check lockout ─────────────────────────────────────────────────────
+    # 1. Check lockout
     lockout_row = (await db.execute(
         _sql("SELECT locked_until, fail_count FROM login_lockouts WHERE scope = :s"),
         {"s": scope},
@@ -53,15 +57,14 @@ async def login(
             detail=f"Too many failed attempts. Account locked for {remaining} more minute(s).",
         )
 
-    # ── 2. Look up user ──────────────────────────────────────────────────────
+    # 2. Look up user
     result = await db.execute(select(User).where(User.username == form_data.username))
     user   = result.scalar_one_or_none()
 
-    # ── 3. Verify password ───────────────────────────────────────────────────
+    # 3. Verify password
     password_ok = user is not None and verify_password(form_data.password, user.password_hash)
 
     if not password_ok:
-        # Record failure — upsert into lockouts table
         await db.execute(
             _sql("""
                 INSERT INTO login_lockouts (scope, fail_count, last_attempt, locked_until)
@@ -95,7 +98,7 @@ async def login(
         await db.commit()
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
 
-    # ── 4. Success — clear lockout, write audit, issue token ─────────────────
+    # 4. Success — clear lockout, write audit
     await db.execute(_sql("DELETE FROM login_lockouts WHERE scope = :s"), {"s": scope})
     await db.execute(
         _sql("INSERT INTO login_audit (username, ip_address, user_id, success) VALUES (:u, :ip, :uid, TRUE)"),
@@ -103,12 +106,49 @@ async def login(
     )
     user.last_login = now
     await db.commit()
+    return user
 
-    token = create_access_token(data={"sub": str(user.id)})
-    return TokenResponse(
-        access_token=token,
-        user=UserResponse.model_validate(user),
-    )
+
+@router.post("/login", response_model=TokenResponse)
+async def login(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    tenant_slug: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+):
+    settings = get_settings()
+
+    if settings.MULTI_TENANT:
+        # ── Multi-tenant login ──────────────────────────────────────────────
+        if not tenant_slug:
+            raise HTTPException(400, "tenant_slug is required for multi-tenant mode")
+
+        from app.multitenancy.registry import tenant_registry
+        tenant = await tenant_registry.get_tenant(tenant_slug)
+        if not tenant or not tenant.is_active:
+            raise HTTPException(404, "Tenant not found or inactive")
+
+        # Authenticate against the tenant's database
+        factory = await tenant_registry.get_session_factory(tenant_slug)
+        async with factory() as tenant_db:
+            user = await _authenticate_user(tenant_db, form_data, request)
+            token = create_access_token(data={
+                "sub": str(user.id),
+                "tenant": tenant_slug,
+            })
+            return TokenResponse(
+                access_token=token,
+                user=UserResponse.model_validate(user),
+                tenant_slug=tenant_slug,
+            )
+    else:
+        # ── Single-tenant login (existing behavior) ─────────────────────────
+        user = await _authenticate_user(db, form_data, request)
+        token = create_access_token(data={"sub": str(user.id)})
+        return TokenResponse(
+            access_token=token,
+            user=UserResponse.model_validate(user),
+        )
 
 
 @router.get("/me", response_model=UserResponse)
