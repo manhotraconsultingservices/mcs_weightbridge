@@ -149,11 +149,22 @@ function RootRoutes() {
   const [licenseChecked, setLicenseChecked] = useState(false);
 
   useEffect(() => {
-    fetch('/api/v1/license/status')
+    // Check health first to detect multi-tenant mode
+    fetch('/api/v1/health')
       .then(r => r.json())
-      .then((data: LicenseStatus) => {
-        setLicenseStatus(data);
-        setLicenseChecked(true);
+      .then((health) => {
+        if (health.multi_tenant) {
+          // SaaS mode — skip license check entirely
+          setLicenseChecked(true);
+          return;
+        }
+        // Single-tenant: check license as before
+        return fetch('/api/v1/license/status')
+          .then(r => r.json())
+          .then((data: LicenseStatus) => {
+            setLicenseStatus(data);
+            setLicenseChecked(true);
+          });
       })
       .catch(() => {
         setLicenseChecked(true);
@@ -163,7 +174,7 @@ function RootRoutes() {
   if (!licenseChecked) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <div className="animate-pulse text-muted-foreground text-sm">Checking license...</div>
+        <div className="animate-pulse text-muted-foreground text-sm">Loading...</div>
       </div>
     );
   }
