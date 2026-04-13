@@ -228,7 +228,8 @@ async def create_tenant(
 
     settings = get_settings()
     slug = payload.slug
-    db_name = f"{settings.TENANT_DB_PREFIX}{slug}"
+    db_slug = slug.replace("-", "_")  # PG db names can't have hyphens
+    db_name = f"{settings.TENANT_DB_PREFIX}{db_slug}"
 
     # Check uniqueness
     existing = (await db.execute(select(Tenant).where(Tenant.slug == slug))).scalar_one_or_none()

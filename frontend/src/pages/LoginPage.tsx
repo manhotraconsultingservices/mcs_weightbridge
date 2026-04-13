@@ -35,14 +35,14 @@ function resolveTenantFromUrl(): string | null {
   const fromQuery = params.get('tenant') || params.get('company');
   if (fromQuery) return fromQuery.trim().toLowerCase();
 
-  // 2. Path segment: /login/alpha
-  const pathMatch = window.location.pathname.match(/\/login\/([a-z][a-z0-9_]{1,30})/i);
+  // 2. Path segment: /login/alpha or /login/ziya-ore-minerals
+  const pathMatch = window.location.pathname.match(/\/login\/([a-z][a-z0-9-]{1,30})/i);
   if (pathMatch) return pathMatch[1].toLowerCase();
 
-  // 3. Subdomain: alpha.weighbridge.app  (skip www / localhost)
+  // 3. Subdomain: alpha.weighbridgesetu.com or ziya-ore-minerals.weighbridgesetu.com
   const host = window.location.hostname;
-  const subdomainMatch = host.match(/^([a-z][a-z0-9_]{1,30})\..+\..+$/i);
-  if (subdomainMatch && subdomainMatch[1] !== 'www') {
+  const subdomainMatch = host.match(/^([a-z][a-z0-9-]{1,30})\..+\..+$/i);
+  if (subdomainMatch && subdomainMatch[1] !== 'www' && subdomainMatch[1] !== 'platform') {
     return subdomainMatch[1].toLowerCase();
   }
 

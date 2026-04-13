@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, field_validator
 
 
-SLUG_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,30}$")
+SLUG_PATTERN = re.compile(r"^[a-z][a-z0-9-]{2,30}$")  # hyphens only (no underscores — invalid in DNS)
 
 
 class TenantCreate(BaseModel):

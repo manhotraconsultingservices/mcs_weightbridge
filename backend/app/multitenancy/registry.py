@@ -22,8 +22,8 @@ from app.multitenancy.models import Tenant
 
 logger = logging.getLogger(__name__)
 
-# Slug validation: lowercase alpha start, then alpha/digits/underscore, 3-31 chars
-SLUG_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,30}$")
+# Slug validation: lowercase alpha start, then alpha/digits/hyphens, 3-31 chars (DNS-safe)
+SLUG_PATTERN = re.compile(r"^[a-z][a-z0-9-]{2,30}$")
 
 
 class TenantRegistry:
@@ -36,13 +36,18 @@ class TenantRegistry:
 
     # ── URL builder ──────────────────────────────────────────────────────────
 
+    @staticmethod
+    def slug_to_dbname(slug: str) -> str:
+        """Convert DNS-safe slug (hyphens) to PG-safe db name (underscores)."""
+        return slug.replace("-", "_")
+
     def build_db_url(self, slug: str) -> str:
         """Replace the database name in MASTER_DATABASE_URL with wb_{slug}."""
         from app.config import get_settings
         settings = get_settings()
         parsed = urlparse(settings.MASTER_DATABASE_URL)
-        # path is  /weighbridge_master  →  /wb_{slug}
-        new_path = f"/{settings.TENANT_DB_PREFIX}{slug}"
+        db_slug = self.slug_to_dbname(slug)
+        new_path = f"/{settings.TENANT_DB_PREFIX}{db_slug}"
         return urlunparse(parsed._replace(path=new_path))
 
     def build_db_url_sync(self, slug: str) -> str:
@@ -50,7 +55,8 @@ class TenantRegistry:
         from app.config import get_settings
         settings = get_settings()
         parsed = urlparse(settings.MASTER_DATABASE_URL_SYNC)
-        new_path = f"/{settings.TENANT_DB_PREFIX}{slug}"
+        db_slug = self.slug_to_dbname(slug)
+        new_path = f"/{settings.TENANT_DB_PREFIX}{db_slug}"
         return urlunparse(parsed._replace(path=new_path))
 
     # ── Engine / session factory ─────────────────────────────────────────────

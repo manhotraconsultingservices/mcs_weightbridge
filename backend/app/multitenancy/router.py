@@ -99,7 +99,8 @@ async def create_tenant(
     """Create a new tenant: register in master DB, create database, seed data."""
     settings = get_settings()
     slug = payload.slug
-    db_name = f"{settings.TENANT_DB_PREFIX}{slug}"
+    db_slug = slug.replace("-", "_")  # PG db names can't have hyphens
+    db_name = f"{settings.TENANT_DB_PREFIX}{db_slug}"
 
     # Check slug doesn't already exist
     existing = await db.execute(select(Tenant).where(Tenant.slug == slug))
