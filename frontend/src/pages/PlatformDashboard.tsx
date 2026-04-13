@@ -43,7 +43,7 @@ function OnboardDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
   const [saving, setSaving] = useState(false);
 
   function autoSlug(name: string) {
-    return name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').slice(0, 30);
+    return name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
   }
 
   async function handleCreate() {
@@ -96,8 +96,8 @@ function OnboardDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
           </div>
           <div>
             <Label>Slug (URL identifier) *</Label>
-            <Input value={slug} onChange={e => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} placeholder="alpha_crushers" className="font-mono text-sm" />
-            <p className="text-[10px] text-muted-foreground mt-0.5">URL: {slug || '...'}.weighbridge.app</p>
+            <Input value={slug} onChange={e => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))} placeholder="ziya-ore-minerals" className="font-mono text-sm" />
+            <p className="text-[10px] text-muted-foreground mt-0.5">URL: {slug || '...'}.weighbridgesetu.com</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

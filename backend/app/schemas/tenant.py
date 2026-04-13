@@ -28,7 +28,7 @@ class TenantCreate(BaseModel):
         if not SLUG_PATTERN.match(v):
             raise ValueError(
                 "Slug must be 3-31 chars, start with letter, "
-                "only lowercase letters/digits/underscores"
+                "only lowercase letters, digits, and hyphens (DNS-safe)"
             )
         # Reserved slugs
         if v in ("admin", "master", "system", "public", "default", "api", "www", "platform"):
