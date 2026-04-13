@@ -13,6 +13,47 @@ export interface LoginResponse {
   token_type: string;
   user: User;
   tenant_slug?: string;
+  tenant_status?: string;         // active | readonly | suspended
+  tenant_status_message?: string;
+}
+
+// ── Platform types ──────────────────────────────────────────────────────────
+
+export interface PlatformBranding {
+  company_name: string;
+  website: string | null;
+  email: string | null;
+  logo_url: string | null;
+}
+
+export interface PlatformUser {
+  id: string;
+  username: string;
+  full_name: string | null;
+  email: string | null;
+  phone: string | null;
+  role: 'platform_admin' | 'sales_rep';
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TenantOverview {
+  id: string;
+  slug: string;
+  display_name: string;
+  db_name: string;
+  is_active: boolean;
+  status: string;
+  amc_start_date: string | null;
+  amc_expiry_date: string | null;
+  logo_url: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  agent_api_key: string;
+  sales_reps: { id: string; username: string; full_name: string | null; email: string | null }[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Company {

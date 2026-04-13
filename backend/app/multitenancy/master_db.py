@@ -62,25 +62,116 @@ def get_master_session_factory():
 
 
 async def init_master_db():
-    """Create the tenants table in the master database if it doesn't exist."""
+    """Create/migrate all master database tables."""
     _ensure_initialized()
-    ddl = """
-    CREATE TABLE IF NOT EXISTS tenants (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        slug VARCHAR(50) NOT NULL UNIQUE,
-        display_name VARCHAR(200) NOT NULL,
-        db_name VARCHAR(100) NOT NULL UNIQUE,
-        is_active BOOLEAN NOT NULL DEFAULT TRUE,
-        agent_api_key VARCHAR(200) NOT NULL UNIQUE,
-        config JSONB,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-    """
+
+    ddl_statements = [
+        # ── Tenants table (original) ──
+        """
+        CREATE TABLE IF NOT EXISTS tenants (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            slug VARCHAR(50) NOT NULL UNIQUE,
+            display_name VARCHAR(200) NOT NULL,
+            db_name VARCHAR(100) NOT NULL UNIQUE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            agent_api_key VARCHAR(200) NOT NULL UNIQUE,
+            config JSONB,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        # ── Tenant column migrations (new SaaS fields) ──
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'",
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS amc_start_date DATE",
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS amc_expiry_date DATE",
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS logo_url VARCHAR(500)",
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_email VARCHAR(200)",
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_phone VARCHAR(20)",
+
+        # ── Platform users (internal staff: platform_admin, sales_rep) ──
+        """
+        CREATE TABLE IF NOT EXISTS platform_users (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            username VARCHAR(50) NOT NULL UNIQUE,
+            password_hash VARCHAR(255) NOT NULL,
+            full_name VARCHAR(100),
+            email VARCHAR(200),
+            phone VARCHAR(20),
+            role VARCHAR(20) NOT NULL DEFAULT 'sales_rep',
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+
+        # ── Tenant ↔ Sales rep junction ──
+        """
+        CREATE TABLE IF NOT EXISTS tenant_sales_reps (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            platform_user_id UUID NOT NULL REFERENCES platform_users(id) ON DELETE CASCADE,
+            assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(tenant_id, platform_user_id)
+        )
+        """,
+
+        # ── Platform branding (singleton row) ──
+        """
+        CREATE TABLE IF NOT EXISTS platform_branding (
+            id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+            company_name VARCHAR(200) NOT NULL DEFAULT 'Manhotra Consulting',
+            website VARCHAR(500),
+            email VARCHAR(200),
+            logo_url VARCHAR(500),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+    ]
+
     async with _master_session_factory() as db:
-        await db.execute(text(ddl))
+        for ddl in ddl_statements:
+            await db.execute(text(ddl))
         await db.commit()
-    logger.info("Master database initialized (tenants table ensured)")
+
+    # Seed defaults
+    await _seed_platform_defaults()
+    logger.info("Master database initialized (all platform tables ensured)")
+
+
+async def _seed_platform_defaults():
+    """Seed default platform admin user and branding row if tables are empty."""
+    from passlib.context import CryptContext
+    from app.config import get_settings
+
+    pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    settings = get_settings()
+
+    async with _master_session_factory() as db:
+        # Seed default branding
+        row = (await db.execute(text("SELECT id FROM platform_branding WHERE id = 1"))).fetchone()
+        if not row:
+            await db.execute(text("""
+                INSERT INTO platform_branding (id, company_name, website, email)
+                VALUES (1, 'Manhotra Consulting', 'https://manhotraconsulting.com', 'info@manhotraconsulting.com')
+            """))
+            logger.info("Seeded default platform branding")
+
+        # Seed default platform admin
+        admin_user = getattr(settings, "PLATFORM_ADMIN_USER", "platform_admin")
+        admin_pass = getattr(settings, "PLATFORM_ADMIN_PASSWORD", "Admin@123")
+        existing = (await db.execute(
+            text("SELECT id FROM platform_users WHERE username = :u"),
+            {"u": admin_user},
+        )).fetchone()
+        if not existing:
+            hashed = pwd_ctx.hash(admin_pass)
+            await db.execute(text("""
+                INSERT INTO platform_users (username, password_hash, full_name, role)
+                VALUES (:u, :h, 'Platform Administrator', 'platform_admin')
+            """), {"u": admin_user, "h": hashed})
+            logger.info("Seeded default platform admin user: %s", admin_user)
+
+        await db.commit()
 
 
 async def dispose_master():

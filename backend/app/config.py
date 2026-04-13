@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     TENANT_POOL_SIZE: int = 3          # Per-tenant connection pool size
     TENANT_MAX_OVERFLOW: int = 5       # Per-tenant max overflow connections
     SUPER_ADMIN_SECRET: str = ""       # Secret for tenant management API auth
+    PLATFORM_ADMIN_USER: str = "platform_admin"     # Default platform admin username
+    PLATFORM_ADMIN_PASSWORD: str = "Admin@123"      # Default platform admin password
 
     class Config:
         env_file = ".env"

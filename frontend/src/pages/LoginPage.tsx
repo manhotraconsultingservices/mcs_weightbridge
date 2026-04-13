@@ -1,5 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react';
-import { Eye, EyeOff, Building2 } from 'lucide-react';
+import { Eye, EyeOff, Building2, AlertTriangle, ExternalLink, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,12 +11,23 @@ interface LoginPageProps {
   onLogin: (token: string, user: LoginResponse['user'], tenantSlug?: string) => void;
 }
 
+interface TenantInfo {
+  slug: string;
+  display_name: string;
+  logo_url: string | null;
+  status: string; // active | readonly | suspended
+  branding: {
+    company_name: string;
+    website: string | null;
+    email: string | null;
+    logo_url: string | null;
+  };
+}
+
 /** Resolve tenant slug from URL — supports three patterns:
  *  1. ?tenant=alpha          (query param — works anywhere)
  *  2. /login/alpha           (path segment after /login/)
  *  3. alpha.example.com      (subdomain — for production deployments)
- *
- * Returns null if not found (generic login).
  */
 function resolveTenantFromUrl(): string | null {
   // 1. Query param: ?tenant=alpha  OR  ?company=alpha
@@ -40,45 +51,51 @@ function resolveTenantFromUrl(): string | null {
 
 export default function LoginPage({ onLogin }: LoginPageProps) {
   const [tenantSlug, setTenantSlug] = useState('');
-  const [lockedTenant, setLockedTenant] = useState<string | null>(null); // pre-filled from URL
-  const [tenantDisplayName, setTenantDisplayName] = useState<string | null>(null);
+  const [tenantInfo, setTenantInfo] = useState<TenantInfo | null>(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [multiTenant, setMultiTenant] = useState(false);
+  const [notFound, setNotFound] = useState(false);
+  const [resolvedSlug, setResolvedSlug] = useState<string | null>(null);
+  const [initDone, setInitDone] = useState(false);
 
   useEffect(() => {
     api.get('/api/v1/health')
       .then(({ data }) => {
         if (data.multi_tenant) {
           setMultiTenant(true);
-
-          // Check if URL already specifies a tenant
           const urlTenant = resolveTenantFromUrl();
           if (urlTenant) {
-            setLockedTenant(urlTenant);
+            setResolvedSlug(urlTenant);
             setTenantSlug(urlTenant);
-            // Fetch tenant display name to show on the card
-            api.get(`/api/v1/admin/tenants/${urlTenant}`, {
-              headers: { 'X-Super-Admin': 'skip' }, // read-only public info fallback
-            }).then(({ data: t }) => {
-              setTenantDisplayName(t.display_name);
-            }).catch(() => {
-              // Not critical — just won't show display name
-            });
+            // Fetch tenant info + branding from public endpoint
+            api.get<TenantInfo>(`/api/v1/tenant-info/${urlTenant}`)
+              .then(({ data: info }) => {
+                setTenantInfo(info);
+                setInitDone(true);
+              })
+              .catch(() => {
+                setNotFound(true);
+                setInitDone(true);
+              });
+          } else {
+            setInitDone(true);
           }
+        } else {
+          setInitDone(true);
         }
       })
-      .catch(() => {});
+      .catch(() => { setInitDone(true); });
   }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError('');
 
-    const slug = (lockedTenant ?? tenantSlug).trim().toLowerCase();
+    const slug = (resolvedSlug ?? tenantSlug).trim().toLowerCase();
 
     if (multiTenant && !slug) {
       setError('Company code is required');
@@ -96,6 +113,15 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       const { data } = await api.post<LoginResponse>('/api/v1/auth/login', formData, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
+
+      // Store tenant status for AMC banner
+      if (data.tenant_status) {
+        sessionStorage.setItem('tenant_status', data.tenant_status);
+        if (data.tenant_status_message) {
+          sessionStorage.setItem('tenant_status_message', data.tenant_status_message);
+        }
+      }
+
       onLogin(data.access_token, data.user, data.tenant_slug);
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
@@ -105,23 +131,68 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     }
   }
 
-  // When a tenant is locked from URL, show a dedicated branded header
-  const isLockedTenant = multiTenant && !!lockedTenant;
+  // Loading state
+  if (!initDone) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-muted/30">
+        <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Company not found page
+  if (notFound) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-4">
+        <Card className="w-full max-w-md text-center">
+          <CardContent className="pt-8 pb-8 space-y-4">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
+              <AlertTriangle className="h-8 w-8 text-destructive" />
+            </div>
+            <h2 className="text-xl font-semibold">Company Not Found</h2>
+            <p className="text-sm text-muted-foreground">
+              The company URL you're looking for doesn't exist or the address is incorrect.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Please check the URL and try again, or contact support.
+            </p>
+          </CardContent>
+        </Card>
+        {/* Powered by footer will show if we have branding (from a fallback fetch) */}
+        <p className="mt-6 text-xs text-muted-foreground">
+          Powered by Manhotra Consulting
+        </p>
+      </div>
+    );
+  }
+
+  const isTenantResolved = multiTenant && !!resolvedSlug && !!tenantInfo;
+  const isSuspended = tenantInfo?.status === 'suspended';
+  const isReadonly = tenantInfo?.status === 'readonly';
+  const branding = tenantInfo?.branding;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-            <svg className="h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
-            </svg>
-          </div>
-          {isLockedTenant ? (
+          {/* Tenant logo or default icon */}
+          {tenantInfo?.logo_url ? (
+            <img
+              src={tenantInfo.logo_url}
+              alt={tenantInfo.display_name}
+              className="mx-auto mb-2 h-16 w-auto max-w-[200px] object-contain"
+            />
+          ) : (
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+              <svg className="h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
+              </svg>
+            </div>
+          )}
+
+          {isTenantResolved ? (
             <>
-              <CardTitle className="text-2xl">
-                {tenantDisplayName ?? lockedTenant!.charAt(0).toUpperCase() + lockedTenant!.slice(1)}
-              </CardTitle>
+              <CardTitle className="text-2xl">{tenantInfo.display_name}</CardTitle>
               <CardDescription>Weighbridge Management System</CardDescription>
             </>
           ) : (
@@ -133,6 +204,22 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         </CardHeader>
 
         <CardContent>
+          {/* Suspended banner */}
+          {isSuspended && (
+            <div className="rounded-md bg-destructive/10 border border-destructive/30 p-3 text-sm text-destructive mb-4 flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              This account has been suspended. Contact support.
+            </div>
+          )}
+
+          {/* Readonly banner */}
+          {isReadonly && (
+            <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 mb-4 flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+              AMC expired. Read-only mode. Contact support to renew.
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
@@ -140,8 +227,8 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               </div>
             )}
 
-            {/* Company Code field — shown only in multi-tenant mode WITHOUT a locked tenant */}
-            {multiTenant && !lockedTenant && (
+            {/* Company Code field — only shown in multi-tenant mode WITHOUT a resolved tenant */}
+            {multiTenant && !resolvedSlug && (
               <div className="space-y-2">
                 <Label htmlFor="tenant_slug">Company Code</Label>
                 <div className="relative">
@@ -159,16 +246,6 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               </div>
             )}
 
-            {/* Locked tenant badge — shown when tenant comes from URL */}
-            {isLockedTenant && (
-              <div className="flex items-center gap-2 rounded-md bg-primary/5 border border-primary/20 px-3 py-2">
-                <Building2 className="h-4 w-4 text-primary shrink-0" />
-                <span className="text-sm text-muted-foreground">
-                  Company: <span className="font-medium text-foreground">{tenantDisplayName ?? lockedTenant}</span>
-                </span>
-              </div>
-            )}
-
             <div className="space-y-2">
               <Label htmlFor="username">Username</Label>
               <Input
@@ -176,8 +253,9 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Enter username"
-                autoFocus={!multiTenant || !!lockedTenant}
+                autoFocus={!multiTenant || !!resolvedSlug}
                 required
+                disabled={isSuspended}
               />
             </div>
 
@@ -192,6 +270,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   placeholder="Enter password"
                   required
                   className="pr-10"
+                  disabled={isSuspended}
                 />
                 <button
                   type="button"
@@ -205,12 +284,42 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               </div>
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full" disabled={loading || isSuspended}>
               {loading ? 'Signing in...' : 'Sign In'}
             </Button>
           </form>
         </CardContent>
       </Card>
+
+      {/* "Powered by" footer — always shown with branding info */}
+      {branding && (
+        <div className="mt-6 text-center space-y-1">
+          <p className="text-xs text-muted-foreground">
+            Powered by{' '}
+            {branding.website ? (
+              <a
+                href={branding.website}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
+              >
+                {branding.company_name}
+                <ExternalLink className="h-2.5 w-2.5" />
+              </a>
+            ) : (
+              <span className="font-medium">{branding.company_name}</span>
+            )}
+          </p>
+          {branding.email && (
+            <p className="text-[11px] text-muted-foreground/70 flex items-center justify-center gap-1">
+              <Mail className="h-2.5 w-2.5" />
+              <a href={`mailto:${branding.email}`} className="hover:text-foreground">
+                {branding.email}
+              </a>
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

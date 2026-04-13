@@ -27,9 +27,52 @@ from app.schemas.tenant import (
     TenantResponse,
     TenantUpdate,
 )
+from app.schemas.platform import TenantPublicInfo, PlatformBrandingResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+public_router = APIRouter()   # no auth required — mounted separately
+
+
+# ── Public tenant info (no auth — used by login page) ─────────────────────────
+
+@public_router.get("/tenant-info/{slug}", response_model=TenantPublicInfo)
+async def get_tenant_public_info(
+    slug: str,
+    db: AsyncSession = Depends(get_master_db),
+):
+    """Return public tenant info + platform branding for the login page.
+
+    No authentication required — the login page needs this before the user logs in.
+    Only returns safe, public-facing fields (no API keys, no config).
+    """
+    result = await db.execute(select(Tenant).where(Tenant.slug == slug))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Company not found")
+
+    # Fetch platform branding
+    branding_row = (await db.execute(
+        text("SELECT company_name, website, email, logo_url FROM platform_branding WHERE id = 1")
+    )).fetchone()
+
+    if branding_row:
+        branding = PlatformBrandingResponse(
+            company_name=branding_row[0] or "Manhotra Consulting",
+            website=branding_row[1],
+            email=branding_row[2],
+            logo_url=branding_row[3],
+        )
+    else:
+        branding = PlatformBrandingResponse(company_name="Manhotra Consulting")
+
+    return TenantPublicInfo(
+        slug=tenant.slug,
+        display_name=tenant.display_name,
+        logo_url=getattr(tenant, "logo_url", None),
+        status=getattr(tenant, "status", "active"),
+        branding=branding,
+    )
 
 
 # ── Auth helper ──────────────────────────────────────────────────────────────

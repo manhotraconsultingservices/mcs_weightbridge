@@ -1,7 +1,7 @@
 """Pydantic schemas for tenant management API."""
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 from uuid import UUID
 
@@ -18,6 +18,8 @@ class TenantCreate(BaseModel):
     admin_password: str
     company_name: str
     company_gstin: Optional[str] = None
+    amc_start_date: Optional[date] = None
+    amc_expiry_date: Optional[date] = None
 
     @field_validator("slug")
     @classmethod
@@ -29,7 +31,7 @@ class TenantCreate(BaseModel):
                 "only lowercase letters/digits/underscores"
             )
         # Reserved slugs
-        if v in ("admin", "master", "system", "public", "default", "api", "www"):
+        if v in ("admin", "master", "system", "public", "default", "api", "www", "platform"):
             raise ValueError(f"'{v}' is a reserved slug")
         return v
 
@@ -37,7 +39,13 @@ class TenantCreate(BaseModel):
 class TenantUpdate(BaseModel):
     display_name: Optional[str] = None
     is_active: Optional[bool] = None
+    status: Optional[str] = None              # active / readonly / suspended
     config: Optional[dict] = None
+    amc_start_date: Optional[date] = None
+    amc_expiry_date: Optional[date] = None
+    logo_url: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
 
 
 class TenantResponse(BaseModel):
@@ -46,8 +54,14 @@ class TenantResponse(BaseModel):
     display_name: str
     db_name: str
     is_active: bool
+    status: str = "active"
     agent_api_key: str
     config: Optional[dict] = None
+    amc_start_date: Optional[date] = None
+    amc_expiry_date: Optional[date] = None
+    logo_url: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

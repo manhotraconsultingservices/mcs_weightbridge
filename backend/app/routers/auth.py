@@ -128,6 +128,16 @@ async def login(
         if not tenant or not tenant.is_active:
             raise HTTPException(404, "Tenant not found or inactive")
 
+        # Check tenant status
+        tenant_status = getattr(tenant, "status", "active")
+        if tenant_status == "suspended":
+            raise HTTPException(403, "This account has been suspended. Contact support.")
+
+        # Build status message for readonly tenants
+        tenant_status_message = None
+        if tenant_status == "readonly":
+            tenant_status_message = "AMC expired. Your account is in read-only mode. Contact support to renew."
+
         # Authenticate against the tenant's database
         factory = await tenant_registry.get_session_factory(tenant_slug)
         async with factory() as tenant_db:
@@ -140,6 +150,8 @@ async def login(
                 access_token=token,
                 user=UserResponse.model_validate(user),
                 tenant_slug=tenant_slug,
+                tenant_status=tenant_status,
+                tenant_status_message=tenant_status_message,
             )
     else:
         # ── Single-tenant login (existing behavior) ─────────────────────────

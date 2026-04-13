@@ -12,6 +12,8 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user: "UserResponse"
     tenant_slug: str | None = None
+    tenant_status: str | None = None             # active / readonly / suspended
+    tenant_status_message: str | None = None      # human-readable message for readonly/suspended
 
 
 class UserCreate(BaseModel):

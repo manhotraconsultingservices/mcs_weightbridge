@@ -32,7 +32,10 @@ import WallpaperSettingsPage from '@/pages/WallpaperSettingsPage';
 import CameraScalePage from '@/pages/CameraScalePage';
 import SnapshotSearchPage from '@/pages/SnapshotSearchPage';
 import TokenPageV1 from '@/pages/TokenPageV1';
+import PlatformLoginPage from '@/pages/PlatformLoginPage';
+import PlatformDashboard from '@/pages/PlatformDashboard';
 import Sidebar from '@/components/Sidebar';
+import { usePlatformAuth } from '@/hooks/usePlatformAuth';
 import type { User } from '@/types';
 
 // Redirect to the first page the user has access to
@@ -43,6 +46,21 @@ function HomeRedirect({ permissions }: { permissions: string[] }) {
   return <DashboardPage />; // absolute fallback
 }
 
+// AMC expired banner
+function AmcBanner() {
+  const status = sessionStorage.getItem('tenant_status');
+  const message = sessionStorage.getItem('tenant_status_message');
+  if (status !== 'readonly') return null;
+  return (
+    <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-sm text-amber-800 flex items-center gap-2 shrink-0">
+      <svg className="h-4 w-4 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+      </svg>
+      {message || 'AMC Expired. Your account is in read-only mode. Contact support to renew.'}
+    </div>
+  );
+}
+
 // Inner layout — only rendered when user is authenticated, so hooks are safe here.
 function AppLayout({ user, logout }: { user: User; logout: () => void }) {
   const { authorized: usbAuthorized } = useUsbGuard();
@@ -51,21 +69,23 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar user={user} onLogout={logout} usbAuthorized={usbAuthorized} permissions={permissions} />
-      <main
-        className="flex-1 overflow-y-auto bg-background p-6"
-        style={
-          wallpaperUrl
-            ? {
-                backgroundImage: `url(${wallpaperUrl})`,
-                backgroundSize: 'cover',
-                backgroundAttachment: 'fixed',
-                backgroundPosition: 'center',
-              }
-            : undefined
-        }
-      >
-        <div className={wallpaperUrl ? 'min-h-full bg-background/80 backdrop-blur-sm rounded-lg p-4' : ''}>
-          <Routes>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <AmcBanner />
+        <main
+          className="flex-1 overflow-y-auto bg-background p-6"
+          style={
+            wallpaperUrl
+              ? {
+                  backgroundImage: `url(${wallpaperUrl})`,
+                  backgroundSize: 'cover',
+                  backgroundAttachment: 'fixed',
+                  backgroundPosition: 'center',
+                }
+              : undefined
+          }
+        >
+          <div className={wallpaperUrl ? 'min-h-full bg-background/80 backdrop-blur-sm rounded-lg p-4' : ''}>
+            <Routes>
             <Route path="/" element={<HomeRedirect permissions={permissions} />} />
             <Route path="/tokens" element={<TokenPage />} />
             <Route path="/tokens-v1" element={<TokenPageV1 />} />
@@ -93,10 +113,11 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/admin/users" element={<UserManagementPage />} />
             <Route path="/admin/permissions" element={<PermissionsPage />} />
             <Route path="/admin/wallpaper" element={<WallpaperSettingsPage />} />
-            <Route path="*" element={<HomeRedirect permissions={permissions} />} />
-          </Routes>
-        </div>
-      </main>
+              <Route path="*" element={<HomeRedirect permissions={permissions} />} />
+            </Routes>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
@@ -160,6 +181,8 @@ function RootRoutes() {
 
   return (
     <Routes>
+      {/* Platform admin portal — separate auth, separate layout */}
+      <Route path="/platform/*" element={<PlatformRoutes />} />
       {/* Dedicated per-tenant login URL: /login/alpha, /login/beta, etc. */}
       <Route path="/login/:tenant" element={<TenantLoginRoute login={login} />} />
       <Route path="/priv-admin" element={
@@ -172,6 +195,28 @@ function RootRoutes() {
           ? <LoginPage onLogin={login} />
           : <AppLayout user={user} logout={logout} />
       } />
+    </Routes>
+  );
+}
+
+/** Platform admin routes — completely separate from tenant auth */
+function PlatformRoutes() {
+  const { isAuthenticated } = usePlatformAuth();
+  const [, forceUpdate] = useState(0);
+
+  if (!isAuthenticated) {
+    return (
+      <Routes>
+        <Route path="*" element={<PlatformLoginPage onLogin={() => forceUpdate(n => n + 1)} />} />
+      </Routes>
+    );
+  }
+
+  return (
+    <Routes>
+      <Route path="/" element={<PlatformDashboard />} />
+      <Route path="/login" element={<PlatformDashboard />} />
+      <Route path="*" element={<PlatformDashboard />} />
     </Routes>
   );
 }

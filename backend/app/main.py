@@ -168,6 +168,64 @@ async def _inventory_daily_report_loop():
             logger.warning("Inventory daily report error: %s", exc)
 
 
+# ── AMC auto-expiry background task (multi-tenant only) ──────────────────────
+
+_last_amc_check_date = None
+
+async def _amc_expiry_check_loop():
+    """Daily check: auto-set tenants to readonly when AMC expires."""
+    global _last_amc_check_date
+    from datetime import date as _date_cls
+
+    while True:
+        await asyncio.sleep(60)  # check every minute
+        try:
+            from app.config import get_settings as _gs
+            if not _gs().MULTI_TENANT:
+                continue
+
+            today = _date_cls.today()
+            if _last_amc_check_date == today:
+                continue
+
+            # Only run at midnight-ish (0:00-0:05)
+            import datetime as _dt
+            now = _dt.datetime.now()
+            if now.hour != 0 or now.minute > 5:
+                continue
+
+            _last_amc_check_date = today
+
+            from app.multitenancy.master_db import get_master_session_factory
+            from sqlalchemy import text as _sql
+            factory = get_master_session_factory()
+            async with factory() as db:
+                # Find active tenants whose AMC has expired
+                result = await db.execute(_sql("""
+                    UPDATE tenants SET status = 'readonly', updated_at = NOW()
+                    WHERE status = 'active'
+                      AND amc_expiry_date IS NOT NULL
+                      AND amc_expiry_date < :today
+                    RETURNING slug, amc_expiry_date
+                """), {"today": today})
+                expired = result.fetchall()
+                await db.commit()
+
+                for row in expired:
+                    logger.warning("AMC EXPIRED: tenant '%s' set to readonly (expired %s)", row[0], row[1])
+                    # Invalidate status cache
+                    from app.multitenancy.middleware import invalidate_tenant_status_cache
+                    invalidate_tenant_status_cache(row[0])
+
+                if expired:
+                    logger.info("AMC check: %d tenant(s) moved to readonly", len(expired))
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("AMC expiry check error: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── License validation ──────────────────────────────────────────────────
@@ -188,6 +246,9 @@ async def lifespan(app: FastAPI):
     )
     daily_inv_task = asyncio.create_task(
         _supervised("inventory-telegram", _inventory_daily_report_loop(), restart_delay=120)
+    )
+    amc_task = asyncio.create_task(
+        _supervised("amc-expiry-check", _amc_expiry_check_loop(), restart_delay=300)
     )
 
     # ── Startup ─────────────────────────────────────────────────────────────
@@ -410,8 +471,11 @@ app.add_middleware(
 # ── API Routers ───────────────────────────────────────────────────────────────
 # Tenant management (multi-tenant only)
 if _gs().MULTI_TENANT:
-    from app.multitenancy.router import router as _tenant_router
+    from app.multitenancy.router import router as _tenant_router, public_router as _tenant_public_router
     app.include_router(_tenant_router, prefix="/api/v1/admin", tags=["Tenant Management"])
+    app.include_router(_tenant_public_router, prefix="/api/v1", tags=["Tenant Public"])
+    from app.multitenancy.platform_router import router as _platform_router
+    app.include_router(_platform_router, prefix="/api/v1/platform", tags=["Platform Admin"])
 
 app.include_router(license.router)  # No auth, must be accessible always
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
