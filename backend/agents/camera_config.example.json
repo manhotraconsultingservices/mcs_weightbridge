@@ -1,9 +1,10 @@
 {
   "cloud_url": "https://weighbridgesetu.com",
-  "tenant_slug": "manhotra-consulting",
-  "agent_key": "09911e73-120f-4ab9-9ef3-47f52604864f",
+  "tenant_slug": "",
+  "agent_key": "",
   "poll_interval_sec": 5,
   "status_port": 9003,
+  "ws_port": 9004,
   "cameras": {
     "front": {
       "label": "Front View",
