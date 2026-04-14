@@ -376,7 +376,7 @@ def discover_hosts(subnet: str, max_workers: int = 100) -> list[str]:
 
 
 def tcp_probe_all(subnet: str, ports: list[int],
-                  timeout: float = 0.8, max_workers: int = 100) -> set[str]:
+                  timeout: float = 1.5, max_workers: int = 80) -> set[str]:
     """Fast TCP probe of ALL 254 IPs on key ports. Returns IPs that respond."""
     responsive = set()
     lock = threading.Lock()
@@ -387,11 +387,49 @@ def tcp_probe_all(subnet: str, ports: list[int],
             with lock:
                 responsive.add(ip)
 
-    # Build (ip, port) pairs for all IPs × key ports
     tasks = [(f"{subnet}.{i}", port) for i in range(1, 255) for port in ports]
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         list(executor.map(_probe, tasks))
+
+    return responsive
+
+
+def http_probe_all(subnet: str, timeout: float = 2.0,
+                   max_workers: int = 50) -> set[str]:
+    """HTTP probe ALL 254 IPs using requests library.
+
+    This catches cameras that raw TCP socket scans miss (Windows
+    Firewall can block raw sockets but allow HTTP via requests).
+    Uses HEAD request for speed — only checks if port 80 responds.
+    """
+    try:
+        import requests as req
+    except ImportError:
+        return set()
+
+    responsive = set()
+    lock = threading.Lock()
+
+    def _probe(ip):
+        try:
+            # Use HEAD for speed, accept any status code (even 401 = camera exists)
+            resp = req.head(f"http://{ip}/", timeout=timeout, verify=False,
+                           allow_redirects=False)
+            if resp.status_code > 0:
+                with lock:
+                    responsive.add(ip)
+        except req.exceptions.ConnectTimeout:
+            pass
+        except req.exceptions.ConnectionError:
+            pass
+        except Exception:
+            pass
+
+    ips = [f"{subnet}.{i}" for i in range(1, 255)]
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        list(executor.map(_probe, ips))
 
     return responsive
 
@@ -407,20 +445,28 @@ def scan_subnet(subnet: str, local_ips: list[str],
     """
     creds = load_config_credentials()
 
-    # Phase 1: Fast TCP probe on ALL 254 IPs for key camera ports
+    # Phase 1a: Fast TCP socket probe on key camera ports
     key_ports = [80, 554, 37777]
-    print(f"\n  Phase 1: TCP probe {subnet}.1-254 on ports {key_ports}...")
-    responsive = tcp_probe_all(subnet, key_ports, timeout=0.8, max_workers=120)
+    print(f"\n  Phase 1a: TCP probe {subnet}.1-254 on ports {key_ports}...")
+    responsive = tcp_probe_all(subnet, key_ports, timeout=1.5, max_workers=80)
+    print(f"    TCP socket: {len(responsive)} hosts")
 
-    # Also add: ARP table entries
+    # Phase 1b: HTTP probe ALL 254 IPs using requests library
+    # This catches cameras that raw TCP sockets miss (common on Windows)
+    print(f"  Phase 1b: HTTP probe {subnet}.1-254 (port 80)...")
+    http_hosts = http_probe_all(subnet, timeout=2.0, max_workers=50)
+    added_by_http = len(http_hosts - responsive)
+    responsive |= http_hosts
+    print(f"    HTTP probe: {len(http_hosts)} hosts ({added_by_http} new)")
+
+    # Phase 1c: ARP table
     arp = get_arp_table()
     for ip, mac in arp.items():
         if ip.startswith(subnet + "."):
             responsive.add(ip)
 
-    # Also add: ping-responsive hosts (catches devices on non-camera ports)
-    print(f"    TCP probe: {len(responsive)} hosts responded")
-    print(f"  Phase 1b: Quick ping sweep for additional hosts...")
+    # Phase 1d: Ping sweep for non-HTTP devices
+    print(f"  Phase 1c: Ping sweep for additional hosts...")
     ping_hosts = discover_hosts(subnet, max_workers=100)
     added_by_ping = 0
     for ip in ping_hosts:
