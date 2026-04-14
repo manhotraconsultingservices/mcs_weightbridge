@@ -47,14 +47,24 @@ def get_local_ips() -> list[str]:
     return ips
 
 
-def get_subnets() -> list[str]:
-    """Get /24 subnets from local IPs."""
+def get_subnets(ips: list[str] | None = None) -> list[str]:
+    """Get /24 subnets from local IPs, filtering out virtual adapters."""
+    if ips is None:
+        ips = get_local_ips()
     subnets = []
-    for ip in get_local_ips():
+    # Skip virtual adapter ranges (WSL, Docker, VPN)
+    skip_prefixes = ("172.", "10.0.", "10.255.")
+    for ip in ips:
+        if any(ip.startswith(p) for p in skip_prefixes):
+            continue
         parts = ip.split(".")
         subnet = f"{parts[0]}.{parts[1]}.{parts[2]}"
         if subnet not in subnets:
             subnets.append(subnet)
+    # If all were filtered, fall back to the first real IP
+    if not subnets and ips:
+        parts = ips[0].split(".")
+        subnets.append(f"{parts[0]}.{parts[1]}.{parts[2]}")
     return subnets
 
 
@@ -290,7 +300,28 @@ def main():
         subnet = target.rsplit(".", 1)[0]
         subnets = [subnet]
     else:
-        subnets = get_subnets()
+        # Derive subnets from detected IPs (same list, no second call)
+        subnets = get_subnets(local_ips)
+
+    # Also check for camera_config.json — add those subnets too
+    try:
+        from pathlib import Path
+        cfg_path = Path(__file__).parent / "camera_config.json"
+        if cfg_path.exists():
+            import json
+            cfg = json.loads(cfg_path.read_text())
+            for cam in cfg.get("cameras", {}).values():
+                url = cam.get("url", "")
+                # Extract IP from URL like http://192.168.0.101/...
+                import re
+                m = re.search(r"//(\d+\.\d+\.\d+)\.\d+", url)
+                if m:
+                    cam_subnet = m.group(1)
+                    if cam_subnet not in subnets:
+                        subnets.append(cam_subnet)
+                        print(f"  (Added {cam_subnet}.0/24 from camera_config.json)")
+    except Exception:
+        pass
 
     print(f"  Subnet(s):   {', '.join(s + '.0/24' for s in subnets)}")
 
