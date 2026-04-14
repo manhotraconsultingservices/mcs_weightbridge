@@ -724,12 +724,8 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
 }
 
 // ------------------------------------------------------------------ //
-// Camera Panel (adapted from CameraScalePage)
+// Camera Panel — WebSocket live streaming (same approach as CameraScalePage)
 // ------------------------------------------------------------------ //
-function getToken(): string {
-  return sessionStorage.getItem('token') ?? '';
-}
-
 interface CameraPanelProps {
   cameraId: 'front' | 'top';
   label: string;
@@ -737,15 +733,85 @@ interface CameraPanelProps {
 
 function CameraPanel({ cameraId, label }: CameraPanelProps) {
   const [status, setStatus] = useState<'connecting' | 'live' | 'error'>('connecting');
-  const [retryKey, setRetryKey] = useState(0);
-  const imgRef = useRef<HTMLImageElement>(null);
-  const token = getToken();
+  const [imgSrc, setImgSrc] = useState('');
+  const wsRef = useRef<WebSocket | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+  const prevBlobRef = useRef('');
 
-  const streamUrl = `/api/v1/cameras/stream/${cameraId}?token=${encodeURIComponent(token)}`;
+  const wsPort = localStorage.getItem('camera_agent_ws_port') || '9004';
 
-  function retry() { setStatus('connecting'); setRetryKey(k => k + 1); }
+  useEffect(() => {
+    mountedRef.current = true;
+    let reconnectAttempts = 0;
 
-  useEffect(() => { setStatus('connecting'); }, [retryKey]);
+    function connect() {
+      if (!mountedRef.current) return;
+      if (wsRef.current) {
+        try { wsRef.current.close(); } catch (_e) { /* ignore */ }
+      }
+      setStatus('connecting');
+
+      const ws = new WebSocket(`ws://localhost:${wsPort}/live/${cameraId}`);
+      ws.binaryType = 'arraybuffer';
+      wsRef.current = ws;
+
+      ws.onopen = () => { if (mountedRef.current) reconnectAttempts = 0; };
+
+      ws.onmessage = (event: MessageEvent) => {
+        if (!mountedRef.current) return;
+        const data = event.data as ArrayBuffer;
+        if (data.byteLength <= 1) return;
+        const blob = new Blob([data], { type: 'image/jpeg' });
+        const url = URL.createObjectURL(blob);
+        if (prevBlobRef.current) URL.revokeObjectURL(prevBlobRef.current);
+        prevBlobRef.current = url;
+        setImgSrc(url);
+        setStatus('live');
+      };
+
+      ws.onerror = () => {};
+      ws.onclose = () => {
+        if (!mountedRef.current) return;
+        setStatus('error');
+        reconnectAttempts++;
+        const delay = Math.min(2000 * reconnectAttempts, 10000);
+        retryTimerRef.current = setTimeout(connect, delay);
+      };
+    }
+
+    connect();
+
+    return () => {
+      mountedRef.current = false;
+      if (wsRef.current) { try { wsRef.current.close(); } catch (_e) { /* ignore */ } wsRef.current = null; }
+      if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+      if (prevBlobRef.current) { URL.revokeObjectURL(prevBlobRef.current); prevBlobRef.current = ''; }
+    };
+  }, [cameraId, wsPort]);
+
+  function retry() {
+    if (wsRef.current) { try { wsRef.current.close(); } catch (_e) { /* ignore */ } }
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    setStatus('connecting');
+    const ws = new WebSocket(`ws://localhost:${wsPort}/live/${cameraId}`);
+    ws.binaryType = 'arraybuffer';
+    wsRef.current = ws;
+    ws.onopen = () => {};
+    ws.onmessage = (event: MessageEvent) => {
+      if (!mountedRef.current) return;
+      const data = event.data as ArrayBuffer;
+      if (data.byteLength <= 1) return;
+      const blob = new Blob([data], { type: 'image/jpeg' });
+      const url = URL.createObjectURL(blob);
+      if (prevBlobRef.current) URL.revokeObjectURL(prevBlobRef.current);
+      prevBlobRef.current = url;
+      setImgSrc(url);
+      setStatus('live');
+    };
+    ws.onerror = () => {};
+    ws.onclose = () => { if (mountedRef.current) setStatus('error'); };
+  }
 
   return (
     <div className="relative flex flex-col rounded-xl overflow-hidden border border-slate-700/60 bg-slate-900/80 shadow-xl h-full">
@@ -808,18 +874,14 @@ function CameraPanel({ cameraId, label }: CameraPanelProps) {
             <p className="text-amber-400/80 text-xs">Connecting…</p>
           </div>
         )}
-        <img
-          key={retryKey}
-          ref={imgRef}
-          src={streamUrl}
-          alt={label}
-          onLoad={() => setStatus('live')}
-          onError={() => setStatus('error')}
-          className={`w-full h-full object-cover transition-opacity duration-500 ${
-            status === 'live' ? 'opacity-100' : 'opacity-0 absolute inset-0'
-          }`}
-          style={{ minHeight: 0 }}
-        />
+        {imgSrc && status === 'live' && (
+          <img
+            src={imgSrc}
+            alt={label}
+            className="w-full h-full object-cover"
+            style={{ minHeight: 0 }}
+          />
+        )}
       </div>
     </div>
   );
