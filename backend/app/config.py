@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     PLATFORM_ADMIN_USER: str = "platform_admin"     # Default platform admin username
     PLATFORM_ADMIN_PASSWORD: str = "Admin@123"      # Default platform admin password
 
+    # Cloudflare R2 storage (for camera snapshots)
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_ENDPOINT_URL: str = ""                       # https://<account-id>.r2.cloudflarestorage.com
+    R2_BUCKET_NAME: str = "weighbridge-snapshots"
+    R2_PUBLIC_URL: str = ""                         # Public bucket URL or custom domain
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

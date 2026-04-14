@@ -175,28 +175,43 @@ async def agent_upload_snapshot(
     if weight_stage not in ("first_weight", "second_weight"):
         raise HTTPException(400, "weight_stage must be 'first_weight' or 'second_weight'")
 
-    # ── Save file ──
+    # ── Read and validate file ──
     content = await file.read()
     if len(content) < 100:
         raise HTTPException(400, "Image file too small")
 
-    # Validate it's a real image
     try:
         img = Image.open(io.BytesIO(content))
         img.verify()
     except Exception:
         raise HTTPException(400, "Invalid image file")
 
-    base_dir = Path(__file__).parent.parent.parent / "uploads" / "camera" / token_id
-    base_dir.mkdir(parents=True, exist_ok=True)
-
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{camera_id}_{weight_stage}_{ts}.jpg"
-    filepath = base_dir / filename
-    rel_path = f"uploads/camera/{token_id}/{filename}"
 
-    with open(filepath, "wb") as f:
-        f.write(content)
+    # ── Upload to R2 (cloud) or save locally (fallback) ──
+    from app.utils.r2_storage import is_r2_configured, upload_to_r2
+
+    if is_r2_configured():
+        # Upload to Cloudflare R2
+        r2_key = f"camera/{tenant_slug}/{token_id}/{filename}"
+        r2_url = upload_to_r2(content, r2_key)
+        if r2_url:
+            file_path_or_url = r2_url
+            logger.info("Snapshot uploaded to R2: %s", r2_key)
+        else:
+            raise HTTPException(500, "Failed to upload to cloud storage")
+    else:
+        # Local fallback
+        from pathlib import Path as _Path
+        base_dir = _Path(__file__).parent.parent.parent / "uploads" / "camera" / token_id
+        base_dir.mkdir(parents=True, exist_ok=True)
+        filepath = base_dir / filename
+        rel_path = f"uploads/camera/{token_id}/{filename}"
+        with open(filepath, "wb") as f:
+            f.write(content)
+        file_path_or_url = rel_path
+        logger.info("Snapshot saved locally: %s", rel_path)
 
     # ── Upsert into token_snapshots ──
     from app.database import get_tenant_session
@@ -211,14 +226,18 @@ async def agent_upload_snapshot(
                     SET file_path = :fp, capture_status = 'captured', captured_at = NOW()
             """),
             {"tid": token_id, "cid": camera_id, "label": camera_id.capitalize() + " View",
-             "fp": rel_path, "ws": weight_stage},
+             "fp": file_path_or_url, "ws": weight_stage},
         )
         await db.commit()
 
-    logger.info("Agent uploaded snapshot: token=%s camera=%s stage=%s path=%s",
-                token_id, camera_id, weight_stage, rel_path)
+    # Build response URL
+    if file_path_or_url.startswith("http"):
+        url = file_path_or_url
+    else:
+        url = _build_url(file_path_or_url)
 
-    return {"success": True, "url": _build_url(rel_path), "token_id": token_id, "camera_id": camera_id}
+    logger.info("Agent uploaded snapshot: token=%s camera=%s stage=%s", token_id, camera_id, weight_stage)
+    return {"success": True, "url": url, "token_id": token_id, "camera_id": camera_id}
 
 
 # ── Agent polling: pending camera events ─────────────────────────────────────
@@ -555,6 +574,9 @@ def _mask_password(cfg: CameraConfig) -> CameraConfig:
 def _build_url(file_path: Optional[str]) -> Optional[str]:
     if not file_path:
         return None
+    # R2 URLs are already absolute (https://...)
+    if file_path.startswith("http"):
+        return file_path
     return "/" + file_path.replace("\\", "/")
 
 
