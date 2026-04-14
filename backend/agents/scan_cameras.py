@@ -375,31 +375,85 @@ def discover_hosts(subnet: str, max_workers: int = 100) -> list[str]:
     return sorted(live, key=lambda ip: [int(x) for x in ip.split(".")])
 
 
+def tcp_probe_all(subnet: str, ports: list[int],
+                  timeout: float = 0.8, max_workers: int = 100) -> set[str]:
+    """Fast TCP probe of ALL 254 IPs on key ports. Returns IPs that respond."""
+    responsive = set()
+    lock = threading.Lock()
+
+    def _probe(ip_port):
+        ip, port = ip_port
+        if scan_port(ip, port, timeout=timeout):
+            with lock:
+                responsive.add(ip)
+
+    # Build (ip, port) pairs for all IPs × key ports
+    tasks = [(f"{subnet}.{i}", port) for i in range(1, 255) for port in ports]
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        list(executor.map(_probe, tasks))
+
+    return responsive
+
+
 def scan_subnet(subnet: str, local_ips: list[str],
                 max_workers: int = 30) -> list[dict]:
-    """Scan a subnet: ping sweep → port scan → camera identification."""
+    """Scan a subnet: TCP probe ALL IPs → full port scan → camera identification.
+
+    Many cameras/DVRs disable ICMP ping, so we do NOT rely on ping.
+    Instead we TCP-probe ALL 254 IPs on the 3 most common camera ports
+    (80, 554, 37777) with a fast timeout, then do full identification
+    on every IP that responded.
+    """
     creds = load_config_credentials()
 
-    # Phase 1: Ping sweep
-    print(f"\n  Phase 1: Ping sweep {subnet}.1-254...")
-    live_hosts = discover_hosts(subnet, max_workers=100)
+    # Phase 1: Fast TCP probe on ALL 254 IPs for key camera ports
+    key_ports = [80, 554, 37777]
+    print(f"\n  Phase 1: TCP probe {subnet}.1-254 on ports {key_ports}...")
+    responsive = tcp_probe_all(subnet, key_ports, timeout=0.8, max_workers=120)
 
-    # Also add ARP table entries for this subnet
+    # Also add: ARP table entries
     arp = get_arp_table()
     for ip, mac in arp.items():
-        if ip.startswith(subnet + ".") and ip not in live_hosts:
-            live_hosts.append(ip)
+        if ip.startswith(subnet + "."):
+            responsive.add(ip)
 
-    # Don't skip our own IPs — a DVR might be connected to this PC
-    print(f"    {len(live_hosts)} hosts alive")
+    # Also add: ping-responsive hosts (catches devices on non-camera ports)
+    print(f"    TCP probe: {len(responsive)} hosts responded")
+    print(f"  Phase 1b: Quick ping sweep for additional hosts...")
+    ping_hosts = discover_hosts(subnet, max_workers=100)
+    added_by_ping = 0
+    for ip in ping_hosts:
+        if ip not in responsive:
+            responsive.add(ip)
+            added_by_ping += 1
+    if added_by_ping:
+        print(f"    Ping added {added_by_ping} more host(s)")
 
-    if not live_hosts:
-        # Fallback: scan all 254 IPs anyway (ping might be blocked)
-        print("    No ping responses — falling back to full TCP scan...")
-        live_hosts = [f"{subnet}.{i}" for i in range(1, 255)]
+    # Also add: known camera IPs from config
+    try:
+        cfg_path = Path(__file__).parent / "camera_config.json"
+        if cfg_path.exists():
+            cfg = json.loads(cfg_path.read_text())
+            for cam in cfg.get("cameras", {}).values():
+                url = cam.get("url", "")
+                m = re.search(r"//(\d+\.\d+\.\d+\.\d+)", url)
+                if m and m.group(1).startswith(subnet + "."):
+                    if m.group(1) not in responsive:
+                        responsive.add(m.group(1))
+                        print(f"    Added {m.group(1)} from camera_config.json")
+    except Exception:
+        pass
 
-    # Phase 2: Port scan + camera identification
-    print(f"  Phase 2: Scanning {len(live_hosts)} hosts for camera ports...")
+    print(f"    Total: {len(responsive)} hosts to scan")
+
+    if not responsive:
+        print("    No hosts found on this subnet.")
+        return []
+
+    # Phase 2: Full port scan + camera identification on responsive hosts
+    hosts = sorted(responsive, key=lambda ip: [int(x) for x in ip.split(".")])
+    print(f"  Phase 2: Full scan + camera identification on {len(hosts)} hosts...")
 
     results = []
     lock = threading.Lock()
@@ -418,7 +472,7 @@ def scan_subnet(subnet: str, local_ips: list[str],
                 results.append(r)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(_scan, ip) for ip in live_hosts]
+        futures = [executor.submit(_scan, ip) for ip in hosts]
         for f in as_completed(futures):
             try:
                 f.result()
