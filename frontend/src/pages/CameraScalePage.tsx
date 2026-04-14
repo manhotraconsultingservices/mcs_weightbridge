@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Camera, Scale, Wifi, WifiOff, Activity, RefreshCw,
-  Maximize2, Clock, Gauge, TrendingUp, Settings,
+  Maximize2, Clock, Gauge, TrendingUp,
 } from 'lucide-react';
 import { useWeight } from '@/hooks/useWeight';
 import api from '@/services/api';
@@ -36,7 +36,7 @@ function CameraPanel({ cameraId, label, subtitle, snapshotUrl, enabled }: Camera
   const [fullscreen, setFullscreen] = useState(false);
   const [frameKey, setFrameKey] = useState(0);
   const imgRef = useRef<HTMLImageElement>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval>>();
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Build URL with cache-buster to force fresh frame each poll
   const buildAuthUrl = useCallback(() => {
