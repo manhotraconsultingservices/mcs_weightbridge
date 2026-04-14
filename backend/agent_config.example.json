@@ -1,0 +1,31 @@
+{
+  "cloud_url": "https://weighbridgesetu.com",
+  "tenant_slug": "ziya-ore-minerals",
+  "agent_key": "YOUR_AGENT_API_KEY_FROM_PLATFORM_ADMIN",
+
+  "scale": {
+    "enabled": true,
+    "port": "COM3",
+    "baud_rate": 9600,
+    "data_bits": 8,
+    "stop_bits": 1,
+    "parity": "N",
+    "push_interval_ms": 500
+  },
+
+  "cameras": {
+    "enabled": true,
+    "front": {
+      "label": "Front View",
+      "url": "http://192.168.0.101/cgi-bin/snapshot.cgi",
+      "username": "",
+      "password": ""
+    },
+    "top": {
+      "label": "Top View",
+      "url": "http://192.168.0.103/cgi-bin/snapshot.cgi",
+      "username": "",
+      "password": ""
+    }
+  }
+}

@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Form, File, UploadFile
 from fastapi.responses import StreamingResponse
 from jose import jwt
 
@@ -130,6 +130,155 @@ async def fake_snapshot(label: str = "Camera"):
             0x7F,0xFF,0xD9,
         ])
         return StreamingResponse(io.BytesIO(minimal_jpg), media_type="image/jpeg")
+
+
+# ── Agent snapshot upload (client-side agent pushes images to cloud) ──────────
+
+@router.post("/agent-upload")
+async def agent_upload_snapshot(
+    token_id: str = Form(...),
+    camera_id: str = Form(...),
+    weight_stage: str = Form("second_weight"),
+    tenant_slug: str = Form(""),
+    agent_key: str = Form(""),
+    file: UploadFile = File(...),
+):
+    """
+    Accept camera snapshot uploaded by the client-side agent.
+
+    The agent runs on the client PC, captures snapshots from local IP cameras,
+    and uploads them to the cloud server. Auth via tenant_slug + agent_key.
+
+    This replaces the backend-initiated capture flow for cloud deployments
+    where the server cannot reach the client's local cameras.
+    """
+    from app.config import get_settings
+    from pathlib import Path
+    from PIL import Image
+
+    settings = get_settings()
+
+    # ── Auth: validate tenant + agent key ──
+    if settings.MULTI_TENANT:
+        if not tenant_slug or not agent_key:
+            raise HTTPException(400, "tenant_slug and agent_key required")
+        from app.multitenancy.registry import tenant_registry
+        if not await tenant_registry.validate_agent_key(tenant_slug, agent_key):
+            raise HTTPException(403, "Invalid agent key for tenant")
+
+    if camera_id not in ("front", "top"):
+        raise HTTPException(400, "camera_id must be 'front' or 'top'")
+    if weight_stage not in ("first_weight", "second_weight"):
+        raise HTTPException(400, "weight_stage must be 'first_weight' or 'second_weight'")
+
+    # ── Save file ──
+    content = await file.read()
+    if len(content) < 100:
+        raise HTTPException(400, "Image file too small")
+
+    # Validate it's a real image
+    try:
+        img = Image.open(io.BytesIO(content))
+        img.verify()
+    except Exception:
+        raise HTTPException(400, "Invalid image file")
+
+    base_dir = Path(__file__).parent.parent.parent / "uploads" / "camera" / token_id
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{camera_id}_{weight_stage}_{ts}.jpg"
+    filepath = base_dir / filename
+    rel_path = f"uploads/camera/{token_id}/{filename}"
+
+    with open(filepath, "wb") as f:
+        f.write(content)
+
+    # ── Upsert into token_snapshots ──
+    from app.database import get_tenant_session
+    _session_cm = await get_tenant_session(tenant_slug if settings.MULTI_TENANT else None)
+    async with _session_cm as db:
+        await db.execute(
+            text("""
+                INSERT INTO token_snapshots
+                    (token_id, camera_id, camera_label, file_path, capture_status, attempts, weight_stage, captured_at)
+                VALUES (:tid, :cid, :label, :fp, 'captured', 1, :ws, NOW())
+                ON CONFLICT (token_id, camera_id, weight_stage) DO UPDATE
+                    SET file_path = :fp, capture_status = 'captured', captured_at = NOW()
+            """),
+            {"tid": token_id, "cid": camera_id, "label": camera_id.capitalize() + " View",
+             "fp": rel_path, "ws": weight_stage},
+        )
+        await db.commit()
+
+    logger.info("Agent uploaded snapshot: token=%s camera=%s stage=%s path=%s",
+                token_id, camera_id, weight_stage, rel_path)
+
+    return {"success": True, "url": _build_url(rel_path), "token_id": token_id, "camera_id": camera_id}
+
+
+# ── Agent polling: pending camera events ─────────────────────────────────────
+
+@router.get("/agent-pending")
+async def agent_pending_events(
+    tenant_slug: str = Query(""),
+    agent_key: str = Query(""),
+):
+    """
+    Return pending camera capture events for the client agent to process.
+
+    The agent polls this endpoint every 5 seconds. Returns tokens that had
+    a weight recorded in the last 5 minutes but don't yet have snapshots.
+    Auth via tenant_slug + agent_key (same as external-reading).
+    """
+    from app.config import get_settings
+    settings = get_settings()
+
+    if settings.MULTI_TENANT:
+        if not tenant_slug or not agent_key:
+            raise HTTPException(400, "tenant_slug and agent_key required")
+        from app.multitenancy.registry import tenant_registry
+        if not await tenant_registry.validate_agent_key(tenant_slug, agent_key):
+            raise HTTPException(403, "Invalid agent key")
+
+    from app.database import get_tenant_session
+    _session_cm = await get_tenant_session(tenant_slug if settings.MULTI_TENANT else None)
+    async with _session_cm as db:
+        # Find tokens with weight events in last 5 minutes that need snapshots
+        rows = (await db.execute(text("""
+            SELECT t.id AS token_id, t.token_no, t.vehicle_no,
+                   CASE
+                       WHEN t.tare_weight IS NOT NULL AND t.gross_weight IS NOT NULL THEN 'second_weight'
+                       WHEN t.gross_weight IS NOT NULL OR t.tare_weight IS NOT NULL THEN 'first_weight'
+                   END AS weight_stage
+            FROM tokens t
+            WHERE t.updated_at > NOW() - INTERVAL '5 minutes'
+              AND t.status IN ('IN_PROGRESS', 'COMPLETED')
+              AND NOT EXISTS (
+                  SELECT 1 FROM token_snapshots ts
+                  WHERE ts.token_id = t.id
+                    AND ts.weight_stage = CASE
+                        WHEN t.tare_weight IS NOT NULL AND t.gross_weight IS NOT NULL THEN 'second_weight'
+                        WHEN t.gross_weight IS NOT NULL OR t.tare_weight IS NOT NULL THEN 'first_weight'
+                    END
+                    AND ts.capture_status = 'captured'
+              )
+            ORDER BY t.updated_at DESC
+            LIMIT 10
+        """))).fetchall()
+
+        events = [
+            {
+                "token_id": str(r._mapping["token_id"]),
+                "token_no": r._mapping.get("token_no"),
+                "vehicle_no": r._mapping.get("vehicle_no"),
+                "weight_stage": r._mapping.get("weight_stage", "first_weight"),
+            }
+            for r in rows
+            if r._mapping.get("weight_stage")
+        ]
+
+    return {"events": events, "count": len(events)}
 
 
 # ── Dev: seed mock snapshots for a token ──────────────────────────────────────
