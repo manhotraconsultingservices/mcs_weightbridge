@@ -1,0 +1,12 @@
+{
+  "cloud_url": "https://weighbridgesetu.com",
+  "tenant_slug": "manhotra-consulting",
+  "agent_key": "09911e73-120f-4ab9-9ef3-47f52604864f",
+  "port": "COM3",
+  "baud_rate": 9600,
+  "data_bits": 8,
+  "stop_bits": 1,
+  "parity": "N",
+  "push_interval_ms": 500,
+  "status_port": 9002
+}

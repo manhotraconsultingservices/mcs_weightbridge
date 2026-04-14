@@ -152,9 +152,17 @@ class CameraCapturer:
             try:
                 auth = None
                 if cam.get("username"):
-                    auth = (cam["username"], cam.get("password", ""))
+                    from requests.auth import HTTPDigestAuth, HTTPBasicAuth
+                    # Try Digest first (CP Plus/Dahua), fall back to Basic (Hikvision)
+                    auth = HTTPDigestAuth(cam["username"], cam.get("password", ""))
 
                 resp = requests.get(cam_url, auth=auth, timeout=10, verify=False)
+
+                # If Digest fails, retry with Basic auth
+                if resp.status_code == 401 and auth:
+                    auth = HTTPBasicAuth(cam["username"], cam.get("password", ""))
+                    resp = requests.get(cam_url, auth=auth, timeout=10, verify=False)
+
                 if resp.status_code != 200:
                     log.warning("Camera %s returned HTTP %d", camera_id, resp.status_code)
                     results[camera_id] = {"success": False, "error": f"HTTP {resp.status_code}"}
@@ -222,9 +230,16 @@ class CameraCapturer:
             try:
                 auth = None
                 if cam.get("username"):
-                    auth = (cam["username"], cam.get("password", ""))
+                    from requests.auth import HTTPDigestAuth, HTTPBasicAuth
+                    auth = HTTPDigestAuth(cam["username"], cam.get("password", ""))
 
                 resp = requests.get(cam_url, auth=auth, timeout=10, verify=False)
+
+                # Fallback to Basic auth if Digest fails
+                if resp.status_code == 401 and auth:
+                    auth = HTTPBasicAuth(cam["username"], cam.get("password", ""))
+                    resp = requests.get(cam_url, auth=auth, timeout=10, verify=False)
+
                 if resp.status_code == 200 and len(resp.content) > 500:
                     filepath = test_dir / f"test_{camera_id}.jpg"
                     with open(filepath, "wb") as f:
