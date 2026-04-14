@@ -619,6 +619,50 @@ async def get_camera_config(
     return CameraConfigPayload(front=_mask_password(front), top=_mask_password(top))
 
 
+@router.get("/live-urls")
+async def get_camera_live_urls(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return camera snapshot URLs with embedded credentials for live view.
+
+    Used by the Camera & Scale Monitor page to load snapshots directly
+    from local IP cameras. Only returns URLs, no other config.
+    Passwords are embedded in the URL (http://user:pass@ip/path).
+    """
+    cfg = await _load_camera_config(db)
+    result = {}
+    for cam_id in ("front", "top"):
+        cam = cfg.get(cam_id, {})
+        url = cam.get("snapshot_url", "")
+        if not url or not cam.get("enabled"):
+            result[cam_id] = {"label": cam.get("label", cam_id.capitalize()), "url": "", "enabled": False}
+            continue
+
+        # Embed credentials in URL for browser <img> tag
+        try:
+            from urllib.parse import urlparse, urlunparse
+            parsed = urlparse(url)
+            username = cam.get("username", "")
+            password = cam.get("password", "")
+            if username:
+                netloc = f"{username}:{password}@{parsed.hostname}"
+                if parsed.port:
+                    netloc += f":{parsed.port}"
+                url_with_auth = urlunparse(parsed._replace(netloc=netloc))
+            else:
+                url_with_auth = url
+        except Exception:
+            url_with_auth = url
+
+        result[cam_id] = {
+            "label": cam.get("label", cam_id.capitalize()),
+            "url": url_with_auth,
+            "enabled": True,
+        }
+    return result
+
+
 @router.put("/config", response_model=CameraConfigPayload)
 async def update_camera_config(
     payload: CameraConfigPayload,
