@@ -38,35 +38,17 @@ function CameraPanel({ cameraId, label, subtitle, snapshotUrl, enabled }: Camera
   const imgRef = useRef<HTMLImageElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const [useLocalAgent, setUseLocalAgent] = useState<boolean | null>(null);
+  const [agentPort] = useState(() => {
+    // Check localStorage for custom agent port, default 9003
+    return localStorage.getItem('camera_agent_port') || '9003';
+  });
 
-  // Auto-detect: check if local camera agent is running on localhost:9003
-  useEffect(() => {
-    if (!snapshotUrl || !enabled) return;
-    fetch('http://localhost:9003/', { mode: 'cors' })
-      .then(r => r.json())
-      .then(d => {
-        if (d.service === 'camera_agent') {
-          setUseLocalAgent(true);
-          console.log('Camera: using local agent proxy');
-        } else {
-          setUseLocalAgent(false);
-        }
-      })
-      .catch(() => setUseLocalAgent(false));
-  }, [snapshotUrl, enabled]);
-
-  // Build snapshot URL — local agent if available, otherwise server proxy
+  // Always try local agent first via <img> tag (no CORS/mixed-content issues for images)
   const buildAuthUrl = useCallback(() => {
     if (!snapshotUrl || !enabled) return '';
-    if (useLocalAgent) {
-      // Local agent proxy — no mixed content, no CORS issues
-      return `http://localhost:9003/snapshot/${cameraId}?_t=${Date.now()}`;
-    }
-    // Fallback: server-side proxy (only works if server can reach cameras)
-    const token = sessionStorage.getItem('token') || '';
-    return `/api/v1/cameras/live-snapshot/${cameraId}?token=${encodeURIComponent(token)}&_t=${Date.now()}`;
-  }, [snapshotUrl, enabled, cameraId, useLocalAgent]);
+    // Use local agent proxy — <img> tags can load http from https pages
+    return `http://localhost:${agentPort}/snapshot/${cameraId}?_t=${Date.now()}`;
+  }, [snapshotUrl, enabled, cameraId, agentPort]);
 
   useEffect(() => {
     if (!snapshotUrl || !enabled) {
@@ -196,7 +178,6 @@ function CameraPanel({ cameraId, label, subtitle, snapshotUrl, enabled }: Camera
               className={`w-full h-full object-cover transition-opacity duration-300 ${
                 status === 'live' ? 'opacity-100' : 'opacity-0 absolute inset-0'
               }`}
-              crossOrigin="anonymous"
             />
           )}
 
