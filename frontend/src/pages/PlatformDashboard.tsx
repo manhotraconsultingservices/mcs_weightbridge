@@ -4,7 +4,7 @@ import {
   Building2, Plus, Search, Shield, UserPlus, UserMinus,
   AlertTriangle, CheckCircle, PauseCircle, Calendar, ExternalLink,
   LogOut, Pencil, Loader2, Users, BarChart3, Power, Ban,
-  TrendingUp, UserCheck, Eye, EyeOff, KeyRound,
+  TrendingUp, UserCheck, Eye, EyeOff, KeyRound, Copy, Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,6 +34,25 @@ function RoleBadge({ role }: { role: string }) {
   if (role === 'cto') return <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100">CTO</Badge>;
   if (role === 'support') return <Badge className="bg-teal-100 text-teal-700 hover:bg-teal-100">Support</Badge>;
   return <Badge variant="secondary">{role}</Badge>;
+}
+
+function AgentKeyCell({ agentKey }: { agentKey: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!agentKey) return <span className="text-xs text-slate-600">—</span>;
+  const short = agentKey.slice(0, 8) + '...';
+  function handleCopy() {
+    navigator.clipboard.writeText(agentKey);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+  return (
+    <div className="flex items-center gap-1">
+      <code className="text-[10px] text-slate-400 font-mono">{short}</code>
+      <button onClick={handleCopy} className="text-slate-500 hover:text-blue-400 transition-colors" title={`Copy: ${agentKey}`}>
+        {copied ? <Check className="h-3 w-3 text-green-400" /> : <Copy className="h-3 w-3" />}
+      </button>
+    </div>
+  );
 }
 
 function fmtDate(iso: string | null) {
@@ -453,6 +472,7 @@ export default function PlatformDashboard() {
                       <th className="text-left px-4 py-3 font-medium">Slug</th>
                       <th className="text-center px-4 py-3 font-medium">Status</th>
                       <th className="text-left px-4 py-3 font-medium">AMC Expiry</th>
+                      <th className="text-left px-4 py-3 font-medium">Agent Key</th>
                       <th className="text-left px-4 py-3 font-medium">Sales Rep</th>
                       <th className="text-right px-4 py-3 font-medium">Actions</th>
                     </tr></thead>
@@ -463,6 +483,9 @@ export default function PlatformDashboard() {
                           <td className="px-4 py-3 font-mono text-xs text-slate-400">{t.slug}</td>
                           <td className="px-4 py-3 text-center"><StatusBadge status={t.status} /></td>
                           <td className="px-4 py-3 text-slate-300"><div className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5 text-slate-500" />{fmtDate(t.amc_expiry_date)}</div></td>
+                          <td className="px-4 py-3">
+                            <AgentKeyCell agentKey={t.agent_api_key} />
+                          </td>
                           <td className="px-4 py-3">
                             <div className="flex flex-wrap gap-1">
                               {t.sales_reps.map(r => (
@@ -502,7 +525,7 @@ export default function PlatformDashboard() {
                           </td>
                         </tr>
                       ))}
-                      {filtered.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-slate-500">No tenants found</td></tr>}
+                      {filtered.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-500">No tenants found</td></tr>}
                     </tbody>
                   </table>
                 </div>
