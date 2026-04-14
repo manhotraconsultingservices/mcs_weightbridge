@@ -248,27 +248,28 @@ async def agent_pending_events(
     from app.database import get_tenant_session
     _session_cm = await get_tenant_session(tenant_slug if settings.MULTI_TENANT else None)
     async with _session_cm as db:
-        # Find tokens with weight events in last 5 minutes that need snapshots
+        # Find tokens needing snapshots — check BOTH stages independently
+        # A token with first weight needs first_weight snapshots
+        # A token with both weights needs both first_weight AND second_weight snapshots
         rows = (await db.execute(text("""
-            SELECT t.id AS token_id, t.token_no, t.vehicle_no,
-                   CASE
-                       WHEN t.tare_weight IS NOT NULL AND t.gross_weight IS NOT NULL THEN 'second_weight'
-                       WHEN t.gross_weight IS NOT NULL OR t.tare_weight IS NOT NULL THEN 'first_weight'
-                   END AS weight_stage
+            SELECT t.id AS token_id, t.token_no, t.vehicle_no, s.stage AS weight_stage
             FROM tokens t
+            CROSS JOIN (VALUES ('first_weight'), ('second_weight')) AS s(stage)
             WHERE t.updated_at > NOW() - INTERVAL '5 minutes'
               AND t.status IN ('IN_PROGRESS', 'COMPLETED')
+              AND (
+                  (s.stage = 'first_weight' AND (t.gross_weight IS NOT NULL OR t.tare_weight IS NOT NULL))
+                  OR
+                  (s.stage = 'second_weight' AND t.gross_weight IS NOT NULL AND t.tare_weight IS NOT NULL)
+              )
               AND NOT EXISTS (
                   SELECT 1 FROM token_snapshots ts
                   WHERE ts.token_id = t.id
-                    AND ts.weight_stage = CASE
-                        WHEN t.tare_weight IS NOT NULL AND t.gross_weight IS NOT NULL THEN 'second_weight'
-                        WHEN t.gross_weight IS NOT NULL OR t.tare_weight IS NOT NULL THEN 'first_weight'
-                    END
+                    AND ts.weight_stage = s.stage
                     AND ts.capture_status = 'captured'
               )
-            ORDER BY t.updated_at DESC
-            LIMIT 10
+            ORDER BY t.updated_at DESC, s.stage
+            LIMIT 20
         """))).fetchall()
 
         events = [
