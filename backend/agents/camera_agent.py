@@ -24,11 +24,18 @@ import sys
 import logging
 import threading
 import signal
+import asyncio
 from datetime import datetime
 from pathlib import Path
 
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+try:
+    import websockets
+    HAS_WEBSOCKETS = True
+except ImportError:
+    HAS_WEBSOCKETS = False
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 
@@ -55,6 +62,7 @@ DEFAULT_CONFIG = {
     "agent_key": "",
     "poll_interval_sec": 5,
     "status_port": 9003,
+    "ws_port": 9004,
     "cameras": {
         "front": {
             "label": "Front View",
@@ -437,6 +445,133 @@ class StatusServer:
         log.info("Status API: http://127.0.0.1:%d", self.port)
 
 
+# ── WebSocket Live Server ────────────────────────────────────────────────────
+
+class WebSocketLiveServer:
+    """Streams live camera frames over WebSocket.
+
+    HTTPS pages can connect to ws://localhost (Chrome treats localhost
+    as a secure context), so this bypasses mixed-content restrictions
+    that block http:// image loads from https:// pages.
+
+    Endpoint:
+      ws://localhost:9004/live/front
+      ws://localhost:9004/live/top
+
+    Each connected client receives a JPEG frame (binary) every ~1.5s.
+    A frame cache avoids hammering the camera when multiple clients
+    connect simultaneously.
+    """
+
+    def __init__(self, capturer: CameraCapturer, port: int = 9004):
+        self.capturer = capturer
+        self.port = port
+        # Frame cache: camera_id → (timestamp, jpeg_bytes)
+        self._frame_cache: dict[str, tuple[float, bytes]] = {}
+        self._cache_ttl = 1.0  # seconds
+
+    def _get_frame(self, camera_id: str) -> bytes | None:
+        """Return cached frame or capture a fresh one (blocking)."""
+        now = time.time()
+        cached = self._frame_cache.get(camera_id)
+        if cached and (now - cached[0]) < self._cache_ttl:
+            return cached[1]
+
+        # Quick single-attempt capture for live view
+        cam = self.capturer.cfg.get("cameras", {}).get(camera_id, {})
+        cam_url = cam.get("url", "")
+        if not cam_url:
+            return cached[1] if cached else None
+
+        try:
+            import requests
+            from requests.auth import HTTPDigestAuth, HTTPBasicAuth
+
+            auth = None
+            if cam.get("username"):
+                auth = HTTPDigestAuth(cam["username"], cam.get("password", ""))
+
+            resp = requests.get(cam_url, auth=auth, timeout=5, verify=False)
+
+            # Fallback to Basic auth
+            if resp.status_code == 401 and auth:
+                auth = HTTPBasicAuth(cam["username"], cam.get("password", ""))
+                resp = requests.get(cam_url, auth=auth, timeout=5, verify=False)
+
+            if resp.status_code == 200 and len(resp.content) >= 500:
+                self._frame_cache[camera_id] = (now, resp.content)
+                return resp.content
+        except Exception:
+            pass
+
+        # Return stale cache if available
+        return cached[1] if cached else None
+
+    def start(self):
+        if not HAS_WEBSOCKETS:
+            log.warning("websockets library not installed — live streaming disabled")
+            log.info("Install with: pip install websockets>=13")
+            return
+
+        def _run():
+            try:
+                asyncio.run(self._serve())
+            except Exception as e:
+                log.error("WebSocket live server crashed: %s", e)
+
+        threading.Thread(target=_run, daemon=True).start()
+        log.info("WebSocket live server: ws://0.0.0.0:%d/live/{front|top}", self.port)
+
+    async def _serve(self):
+        async def handler(websocket):
+            # Extract camera_id from path
+            try:
+                path = websocket.request.path
+            except AttributeError:
+                path = getattr(websocket, "path", "/live/front")
+
+            parts = path.strip("/").split("/")
+            camera_id = parts[-1] if parts else ""
+
+            if camera_id not in ("front", "top"):
+                await websocket.close(1008, "Invalid camera ID. Use /live/front or /live/top")
+                return
+
+            log.info("Live stream client connected: %s", camera_id)
+            loop = asyncio.get_event_loop()
+            consecutive_errors = 0
+
+            try:
+                while True:
+                    # Capture frame in thread pool (blocking I/O)
+                    frame = await loop.run_in_executor(
+                        None, self._get_frame, camera_id
+                    )
+                    if frame:
+                        await websocket.send(frame)
+                        consecutive_errors = 0
+                    else:
+                        # Send a 1-byte marker so client knows we're alive
+                        await websocket.send(b"\x00")
+                        consecutive_errors += 1
+                        if consecutive_errors > 20:
+                            log.warning("Camera %s: too many consecutive failures", camera_id)
+
+                    await asyncio.sleep(1.5)
+
+            except websockets.ConnectionClosed:
+                log.info("Live stream client disconnected: %s", camera_id)
+            except Exception as e:
+                log.warning("Live stream error for %s: %s", camera_id, e)
+
+        try:
+            async with websockets.serve(handler, "0.0.0.0", self.port):
+                log.info("WebSocket live server ready on port %d", self.port)
+                await asyncio.Future()  # run forever
+        except Exception as e:
+            log.error("WebSocket server failed to start on port %d: %s", self.port, e)
+
+
 # ── Windows Service Install ──────────────────────────────────────────────────
 
 def install_service():
@@ -537,8 +672,12 @@ def main():
     listener = EventListener(cfg, capturer)
     listener.start()
 
-    # Status API
+    # Status API (HTTP — for direct browser access & health checks)
     StatusServer(capturer, port=cfg.get("status_port", 9003)).start()
+
+    # WebSocket live server (for HTTPS pages — bypasses mixed-content)
+    ws_port = cfg.get("ws_port", 9004)
+    WebSocketLiveServer(capturer, port=ws_port).start()
 
     log.info("Running. Press Ctrl+C to stop.")
 

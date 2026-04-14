@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Camera, Scale, Wifi, WifiOff, Activity, RefreshCw,
   Maximize2, Clock, Gauge, TrendingUp,
@@ -22,7 +22,7 @@ function LiveClock() {
   );
 }
 
-// ── Camera panel with direct snapshot polling ────────────────────────────────
+// ── Camera panel with WebSocket live streaming ──────────────────────────────
 interface CameraPanelProps {
   cameraId: 'front' | 'top';
   label: string;
@@ -34,54 +34,128 @@ interface CameraPanelProps {
 function CameraPanel({ cameraId, label, subtitle, snapshotUrl, enabled }: CameraPanelProps) {
   const [status, setStatus] = useState<'connecting' | 'live' | 'error' | 'off'>('connecting');
   const [fullscreen, setFullscreen] = useState(false);
-  const [frameKey, setFrameKey] = useState(0);
-  const imgRef = useRef<HTMLImageElement>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [imgSrc, setImgSrc] = useState('');
+  const wsRef = useRef<WebSocket | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+  const prevBlobRef = useRef('');
 
-  const [agentPort] = useState(() => {
-    // Check localStorage for custom agent port, default 9003
-    return localStorage.getItem('camera_agent_port') || '9003';
+  const [wsPort] = useState(() => {
+    return localStorage.getItem('camera_agent_ws_port') || '9004';
   });
 
-  // Always try local agent first via <img> tag (no CORS/mixed-content issues for images)
-  const buildAuthUrl = useCallback(() => {
-    if (!snapshotUrl || !enabled) return '';
-    // Use local agent proxy — <img> tags can load http from https pages
-    return `http://localhost:${agentPort}/snapshot/${cameraId}?_t=${Date.now()}`;
-  }, [snapshotUrl, enabled, cameraId, agentPort]);
-
   useEffect(() => {
+    mountedRef.current = true;
+
     if (!snapshotUrl || !enabled) {
       setStatus('off');
       return;
     }
 
-    setStatus('connecting');
+    let reconnectAttempts = 0;
 
-    // Poll snapshot every 1.5 seconds for live effect
-    timerRef.current = setInterval(() => {
-      setFrameKey(k => k + 1);
-    }, 1500);
+    function connect() {
+      if (!mountedRef.current) return;
+
+      // Clean up previous connection
+      if (wsRef.current) {
+        try { wsRef.current.close(); } catch (_e) { /* ignore */ }
+      }
+
+      setStatus('connecting');
+
+      const ws = new WebSocket(`ws://localhost:${wsPort}/live/${cameraId}`);
+      ws.binaryType = 'arraybuffer';
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (!mountedRef.current) return;
+        reconnectAttempts = 0;
+        // Status will become 'live' when first frame arrives
+      };
+
+      ws.onmessage = (event: MessageEvent) => {
+        if (!mountedRef.current) return;
+
+        const data = event.data as ArrayBuffer;
+        // Skip empty/error markers (1-byte \x00)
+        if (data.byteLength <= 1) return;
+
+        // Create blob URL from JPEG data
+        const blob = new Blob([data], { type: 'image/jpeg' });
+        const url = URL.createObjectURL(blob);
+
+        // Revoke previous blob to prevent memory leak
+        if (prevBlobRef.current) {
+          URL.revokeObjectURL(prevBlobRef.current);
+        }
+        prevBlobRef.current = url;
+        setImgSrc(url);
+        setStatus('live');
+      };
+
+      ws.onerror = () => {
+        if (!mountedRef.current) return;
+        // onclose will fire after onerror, handle reconnect there
+      };
+
+      ws.onclose = () => {
+        if (!mountedRef.current) return;
+        setStatus('error');
+        // Auto-reconnect with exponential backoff (max 10s)
+        reconnectAttempts++;
+        const delay = Math.min(2000 * reconnectAttempts, 10000);
+        retryTimerRef.current = setTimeout(connect, delay);
+      };
+    }
+
+    connect();
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      mountedRef.current = false;
+      if (wsRef.current) {
+        try { wsRef.current.close(); } catch (_e) { /* ignore */ }
+        wsRef.current = null;
+      }
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      if (prevBlobRef.current) {
+        URL.revokeObjectURL(prevBlobRef.current);
+        prevBlobRef.current = '';
+      }
     };
-  }, [snapshotUrl, enabled]);
-
-  function handleLoad() {
-    setStatus('live');
-  }
-
-  function handleError() {
-    setStatus('error');
-  }
+  }, [snapshotUrl, enabled, cameraId, wsPort]);
 
   function retry() {
+    // Force reconnect
+    if (wsRef.current) {
+      try { wsRef.current.close(); } catch (_e) { /* ignore */ }
+    }
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+    }
     setStatus('connecting');
-    setFrameKey(k => k + 1);
+    // Small delay then reconnect
+    const ws = new WebSocket(`ws://localhost:${wsPort}/live/${cameraId}`);
+    ws.binaryType = 'arraybuffer';
+    wsRef.current = ws;
+    ws.onopen = () => { if (mountedRef.current) setStatus('connecting'); };
+    ws.onmessage = (event: MessageEvent) => {
+      if (!mountedRef.current) return;
+      const data = event.data as ArrayBuffer;
+      if (data.byteLength <= 1) return;
+      const blob = new Blob([data], { type: 'image/jpeg' });
+      const url = URL.createObjectURL(blob);
+      if (prevBlobRef.current) URL.revokeObjectURL(prevBlobRef.current);
+      prevBlobRef.current = url;
+      setImgSrc(url);
+      setStatus('live');
+    };
+    ws.onerror = () => {};
+    ws.onclose = () => { if (mountedRef.current) setStatus('error'); };
   }
-
-  const imgUrl = buildAuthUrl();
 
   return (
     <>
@@ -167,17 +241,11 @@ function CameraPanel({ cameraId, label, subtitle, snapshotUrl, enabled }: Camera
             </div>
           )}
 
-          {imgUrl && status !== 'off' && (
+          {imgSrc && status === 'live' && (
             <img
-              key={frameKey}
-              ref={imgRef}
-              src={imgUrl}
+              src={imgSrc}
               alt={label}
-              onLoad={handleLoad}
-              onError={handleError}
-              className={`w-full h-full object-cover transition-opacity duration-300 ${
-                status === 'live' ? 'opacity-100' : 'opacity-0 absolute inset-0'
-              }`}
+              className="w-full h-full object-cover"
             />
           )}
 
@@ -193,7 +261,7 @@ function CameraPanel({ cameraId, label, subtitle, snapshotUrl, enabled }: Camera
               ))}
               <div className="absolute bottom-0 inset-x-0 z-20 bg-gradient-to-t from-black/70 to-transparent px-3 pt-6 pb-2 flex items-end justify-between">
                 <span className="text-[10px] text-emerald-400/80 font-mono flex items-center gap-1">
-                  <Activity className="h-2.5 w-2.5" /> SNAPSHOT · ~1fps
+                  <Activity className="h-2.5 w-2.5" /> WS LIVE · ~1fps
                 </span>
                 <LiveClock />
               </div>
@@ -216,8 +284,8 @@ function CameraPanel({ cameraId, label, subtitle, snapshotUrl, enabled }: Camera
               ✕ Exit Fullscreen
             </button>
           </div>
-          {imgUrl && (
-            <img src={imgUrl} alt={label} className="flex-1 w-full object-contain" />
+          {imgSrc && (
+            <img src={imgSrc} alt={label} className="flex-1 w-full object-contain" />
           )}
         </div>
       )}
@@ -392,9 +460,9 @@ export default function CameraScalePage() {
         <span>WEIGHBRIDGE MONITORING SYSTEM · v2.0</span>
         <span className="flex items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          LOCAL SNAPSHOT MODE
+          WEBSOCKET LIVE MODE
         </span>
-        <span>DIRECT IP · ~1 FPS · WebSocket Scale</span>
+        <span>WS STREAM · ~1 FPS · WebSocket Scale</span>
       </div>
     </div>
   );
