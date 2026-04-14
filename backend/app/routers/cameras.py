@@ -619,6 +619,76 @@ async def get_camera_config(
     return CameraConfigPayload(front=_mask_password(front), top=_mask_password(top))
 
 
+@router.get("/live-snapshot/{camera_id}")
+async def live_snapshot_proxy(
+    camera_id: str,
+    token: str = Query(..., description="JWT access token"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Proxy a camera snapshot through the backend server.
+
+    Solves the mixed-content problem: browser loads HTTPS page but cameras
+    are HTTP. This endpoint fetches the snapshot server-side and returns it.
+
+    For cloud SaaS: this only works if the server can reach the camera.
+    For local network: the backend runs on the same LAN as cameras.
+
+    Auth via ?token= query param (img tags can't send Authorization headers).
+    """
+    import httpx
+
+    # Verify JWT
+    try:
+        _cfg = get_settings()
+        payload = jwt.decode(token, _cfg.SECRET_KEY, algorithms=[_cfg.ALGORITHM])
+        if not payload.get("sub"):
+            raise HTTPException(401, "Invalid token")
+    except Exception:
+        raise HTTPException(401, "Invalid token")
+
+    if camera_id not in CAMERA_IDS:
+        raise HTTPException(400, f"camera_id must be one of: {', '.join(CAMERA_IDS)}")
+
+    cfg = await _load_camera_config(db)
+    cam = cfg.get(camera_id, {})
+    if not cam or not cam.get("snapshot_url", "").strip() or not cam.get("enabled"):
+        raise HTTPException(400, f"Camera '{camera_id}' is not configured or disabled")
+
+    url = cam["snapshot_url"].strip()
+    username = cam.get("username", "")
+    password = cam.get("password", "")
+
+    try:
+        auth = None
+        if username:
+            # Try Digest auth first (CP Plus/Dahua)
+            auth = httpx.DigestAuth(username, password)
+
+        async with httpx.AsyncClient(timeout=8.0, verify=False) as client:
+            resp = await client.get(url, auth=auth)
+
+            # Fallback to Basic auth if Digest fails
+            if resp.status_code == 401 and username:
+                auth = httpx.BasicAuth(username, password)
+                resp = await client.get(url, auth=auth)
+
+            if resp.status_code != 200:
+                raise HTTPException(502, f"Camera returned HTTP {resp.status_code}")
+
+            if len(resp.content) < 100:
+                raise HTTPException(502, "Camera returned empty image")
+
+            return StreamingResponse(
+                io.BytesIO(resp.content),
+                media_type="image/jpeg",
+                headers={"Cache-Control": "no-store, no-cache", "Pragma": "no-cache"},
+            )
+
+    except httpx.RequestError as e:
+        raise HTTPException(502, f"Camera unreachable: {e}")
+
+
 @router.get("/live-urls")
 async def get_camera_live_urls(
     db: AsyncSession = Depends(get_db),

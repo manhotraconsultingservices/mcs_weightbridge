@@ -38,13 +38,35 @@ function CameraPanel({ cameraId, label, subtitle, snapshotUrl, enabled }: Camera
   const imgRef = useRef<HTMLImageElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Build URL with cache-buster to force fresh frame each poll
+  const [useLocalAgent, setUseLocalAgent] = useState<boolean | null>(null);
+
+  // Auto-detect: check if local camera agent is running on localhost:9003
+  useEffect(() => {
+    if (!snapshotUrl || !enabled) return;
+    fetch('http://localhost:9003/', { mode: 'cors' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.service === 'camera_agent') {
+          setUseLocalAgent(true);
+          console.log('Camera: using local agent proxy');
+        } else {
+          setUseLocalAgent(false);
+        }
+      })
+      .catch(() => setUseLocalAgent(false));
+  }, [snapshotUrl, enabled]);
+
+  // Build snapshot URL — local agent if available, otherwise server proxy
   const buildAuthUrl = useCallback(() => {
     if (!snapshotUrl || !enabled) return '';
-    // Credentials are already embedded in the URL (http://user:pass@ip/path)
-    const sep = snapshotUrl.includes('?') ? '&' : '?';
-    return `${snapshotUrl}${sep}_t=${Date.now()}`;
-  }, [snapshotUrl, enabled]);
+    if (useLocalAgent) {
+      // Local agent proxy — no mixed content, no CORS issues
+      return `http://localhost:9003/snapshot/${cameraId}?_t=${Date.now()}`;
+    }
+    // Fallback: server-side proxy (only works if server can reach cameras)
+    const token = sessionStorage.getItem('token') || '';
+    return `/api/v1/cameras/live-snapshot/${cameraId}?token=${encodeURIComponent(token)}&_t=${Date.now()}`;
+  }, [snapshotUrl, enabled, cameraId, useLocalAgent]);
 
   useEffect(() => {
     if (!snapshotUrl || !enabled) {

@@ -222,6 +222,14 @@ class CameraCapturer:
 
         return results
 
+    def _capture_single_for_live(self, camera_id: str) -> bytes | None:
+        """Capture a single snapshot for live view (no upload, no retry)."""
+        cam = self.cfg.get("cameras", {}).get(camera_id, {})
+        cam_url = cam.get("url", "")
+        if not cam_url:
+            return None
+        return self._capture_single(cam_url, cam, camera_id)
+
     def test_cameras(self) -> dict:
         """Test all cameras — capture snapshot and save locally."""
         import requests
@@ -336,6 +344,18 @@ class EventListener:
 # ── Status API ───────────────────────────────────────────────────────────────
 
 class StatusServer:
+    """Serves status JSON + live camera snapshot proxy on localhost.
+
+    Endpoints:
+      GET /                     → agent status JSON
+      GET /snapshot/front       → live JPEG from front camera
+      GET /snapshot/top         → live JPEG from top camera
+
+    The snapshot proxy allows the browser to load camera images via
+    http://localhost:9003/snapshot/front — no mixed-content issues.
+    CORS headers allow any origin (the cloud-hosted frontend).
+    """
+
     def __init__(self, capturer: CameraCapturer, port: int = 9003):
         self.capturer = capturer
         self.port = port
@@ -346,29 +366,70 @@ class StatusServer:
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
+                # CORS headers for cross-origin access from cloud frontend
+                cors_headers = {
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET",
+                    "Cache-Control": "no-store, no-cache",
+                    "Pragma": "no-cache",
+                }
+
+                path = self.path.split("?")[0]  # strip query params
+
+                # Live snapshot proxy
+                if path in ("/snapshot/front", "/snapshot/top"):
+                    camera_id = path.split("/")[-1]
+                    image_data = capturer._capture_single_for_live(camera_id)
+                    if image_data:
+                        self.send_response(200)
+                        self.send_header("Content-Type", "image/jpeg")
+                        self.send_header("Content-Length", str(len(image_data)))
+                        for k, v in cors_headers.items():
+                            self.send_header(k, v)
+                        self.end_headers()
+                        self.wfile.write(image_data)
+                    else:
+                        self.send_response(502)
+                        self.send_header("Content-Type", "text/plain")
+                        for k, v in cors_headers.items():
+                            self.send_header(k, v)
+                        self.end_headers()
+                        self.wfile.write(b"Camera unavailable")
+                    return
+
+                # Status JSON
                 body = json.dumps({
                     "service": "camera_agent",
                     "status": "running",
                     "timestamp": datetime.now().isoformat(),
                     "capture_count": capturer.capture_count,
                     "error_count": capturer.error_count,
-                    "cameras": {
-                        cam_id: {"url": cam.get("url", "")}
-                        for cam_id, cam in capturer.cfg.get("cameras", {}).items()
-                        if isinstance(cam, dict)
+                    "live_snapshot_urls": {
+                        "front": f"http://localhost:{capturer.cfg.get('status_port', 9003)}/snapshot/front",
+                        "top": f"http://localhost:{capturer.cfg.get('status_port', 9003)}/snapshot/top",
                     },
                 })
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
+                for k, v in cors_headers.items():
+                    self.send_header(k, v)
                 self.end_headers()
                 self.wfile.write(body.encode())
+
+            def do_OPTIONS(self):
+                """Handle CORS preflight."""
+                self.send_response(204)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "GET")
+                self.send_header("Access-Control-Allow-Headers", "*")
+                self.end_headers()
 
             def log_message(self, *args):
                 pass
 
         def _serve():
             try:
-                HTTPServer(("127.0.0.1", self.port), Handler).serve_forever()
+                HTTPServer(("0.0.0.0", self.port), Handler).serve_forever()
             except OSError as e:
                 log.warning("Status server port %d: %s", self.port, e)
 
