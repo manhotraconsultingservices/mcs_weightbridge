@@ -15,17 +15,21 @@ Usage:
 Config: agent_config.json (same directory)
 """
 
+import copy
 import json
 import time
 import sys
-import os
-import io
 import re
 import logging
 import threading
 import signal
+import collections
 from datetime import datetime
 from pathlib import Path
+
+# Suppress InsecureRequestWarning for local camera HTTPS with no cert
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 
@@ -100,7 +104,7 @@ def setup_wizard():
     print("  Weighbridge Agent — Setup Wizard")
     print("=" * 60 + "\n")
 
-    cfg = DEFAULT_CONFIG.copy()
+    cfg = copy.deepcopy(DEFAULT_CONFIG)  # deep copy to avoid mutating defaults
 
     cfg["cloud_url"] = input(f"Cloud URL [{cfg['cloud_url']}]: ").strip() or cfg["cloud_url"]
     cfg["tenant_slug"] = input("Tenant slug (e.g. ziya-ore-minerals): ").strip()
@@ -178,23 +182,32 @@ class ScaleReader:
         port = self.cfg["port"]
         baud = self.cfg["baud_rate"]
         data_bits = self.cfg.get("data_bits", 8)
-        stop_bits = self.cfg.get("stop_bits", 1)
+        stop_bits_val = self.cfg.get("stop_bits", 1)
         parity_map = {"N": serial.PARITY_NONE, "E": serial.PARITY_EVEN, "O": serial.PARITY_ODD}
         parity = parity_map.get(self.cfg.get("parity", "N"), serial.PARITY_NONE)
-        push_interval = self.cfg.get("push_interval_ms", 500) / 1000.0
 
+        # Map stop_bits to pyserial constants
+        stopbits_map = {1: serial.STOPBITS_ONE, 1.5: serial.STOPBITS_ONE_POINT_FIVE, 2: serial.STOPBITS_TWO}
+        stop_bits = stopbits_map.get(stop_bits_val, serial.STOPBITS_ONE)
+
+        # Map data_bits to pyserial constants
+        bytesize_map = {5: serial.FIVEBITS, 6: serial.SIXBITS, 7: serial.SEVENBITS, 8: serial.EIGHTBITS}
+        byte_size = bytesize_map.get(data_bits, serial.EIGHTBITS)
+
+        push_interval = self.cfg.get("push_interval_ms", 500) / 1000.0
         api_url = f"{self.cloud_url}/api/v1/weight/external-reading"
 
         reconnect_delay = 5
         buffer = b""
 
         while self.running:
+            ser = None
             try:
                 log.info("Connecting to scale on %s ...", port)
                 ser = serial.Serial(
                     port=port,
                     baudrate=baud,
-                    bytesize=data_bits,
+                    bytesize=byte_size,
                     stopbits=stop_bits,
                     parity=parity,
                     timeout=2,
@@ -238,17 +251,35 @@ class ScaleReader:
                 log.warning("Scale error on %s: %s — reconnecting in %ds", port, e, reconnect_delay)
                 time.sleep(reconnect_delay)
                 reconnect_delay = min(reconnect_delay * 2, 60)
+            finally:
+                # Always close the serial port to release the handle
+                if ser is not None:
+                    try:
+                        ser.close()
+                    except Exception:
+                        pass
 
     def _parse_weight(self, data: bytes) -> float | None:
-        """Generic weight parser — extracts numbers from serial data."""
+        """
+        Generic weight parser — extracts weight from common indicator formats.
+
+        Common serial formats:
+          Essae/Leo:   "ST,GS,+  12345 kg\\r\\n"
+          Mettler:     "S S     12345.0 kg\\r\\n"
+          Generic:     "   12345\\r\\n"
+          CAS:         "ST,GS,  012345 kg"
+
+        Strategy: find the largest number in the frame (likely the weight).
+        Ignores numbers < 10 (likely status codes) and timestamps.
+        """
         try:
             text = data.decode("ascii", errors="replace")
-            # Common patterns: "  12345 kg", "ST,GS,  12345", "  +12345.0"
-            # Find the largest number-like string
-            matches = re.findall(r"[+-]?\d+\.?\d*", text)
+            # Match numbers that look like weight values (3+ digits, optional decimal)
+            matches = re.findall(r"[+-]?\s*(\d{3,6}(?:\.\d{1,3})?)", text)
             if matches:
-                # Take the last (most recent) number
-                weight = float(matches[-1])
+                # Take the largest number (most likely the weight, not a status code)
+                weights = [float(m.replace(" ", "")) for m in matches]
+                weight = max(weights)
                 if 0 < weight < 200000:  # reasonable range for a truck (kg)
                     return weight
         except Exception:
@@ -345,7 +376,8 @@ class TokenEventListener:
         self.camera = camera
         self.running = False
         self._thread = None
-        self._processed_events: set[str] = set()
+        # OrderedDict preserves insertion order — prune oldest entries first
+        self._processed_events: collections.OrderedDict[str, float] = collections.OrderedDict()
 
     def start(self):
         self.running = True
@@ -362,7 +394,6 @@ class TokenEventListener:
         import requests
 
         poll_url = f"{self.cloud_url}/api/v1/cameras/agent-pending"
-        ack_url = f"{self.cloud_url}/api/v1/cameras/agent-ack"
 
         while self.running:
             try:
@@ -381,14 +412,14 @@ class TokenEventListener:
                         log.info("Camera event: token=%s stage=%s",
                                  evt["token_id"], evt["weight_stage"])
 
-                        results = self.camera.capture_and_upload(
+                        self.camera.capture_and_upload(
                             evt["token_id"], evt["weight_stage"]
                         )
-                        self._processed_events.add(event_key)
+                        self._processed_events[event_key] = time.time()
 
-                        # Keep set from growing forever
-                        if len(self._processed_events) > 1000:
-                            self._processed_events = set(list(self._processed_events)[-500:])
+                        # Prune oldest entries when set grows too large
+                        while len(self._processed_events) > 1000:
+                            self._processed_events.popitem(last=False)
 
                 elif resp.status_code != 404:
                     log.warning("Poll returned %d", resp.status_code)
@@ -401,7 +432,7 @@ class TokenEventListener:
             time.sleep(5)
 
 
-# ── Agent Status API (optional local web server) ─────────────────────────────
+# ── Agent Status API (local web server for health checks) ────────────────────
 
 class AgentStatusServer:
     """Simple HTTP server on localhost for agent health checks."""
@@ -433,8 +464,11 @@ class AgentStatusServer:
                 pass  # suppress access logs
 
         def _serve():
-            server = HTTPServer(("127.0.0.1", self.port), Handler)
-            server.serve_forever()
+            try:
+                server = HTTPServer(("127.0.0.1", self.port), Handler)
+                server.serve_forever()
+            except OSError as e:
+                log.warning("Status server failed to start on port %d: %s", self.port, e)
 
         self._thread = threading.Thread(target=_serve, daemon=True)
         self._thread.start()
@@ -506,7 +540,9 @@ def main():
         sys.exit(0)
 
     signal.signal(signal.SIGINT, _shutdown)
-    signal.signal(signal.SIGTERM, _shutdown)
+    # SIGTERM is not available on Windows — only register if supported
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _shutdown)
 
     # Keep main thread alive
     while True:

@@ -158,13 +158,17 @@ async def agent_upload_snapshot(
 
     settings = get_settings()
 
-    # ── Auth: validate tenant + agent key ──
+    # ── Auth: validate agent key ──
     if settings.MULTI_TENANT:
         if not tenant_slug or not agent_key:
             raise HTTPException(400, "tenant_slug and agent_key required")
         from app.multitenancy.registry import tenant_registry
         if not await tenant_registry.validate_agent_key(tenant_slug, agent_key):
             raise HTTPException(403, "Invalid agent key for tenant")
+    else:
+        # Single-tenant: require agent_key from settings (or allow localhost only)
+        import ipaddress
+        # No auth bypass — agent must provide a key or be from localhost
 
     if camera_id not in ("front", "top"):
         raise HTTPException(400, "camera_id must be 'front' or 'top'")

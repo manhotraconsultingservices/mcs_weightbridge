@@ -1,3 +1,5 @@
 # Weighbridge Agent — minimal dependencies (client PC)
+# Install: pip install -r requirements-agent.txt
 pyserial==3.5
 requests>=2.31.0
+urllib3>=2.0.0
