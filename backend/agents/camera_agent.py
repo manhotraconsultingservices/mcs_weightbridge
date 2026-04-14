@@ -133,6 +133,39 @@ class CameraCapturer:
         self.capture_count = 0
         self.error_count = 0
 
+    def _capture_single(self, cam_url: str, cam: dict, camera_id: str) -> bytes | None:
+        """Capture a single snapshot with retry and auth fallback."""
+        import requests
+        from requests.auth import HTTPDigestAuth, HTTPBasicAuth
+
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                auth = None
+                if cam.get("username"):
+                    auth = HTTPDigestAuth(cam["username"], cam.get("password", ""))
+
+                resp = requests.get(cam_url, auth=auth, timeout=10, verify=False)
+
+                # Fallback to Basic auth if Digest fails
+                if resp.status_code == 401 and auth:
+                    auth = HTTPBasicAuth(cam["username"], cam.get("password", ""))
+                    resp = requests.get(cam_url, auth=auth, timeout=10, verify=False)
+
+                if resp.status_code == 200 and len(resp.content) >= 500:
+                    return resp.content
+
+                log.warning("Camera %s attempt %d: HTTP %d, %d bytes",
+                            camera_id, attempt, resp.status_code, len(resp.content))
+
+            except Exception as e:
+                log.warning("Camera %s attempt %d failed: %s", camera_id, attempt, e)
+
+            if attempt < max_retries:
+                time.sleep(2)  # wait before retry
+
+        return None
+
     def capture_and_upload(self, token_id: str, weight_stage: str = "second_weight") -> dict:
         """Capture from all cameras and upload to cloud."""
         import requests
@@ -148,41 +181,15 @@ class CameraCapturer:
 
             log.info("Capturing %s: %s", camera_id, cam_url)
 
-            # Step 1: Capture from local camera
-            try:
-                auth = None
-                if cam.get("username"):
-                    from requests.auth import HTTPDigestAuth, HTTPBasicAuth
-                    # Try Digest first (CP Plus/Dahua), fall back to Basic (Hikvision)
-                    auth = HTTPDigestAuth(cam["username"], cam.get("password", ""))
-
-                resp = requests.get(cam_url, auth=auth, timeout=10, verify=False)
-
-                # If Digest fails, retry with Basic auth
-                if resp.status_code == 401 and auth:
-                    auth = HTTPBasicAuth(cam["username"], cam.get("password", ""))
-                    resp = requests.get(cam_url, auth=auth, timeout=10, verify=False)
-
-                if resp.status_code != 200:
-                    log.warning("Camera %s returned HTTP %d", camera_id, resp.status_code)
-                    results[camera_id] = {"success": False, "error": f"HTTP {resp.status_code}"}
-                    self.error_count += 1
-                    continue
-
-                image_data = resp.content
-                if len(image_data) < 500:
-                    log.warning("Camera %s image too small (%d bytes)", camera_id, len(image_data))
-                    results[camera_id] = {"success": False, "error": "Image too small"}
-                    self.error_count += 1
-                    continue
-
-                log.info("Captured %s: %d bytes", camera_id, len(image_data))
-
-            except requests.RequestException as e:
-                log.warning("Camera %s failed: %s", camera_id, e)
-                results[camera_id] = {"success": False, "error": str(e)}
+            # Step 1: Capture from local camera (with retry)
+            image_data = self._capture_single(cam_url, cam, camera_id)
+            if image_data is None:
+                log.warning("Camera %s FAILED after 3 retries", camera_id)
+                results[camera_id] = {"success": False, "error": "Capture failed after retries"}
                 self.error_count += 1
                 continue
+
+            log.info("Captured %s: %d bytes", camera_id, len(image_data))
 
             # Step 2: Upload to cloud
             try:
@@ -209,6 +216,9 @@ class CameraCapturer:
                 log.warning("Upload %s failed: %s", camera_id, e)
                 results[camera_id] = {"success": False, "error": str(e)}
                 self.error_count += 1
+
+            # Small delay between cameras to avoid overwhelming DVR
+            time.sleep(1)
 
         return results
 
