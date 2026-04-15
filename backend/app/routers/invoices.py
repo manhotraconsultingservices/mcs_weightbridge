@@ -517,6 +517,49 @@ async def _load_einvoice_config(db: AsyncSession):
         return None
 
 
+def _generate_demo_irn(inv, co):
+    """
+    Generate demo/sample IRN + QR data for PDF preview.
+    No NIC API call — uses deterministic fake data based on invoice number.
+    The QR encodes a JSON string mimicking the NIC signed QR format.
+    """
+    import hashlib
+    import json as _json
+    from datetime import datetime as _dt
+
+    inv_no = inv.invoice_no or "DRAFT"
+    # Deterministic fake IRN (64-char hex hash)
+    irn_hash = hashlib.sha256(f"DEMO-{inv_no}-{inv.id}".encode()).hexdigest()
+
+    # Fake ack number (numeric, 12 digits)
+    ack_no = str(abs(hash(f"ACK-{inv.id}")) % 10**12).zfill(12)
+
+    # QR content mimics NIC signed QR JSON structure
+    seller_gstin = getattr(co, "gstin", None) or "29AABCT1332L1ZN"
+    buyer_gstin = ""
+    if inv.party and hasattr(inv.party, "gstin") and inv.party.gstin:
+        buyer_gstin = inv.party.gstin
+
+    qr_data = _json.dumps({
+        "SellerGstin": seller_gstin,
+        "BuyerGstin": buyer_gstin,
+        "DocNo": inv_no,
+        "DocTyp": "INV",
+        "DocDt": inv.invoice_date.strftime("%d/%m/%Y") if inv.invoice_date else "",
+        "TotVal": float(inv.grand_total or 0),
+        "Irn": irn_hash,
+        "IrnDt": _dt.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "DEMO": "This is a demo IRN for preview purposes only",
+    }, separators=(",", ":"))
+
+    inv.irn = irn_hash
+    inv.irn_ack_no = ack_no
+    inv.irn_ack_date = _dt.now()
+    inv.irn_qr_code = qr_data
+    inv.einvoice_status = "success"
+    inv.einvoice_error = None
+
+
 async def _try_generate_irn(db: AsyncSession, inv, co):
     """
     Attempt eInvoice IRN generation during finalization.
@@ -526,6 +569,12 @@ async def _try_generate_irn(db: AsyncSession, inv, co):
     try:
         config = await _load_einvoice_config(db)
         if not config or not config.is_enabled or not config.auto_generate_on_finalize:
+            return
+
+        # Demo mode — generate fake IRN+QR for PDF preview, no NIC API call
+        if config.demo_mode:
+            _generate_demo_irn(inv, co)
+            _log.getLogger(__name__).info("Demo IRN generated for invoice %s", inv.invoice_no)
             return
 
         # Only B2B invoices with party GSTIN get IRN
@@ -574,14 +623,20 @@ async def generate_irn(
     if inv.einvoice_status == "success" and inv.irn:
         raise HTTPException(400, f"IRN already exists: {inv.irn}")
 
-    if not inv.party or not inv.party.gstin:
-        raise HTTPException(400, "eInvoice requires a party with GSTIN (B2B)")
-
     config = await _load_einvoice_config(db)
     if not config or not config.is_enabled:
         raise HTTPException(400, "eInvoice is not configured or not enabled")
 
     co, _ = await _get_company_fy(db)
+
+    # Demo mode — generate fake IRN+QR for PDF preview
+    if config.demo_mode:
+        _generate_demo_irn(inv, co)
+        await db.commit()
+        return await _load_invoice(db, invoice_id)
+
+    if not inv.party or not inv.party.gstin:
+        raise HTTPException(400, "eInvoice requires a party with GSTIN (B2B)")
 
     from app.integrations.einvoice import EInvoiceClient, build_einvoice_payload
 

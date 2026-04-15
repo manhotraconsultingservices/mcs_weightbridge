@@ -342,6 +342,7 @@ _EINVOICE_DEFAULTS = {
     "is_sandbox": True,
     "is_enabled": False,
     "auto_generate_on_finalize": True,
+    "demo_mode": False,
 }
 
 _MASK = "***"

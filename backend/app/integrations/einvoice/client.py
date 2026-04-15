@@ -46,6 +46,7 @@ class EInvoiceConfig:
     is_sandbox: bool = True
     is_enabled: bool = False
     auto_generate_on_finalize: bool = True
+    demo_mode: bool = False                  # Generate fake IRN+QR for PDF preview (no NIC API call)
 
     @classmethod
     def from_dict(cls, d: dict) -> "EInvoiceConfig":
@@ -63,6 +64,7 @@ class EInvoiceConfig:
             "is_sandbox": self.is_sandbox,
             "is_enabled": self.is_enabled,
             "auto_generate_on_finalize": self.auto_generate_on_finalize,
+            "demo_mode": self.demo_mode,
         }
 
 

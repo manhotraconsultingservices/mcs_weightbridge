@@ -1461,6 +1461,7 @@ interface EInvoiceConfig {
   is_sandbox: boolean;
   is_enabled: boolean;
   auto_generate_on_finalize: boolean;
+  demo_mode: boolean;
 }
 
 const DEFAULT_EINVOICE: EInvoiceConfig = {
@@ -1474,6 +1475,7 @@ const DEFAULT_EINVOICE: EInvoiceConfig = {
   is_sandbox: true,
   is_enabled: false,
   auto_generate_on_finalize: true,
+  demo_mode: false,
 };
 
 function EInvoiceSettingsTab() {
@@ -1572,6 +1574,14 @@ function EInvoiceSettingsTab() {
           <Label htmlFor="auto-irn" className="text-xs cursor-pointer">Auto-generate IRN when invoice is finalized (B2B with GSTIN only)</Label>
         </div>
 
+        <div className="flex items-center gap-3 p-2 rounded bg-amber-50 border border-amber-200">
+          <input type="checkbox" checked={cfg.demo_mode} onChange={e => set('demo_mode', e.target.checked)} id="demo-irn" />
+          <Label htmlFor="demo-irn" className="text-xs cursor-pointer">
+            <span className="font-semibold text-amber-700">Demo Mode</span>
+            <span className="text-amber-600"> — Generate sample IRN + QR code on PDF without NIC API (for preview/testing)</span>
+          </Label>
+        </div>
+
         <div className="flex items-center gap-3">
           <Button onClick={save} disabled={saving} size="sm">
             {saving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
@@ -1596,6 +1606,7 @@ function EInvoiceSettingsTab() {
             <b>How it works:</b> When enabled, the system will automatically call the NIC eInvoice API to generate an IRN (Invoice Reference Number) for B2B invoices with party GSTIN upon finalization.
             Failed IRN generation does NOT block invoice finalization — you can retry manually using the retry button on the invoice row.
             IRN can be cancelled within 24 hours of generation.
+            <br/><b>Demo Mode:</b> Generates a sample IRN and QR code on invoices without calling NIC API. Use this to preview how the PDF looks with eInvoice data. No NIC credentials needed. Disable demo mode before going live.
           </p>
         </div>
       </div>
