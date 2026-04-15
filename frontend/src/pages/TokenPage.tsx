@@ -38,13 +38,13 @@ function fmtMonth(ym: string) {
 }
 
 function mtFmt(kg: number | null | undefined) {
-  if (kg == null) return '—';
-  return (kg / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' MT';
+  if (kg == null || isNaN(Number(kg))) return '0.000 MT';
+  return (Number(kg) / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' MT';
 }
 
 function kgFmt(kg: number | null | undefined) {
-  if (kg == null) return '—';
-  return kg.toLocaleString('en-IN', { minimumFractionDigits: 2 }) + ' kg';
+  if (kg == null || isNaN(Number(kg))) return '—';
+  return Number(kg).toLocaleString('en-IN', { minimumFractionDigits: 2 }) + ' kg';
 }
 
 const STATUS_CONFIG = {
@@ -177,7 +177,7 @@ export default function TokenPage() {
   const completed = useMemo(() => tokens.filter(t => t.status === 'COMPLETED'), [tokens]);
   const active = useMemo(() => tokens.filter(t => !['COMPLETED', 'CANCELLED'].includes(t.status)), [tokens]);
   const cancelled = useMemo(() => tokens.filter(t => t.status === 'CANCELLED'), [tokens]);
-  const totalNet = useMemo(() => completed.reduce((s, t) => s + (t.net_weight ?? 0), 0), [completed]);
+  const totalNet = useMemo(() => completed.reduce((s, t) => s + (Number(t.net_weight) || 0), 0), [completed]);
 
   // Trend data
   const trendData = useMemo(() => {
