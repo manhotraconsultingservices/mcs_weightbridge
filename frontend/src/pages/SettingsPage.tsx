@@ -2161,6 +2161,7 @@ function PrintSettingsTab() {
 }
 
 export default function SettingsPage() {
+  const isSaas = sessionStorage.getItem('multi_tenant') === '1';
   const [tab, setTab] = useState('company');
   const [company, setCompany] = useState<Company | null>(null);
   const [saving, setSaving] = useState(false);
@@ -2230,14 +2231,17 @@ export default function SettingsPage() {
           <TabsTrigger value="bank">Bank Details</TabsTrigger>
           <TabsTrigger value="prefixes">Invoice Prefixes</TabsTrigger>
           <TabsTrigger value="fy">Financial Years</TabsTrigger>
-          <TabsTrigger value="usb">USB Guard</TabsTrigger>
-          <TabsTrigger value="scale">Weight Scale</TabsTrigger>
+          {/* Hardware tabs — hidden in SaaS mode (handled by client-side agents) */}
+          {!isSaas && <TabsTrigger value="usb">USB Guard</TabsTrigger>}
+          {!isSaas && <TabsTrigger value="scale">Weight Scale</TabsTrigger>}
           <TabsTrigger value="tally">Tally</TabsTrigger>
           <TabsTrigger value="weighbridge">Weighbridge</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
-          <TabsTrigger value="cameras" className="flex items-center gap-1">
-            <Camera className="h-3.5 w-3.5" />Cameras
-          </TabsTrigger>
+          {!isSaas && (
+            <TabsTrigger value="cameras" className="flex items-center gap-1">
+              <Camera className="h-3.5 w-3.5" />Cameras
+            </TabsTrigger>
+          )}
           <TabsTrigger value="einvoice" className="flex items-center gap-1">
             <Shield className="h-3.5 w-3.5" />eInvoice
           </TabsTrigger>

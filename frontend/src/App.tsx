@@ -185,7 +185,8 @@ function RootRoutes() {
       .then(r => r.json())
       .then((health) => {
         if (health.multi_tenant) {
-          // SaaS mode — skip license check entirely
+          // SaaS mode — store flag and skip license check
+          sessionStorage.setItem('multi_tenant', '1');
           setLicenseChecked(true);
           return;
         }
