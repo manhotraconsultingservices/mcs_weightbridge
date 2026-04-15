@@ -46,6 +46,18 @@ function isPlatformHost(): boolean {
   return match ? match[1].toLowerCase() === 'platform' : false;
 }
 
+/** Check if we're on a tenant subdomain (e.g. manhotra-consulting.weighbridgesetu.com).
+ *  Returns true for ANY subdomain except www and platform.
+ *  Used to decide: show LandingPage (marketing) or LoginPage (tenant login).
+ */
+function isTenantSubdomain(): boolean {
+  const host = window.location.hostname;
+  const match = host.match(/^([a-z][a-z0-9-]{1,30})\..+\..+$/i);
+  if (!match) return false;
+  const sub = match[1].toLowerCase();
+  return sub !== 'www' && sub !== 'platform';
+}
+
 // Redirect to the first page the user has access to
 function HomeRedirect({ permissions }: { permissions: string[] }) {
   if (permissions.includes('*') || permissions.includes('/')) return <DashboardPage />;
@@ -214,12 +226,16 @@ function RootRoutes() {
     );
   }
 
+  // Tenant subdomain (e.g. manhotra-consulting.weighbridgesetu.com)
+  // → show LoginPage directly, NOT the marketing LandingPage.
+  const onTenantHost = isTenantSubdomain();
+
   return (
     <Routes>
       {/* Platform admin portal — separate auth, separate layout */}
       <Route path="/platform/*" element={<PlatformRoutes />} />
-      {/* Public landing page — only shown when not authenticated */}
-      {(!isAuthenticated || !user) && (
+      {/* Public landing page — only on main domain, never on tenant subdomains */}
+      {(!isAuthenticated || !user) && !onTenantHost && (
         <Route path="/" element={<LandingPage />} />
       )}
       {/* Login page at /login */}
@@ -237,7 +253,7 @@ function RootRoutes() {
       } />
       <Route path="*" element={
         (!isAuthenticated || !user)
-          ? <Navigate to="/" replace />
+          ? (onTenantHost ? <LoginPage onLogin={login} /> : <Navigate to="/" replace />)
           : <AppLayout user={user} logout={logout} />
       } />
     </Routes>

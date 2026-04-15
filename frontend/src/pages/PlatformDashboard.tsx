@@ -182,7 +182,7 @@ function EditTenantDialog({ tenant, open, onClose, onSaved }: {
   if (!tenant) return null;
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>Edit: {tenant.display_name}</DialogTitle></DialogHeader>
         <div className="space-y-3 py-2">
           <div><Label>Display Name</Label><Input value={displayName} onChange={e => setDisplayName(e.target.value)} /></div>
