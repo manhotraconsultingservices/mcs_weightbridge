@@ -1470,10 +1470,10 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                       </td>
                       <td className="px-3 py-2 font-mono text-xs font-semibold whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
-                          <span>{inv.invoice_no ?? <span className="text-amber-600 italic text-[10px] font-normal">Draft — not assigned</span>}</span>
+                          <span>{inv.invoice_no?.split('/Rv')[0] ?? <span className="text-amber-600 italic text-[10px] font-normal">Draft — not assigned</span>}</span>
                           {inv.revision_no > 1 && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 font-mono">
-                              Rv{inv.revision_no}
+                            <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-200" title={`Revision ${inv.revision_no} — click History to see previous versions`}>
+                              v{inv.revision_no}
                             </span>
                           )}
                         </div>

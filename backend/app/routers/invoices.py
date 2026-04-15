@@ -254,6 +254,23 @@ async def list_invoices(
     if search:
         filters.append(Invoice.invoice_no.ilike(f"%{search}%"))
 
+    # Hide older revisions — only show the latest revision per invoice chain.
+    # An invoice is "superseded" if another invoice exists with a higher revision_no
+    # pointing to the same original_invoice_id (or to this invoice as original).
+    from sqlalchemy import exists, literal
+    NewerRevision = Invoice.__table__.alias("newer")
+    superseded = exists(
+        select(literal(1)).select_from(NewerRevision).where(
+            and_(
+                NewerRevision.c.original_invoice_id == func.coalesce(
+                    Invoice.original_invoice_id, Invoice.id
+                ),
+                NewerRevision.c.revision_no > Invoice.revision_no,
+            )
+        )
+    )
+    filters.append(~superseded)
+
     total = (await db.execute(
         select(func.count()).select_from(Invoice).where(and_(*filters))
     )).scalar()
@@ -400,16 +417,14 @@ async def finalise_invoice(
     # Assign invoice_no NOW (gap-free: only finalised invoices consume sequence numbers)
     if not inv.invoice_no:
         if inv.revision_no and inv.revision_no > 1 and inv.original_invoice_id:
-            # Revision: inherit original invoice_no with /Rv<n> suffix
+            # Revision: keep the SAME invoice_no as the original (no /Rv suffix)
             orig = (await db.execute(
                 select(Invoice).where(Invoice.id == inv.original_invoice_id)
             )).scalar_one_or_none()
             if orig and orig.invoice_no:
-                # Use original base (strip any prior /Rv suffix)
                 base_no = orig.invoice_no.split("/Rv")[0]
-                inv.invoice_no = f"{base_no}/Rv{inv.revision_no}"
+                inv.invoice_no = base_no
             else:
-                # Fallback: treat as normal invoice
                 prefix = "INV" if inv.invoice_type == "sale" else "PUR"
                 inv.invoice_no = await _next_invoice_no(db, co.id, fy.id, inv.invoice_type, prefix)
         else:
