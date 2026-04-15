@@ -138,7 +138,12 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
     vehicle_no: '', transporter_name: '', eway_bill_no: '',
     discount_type: '', discount_value: '0', freight: '0', tcs_rate: '0',
     payment_mode: '', notes: '', invoice_date: new Date().toISOString().split('T')[0],
+    // Transport & dispatch metadata
+    royalty_no: '', delivery_note: '', supplier_ref: '', buyer_order_no: '',
+    buyer_order_date: '', dispatch_doc_no: '', dispatch_through: '',
+    destination: '', lr_rr_no: '', terms_of_delivery: '', driver_name: '',
   });
+  const [showTransport, setShowTransport] = useState(false);
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -241,6 +246,18 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
         tcs_rate: parseFloat(form.tcs_rate) || 0,
         payment_mode: form.payment_mode || undefined,
         notes: form.notes || undefined,
+        // Transport & dispatch metadata
+        royalty_no: form.royalty_no || undefined,
+        delivery_note: form.delivery_note || undefined,
+        supplier_ref: form.supplier_ref || undefined,
+        buyer_order_no: form.buyer_order_no || undefined,
+        buyer_order_date: form.buyer_order_date || undefined,
+        dispatch_doc_no: form.dispatch_doc_no || undefined,
+        dispatch_through: form.dispatch_through || undefined,
+        destination: form.destination || undefined,
+        lr_rr_no: form.lr_rr_no || undefined,
+        terms_of_delivery: form.terms_of_delivery || undefined,
+        driver_name: form.driver_name || undefined,
         items: lines.map((l, i) => ({
           product_id: l.product_id,
           description: l.description || undefined,
@@ -457,6 +474,64 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
               </Select>
             </div>
           </div>
+
+          {/* Transport & Dispatch Details (collapsible) */}
+          <div className="border-t pt-3">
+            <button type="button" className="flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => setShowTransport(t => !t)}>
+              {showTransport ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              Transport &amp; Dispatch Details
+              <span className="text-xs font-normal">(Royalty No., Driver, LR/RR, etc.)</span>
+            </button>
+            {showTransport && (
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <div className="space-y-1">
+                  <Label>Royalty No.</Label>
+                  <Input value={form.royalty_no} onChange={e => setForm(f => ({ ...f, royalty_no: e.target.value }))} placeholder="Mining royalty receipt no." />
+                </div>
+                <div className="space-y-1">
+                  <Label>Delivery Note</Label>
+                  <Input value={form.delivery_note} onChange={e => setForm(f => ({ ...f, delivery_note: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Driver Name</Label>
+                  <Input value={form.driver_name} onChange={e => setForm(f => ({ ...f, driver_name: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>LR / RR No.</Label>
+                  <Input value={form.lr_rr_no} onChange={e => setForm(f => ({ ...f, lr_rr_no: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Buyer's Order No.</Label>
+                  <Input value={form.buyer_order_no} onChange={e => setForm(f => ({ ...f, buyer_order_no: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Buyer's Order Date</Label>
+                  <Input type="date" value={form.buyer_order_date} onChange={e => setForm(f => ({ ...f, buyer_order_date: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Dispatch Doc No.</Label>
+                  <Input value={form.dispatch_doc_no} onChange={e => setForm(f => ({ ...f, dispatch_doc_no: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Dispatched Through</Label>
+                  <Input value={form.dispatch_through} onChange={e => setForm(f => ({ ...f, dispatch_through: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Supplier's Ref.</Label>
+                  <Input value={form.supplier_ref} onChange={e => setForm(f => ({ ...f, supplier_ref: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Destination</Label>
+                  <Input value={form.destination} onChange={e => setForm(f => ({ ...f, destination: e.target.value }))} />
+                </div>
+                <div className="col-span-2 space-y-1">
+                  <Label>Terms of Delivery</Label>
+                  <Input value={form.terms_of_delivery} onChange={e => setForm(f => ({ ...f, terms_of_delivery: e.target.value }))} />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <DialogFooter className="gap-2">
@@ -492,7 +567,12 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
     vehicle_no: '', transporter_name: '', eway_bill_no: '',
     discount_type: '', discount_value: '0', freight: '0', tcs_rate: '0',
     payment_mode: '', notes: '', invoice_date: '',
+    // Transport & dispatch metadata
+    royalty_no: '', delivery_note: '', supplier_ref: '', buyer_order_no: '',
+    buyer_order_date: '', dispatch_doc_no: '', dispatch_through: '',
+    destination: '', lr_rr_no: '', terms_of_delivery: '', driver_name: '',
   });
+  const [showTransport, setShowTransport] = useState(false);
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -517,7 +597,24 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
       payment_mode: invoice.payment_mode ?? '',
       notes: invoice.notes ?? '',
       invoice_date: invoice.invoice_date ?? new Date().toISOString().split('T')[0],
+      // Transport & dispatch metadata
+      royalty_no: invoice.royalty_no ?? '',
+      delivery_note: invoice.delivery_note ?? '',
+      supplier_ref: invoice.supplier_ref ?? '',
+      buyer_order_no: invoice.buyer_order_no ?? '',
+      buyer_order_date: invoice.buyer_order_date ?? '',
+      dispatch_doc_no: invoice.dispatch_doc_no ?? '',
+      dispatch_through: invoice.dispatch_through ?? '',
+      destination: invoice.destination ?? '',
+      lr_rr_no: invoice.lr_rr_no ?? '',
+      terms_of_delivery: invoice.terms_of_delivery ?? '',
+      driver_name: invoice.driver_name ?? '',
     });
+    // Auto-expand transport section if any transport field has data
+    const hasTransport = !!(invoice.royalty_no || invoice.delivery_note || invoice.supplier_ref ||
+      invoice.buyer_order_no || invoice.dispatch_doc_no || invoice.dispatch_through ||
+      invoice.destination || invoice.lr_rr_no || invoice.terms_of_delivery || invoice.driver_name);
+    setShowTransport(hasTransport);
     setLines(
       invoice.items.length > 0
         ? invoice.items.map(item => ({
@@ -584,6 +681,18 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
         tcs_rate: parseFloat(form.tcs_rate) || 0,
         payment_mode: form.payment_mode || null,
         notes: form.notes || null,
+        // Transport & dispatch metadata
+        royalty_no: form.royalty_no || null,
+        delivery_note: form.delivery_note || null,
+        supplier_ref: form.supplier_ref || null,
+        buyer_order_no: form.buyer_order_no || null,
+        buyer_order_date: form.buyer_order_date || null,
+        dispatch_doc_no: form.dispatch_doc_no || null,
+        dispatch_through: form.dispatch_through || null,
+        destination: form.destination || null,
+        lr_rr_no: form.lr_rr_no || null,
+        terms_of_delivery: form.terms_of_delivery || null,
+        driver_name: form.driver_name || null,
         items: lines.map((l, i) => ({
           product_id: l.product_id,
           description: l.description || null,
@@ -812,6 +921,64 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
                 onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                 placeholder="Optional remarks…" />
             </div>
+          </div>
+
+          {/* Transport & Dispatch Details (collapsible) */}
+          <div className="border-t pt-3">
+            <button type="button" className="flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => setShowTransport(t => !t)}>
+              {showTransport ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              Transport &amp; Dispatch Details
+              <span className="text-xs font-normal">(Royalty No., Driver, LR/RR, etc.)</span>
+            </button>
+            {showTransport && (
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <div className="space-y-1">
+                  <Label>Royalty No.</Label>
+                  <Input value={form.royalty_no} onChange={e => setForm(f => ({ ...f, royalty_no: e.target.value }))} placeholder="Mining royalty receipt no." />
+                </div>
+                <div className="space-y-1">
+                  <Label>Delivery Note</Label>
+                  <Input value={form.delivery_note} onChange={e => setForm(f => ({ ...f, delivery_note: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Driver Name</Label>
+                  <Input value={form.driver_name} onChange={e => setForm(f => ({ ...f, driver_name: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>LR / RR No.</Label>
+                  <Input value={form.lr_rr_no} onChange={e => setForm(f => ({ ...f, lr_rr_no: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Buyer's Order No.</Label>
+                  <Input value={form.buyer_order_no} onChange={e => setForm(f => ({ ...f, buyer_order_no: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Buyer's Order Date</Label>
+                  <Input type="date" value={form.buyer_order_date} onChange={e => setForm(f => ({ ...f, buyer_order_date: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Dispatch Doc No.</Label>
+                  <Input value={form.dispatch_doc_no} onChange={e => setForm(f => ({ ...f, dispatch_doc_no: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Dispatched Through</Label>
+                  <Input value={form.dispatch_through} onChange={e => setForm(f => ({ ...f, dispatch_through: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Supplier's Ref.</Label>
+                  <Input value={form.supplier_ref} onChange={e => setForm(f => ({ ...f, supplier_ref: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Destination</Label>
+                  <Input value={form.destination} onChange={e => setForm(f => ({ ...f, destination: e.target.value }))} />
+                </div>
+                <div className="col-span-2 space-y-1">
+                  <Label>Terms of Delivery</Label>
+                  <Input value={form.terms_of_delivery} onChange={e => setForm(f => ({ ...f, terms_of_delivery: e.target.value }))} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

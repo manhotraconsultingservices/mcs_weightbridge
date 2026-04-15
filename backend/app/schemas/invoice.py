@@ -36,6 +36,18 @@ class InvoiceCreate(BaseModel):
     tcs_rate: Decimal = Decimal("0")
     payment_mode: Optional[str] = None
     notes: Optional[str] = None
+    # Transport & dispatch metadata (Tally-compatible)
+    royalty_no: Optional[str] = None
+    delivery_note: Optional[str] = None
+    supplier_ref: Optional[str] = None
+    buyer_order_no: Optional[str] = None
+    buyer_order_date: Optional[date] = None
+    dispatch_doc_no: Optional[str] = None
+    dispatch_through: Optional[str] = None
+    destination: Optional[str] = None
+    lr_rr_no: Optional[str] = None
+    terms_of_delivery: Optional[str] = None
+    driver_name: Optional[str] = None
     items: list[InvoiceItemCreate]
 
 
@@ -55,6 +67,18 @@ class InvoiceUpdate(BaseModel):
     tcs_rate: Optional[Decimal] = None
     payment_mode: Optional[str] = None
     notes: Optional[str] = None
+    # Transport & dispatch metadata (Tally-compatible)
+    royalty_no: Optional[str] = None
+    delivery_note: Optional[str] = None
+    supplier_ref: Optional[str] = None
+    buyer_order_no: Optional[str] = None
+    buyer_order_date: Optional[date] = None
+    dispatch_doc_no: Optional[str] = None
+    dispatch_through: Optional[str] = None
+    destination: Optional[str] = None
+    lr_rr_no: Optional[str] = None
+    terms_of_delivery: Optional[str] = None
+    driver_name: Optional[str] = None
     items: Optional[list[InvoiceItemCreate]] = None
 
 
@@ -101,6 +125,18 @@ class InvoiceResponse(BaseModel):
     vehicle_no: Optional[str]
     transporter_name: Optional[str]
     eway_bill_no: Optional[str]
+    # Transport & dispatch metadata
+    royalty_no: Optional[str] = None
+    delivery_note: Optional[str] = None
+    supplier_ref: Optional[str] = None
+    buyer_order_no: Optional[str] = None
+    buyer_order_date: Optional[date] = None
+    dispatch_doc_no: Optional[str] = None
+    dispatch_through: Optional[str] = None
+    destination: Optional[str] = None
+    lr_rr_no: Optional[str] = None
+    terms_of_delivery: Optional[str] = None
+    driver_name: Optional[str] = None
     gross_weight: Optional[Decimal]
     tare_weight: Optional[Decimal]
     net_weight: Optional[Decimal]

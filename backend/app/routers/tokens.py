@@ -260,6 +260,14 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
     )
 
     from app.models.invoice import Invoice, InvoiceItem
+    # Auto-fill driver name from token's driver relationship
+    driver_name = None
+    if token.driver_id:
+        from app.models.vehicle import Driver
+        driver = (await db.execute(select(Driver).where(Driver.id == token.driver_id))).scalar_one_or_none()
+        if driver:
+            driver_name = driver.name
+
     invoice = Invoice(
         company_id=company.id,
         fy_id=fy.id,
@@ -273,6 +281,9 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
         gross_weight=token.gross_weight,
         tare_weight=token.tare_weight,
         net_weight=token.net_weight,
+        # Auto-fill transport metadata
+        driver_name=driver_name,
+        destination=party.billing_city if party else None,
         status="draft",
         payment_status="unpaid",
         amount_paid=Decimal("0"),

@@ -190,6 +190,18 @@ async def create_invoice(
         payment_mode=payload.payment_mode,
         notes=payload.notes,
         tcs_rate=payload.tcs_rate,
+        # Transport & dispatch metadata
+        royalty_no=payload.royalty_no,
+        delivery_note=payload.delivery_note,
+        supplier_ref=payload.supplier_ref,
+        buyer_order_no=payload.buyer_order_no,
+        buyer_order_date=payload.buyer_order_date,
+        dispatch_doc_no=payload.dispatch_doc_no,
+        dispatch_through=payload.dispatch_through,
+        destination=payload.destination,
+        lr_rr_no=payload.lr_rr_no,
+        terms_of_delivery=payload.terms_of_delivery,
+        driver_name=payload.driver_name,
         created_by=current_user.id,
         status="draft",
         payment_status="unpaid",
@@ -349,7 +361,11 @@ async def update_invoice(
 
     for field in ("vehicle_no", "transporter_name", "eway_bill_no",
                   "discount_type", "discount_value", "freight",
-                  "tcs_rate", "payment_mode", "notes"):
+                  "tcs_rate", "payment_mode", "notes",
+                  "royalty_no", "delivery_note", "supplier_ref",
+                  "buyer_order_no", "buyer_order_date",
+                  "dispatch_doc_no", "dispatch_through", "destination",
+                  "lr_rr_no", "terms_of_delivery", "driver_name"):
         val = getattr(payload, field, None)
         if val is not None:
             setattr(inv, field, val)

@@ -424,6 +424,18 @@ def get_column_migrations() -> list[str]:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """,
+        # Invoice transport & dispatch metadata (Tally-compatible fields)
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS royalty_no VARCHAR(50)",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS delivery_note VARCHAR(100)",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS supplier_ref VARCHAR(100)",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS buyer_order_no VARCHAR(100)",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS buyer_order_date DATE",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS dispatch_doc_no VARCHAR(100)",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS dispatch_through VARCHAR(200)",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS destination VARCHAR(200)",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS lr_rr_no VARCHAR(50)",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS terms_of_delivery VARCHAR(200)",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS driver_name VARCHAR(100)",
     ]
 
 

@@ -251,6 +251,18 @@ export interface Invoice {
   vehicle_no: string | null;
   transporter_name: string | null;
   eway_bill_no: string | null;
+  // Transport & dispatch metadata (Tally-compatible)
+  royalty_no?: string | null;
+  delivery_note?: string | null;
+  supplier_ref?: string | null;
+  buyer_order_no?: string | null;
+  buyer_order_date?: string | null;
+  dispatch_doc_no?: string | null;
+  dispatch_through?: string | null;
+  destination?: string | null;
+  lr_rr_no?: string | null;
+  terms_of_delivery?: string | null;
+  driver_name?: string | null;
   gross_weight: number | null;
   tare_weight: number | null;
   net_weight: number | null;

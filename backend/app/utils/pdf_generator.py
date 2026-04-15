@@ -8,6 +8,7 @@ from jinja2 import Environment, FileSystemLoader
 # ── Default Invoice Print Settings ────────────────────────────────────────── #
 
 DEFAULT_INVOICE_PRINT_SETTINGS = {
+    "page_size": "a4",  # "a4" or "a5"
     "copies": 3,
     "copy_labels": ["ORIGINAL FOR RECIPIENT", "DUPLICATE FOR TRANSPORTER", "TRIPLICATE FOR SUPPLIER"],
     "company": {
@@ -47,6 +48,7 @@ DEFAULT_INVOICE_PRINT_SETTINGS = {
         "show_per": True,
         "show_tax_inline": True,
         "show_qty_total": True,
+        "show_discount_col": False,
     },
     "sections": {
         "show_weight": True,

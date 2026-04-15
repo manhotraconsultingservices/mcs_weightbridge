@@ -1857,6 +1857,7 @@ function CameraSettingsTab() {
 // ── Invoice Print Settings Tab ────────────────────────────────────────────────
 
 interface InvoicePrintSettings {
+  page_size: string;
   copies: number;
   copy_labels: string[];
   company: {
@@ -1896,6 +1897,7 @@ interface InvoicePrintSettings {
     show_per: boolean;
     show_tax_inline: boolean;
     show_qty_total: boolean;
+    show_discount_col: boolean;
   };
   sections: {
     show_weight: boolean;
@@ -1912,6 +1914,7 @@ interface InvoicePrintSettings {
 }
 
 const DEFAULT_PRINT_SETTINGS: InvoicePrintSettings = {
+  page_size: 'a4',
   copies: 3,
   copy_labels: ['ORIGINAL FOR RECIPIENT', 'DUPLICATE FOR TRANSPORTER', 'TRIPLICATE FOR SUPPLIER'],
   company: {
@@ -1951,6 +1954,7 @@ const DEFAULT_PRINT_SETTINGS: InvoicePrintSettings = {
     show_per: true,
     show_tax_inline: true,
     show_qty_total: true,
+    show_discount_col: false,
   },
   sections: {
     show_weight: true,
@@ -2030,10 +2034,22 @@ function PrintSettingsTab() {
   return (
     <div className="space-y-4">
 
-      {/* Copies */}
+      {/* Page Size + Copies */}
       <Card>
-        <CardHeader><CardTitle className="text-base">Print Copies</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">Page Format &amp; Copies</CardTitle></CardHeader>
         <CardContent className="space-y-3">
+          <div className="flex items-center gap-4">
+            <Label className="w-32 shrink-0">Page Size</Label>
+            <Select value={ps.page_size || 'a4'} onValueChange={v => setPs(p => ({ ...p, page_size: v }))}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="a4">A4 (Standard)</SelectItem>
+                <SelectItem value="a5">A5 (Compact)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex items-center gap-4">
             <Label className="w-32 shrink-0">Number of copies</Label>
             <Select value={String(ps.copies)} onValueChange={v => setPs(p => ({ ...p, copies: Number(v) }))}>
@@ -2127,6 +2143,7 @@ function PrintSettingsTab() {
           <ToggleRow label="HSN / SAC column" checked={ps.items.show_hsn} onCheckedChange={v => setItems('show_hsn', v)} />
           <ToggleRow label="Rate column" checked={ps.items.show_rate} onCheckedChange={v => setItems('show_rate', v)} />
           <ToggleRow label="Per column" checked={ps.items.show_per} onCheckedChange={v => setItems('show_per', v)} />
+          <ToggleRow label="Discount % column" checked={ps.items.show_discount_col} onCheckedChange={v => setItems('show_discount_col', v)} />
           <ToggleRow label="Tax rows inline (CGST / SGST / IGST)" checked={ps.items.show_tax_inline} onCheckedChange={v => setItems('show_tax_inline', v)} />
           <ToggleRow label="Qty total in footer" checked={ps.items.show_qty_total} onCheckedChange={v => setItems('show_qty_total', v)} />
         </CardContent>
