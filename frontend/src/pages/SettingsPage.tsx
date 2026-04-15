@@ -2040,7 +2040,7 @@ function PrintSettingsTab() {
         <CardContent className="space-y-3">
           <div className="flex items-center gap-4">
             <Label className="w-32 shrink-0">Page Size</Label>
-            <Select value={ps.page_size || 'a4'} onValueChange={v => setPs(p => ({ ...p, page_size: v }))}>
+            <Select value={ps.page_size || 'a4'} onValueChange={v => setPs(p => ({ ...p, page_size: v ?? 'a4' }))}>
               <SelectTrigger className="w-32">
                 <SelectValue />
               </SelectTrigger>
