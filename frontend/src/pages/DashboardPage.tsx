@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   Scale, IndianRupee, Package, AlertCircle,
-  TrendingUp, TrendingDown, Activity, Printer,
+  TrendingUp, TrendingDown, Activity,
   Truck, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Search, X, Usb,
   ShieldCheck, ExternalLink,
 } from 'lucide-react';
