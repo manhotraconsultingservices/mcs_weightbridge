@@ -912,7 +912,9 @@ function StatusFilterPills({
     if (next.has(s)) next.delete(s); else next.add(s);
     onChange(next);
   }
-  const all = Object.entries(STATUS_CONFIG) as [TokenStatus, typeof STATUS_CONFIG[keyof typeof STATUS_CONFIG]][];
+  const HIDDEN_FILTERS: TokenStatus[] = ['OPEN', 'LOADING', 'SECOND_WEIGHT'];
+  const all = (Object.entries(STATUS_CONFIG) as [TokenStatus, typeof STATUS_CONFIG[keyof typeof STATUS_CONFIG]][])
+    .filter(([key]) => !HIDDEN_FILTERS.includes(key));
   return (
     <div className="flex flex-wrap gap-1">
       {all.map(([key, cfg]) => (

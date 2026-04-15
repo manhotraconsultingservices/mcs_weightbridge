@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
-  Plus, FileText, FolderOpen, Edit2, Trash2,
+  Plus, FileText, FolderOpen, Edit2, Trash2, Upload,
   AlertTriangle, CheckCircle, Clock, XCircle, RefreshCw, Settings2, X, Tag,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -323,6 +323,8 @@ function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -342,6 +344,7 @@ function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps
       } else {
         setForm({ item_type: defaultType, name: '', policy_holder: '', issuer: '', reference_no: '', issue_date: '', expiry_date: '', file_path: '', notes: '' });
       }
+      setSelectedFile(null);
       setError('');
     }
   }, [open, item, itemTypes]);
@@ -359,7 +362,7 @@ function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps
         reference_no: form.reference_no.trim() || null,
         issue_date: form.issue_date || null,
         expiry_date: form.expiry_date || null,
-        file_path: form.file_path.trim() || null,
+        file_path: (!selectedFile && form.file_path.trim()) ? form.file_path.trim() : (item?.file_path || null),
         notes: form.notes.trim() || null,
       };
       let resp;
@@ -368,6 +371,24 @@ function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps
       } else {
         resp = await api.post<ComplianceItem>('/api/v1/compliance', payload);
       }
+
+      // Upload file if selected
+      if (selectedFile) {
+        setUploading(true);
+        const fd = new FormData();
+        fd.append('file', selectedFile);
+        try {
+          resp = await api.post<ComplianceItem>(`/api/v1/compliance/${resp.data.id}/upload`, fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+        } catch (uploadErr: unknown) {
+          const detail = (uploadErr as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+          toast.error(typeof detail === 'string' ? detail : 'File upload failed');
+        } finally {
+          setUploading(false);
+        }
+      }
+
       onSaved(resp.data);
       onClose();
     } catch (e: unknown) {
@@ -437,12 +458,39 @@ function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps
           </div>
 
           <div className="space-y-1">
-            <Label>File Path (local or network drive)</Label>
-            <Input value={form.file_path} onChange={e => setForm(f => ({ ...f, file_path: e.target.value }))}
-              placeholder="C:\Documents\Insurance\policy.pdf  or  \\server\share\cert.pdf" />
-            <p className="text-[11px] text-muted-foreground">
-              Enter the full path to the document. Click the folder icon on the record to open it.
-            </p>
+            <Label>Upload Document</Label>
+            <label
+              className="flex items-center gap-3 rounded-lg border-2 border-dashed border-muted-foreground/25 p-3 cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors"
+              onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('border-primary/60', 'bg-primary/10'); }}
+              onDragLeave={e => { e.currentTarget.classList.remove('border-primary/60', 'bg-primary/10'); }}
+              onDrop={e => {
+                e.preventDefault();
+                e.currentTarget.classList.remove('border-primary/60', 'bg-primary/10');
+                const f = e.dataTransfer.files?.[0];
+                if (f) setSelectedFile(f);
+              }}
+            >
+              <Upload className="h-5 w-5 text-muted-foreground shrink-0" />
+              <div className="flex-1 min-w-0">
+                {selectedFile ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium truncate">{selectedFile.name}</span>
+                    <span className="text-[11px] text-muted-foreground">({(selectedFile.size / 1024).toFixed(0)} KB)</span>
+                    <button type="button" className="text-destructive hover:text-destructive/80" onClick={e => { e.preventDefault(); setSelectedFile(null); }}>
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : item?.file_path ? (
+                  <p className="text-sm text-muted-foreground">
+                    Current: <span className="font-medium">{item.file_path.split('/').pop()}</span> — drop new file to replace
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Click or drag file here (PDF, JPG, PNG, DOCX — max 10 MB)</p>
+                )}
+              </div>
+              <input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.tif,.tiff"
+                onChange={e => { const f = e.target.files?.[0]; if (f) setSelectedFile(f); e.target.value = ''; }} />
+            </label>
           </div>
 
           <div className="space-y-1">
@@ -453,9 +501,9 @@ function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : (item ? 'Update' : 'Add')}
+          <Button variant="outline" onClick={onClose} disabled={saving || uploading}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving || uploading}>
+            {uploading ? 'Uploading…' : saving ? 'Saving…' : (item ? 'Update' : 'Add')}
           </Button>
         </DialogFooter>
       </DialogContent>

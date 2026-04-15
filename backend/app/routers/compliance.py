@@ -6,7 +6,7 @@ import json
 import uuid
 from datetime import date, datetime, timedelta
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy import select, and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from app.dependencies import get_current_user, require_role
 from app.models.user import User
 from app.models.compliance import ComplianceItem
 from app.models.company import Company
+from app.utils.r2_storage import upload_to_r2, is_r2_configured
 
 router = APIRouter(prefix="/api/v1/compliance", tags=["compliance"])
 
@@ -393,6 +394,27 @@ async def download_file(
         raise HTTPException(400, "No file path configured for this item")
 
     path = item.file_path.strip()
+
+    # ── R2 URL — proxy download from cloud storage ──
+    if path.startswith("http://") or path.startswith("https://"):
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.get(path)
+                resp.raise_for_status()
+        except Exception as e:
+            raise HTTPException(502, f"Failed to fetch file from cloud storage: {e}")
+
+        filename = path.rsplit("/", 1)[-1] if "/" in path else "document"
+        mime, _ = mimetypes.guess_type(filename)
+        from fastapi.responses import Response
+        return Response(
+            content=resp.content,
+            media_type=mime or "application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    # ── Local file path — stream from disk ──
     if not os.path.exists(path):
         raise HTTPException(400, f"File not found: {path}")
 
@@ -403,3 +425,73 @@ async def download_file(
         media_type=mime or "application/octet-stream",
         filename=filename,
     )
+
+
+# ── File Upload (R2 or local fallback) ─────────────────────────────────── #
+
+ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx", ".xls", ".xlsx", ".tif", ".tiff"}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+@router.post("/{item_id}/upload", response_model=ComplianceItemResponse)
+async def upload_compliance_file(
+    item_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Upload a document file for a compliance item.
+    Stores in Cloudflare R2 under compliance/{company_id}/{item_id}/ prefix.
+    Falls back to local uploads/compliance/ if R2 is not configured.
+    """
+    import os
+    import mimetypes
+    from pathlib import Path
+
+    # Validate item exists
+    item = (await db.execute(select(ComplianceItem).where(ComplianceItem.id == item_id))).scalar_one_or_none()
+    if not item:
+        raise HTTPException(404, "Item not found")
+
+    # Validate file extension
+    original_name = file.filename or "document"
+    ext = os.path.splitext(original_name)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(400, f"File type '{ext}' not allowed. Accepted: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
+
+    # Read and validate size
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(400, f"File too large ({len(content) // (1024*1024)} MB). Maximum: {MAX_FILE_SIZE // (1024*1024)} MB")
+    if len(content) == 0:
+        raise HTTPException(400, "File is empty")
+
+    # Determine content type
+    content_type = file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+
+    # Build a safe filename
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    safe_name = f"{timestamp}_{original_name.replace(' ', '_')}"
+
+    co = await _get_company(db)
+    warning_days, critical_days = await _get_thresholds(db)
+
+    if is_r2_configured():
+        # Upload to R2 under compliance/ prefix (separate from camera/ images)
+        r2_key = f"compliance/{co.id}/{item_id}/{safe_name}"
+        url = upload_to_r2(content, r2_key, content_type)
+        if not url:
+            raise HTTPException(502, "Failed to upload file to cloud storage")
+        item.file_path = url
+    else:
+        # Fallback: save to local uploads/compliance/ directory
+        upload_dir = Path(__file__).parent.parent.parent / "uploads" / "compliance" / str(item_id)
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        local_path = upload_dir / safe_name
+        local_path.write_bytes(content)
+        item.file_path = f"uploads/compliance/{item_id}/{safe_name}"
+
+    await db.commit()
+    await db.refresh(item)
+    return _to_response(item, critical_days, warning_days)

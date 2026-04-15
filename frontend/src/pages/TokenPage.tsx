@@ -405,7 +405,9 @@ export default function TokenPage() {
             />
             {/* Status filter pills */}
             <div className="flex flex-wrap gap-1">
-              {(Object.keys(STATUS_CONFIG) as Array<keyof typeof STATUS_CONFIG>).map(s => (
+              {(Object.keys(STATUS_CONFIG) as Array<keyof typeof STATUS_CONFIG>)
+                .filter(s => !['OPEN', 'LOADING', 'SECOND_WEIGHT'].includes(s))
+                .map(s => (
                 <button
                   key={s}
                   onClick={() => toggleStatus(s)}

@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   Scale, IndianRupee, Package, AlertCircle,
-  TrendingUp, TrendingDown, Activity,
+  TrendingUp, TrendingDown, Activity, Printer,
   Truck, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Search, X, Usb,
   ShieldCheck, ExternalLink,
 } from 'lucide-react';
@@ -19,6 +19,7 @@ import { Link } from 'react-router-dom';
 import api from '@/services/api';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
 import { TokenDetailModal } from '@/components/TokenDetailModal';
+import { PrintButton } from '@/components/PrintButton';
 import type { Token } from '@/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -741,9 +742,9 @@ export default function DashboardPage() {
             ) : (
               <div className="divide-y">
                 {d.recent_tokens.map(t => (
-                  <div key={t.id} className={`flex items-center gap-3 px-4 py-2.5 ${t.is_supplement ? 'bg-purple-50/50' : ''}`}>
+                  <div key={t.id} className={`flex items-center gap-2 px-4 py-2.5 ${t.is_supplement ? 'bg-purple-50/50' : ''}`}>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-sm font-medium">#{t.token_no}</span>
                         <Badge variant="outline" className={`text-[10px] py-0 ${STATUS_COLORS[t.status] || ''}`}>
                           {t.status}
@@ -753,14 +754,17 @@ export default function DashboardPage() {
                         )}
                         <span className="text-[10px] text-muted-foreground uppercase">{t.token_type}</span>
                       </div>
-                      <p className="text-xs text-muted-foreground truncate">
+                      <p className="text-[11px] text-muted-foreground truncate max-w-[200px]">
                         {[t.party_name, t.vehicle_no].filter(Boolean).join(' · ')} · {t.token_date}
                       </p>
                     </div>
                     {t.net_weight != null && (
-                      <span className="text-xs font-semibold shrink-0 text-muted-foreground">
+                      <span className="text-[11px] font-semibold shrink-0 text-muted-foreground">
                         {(t.net_weight / 1000).toLocaleString('en-IN', { maximumFractionDigits: 2 })} MT
                       </span>
+                    )}
+                    {t.status === 'COMPLETED' && (
+                      <PrintButton url={`/api/v1/tokens/${t.id}/print`} iconOnly />
                     )}
                   </div>
                 ))}
