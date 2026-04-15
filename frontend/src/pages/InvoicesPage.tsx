@@ -151,7 +151,17 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
   useEffect(() => {
     if (!open) return;
     const today = new Date().toISOString().split('T')[0];
-    setForm(f => ({ ...f, invoice_date: today }));
+    // Reset entire form to defaults (prevents stale transport fields from previous entry)
+    setForm({
+      party_id: '', tax_type: 'gst', token_id: '',
+      vehicle_no: '', transporter_name: '', eway_bill_no: '',
+      discount_type: '', discount_value: '0', freight: '0', tcs_rate: '0',
+      payment_mode: '', notes: '', invoice_date: today,
+      royalty_no: '', delivery_note: '', supplier_ref: '', buyer_order_no: '',
+      buyer_order_date: '', dispatch_doc_no: '', dispatch_through: '',
+      destination: '', lr_rr_no: '', terms_of_delivery: '', driver_name: '',
+    });
+    setShowTransport(false);
     setLines([emptyLine()]);
     setWalkIn(false);
     setCustomerName('');
