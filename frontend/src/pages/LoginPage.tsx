@@ -8,7 +8,7 @@ import api from '@/services/api';
 import type { LoginResponse } from '@/types';
 
 interface LoginPageProps {
-  onLogin: (token: string, user: LoginResponse['user'], tenantSlug?: string) => void;
+  onLogin: (token: string, user: LoginResponse['user'], tenantSlug?: string, tenantModules?: Record<string, boolean>) => void;
 }
 
 interface TenantInfo {

@@ -15,6 +15,7 @@ export interface LoginResponse {
   tenant_slug?: string;
   tenant_status?: string;         // active | readonly | suspended
   tenant_status_message?: string;
+  tenant_modules?: Record<string, boolean>;
 }
 
 // ── Platform types ──────────────────────────────────────────────────────────
