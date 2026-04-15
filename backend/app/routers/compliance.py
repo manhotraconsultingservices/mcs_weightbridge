@@ -495,3 +495,45 @@ async def upload_compliance_file(
     await db.commit()
     await db.refresh(item)
     return _to_response(item, critical_days, warning_days)
+
+
+@router.delete("/{item_id}/file", response_model=ComplianceItemResponse)
+async def delete_compliance_file(
+    item_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete the uploaded file for a compliance item (from R2 or local disk)."""
+    import os
+    from app.utils.r2_storage import delete_from_r2
+
+    item = (await db.execute(select(ComplianceItem).where(ComplianceItem.id == item_id))).scalar_one_or_none()
+    if not item:
+        raise HTTPException(404, "Item not found")
+    if not item.file_path:
+        raise HTTPException(400, "No file attached to this item")
+
+    path = item.file_path.strip()
+
+    if path.startswith("http://") or path.startswith("https://"):
+        # R2 URL — extract key and delete from cloud
+        from app.config import get_settings
+        settings = get_settings()
+        public_base = getattr(settings, "R2_PUBLIC_URL", "")
+        if public_base and path.startswith(public_base):
+            r2_key = path[len(public_base.rstrip("/")) + 1:]
+            delete_from_r2(r2_key)
+    elif os.path.exists(path):
+        os.remove(path)
+    elif path.startswith("uploads/"):
+        from pathlib import Path
+        full = Path(__file__).parent.parent.parent / path
+        if full.exists():
+            full.unlink()
+
+    co = await _get_company(db)
+    warning_days, critical_days = await _get_thresholds(db)
+    item.file_path = None
+    await db.commit()
+    await db.refresh(item)
+    return _to_response(item, critical_days, warning_days)

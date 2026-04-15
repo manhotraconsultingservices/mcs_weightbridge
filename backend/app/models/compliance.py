@@ -14,6 +14,7 @@ class ComplianceItem(Base):
 
     item_type: Mapped[str] = mapped_column(String(30))          # insurance | certification | license | permit
     name: Mapped[str] = mapped_column(String(200))              # e.g. "Vehicle Insurance - MH-12-AB-1234"
+    policy_holder: Mapped[str | None] = mapped_column(String(200), nullable=True)  # e.g. "ABC Stone Crusher Pvt. Ltd."
     issuer: Mapped[str | None] = mapped_column(String(200))     # e.g. "New India Assurance"
     reference_no: Mapped[str | None] = mapped_column(String(100))  # Policy/cert number
     issue_date: Mapped[date | None] = mapped_column(Date)

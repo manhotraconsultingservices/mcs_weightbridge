@@ -597,6 +597,17 @@ export default function CompliancePage() {
     }
   }
 
+  async function deleteFile(item: ComplianceItem) {
+    if (!confirm(`Delete the file attached to "${item.name}"? This cannot be undone.`)) return;
+    try {
+      const resp = await api.delete<ComplianceItem>(`/api/v1/compliance/${item.id}/file`);
+      setItems(prev => prev.map(i => i.id === item.id ? resp.data : i));
+      toast.success('File deleted');
+    } catch {
+      toast.error('Failed to delete file');
+    }
+  }
+
   async function deleteItem(item: ComplianceItem) {
     if (!confirm(`Archive "${item.name}"? It will be hidden but not permanently deleted.`)) return;
     try {
@@ -837,14 +848,23 @@ export default function CompliancePage() {
                       <td className="px-3 py-2.5">
                         <div className="flex gap-0.5 justify-end">
                           {item.file_path && (
-                            <Button
-                              size="icon" variant="ghost" className="h-7 w-7"
-                              title={`Open: ${item.file_path}`}
-                              disabled={openingFile === item.id}
-                              onClick={() => openFile(item)}
-                            >
-                              <FolderOpen className="h-3.5 w-3.5 text-blue-600" />
-                            </Button>
+                            <>
+                              <Button
+                                size="icon" variant="ghost" className="h-7 w-7"
+                                title={`Open: ${item.file_path.split('/').pop()}`}
+                                disabled={openingFile === item.id}
+                                onClick={() => openFile(item)}
+                              >
+                                <FolderOpen className="h-3.5 w-3.5 text-blue-600" />
+                              </Button>
+                              <Button
+                                size="icon" variant="ghost" className="h-7 w-7"
+                                title="Delete file"
+                                onClick={() => deleteFile(item)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                              </Button>
+                            </>
                           )}
                           <Button
                             size="icon" variant="ghost" className="h-7 w-7"
