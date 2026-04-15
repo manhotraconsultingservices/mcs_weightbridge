@@ -24,9 +24,8 @@ export default function PlatformLoginPage({ onLogin }: PlatformLoginPageProps) {
     setLoading(true);
     try {
       await login(username, password);
-      // Force full reload so usePlatformAuth re-reads sessionStorage
-      window.location.href = '/platform';
-      return;
+      // Notify parent to re-render (usePlatformAuth re-reads sessionStorage)
+      onLogin();
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
       setError(typeof detail === 'string' ? detail : 'Invalid credentials');

@@ -23,7 +23,8 @@ platformApi.interceptors.response.use(
     if (error.response?.status === 401) {
       sessionStorage.removeItem('platform_token');
       sessionStorage.removeItem('platform_user');
-      window.location.href = '/platform/login';
+      // Trigger re-render so PlatformRoutes shows login page
+      window.dispatchEvent(new Event('platform:logout'));
     }
     return Promise.reject(error);
   }

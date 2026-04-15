@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
 import { useAppSettings } from '@/hooks/useAppSettings';
 import LoginPage from '@/pages/LoginPage';
+import LandingPage from '@/pages/LandingPage';
 import LicenseExpiredPage from '@/pages/LicenseExpiredPage';
 import DashboardPage from '@/pages/DashboardPage';
 import TokenPage from '@/pages/TokenPage';
@@ -37,6 +38,13 @@ import PlatformDashboard from '@/pages/PlatformDashboard';
 import Sidebar from '@/components/Sidebar';
 import { usePlatformAuth } from '@/hooks/usePlatformAuth';
 import type { User } from '@/types';
+
+/** Check if we're on the platform admin subdomain (e.g. platform.weighbridgesetu.com) */
+function isPlatformHost(): boolean {
+  const host = window.location.hostname;
+  const match = host.match(/^([a-z][a-z0-9-]{1,30})\..+\..+$/i);
+  return match ? match[1].toLowerCase() === 'platform' : false;
+}
 
 // Redirect to the first page the user has access to
 function HomeRedirect({ permissions }: { permissions: string[] }) {
@@ -148,7 +156,18 @@ function RootRoutes() {
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
   const [licenseChecked, setLicenseChecked] = useState(false);
 
+  // ── Platform subdomain: render ONLY platform UI ──────────────────────────
+  // When on platform.weighbridgesetu.com, the entire app becomes the platform
+  // admin portal. No tenant login, no landing page, no sidebar.
+  const onPlatformHost = isPlatformHost();
+
   useEffect(() => {
+    if (onPlatformHost) {
+      // Platform subdomain — skip health/license checks entirely
+      setLicenseChecked(true);
+      return;
+    }
+
     // Check health first to detect multi-tenant mode
     fetch('/api/v1/health')
       .then(r => r.json())
@@ -169,7 +188,7 @@ function RootRoutes() {
       .catch(() => {
         setLicenseChecked(true);
       });
-  }, []);
+  }, [onPlatformHost]);
 
   if (!licenseChecked) {
     return (
@@ -177,6 +196,11 @@ function RootRoutes() {
         <div className="animate-pulse text-muted-foreground text-sm">Loading...</div>
       </div>
     );
+  }
+
+  // ── Platform subdomain: exclusively render platform routes ────────────────
+  if (onPlatformHost) {
+    return <PlatformRoutes />;
   }
 
   if (licenseStatus && !licenseStatus.valid) {
@@ -194,6 +218,16 @@ function RootRoutes() {
     <Routes>
       {/* Platform admin portal — separate auth, separate layout */}
       <Route path="/platform/*" element={<PlatformRoutes />} />
+      {/* Public landing page — only shown when not authenticated */}
+      {(!isAuthenticated || !user) && (
+        <Route path="/" element={<LandingPage />} />
+      )}
+      {/* Login page at /login */}
+      <Route path="/login" element={
+        (isAuthenticated && user)
+          ? <Navigate to="/dashboard" replace />
+          : <LoginPage onLogin={login} />
+      } />
       {/* Dedicated per-tenant login URL: /login/alpha, /login/beta, etc. */}
       <Route path="/login/:tenant" element={<TenantLoginRoute login={login} />} />
       <Route path="/priv-admin" element={
@@ -203,33 +237,29 @@ function RootRoutes() {
       } />
       <Route path="*" element={
         (!isAuthenticated || !user)
-          ? <LoginPage onLogin={login} />
+          ? <Navigate to="/" replace />
           : <AppLayout user={user} logout={logout} />
       } />
     </Routes>
   );
 }
 
-/** Platform admin routes — completely separate from tenant auth */
+/** Platform admin routes — completely separate from tenant auth.
+ *  Renders as a self-contained UI: login page when unauthenticated,
+ *  dashboard when authenticated.  Works both as a nested route
+ *  (path="/platform/*") and standalone (platform subdomain).
+ */
 function PlatformRoutes() {
   const { isAuthenticated } = usePlatformAuth();
   const [, forceUpdate] = useState(0);
 
+  // Not logged in → platform login page (no tenant UI, no landing page)
   if (!isAuthenticated) {
-    return (
-      <Routes>
-        <Route path="*" element={<PlatformLoginPage onLogin={() => forceUpdate(n => n + 1)} />} />
-      </Routes>
-    );
+    return <PlatformLoginPage onLogin={() => forceUpdate(n => n + 1)} />;
   }
 
-  return (
-    <Routes>
-      <Route path="/" element={<PlatformDashboard />} />
-      <Route path="/login" element={<PlatformDashboard />} />
-      <Route path="*" element={<PlatformDashboard />} />
-    </Routes>
-  );
+  // Authenticated → always show dashboard
+  return <PlatformDashboard />;
 }
 
 export default function App() {

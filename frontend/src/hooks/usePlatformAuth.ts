@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { PlatformUser } from '@/types';
 import platformApi from '@/services/platformApi';
 
@@ -27,6 +27,13 @@ export function usePlatformAuth() {
     setToken(null);
     setUser(null);
   }, []);
+
+  // Listen for 401 events from platformApi interceptor
+  useEffect(() => {
+    const handler = () => logout();
+    window.addEventListener('platform:logout', handler);
+    return () => window.removeEventListener('platform:logout', handler);
+  }, [logout]);
 
   return {
     user,
