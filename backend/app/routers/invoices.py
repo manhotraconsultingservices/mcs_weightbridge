@@ -1072,7 +1072,7 @@ async def create_revision(
     co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
     if co:
         from app.routers.audit import log_action
-        await log_action(db, co.id, current_user.id, "create_revision", "invoice",
+        await log_action(db, co.id, current_user.id, "revised", "invoice",
                          entity_id=str(invoice_id),
                          details={
                              "from_revision": inv.revision_no,

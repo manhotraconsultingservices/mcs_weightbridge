@@ -37,8 +37,115 @@ const ACTION_COLORS: Record<string, string> = {
   delete: 'bg-red-100 text-red-800',
   cancel: 'bg-orange-100 text-orange-800',
   finalize: 'bg-purple-100 text-purple-800',
+  revised: 'bg-indigo-100 text-indigo-800',
+  completed: 'bg-emerald-100 text-emerald-800',
+  first_weight: 'bg-cyan-100 text-cyan-800',
+  second_weight: 'bg-teal-100 text-teal-800',
   login: 'bg-gray-100 text-gray-800',
   payment: 'bg-yellow-100 text-yellow-800',
+  approve: 'bg-green-100 text-green-800',
+  reject: 'bg-red-100 text-red-800',
+  receive: 'bg-sky-100 text-sky-800',
+  convert: 'bg-violet-100 text-violet-800',
+  send: 'bg-pink-100 text-pink-800',
+  sync: 'bg-amber-100 text-amber-800',
+};
+
+// Entity → relevant actions mapping (keeps dropdown clean and contextual)
+const ENTITY_ACTIONS: Record<string, { value: string; label: string }[]> = {
+  invoice: [
+    { value: 'create', label: 'Created' },
+    { value: 'update', label: 'Updated' },
+    { value: 'finalize', label: 'Finalized' },
+    { value: 'cancel', label: 'Cancelled' },
+    { value: 'revised', label: 'Revised' },
+    { value: 'delete', label: 'Deleted' },
+    { value: 'sync', label: 'Tally Synced' },
+  ],
+  token: [
+    { value: 'create', label: 'Created' },
+    { value: 'first_weight', label: 'First Weight' },
+    { value: 'second_weight', label: 'Second Weight' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'cancel', label: 'Cancelled' },
+  ],
+  payment: [
+    { value: 'create', label: 'Received' },
+    { value: 'delete', label: 'Deleted' },
+  ],
+  party: [
+    { value: 'create', label: 'Created' },
+    { value: 'update', label: 'Updated' },
+    { value: 'delete', label: 'Deleted' },
+    { value: 'sync', label: 'Tally Synced' },
+  ],
+  product: [
+    { value: 'create', label: 'Created' },
+    { value: 'update', label: 'Updated' },
+    { value: 'delete', label: 'Deleted' },
+  ],
+  vehicle: [
+    { value: 'create', label: 'Created' },
+    { value: 'update', label: 'Updated' },
+    { value: 'delete', label: 'Deleted' },
+  ],
+  user: [
+    { value: 'create', label: 'Created' },
+    { value: 'update', label: 'Updated' },
+    { value: 'login', label: 'Login' },
+  ],
+  quotation: [
+    { value: 'create', label: 'Created' },
+    { value: 'update', label: 'Updated' },
+    { value: 'send', label: 'Sent' },
+    { value: 'convert', label: 'Converted' },
+    { value: 'cancel', label: 'Cancelled' },
+  ],
+  purchase_order: [
+    { value: 'create', label: 'Created' },
+    { value: 'approve', label: 'Approved' },
+    { value: 'reject', label: 'Rejected' },
+    { value: 'receive', label: 'Received' },
+  ],
+  inventory: [
+    { value: 'create', label: 'Created' },
+    { value: 'update', label: 'Updated' },
+    { value: 'delete', label: 'Deleted' },
+  ],
+};
+
+// All unique actions (for when no entity is selected)
+const ALL_ACTIONS = [
+  { value: 'create', label: 'Create' },
+  { value: 'update', label: 'Update' },
+  { value: 'finalize', label: 'Finalize' },
+  { value: 'cancel', label: 'Cancel' },
+  { value: 'revised', label: 'Revised' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'first_weight', label: 'First Weight' },
+  { value: 'second_weight', label: 'Second Weight' },
+  { value: 'delete', label: 'Delete' },
+  { value: 'payment', label: 'Payment' },
+  { value: 'approve', label: 'Approve' },
+  { value: 'reject', label: 'Reject' },
+  { value: 'receive', label: 'Receive' },
+  { value: 'convert', label: 'Convert' },
+  { value: 'send', label: 'Send' },
+  { value: 'sync', label: 'Tally Sync' },
+  { value: 'login', label: 'Login' },
+];
+
+const ENTITY_LABELS: Record<string, string> = {
+  invoice: 'Invoice',
+  token: 'Token',
+  payment: 'Payment',
+  party: 'Party',
+  product: 'Product',
+  vehicle: 'Vehicle',
+  user: 'User',
+  quotation: 'Quotation',
+  purchase_order: 'Purchase Order',
+  inventory: 'Inventory',
 };
 
 function actionBadgeClass(action: string) {
@@ -76,6 +183,22 @@ export default function AuditPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [search, setSearch] = useState('');
+
+  // Get available actions based on selected entity
+  const availableActions = entityType
+    ? (ENTITY_ACTIONS[entityType] ?? ALL_ACTIONS)
+    : ALL_ACTIONS;
+
+  // Reset action when entity changes and current action is not valid for new entity
+  function handleEntityChange(newEntity: string) {
+    setEntityType(newEntity);
+    if (newEntity && action) {
+      const validActions = ENTITY_ACTIONS[newEntity];
+      if (validActions && !validActions.some(a => a.value === action)) {
+        setAction('');
+      }
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -121,7 +244,7 @@ export default function AuditPage() {
               <CardContent className="pt-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs text-muted-foreground capitalize">{act}</p>
+                    <p className="text-xs text-muted-foreground capitalize">{act.replace(/_/g, ' ')}</p>
                     <p className="text-2xl font-bold">{count}</p>
                   </div>
                   <Activity className="h-8 w-8 text-muted-foreground/30" />
@@ -150,27 +273,27 @@ export default function AuditPage() {
               </div>
             </div>
 
-            <div className="w-36 space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Action</p>
-              <Select value={action || 'all'} onValueChange={v => setAction(v === 'all' ? '' : (v ?? ''))}>
-                <SelectTrigger><SelectValue placeholder="All actions" /></SelectTrigger>
+            <div className="w-44 space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Entity</p>
+              <Select value={entityType || 'all'} onValueChange={v => handleEntityChange(v === 'all' ? '' : (v ?? ''))}>
+                <SelectTrigger><SelectValue placeholder="All entities" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All actions</SelectItem>
-                  {['create', 'update', 'delete', 'cancel', 'finalize', 'login', 'payment'].map(a => (
-                    <SelectItem key={a} value={a} className="capitalize">{a}</SelectItem>
+                  <SelectItem value="all">All entities</SelectItem>
+                  {Object.entries(ENTITY_LABELS).map(([key, label]) => (
+                    <SelectItem key={key} value={key}>{label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="w-40 space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Entity</p>
-              <Select value={entityType || 'all'} onValueChange={v => setEntityType(v === 'all' ? '' : (v ?? ''))}>
-                <SelectTrigger><SelectValue placeholder="All entities" /></SelectTrigger>
+              <p className="text-xs font-medium text-muted-foreground">Action</p>
+              <Select value={action || 'all'} onValueChange={v => setAction(v === 'all' ? '' : (v ?? ''))}>
+                <SelectTrigger><SelectValue placeholder="All actions" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All entities</SelectItem>
-                  {['invoice', 'payment', 'token', 'party', 'product', 'vehicle', 'user', 'quotation'].map(e => (
-                    <SelectItem key={e} value={e} className="capitalize">{e}</SelectItem>
+                  <SelectItem value="all">All actions</SelectItem>
+                  {availableActions.map(a => (
+                    <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -222,9 +345,9 @@ export default function AuditPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-1">
                       <Badge className={`text-xs px-2 py-0 ${actionBadgeClass(e.action)}`}>
-                        {e.action}
+                        {e.action.replace(/_/g, ' ')}
                       </Badge>
-                      <span className="text-sm font-medium capitalize">{e.entity_type}</span>
+                      <span className="text-sm font-medium capitalize">{(ENTITY_LABELS[e.entity_type] ?? e.entity_type).replace(/_/g, ' ')}</span>
                       {e.entity_id && (
                         <span className="text-xs text-muted-foreground font-mono">#{e.entity_id.slice(0, 8)}</span>
                       )}
@@ -281,7 +404,7 @@ export default function AuditPage() {
             <div className="flex flex-wrap gap-2">
               {Object.entries(stats.by_entity).sort((a, b) => b[1] - a[1]).map(([ent, cnt]) => (
                 <Badge key={ent} variant="secondary" className="text-sm px-3 py-1 capitalize">
-                  {ent}: <span className="font-bold ml-1">{cnt}</span>
+                  {(ENTITY_LABELS[ent] ?? ent).replace(/_/g, ' ')}: <span className="font-bold ml-1">{cnt}</span>
                 </Badge>
               ))}
             </div>

@@ -91,7 +91,7 @@ const adminGroup: { label: string; items: NavItem[] } = {
   items: [
     { to: '/admin/users',       icon: UserCog,   label: 'User Management' },
     { to: '/admin/permissions', icon: Lock,       label: 'Role Permissions' },
-    { to: '/admin/wallpaper',   icon: ImageIcon,  label: 'Wallpaper' },
+    { to: '/admin/wallpaper',   icon: ImageIcon,  label: 'Branding' },
   ],
 };
 
@@ -117,8 +117,9 @@ function NavItemLink({ to, icon: Icon, label, end }: NavItem & { end?: boolean }
 export default function Sidebar({ user, onLogout, usbAuthorized = false, permissions = ['*'] }: SidebarProps) {
   const isAdmin = permissions.includes('*');
   const modules = getTenantModules();
+  const isSaaS = sessionStorage.getItem('multi_tenant') === '1';
 
-  // Filter items by role permissions AND tenant module flags
+  // Filter items by role permissions, tenant module flags, and SaaS restrictions
   function filterItems(items: NavItem[]): NavItem[] {
     let visible = isAdmin ? items : items.filter(item => permissions.includes(item.to));
     // Module-level gating: hide pages whose module is disabled
@@ -128,6 +129,10 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
         if (!mod) return true;  // not module-gated → always show
         return modules[mod] !== false;
       });
+    }
+    // SaaS mode: hide pages that are server-managed (backup, data import)
+    if (isSaaS) {
+      visible = visible.filter(item => item.to !== '/backup');
     }
     return visible;
   }
@@ -140,8 +145,8 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
           <Scale className="h-5 w-5" />
         </div>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-sidebar-foreground">Weighbridge</p>
-          <p className="truncate text-xs text-sidebar-foreground/50">Stone Crusher ERP</p>
+          <p className="truncate text-sm font-semibold text-sidebar-foreground">WeighbridgeSetu</p>
+          <p className="truncate text-xs text-sidebar-foreground/50">by Manhotra Consulting</p>
         </div>
       </div>
 

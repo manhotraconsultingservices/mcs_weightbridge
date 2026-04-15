@@ -346,6 +346,15 @@ async def create_token(
     )
     db.add(token)
     await db.commit()
+
+    # Audit log
+    try:
+        from app.routers.audit import log_action
+        await log_action(db, company.id, current_user.id, "create", "token",
+                         str(token.id), {"vehicle_no": token.vehicle_no, "type": token.token_type})
+    except Exception:
+        pass
+
     return await _load_token(db, token.id)
 
 
@@ -497,6 +506,15 @@ async def record_first_weight(
 
     await db.commit()
 
+    # Audit log
+    try:
+        from app.routers.audit import log_action
+        company, _ = await _get_company_and_fy(db)
+        await log_action(db, company.id, current_user.id, "first_weight", "token",
+                         str(token.id), {"vehicle_no": token.vehicle_no, "weight": float(payload.weight_kg)})
+    except Exception:
+        pass
+
     # Capture snapshot at 1st weight for ALL token types
     _bg_tenant_1w = None
     try:
@@ -545,6 +563,15 @@ async def record_second_weight(
 
     await db.commit()
 
+    # Audit log — completed
+    try:
+        from app.routers.audit import log_action
+        await log_action(db, company.id, current_user.id, "completed", "token",
+                         str(token.id), {"token_no": token.token_no, "vehicle_no": token.vehicle_no,
+                                         "net_weight": float(token.net_weight or 0)})
+    except Exception:
+        pass
+
     # ── Fire token_completed notification (background, non-blocking) ──────────
     # Capture tenant slug BEFORE dispatching background task
     _bg_tenant = None
@@ -586,6 +613,16 @@ async def cancel_token(
         raise HTTPException(400, "Cannot cancel a completed token. Create a credit note instead.")
     token.status = "CANCELLED"
     await db.commit()
+
+    # Audit log
+    try:
+        from app.routers.audit import log_action
+        company, _ = await _get_company_and_fy(db)
+        await log_action(db, company.id, current_user.id, "cancel", "token",
+                         str(token.id), {"vehicle_no": token.vehicle_no})
+    except Exception:
+        pass
+
     return await _load_token(db, token_id)
 
 
