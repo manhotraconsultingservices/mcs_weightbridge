@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { TokenDetailModal } from '@/components/TokenDetailModal';
+import { PrintButton } from '@/components/PrintButton';
 import api from '@/services/api';
 import type { Token, TokenListResponse } from '@/types';
 
@@ -435,10 +436,10 @@ export default function TokenPage() {
         <div className="overflow-x-auto">
           <div
             className="grid text-xs font-medium text-muted-foreground bg-muted/40 border-b"
-            style={{ gridTemplateColumns: '60px 90px 80px 1fr 90px 90px 90px 80px' }}
+            style={{ gridTemplateColumns: '60px 90px 70px minmax(120px,200px) 80px 80px 80px 70px 40px' }}
           >
-            {['Token', 'Date', 'Type', 'Vehicle / Party / Product', 'Gross', 'Tare', 'Net', 'Status'].map(h => (
-              <div key={h} className="px-3 py-2">{h}</div>
+            {['Token', 'Date', 'Type', 'Vehicle / Party', 'Gross', 'Tare', 'Net', 'Status', ''].map(h => (
+              <div key={h || '_print'} className="px-2 py-2">{h}</div>
             ))}
           </div>
 
@@ -453,31 +454,36 @@ export default function TokenPage() {
             <div
               key={token.id}
               className="grid border-b last:border-0 hover:bg-muted/30 cursor-pointer text-xs items-center"
-              style={{ gridTemplateColumns: '60px 90px 80px 1fr 90px 90px 90px 80px' }}
+              style={{ gridTemplateColumns: '60px 90px 70px minmax(120px,200px) 80px 80px 80px 70px 40px' }}
               onClick={() => setDetailToken(token)}
             >
-              <div className="px-3 py-2 font-mono font-bold">{token.token_no ?? '—'}</div>
-              <div className="px-3 py-2 text-muted-foreground">{token.token_date ?? '—'}</div>
-              <div className="px-3 py-2">
+              <div className="px-2 py-2 font-mono font-bold">{token.token_no ?? '—'}</div>
+              <div className="px-2 py-2 text-muted-foreground">{token.token_date ?? '—'}</div>
+              <div className="px-2 py-2">
                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${token.token_type === 'purchase' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
                   {(token.token_type ?? 'sale').toUpperCase()}
                 </span>
               </div>
-              <div className="px-3 py-2 min-w-0">
-                <p className="font-mono font-semibold tracking-wide whitespace-nowrap overflow-hidden text-ellipsis">{token.vehicle_no ?? '—'}</p>
-                <p className="text-muted-foreground truncate">{token.party?.name ?? '—'}</p>
-                <p className="text-muted-foreground/70 truncate">{token.product?.name ?? '—'}</p>
+              <div className="px-2 py-2 min-w-0">
+                <p className="font-mono font-semibold text-[11px] tracking-wide whitespace-nowrap overflow-hidden text-ellipsis">{token.vehicle_no ?? '—'}</p>
+                <p className="text-muted-foreground text-[11px] truncate">{token.party?.name ?? '—'}</p>
+                <p className="text-muted-foreground/70 text-[10px] truncate">{token.product?.name ?? '—'}</p>
               </div>
-              <div className="px-3 py-2 whitespace-nowrap text-right">{kgFmt(token.gross_weight)}</div>
-              <div className="px-3 py-2 whitespace-nowrap text-right">{kgFmt(token.tare_weight)}</div>
-              <div className="px-3 py-2 whitespace-nowrap text-right font-semibold">{mtFmt(token.net_weight)}</div>
-              <div className="px-3 py-2">
+              <div className="px-2 py-2 whitespace-nowrap text-right">{kgFmt(token.gross_weight)}</div>
+              <div className="px-2 py-2 whitespace-nowrap text-right">{kgFmt(token.tare_weight)}</div>
+              <div className="px-2 py-2 whitespace-nowrap text-right font-semibold">{mtFmt(token.net_weight)}</div>
+              <div className="px-2 py-2">
                 <Badge
                   variant="outline"
                   className={`text-[10px] px-1.5 py-0 whitespace-nowrap ${STATUS_CONFIG[token.status]?.color ?? ''}`}
                 >
                   {STATUS_CONFIG[token.status]?.label ?? token.status}
                 </Badge>
+              </div>
+              <div className="px-1 py-2 flex items-center justify-center" onClick={e => e.stopPropagation()}>
+                {token.status === 'COMPLETED' && (
+                  <PrintButton url={`/api/v1/tokens/${token.id}/print`} iconOnly />
+                )}
               </div>
             </div>
           ))}
