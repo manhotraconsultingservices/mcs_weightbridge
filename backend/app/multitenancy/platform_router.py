@@ -306,6 +306,63 @@ async def update_tenant(
     return await _build_tenant_overview(db, tenant)
 
 
+# ── Module Config (Feature Gating) ────────────────────────────────────────────
+
+@router.get("/tenants/{slug}/modules")
+async def get_tenant_modules(
+    slug: str,
+    db: AsyncSession = Depends(get_master_db),
+    user: PlatformUser = Depends(require_platform_role("platform_admin")),
+):
+    """Get tenant module flags (merged with defaults)."""
+    from app.routers.auth import DEFAULT_MODULES
+
+    tenant = (await db.execute(select(Tenant).where(Tenant.slug == slug))).scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+
+    config = tenant.config or {}
+    saved_modules = config.get("modules", {})
+    resolved = {**DEFAULT_MODULES, **saved_modules}
+    return {"slug": slug, "modules": resolved}
+
+
+@router.put("/tenants/{slug}/modules")
+async def update_tenant_modules(
+    slug: str,
+    payload: dict,
+    db: AsyncSession = Depends(get_master_db),
+    user: PlatformUser = Depends(require_platform_role("platform_admin")),
+):
+    """Update tenant module flags. Accepts {module_key: bool, ...}."""
+    from app.routers.auth import DEFAULT_MODULES
+    from app.multitenancy.middleware import _modules_cache
+
+    tenant = (await db.execute(select(Tenant).where(Tenant.slug == slug))).scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+
+    # Validate all keys are known modules
+    for key in payload:
+        if key not in DEFAULT_MODULES:
+            raise HTTPException(400, f"Unknown module: {key}")
+
+    # Merge into existing config
+    config = dict(tenant.config or {})
+    config["modules"] = {**config.get("modules", {}), **payload}
+    tenant.config = config
+
+    await db.commit()
+    await db.refresh(tenant)
+
+    # Invalidate middleware cache so changes take effect immediately
+    _modules_cache.pop(slug, None)
+
+    resolved = {**DEFAULT_MODULES, **config.get("modules", {})}
+    logger.info("Platform admin %s updated modules for %s: %s", user.username, slug, payload)
+    return {"slug": slug, "modules": resolved}
+
+
 # ── Sales Rep Assignment ──────────────────────────────────────────────────────
 
 @router.post("/tenants/{slug}/assign-rep")

@@ -6,7 +6,26 @@ import {
   Upload, Scale, ShieldCheck, UserCog, ImageIcon, Lock, MonitorPlay, Warehouse, ScanSearch,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { getTenantModules } from '@/hooks/useAuth';
 import type { User } from '@/types';
+
+// Maps sidebar route → module key. Routes NOT listed are always available.
+const PAGE_TO_MODULE: Record<string, string> = {
+  '/tokens-v1':       'weighing',
+  '/tokens':          'weighing',
+  '/camera-scale':    'weighing',
+  '/snapshot-search': 'weighing',
+  '/invoices':        'invoicing',
+  '/quotations':      'quotations',
+  '/payments':        'payments',
+  '/ledger':          'payments',
+  '/gst-reports':     'gst_reports',
+  '/reports':         'reports',
+  '/inventory':       'inventory',
+  '/compliance':      'compliance',
+  '/notifications':   'notifications',
+  '/import':          'data_import',
+};
 
 interface SidebarProps {
   user: User;
@@ -97,11 +116,20 @@ function NavItemLink({ to, icon: Icon, label, end }: NavItem & { end?: boolean }
 
 export default function Sidebar({ user, onLogout, usbAuthorized = false, permissions = ['*'] }: SidebarProps) {
   const isAdmin = permissions.includes('*');
+  const modules = getTenantModules();
 
-  // Filter a list of items to only those the current role can see
+  // Filter items by role permissions AND tenant module flags
   function filterItems(items: NavItem[]): NavItem[] {
-    if (isAdmin) return items;
-    return items.filter(item => permissions.includes(item.to));
+    let visible = isAdmin ? items : items.filter(item => permissions.includes(item.to));
+    // Module-level gating: hide pages whose module is disabled
+    if (modules) {
+      visible = visible.filter(item => {
+        const mod = PAGE_TO_MODULE[item.to];
+        if (!mod) return true;  // not module-gated → always show
+        return modules[mod] !== false;
+      });
+    }
+    return visible;
   }
 
   return (

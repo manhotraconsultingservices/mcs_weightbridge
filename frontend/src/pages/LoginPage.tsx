@@ -1,5 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react';
-import { Eye, EyeOff, Building2, AlertTriangle, ExternalLink, Mail } from 'lucide-react';
+import { Eye, EyeOff, Building2, AlertTriangle, ExternalLink, Mail, Phone, MessageCircle, Shield, Zap, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -122,7 +122,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         }
       }
 
-      onLogin(data.access_token, data.user, data.tenant_slug);
+      onLogin(data.access_token, data.user, data.tenant_slug, data.tenant_modules);
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
       setError(typeof detail === 'string' ? detail : 'Invalid username or password');
@@ -291,6 +291,47 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         </CardContent>
       </Card>
 
+      {/* Trust signals strip */}
+      <div className="mt-6 flex items-center justify-center gap-6 text-muted-foreground/60">
+        <div className="flex items-center gap-1.5 text-[11px]">
+          <Shield className="h-3.5 w-3.5" />
+          <span>256-bit Encrypted</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-[11px]">
+          <Zap className="h-3.5 w-3.5" />
+          <span>Tally Integrated</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-[11px]">
+          <BarChart3 className="h-3.5 w-3.5" />
+          <span>GST Compliant</span>
+        </div>
+      </div>
+
+      {/* Contact & CTA for prospects */}
+      {!isTenantResolved && (
+        <div className="mt-4 flex flex-col items-center gap-2">
+          <p className="text-xs text-muted-foreground">New to WeighBridge Setu?</p>
+          <div className="flex items-center gap-3">
+            <a
+              href="https://wa.me/917011189371?text=Hi%2C%20I%27m%20interested%20in%20WeighBridge%20Setu%20software"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-full bg-green-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-green-700 transition-colors"
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+              WhatsApp Us
+            </a>
+            <a
+              href="tel:+917011189371"
+              className="inline-flex items-center gap-1.5 rounded-full border border-border px-4 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
+            >
+              <Phone className="h-3.5 w-3.5" />
+              Call Now
+            </a>
+          </div>
+        </div>
+      )}
+
       {/* "Powered by" footer — always shown with branding info */}
       {branding && (
         <div className="mt-6 text-center space-y-1">
@@ -318,6 +359,15 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               </a>
             </p>
           )}
+        </div>
+      )}
+
+      {/* Fallback footer when no tenant branding */}
+      {!branding && (
+        <div className="mt-6 text-center space-y-1">
+          <p className="text-xs text-muted-foreground">
+            Powered by <span className="font-medium">Manhotra Consulting</span>
+          </p>
         </div>
       )}
     </div>

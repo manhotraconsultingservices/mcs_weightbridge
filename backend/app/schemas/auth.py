@@ -14,6 +14,7 @@ class TokenResponse(BaseModel):
     tenant_slug: str | None = None
     tenant_status: str | None = None             # active / readonly / suspended
     tenant_status_message: str | None = None      # human-readable message for readonly/suspended
+    tenant_modules: dict | None = None            # module-level feature flags per tenant
 
 
 class UserCreate(BaseModel):

@@ -133,12 +133,20 @@ function EditTenantDialog({ tenant, open, onClose, onSaved }: {
   const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [saving, setSaving] = useState(false);
+  const [modules, setModules] = useState<Record<string, boolean>>({});
+  const [modulesLoading, setModulesLoading] = useState(false);
 
   useEffect(() => {
     if (tenant) {
       setStatus(tenant.status); setDisplayName(tenant.display_name);
       setAmcStart(tenant.amc_start_date || ''); setAmcExpiry(tenant.amc_expiry_date || '');
       setContactEmail(tenant.contact_email || ''); setContactPhone(tenant.contact_phone || '');
+      // Load modules
+      setModulesLoading(true);
+      platformApi.get(`/api/v1/platform/tenants/${tenant.slug}/modules`)
+        .then(r => setModules(r.data.modules))
+        .catch(() => {})
+        .finally(() => setModulesLoading(false));
     }
   }, [tenant]);
 
@@ -149,10 +157,27 @@ function EditTenantDialog({ tenant, open, onClose, onSaved }: {
         display_name: displayName, status, amc_start_date: amcStart || null,
         amc_expiry_date: amcExpiry || null, contact_email: contactEmail || null, contact_phone: contactPhone || null,
       });
+      // Save modules separately
+      await platformApi.put(`/api/v1/platform/tenants/${tenant!.slug}/modules`, modules);
       toast.success('Tenant updated'); onSaved(); onClose();
     } catch (err: any) { toast.error(err?.response?.data?.detail || 'Update failed'); }
     finally { setSaving(false); }
   }
+
+  const MODULE_META: { key: string; label: string; description: string }[] = [
+    { key: 'weighing',      label: 'Weighing & Tokens',   description: 'Token creation, weighment, camera, snapshot search' },
+    { key: 'invoicing',     label: 'Invoicing',           description: 'Sales & purchase invoices with GST' },
+    { key: 'quotations',    label: 'Quotations',          description: 'Create and convert quotations to invoices' },
+    { key: 'payments',      label: 'Payments & Ledger',   description: 'Payment receipts, vouchers, party ledger' },
+    { key: 'gst_reports',   label: 'GST Reports',         description: 'GSTR-1, GSTR-3B, HSN summary, JSON export' },
+    { key: 'reports',       label: 'Reports & Analytics', description: 'Sales register, weight register, P&L, stock summary' },
+    { key: 'inventory',     label: 'Store Inventory',     description: 'Stock items, purchase orders, daily reports' },
+    { key: 'compliance',    label: 'Compliance Tracker',  description: 'Insurance, licenses, permits with expiry alerts' },
+    { key: 'notifications', label: 'Notifications',       description: 'Email, SMS, WhatsApp, Telegram alerts' },
+    { key: 'tally_sync',    label: 'Tally Integration',   description: 'Push invoices and masters to Tally Prime' },
+    { key: 'einvoice',      label: 'eInvoice (IRN)',      description: 'NIC eInvoice generation for B2B invoices' },
+    { key: 'data_import',   label: 'Data Import',         description: 'Bulk import parties, products, vehicles from Excel' },
+  ];
 
   if (!tenant) return null;
   return (
@@ -178,6 +203,36 @@ function EditTenantDialog({ tenant, open, onClose, onSaved }: {
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Contact Email</Label><Input value={contactEmail} onChange={e => setContactEmail(e.target.value)} /></div>
             <div><Label>Contact Phone</Label><Input value={contactPhone} onChange={e => setContactPhone(e.target.value)} /></div>
+          </div>
+
+          {/* ── Module Toggles ── */}
+          <div className="pt-2 border-t">
+            <div className="flex items-center justify-between mb-2">
+              <Label className="text-sm font-semibold">Feature Modules</Label>
+              <span className="text-[11px] text-muted-foreground">
+                {Object.values(modules).filter(Boolean).length}/{MODULE_META.length} enabled
+              </span>
+            </div>
+            {modulesLoading ? (
+              <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading modules...</div>
+            ) : (
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 max-h-[240px] overflow-y-auto">
+                {MODULE_META.map(m => (
+                  <label key={m.key} className="flex items-start gap-2 cursor-pointer group py-1 px-1.5 rounded hover:bg-muted/50">
+                    <input
+                      type="checkbox"
+                      checked={modules[m.key] ?? false}
+                      onChange={e => setModules(prev => ({ ...prev, [m.key]: e.target.checked }))}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium leading-tight">{m.label}</p>
+                      <p className="text-[10px] text-muted-foreground leading-tight">{m.description}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={handleSave} disabled={saving}>{saving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}Save Changes</Button></DialogFooter>

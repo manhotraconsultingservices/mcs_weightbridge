@@ -63,6 +63,64 @@ _READONLY_EXEMPT_PATHS = {
     "/api/v1/health",
 }
 
+# ── Module-gating: API route prefix → module key ──────────────────────────────
+# Routes NOT listed here are always available (company, parties, products, etc.)
+_ROUTE_TO_MODULE: dict[str, str] = {
+    "/api/v1/tokens":         "weighing",
+    "/api/v1/weight":         "weighing",
+    "/api/v1/cameras":        "weighing",
+    "/ws/weight":             "weighing",
+    "/api/v1/invoices":       "invoicing",
+    "/api/v1/quotations":     "quotations",
+    "/api/v1/payments":       "payments",
+    "/api/v1/reports/gstr":   "gst_reports",
+    "/api/v1/reports":        "reports",
+    "/api/v1/inventory":      "inventory",
+    "/api/v1/compliance":     "compliance",
+    "/api/v1/notifications":  "notifications",
+    "/api/v1/tally":          "tally_sync",
+    "/api/v1/import":         "data_import",
+}
+
+# Module cache alongside status cache: slug → (modules_dict, timestamp)
+_modules_cache: dict[str, tuple[dict, float]] = {}
+
+
+async def _get_tenant_modules(slug: str) -> dict:
+    """Fetch tenant modules config with caching (5-min TTL)."""
+    now = time.time()
+    cached = _modules_cache.get(slug)
+    if cached and (now - cached[1]) < _CACHE_TTL:
+        return cached[0]
+
+    from app.routers.auth import DEFAULT_MODULES
+
+    try:
+        from app.multitenancy.master_db import get_master_session_factory
+        factory = get_master_session_factory()
+        from sqlalchemy import text
+        async with factory() as db:
+            row = (await db.execute(
+                text("SELECT config FROM tenants WHERE slug = :s"),
+                {"s": slug},
+            )).fetchone()
+            config = row[0] if row and row[0] else {}
+            saved = config.get("modules", {})
+            resolved = {**DEFAULT_MODULES, **saved}
+            _modules_cache[slug] = (resolved, now)
+            return resolved
+    except Exception as e:
+        logger.warning("Failed to check tenant modules for %s: %s", slug, e)
+        return cached[0] if cached else dict(DEFAULT_MODULES)
+
+
+def _match_module(path: str) -> str | None:
+    """Find which module a request path belongs to, if any."""
+    for prefix, module in _ROUTE_TO_MODULE.items():
+        if path.startswith(prefix):
+            return module
+    return None
+
 
 class TenantMiddleware(BaseHTTPMiddleware):
     """Extract tenant slug from JWT Bearer token, set ContextVar, enforce status."""
@@ -134,6 +192,20 @@ class TenantMiddleware(BaseHTTPMiddleware):
                         )
             else:
                 current_tenant_readonly.set(False)
+
+            # ── Enforce module-level access ──────────────────────────────
+            path = request.url.path
+            module_key = _match_module(path)
+            if module_key:
+                modules = await _get_tenant_modules(tenant_slug_value)
+                if not modules.get(module_key, False):
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "detail": f"This feature is not available in your current plan. Contact support to upgrade.",
+                            "module": module_key,
+                        },
+                    )
 
         try:
             response = await call_next(request)

@@ -14,13 +14,18 @@ export function useAuth() {
 
   const [token, setToken] = useState<string | null>(() => STORE.getItem('token'));
 
-  const login = useCallback((accessToken: string, userData: User, tenantSlug?: string) => {
+  const login = useCallback((accessToken: string, userData: User, tenantSlug?: string, tenantModules?: Record<string, boolean>) => {
     STORE.setItem('token', accessToken);
     STORE.setItem('user', JSON.stringify(userData));
     if (tenantSlug) {
       STORE.setItem('tenant_slug', tenantSlug);
     } else {
       STORE.removeItem('tenant_slug');
+    }
+    if (tenantModules) {
+      STORE.setItem('tenant_modules', JSON.stringify(tenantModules));
+    } else {
+      STORE.removeItem('tenant_modules');
     }
     setToken(accessToken);
     setUser(userData);
@@ -30,6 +35,7 @@ export function useAuth() {
     STORE.removeItem('token');
     STORE.removeItem('user');
     STORE.removeItem('tenant_slug');
+    STORE.removeItem('tenant_modules');
     setToken(null);
     setUser(null);
   }, []);
@@ -49,4 +55,11 @@ export function useAuth() {
 /** Get the current tenant slug from session storage (for WebSocket connections). */
 export function getTenantSlug(): string | null {
   return sessionStorage.getItem('tenant_slug');
+}
+
+/** Get tenant modules from session storage (for sidebar filtering). */
+export function getTenantModules(): Record<string, boolean> | null {
+  const raw = sessionStorage.getItem('tenant_modules');
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
 }

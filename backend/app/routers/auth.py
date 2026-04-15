@@ -23,6 +23,23 @@ _LOCKOUT_THRESHOLD = 5          # failed attempts before lockout
 _LOCKOUT_MINUTES   = 15         # lockout duration
 _LOCKOUT_WINDOW    = 30         # minutes window to count failures in
 
+# Module-level feature flags — platform admin toggles per tenant for monetization.
+# Modules not in this dict are always available (dashboard, parties, products, vehicles, settings, etc.)
+DEFAULT_MODULES = {
+    "weighing":      True,      # Tokens, Token Dashboard, Camera & Scale, Snapshot Search
+    "invoicing":     True,      # Invoices (Sales & Purchase)
+    "quotations":    False,     # Quotations
+    "payments":      True,      # Payments & Ledger
+    "gst_reports":   False,     # GST Reports (GSTR-1, GSTR-3B)
+    "reports":       True,      # Reports & Analytics
+    "inventory":     False,     # Store Inventory
+    "compliance":    False,     # Compliance Tracker
+    "notifications": False,     # Notification System
+    "tally_sync":    False,     # Tally Integration
+    "einvoice":      False,     # eInvoice (IRN)
+    "data_import":   False,     # Data Import (Excel/CSV)
+}
+
 from fastapi import Request
 from sqlalchemy import text as _sql
 
@@ -138,6 +155,11 @@ async def login(
         if tenant_status == "readonly":
             tenant_status_message = "AMC expired. Your account is in read-only mode. Contact support to renew."
 
+        # Resolve tenant modules (merge saved config with defaults)
+        tenant_config = getattr(tenant, "config", None) or {}
+        saved_modules = tenant_config.get("modules", {})
+        resolved_modules = {**DEFAULT_MODULES, **saved_modules}
+
         # Authenticate against the tenant's database
         factory = await tenant_registry.get_session_factory(tenant_slug)
         async with factory() as tenant_db:
@@ -152,6 +174,7 @@ async def login(
                 tenant_slug=tenant_slug,
                 tenant_status=tenant_status,
                 tenant_status_message=tenant_status_message,
+                tenant_modules=resolved_modules,
             )
     else:
         # ── Single-tenant login (existing behavior) ─────────────────────────
