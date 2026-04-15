@@ -436,7 +436,7 @@ export default function TokenPage() {
         <div className="overflow-x-auto">
           <div
             className="grid text-xs font-medium text-muted-foreground bg-muted/40 border-b"
-            style={{ gridTemplateColumns: '60px 90px 70px minmax(120px,200px) 80px 80px 80px 70px 40px' }}
+            style={{ gridTemplateColumns: '55px 85px 70px 1fr 95px 95px 90px 80px 36px' }}
           >
             {['Token', 'Date', 'Type', 'Vehicle / Party', 'Gross', 'Tare', 'Net', 'Status', ''].map(h => (
               <div key={h || '_print'} className="px-2 py-2">{h}</div>
@@ -454,7 +454,7 @@ export default function TokenPage() {
             <div
               key={token.id}
               className="grid border-b last:border-0 hover:bg-muted/30 cursor-pointer text-xs items-center"
-              style={{ gridTemplateColumns: '60px 90px 70px minmax(120px,200px) 80px 80px 80px 70px 40px' }}
+              style={{ gridTemplateColumns: '55px 85px 70px 1fr 95px 95px 90px 80px 36px' }}
               onClick={() => setDetailToken(token)}
             >
               <div className="px-2 py-2 font-mono font-bold">{token.token_no ?? '—'}</div>
@@ -464,8 +464,8 @@ export default function TokenPage() {
                   {(token.token_type ?? 'sale').toUpperCase()}
                 </span>
               </div>
-              <div className="px-2 py-2 min-w-0">
-                <p className="font-mono font-semibold text-[11px] tracking-wide whitespace-nowrap overflow-hidden text-ellipsis">{token.vehicle_no ?? '—'}</p>
+              <div className="px-2 py-2 min-w-0 max-w-[280px]">
+                <p className="font-mono font-semibold text-xs tracking-wide truncate">{token.vehicle_no ?? '—'}</p>
                 <p className="text-muted-foreground text-[11px] truncate">{token.party?.name ?? '—'}</p>
                 <p className="text-muted-foreground/70 text-[10px] truncate">{token.product?.name ?? '—'}</p>
               </div>
