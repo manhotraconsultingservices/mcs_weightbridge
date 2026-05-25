@@ -27,6 +27,7 @@ class ProductCreate(BaseModel):
     unit: str = "MT"
     default_rate: Decimal = Decimal("0")
     gst_rate: Decimal = Decimal("5.00")
+    bulk_density: Decimal | None = None   # t/m³
     description: str | None = None
 
 
@@ -38,6 +39,7 @@ class ProductUpdate(BaseModel):
     unit: str | None = None
     default_rate: Decimal | None = None
     gst_rate: Decimal | None = None
+    bulk_density: Decimal | None = None
     description: str | None = None
     is_active: bool | None = None
 
@@ -51,6 +53,7 @@ class ProductResponse(BaseModel):
     unit: str
     default_rate: Decimal
     gst_rate: Decimal
+    bulk_density: Decimal | None = None
     description: str | None
     is_active: bool
 

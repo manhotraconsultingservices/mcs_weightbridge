@@ -33,7 +33,8 @@ from app.models.product import Product
 from app.models.vehicle import Vehicle, Driver, Transporter
 from app.models.user import User
 from app.schemas.token import (
-    TokenCreate, TokenFirstWeight, TokenSecondWeight, TokenUpdate, TokenResponse, TokenListResponse
+    TokenCreate, TokenFirstWeight, TokenSecondWeight, TokenUpdate, TokenResponse,
+    TokenListResponse, TokenVolumeCreate,
 )
 from app.utils.pdf_generator import render_html
 
@@ -354,6 +355,115 @@ async def create_token(
                          str(token.id), {"vehicle_no": token.vehicle_no, "type": token.token_type})
     except Exception:
         pass
+
+    return await _load_token(db, token.id)
+
+
+@router.post("/volume", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+async def create_volume_token(
+    payload: TokenVolumeCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Volume-based token: load measured by volume (m³) rather than the weighbridge.
+
+    Truck does not go on the bridge. net_weight is computed from
+        weight_kg = volume_m3 × product.bulk_density × 1000
+    and the token jumps directly to COMPLETED. Same auto-invoice + notification
+    flow fires as for a normal second-weight completion.
+    """
+    if payload.volume_m3 <= 0:
+        raise HTTPException(400, "volume_m3 must be greater than zero")
+
+    company, fy = await _get_company_and_fy(db)
+
+    product = (await db.execute(
+        select(Product).where(Product.id == payload.product_id)
+    )).scalar_one_or_none()
+    if not product:
+        raise HTTPException(404, "Product not found")
+    if not product.bulk_density or product.bulk_density <= 0:
+        raise HTTPException(
+            400,
+            f"Bulk density is not set for product '{product.name}'. "
+            f"Set it on the product before using volume-based tokens.",
+        )
+
+    # weight_kg = m³ × (t/m³) × 1000  → kg
+    net_kg = (payload.volume_m3 * product.bulk_density * Decimal("1000")).quantize(Decimal("0.01"))
+
+    token = Token(
+        company_id=company.id,
+        fy_id=fy.id,
+        token_no=await _next_token_no(db, company.id, fy.id, payload.token_date),
+        token_date=payload.token_date,
+        direction=payload.direction,
+        token_type=payload.token_type,
+        party_id=payload.party_id,
+        product_id=payload.product_id,
+        vehicle_no=payload.vehicle_no.upper().strip(),
+        vehicle_id=payload.vehicle_id,
+        vehicle_type=payload.vehicle_type,
+        driver_id=payload.driver_id,
+        transporter_id=payload.transporter_id,
+        gate_pass=payload.gate_pass,
+        remarks=payload.remarks,
+        created_by=current_user.id,
+        status="COMPLETED",
+        completed_at=datetime.now(timezone.utc),
+        # Weight: only net is recorded (no gross/tare since there's no bridge reading)
+        gross_weight=None,
+        tare_weight=None,
+        net_weight=net_kg,
+        weight_method="volume",
+        volume_m3=payload.volume_m3,
+        is_manual_weight=True,
+    )
+    db.add(token)
+    await db.flush()
+
+    # Auto-create draft invoice — identical flow to second-weight completion
+    if token.token_type in ("sale", "purchase"):
+        await _auto_create_invoice(db, token, company, fy, current_user.id,
+                                   invoice_type=token.token_type)
+
+    await db.commit()
+
+    # Audit log
+    try:
+        from app.routers.audit import log_action
+        await log_action(db, company.id, current_user.id, "completed", "token",
+                         str(token.id), {"token_no": token.token_no, "vehicle_no": token.vehicle_no,
+                                         "method": "volume", "volume_m3": float(payload.volume_m3),
+                                         "net_kg": float(net_kg)})
+    except Exception:
+        pass
+
+    # Token-completed notification (background, non-blocking) — same shape as second-weight path
+    _bg_tenant = None
+    try:
+        from app.multitenancy.context import current_tenant_slug
+        _bg_tenant = current_tenant_slug.get()
+    except Exception:
+        pass
+
+    # Fetch party name for the notification context
+    party = (await db.execute(select(Party).where(Party.id == token.party_id))).scalar_one_or_none()
+    _notify_ctx = {
+        "token_no": token.token_no or "PENDING",
+        "vehicle_no": token.vehicle_no or "—",
+        "net_weight": f"{float(net_kg) / 1000:.3f}",
+        "completed_at": token.completed_at.strftime("%d-%m-%Y %H:%M") if token.completed_at else "—",
+        "party_name": party.name if party else "—",
+        "party_phone": party.phone or "" if party else "",
+        "company_name": company.name,
+    }
+    background_tasks.add_task(
+        _send_notification_bg,
+        company.id, "token_completed", _notify_ctx, "token", str(token.id), _bg_tenant,
+    )
 
     return await _load_token(db, token.id)
 

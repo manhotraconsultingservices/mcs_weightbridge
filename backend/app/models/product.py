@@ -31,6 +31,9 @@ class Product(Base):
     unit: Mapped[str] = mapped_column(String(10))  # MT, CFT, BRASS, CUM, NOS
     default_rate: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
     gst_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=5.00)
+    # Bulk density in t/m³ — enables volume → weight conversion at token creation.
+    # NULL means volume mode is not available for this product.
+    bulk_density: Mapped[Decimal | None] = mapped_column(Numeric(6, 3))
     description: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

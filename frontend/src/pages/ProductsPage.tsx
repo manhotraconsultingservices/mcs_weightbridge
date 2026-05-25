@@ -23,6 +23,7 @@ interface ProductForm {
   unit: string;
   default_rate: string;
   gst_rate: string;
+  bulk_density: string;
   description: string;
   is_active: boolean;
 }
@@ -30,6 +31,7 @@ interface ProductForm {
 const emptyForm = (): ProductForm => ({
   name: '', code: '', category_id: '', hsn_code: '',
   unit: 'MT', default_rate: '0', gst_rate: '5',
+  bulk_density: '',
   description: '', is_active: true,
 });
 
@@ -57,6 +59,7 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
           unit: editing.unit,
           default_rate: String(editing.default_rate),
           gst_rate: String(editing.gst_rate),
+          bulk_density: editing.bulk_density != null ? String(editing.bulk_density) : '',
           description: editing.description ?? '',
           is_active: editing.is_active,
         });
@@ -83,6 +86,7 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
         unit: form.unit,
         default_rate: parseFloat(form.default_rate) || 0,
         gst_rate: parseFloat(form.gst_rate) || 0,
+        bulk_density: form.bulk_density.trim() ? parseFloat(form.bulk_density) : null,
         description: form.description.trim() || null,
         is_active: form.is_active,
       };
@@ -166,6 +170,22 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
                 {GST_RATES.map(r => <SelectItem key={r} value={r}>{r}%</SelectItem>)}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="col-span-2 space-y-1">
+            <Label>Bulk Density (t/m³)</Label>
+            <Input
+              type="number"
+              value={form.bulk_density}
+              onChange={e => set('bulk_density', e.target.value)}
+              min="0"
+              step="0.001"
+              placeholder="e.g. 1.50 — leave blank if not applicable"
+            />
+            <p className="text-xs text-muted-foreground">
+              Used to convert volume (m³) to weight when the truck isn't weighed on the bridge.
+              Typical values: aggregate 1.50, sand 1.70, GSB 1.90, stone dust 1.55.
+            </p>
           </div>
 
           <div className="col-span-2 space-y-1">
@@ -319,16 +339,17 @@ export default function ProductsPage() {
                   <th className="text-left p-3 font-medium">Unit</th>
                   <th className="text-right p-3 font-medium">Rate (₹)</th>
                   <th className="text-right p-3 font-medium">GST%</th>
+                  <th className="text-right p-3 font-medium">Density (t/m³)</th>
                   <th className="text-center p-3 font-medium">Status</th>
                   <th className="p-3"></th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={9} className="text-center p-8 text-muted-foreground">Loading…</td></tr>
+                  <tr><td colSpan={10} className="text-center p-8 text-muted-foreground">Loading…</td></tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={9}>
+                    <td colSpan={10}>
                       <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
                         <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
                           <Package className="h-8 w-8 text-muted-foreground/40" />
@@ -352,6 +373,9 @@ export default function ProductsPage() {
                         {p.default_rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
                       <td className="p-3 text-right">{p.gst_rate}%</td>
+                      <td className="p-3 text-right text-muted-foreground">
+                        {p.bulk_density != null ? Number(p.bulk_density).toFixed(3) : '—'}
+                      </td>
                       <td className="p-3 text-center">
                         <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
                           p.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'

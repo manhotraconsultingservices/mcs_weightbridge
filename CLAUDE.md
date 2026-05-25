@@ -126,13 +126,13 @@ require_role("admin")  # Role guard — returns 403 if not matching
 | `financial_years` | id, company_id, label, start_date, end_date, is_active | |
 | `parties` | id, company_id, party_type, name, gstin, phone, current_balance | party_type: customer/supplier/both |
 | `party_rates` | id, party_id, product_id, rate, effective_from | Custom rate per party+product |
-| `products` | id, company_id, category_id, name, hsn_code, unit, default_rate, gst_rate | |
+| `products` | id, company_id, category_id, name, hsn_code, unit, default_rate, gst_rate, bulk_density | bulk_density (t/m³) enables volume→weight conversion for volume-based tokens |
 | `product_categories` | id, company_id, name | |
 | `vehicles` | id, company_id, registration_no, default_tare_weight | |
 | `tare_weight_history` | id, vehicle_id, tare_weight, recorded_at | |
 | `drivers` | id, company_id, name, license_no, phone | |
 | `transporters` | id, company_id, name, gstin | |
-| `tokens` | id, company_id, token_no (nullable), token_type, vehicle_id, party_id, product_id, vehicle_no, vehicle_type, gross_weight, tare_weight, net_weight, status, is_supplement | token_no assigned at COMPLETED; vehicle_type from admin-configurable list; is_supplement=TRUE when moved to supplement |
+| `tokens` | id, company_id, token_no (nullable), token_type, vehicle_id, party_id, product_id, vehicle_no, vehicle_type, gross_weight, tare_weight, net_weight, weight_method, volume_m3, status, is_supplement | token_no assigned at COMPLETED; vehicle_type from admin-configurable list; is_supplement=TRUE when moved to supplement; weight_method='weighbridge' (default, gross-tare) or 'volume' (volume_m3 × product.bulk_density); volume_m3 populated only when weight_method='volume' |
 | `invoices` | id, company_id, fy_id, invoice_type, tax_type, invoice_no (nullable), party_id, token_id, total_amount, grand_total, payment_status, status, revision_no, original_invoice_id, irn, irn_ack_no, irn_ack_date, irn_qr_code, irn_signed_invoice, einvoice_status, einvoice_error, irn_cancelled_at | invoice_no assigned at FINALISE; revision_no starts at 1; original_invoice_id NULL for v1, points to root for all revisions; eInvoice columns for NIC IRN integration |
 | `invoice_items` | id, invoice_id, product_id, quantity, rate, gst_rate, amounts | Line items |
 | `invoice_revisions` | id, original_invoice_id, from_revision_no, to_revision_no, from_invoice_id, to_invoice_id, snapshot (JSONB), diff (JSONB), change_summary, revised_by, created_at, finalized_at | Revision chain records; snapshot = full from-invoice at creation time; diff computed at finalization |
@@ -232,6 +232,7 @@ All endpoints prefixed `/api/v1` unless noted.
 | GET/PUT | `/{id}` | Get/update token |
 | POST | `/{id}/first-weight` | Record first weight |
 | POST | `/{id}/second-weight` | Record second weight + complete |
+| POST | `/volume` | Volume-based token (skips bridge): one call creates + completes + auto-invoices. Requires `product.bulk_density`. Computes net_weight = volume_m3 × bulk_density × 1000. |
 | POST | `/{id}/cancel` | Cancel token |
 | POST | `/{id}/set-loading` | Mark loading/unloading |
 
@@ -634,6 +635,7 @@ All endpoints prefixed `/api/v1` unless noted.
 | Multi-Tenant SaaS | Separate database per client within single PG container; `MULTI_TENANT=true` activates; `weighbridge_master` DB for tenant registry; `wb_<slug>` databases per client; TenantMiddleware extracts tenant from JWT ContextVar; tenant-aware background tasks; per-tenant WeightScaleManager; Super-admin API for tenant CRUD; Docker + init scripts; parallel Windows (PowerShell) + Linux (bash) management scripts; frontend Company Code login field; zero data interchange risk |
 | Dual-stage camera capture | Snapshots captured at both 1st and 2nd weight events; `weight_stage` column on `token_snapshots`; unique constraint `(token_id, camera_id, weight_stage)`; mock snapshot seeding endpoint for dev/test |
 | Snapshot Search | SnapshotSearchPage: search camera images by token number, vehicle number, or date range; results grouped by token with 1st/2nd weight sections; lightbox viewer; date presets; pagination; `GET /api/v1/cameras/search` endpoint |
+| Volume-based tokens | `POST /api/v1/tokens/volume` — single-call create + complete + auto-invoice for trucks not weighed on the bridge. Computes `net_weight = volume_m3 × product.bulk_density × 1000`. `products.bulk_density` field set on Products page. TokenPage adds Measurement Method toggle with m³/ft³ unit conversion and live weight preview |
 
 ### ❌ Pending
 
@@ -778,3 +780,4 @@ SUPER_ADMIN_SECRET=change-this-to-a-strong-secret
 | 2026-04-14 | Dual-stage camera capture: `weight_stage` column on token_snapshots; snapshots captured at both 1st and 2nd weight; unique constraint `(token_id, camera_id, weight_stage)`; DDL migration; tokens.py triggers capture for all token types at both weight events |
 | 2026-04-14 | Snapshot Search page: `GET /api/v1/cameras/search` endpoint (search by token_no/vehicle_no + date range); SnapshotSearchPage.tsx with grouped results, 1st/2nd weight sections, lightbox viewer, date presets, pagination; sidebar entry under Daily Work |
 | 2026-04-14 | Mock snapshot seeding: `POST /api/v1/cameras/mock-snapshots/{token_id}` generates PIL test images for both weight stages and cameras (4 images per token) |
+| 2026-05-26 | Bulk density + volume-based tokens: `products.bulk_density` (NUMERIC t/m³); `tokens.weight_method` + `tokens.volume_m3`; new `POST /api/v1/tokens/volume` endpoint computes weight as `volume_m3 × bulk_density × 1000` and creates+completes+auto-invoices in one call; ProductsPage shows + edits bulk_density; TokenPage adds Measurement Method toggle (Weighbridge / Volume) with m³/ft³ unit conversion and live computed weight preview; seed_tenant_demo.py seeds industry-standard density values for all 13 crusher products |

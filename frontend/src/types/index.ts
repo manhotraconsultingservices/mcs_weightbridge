@@ -84,6 +84,7 @@ export interface Product {
   unit: string;
   default_rate: number;
   gst_rate: number;
+  bulk_density: number | null;   // t/m³ — enables volume → weight conversion in tokens
   description: string | null;
   is_active: boolean;
 }

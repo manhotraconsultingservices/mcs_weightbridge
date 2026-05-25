@@ -32,6 +32,10 @@ class Token(Base):
     gross_weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     tare_weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     net_weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    # How the net_weight was determined: 'weighbridge' (gross-tare) or 'volume' (volume_m3 × bulk_density)
+    weight_method: Mapped[str] = mapped_column(String(20), default="weighbridge")
+    # Recorded volume for audit trail when weight_method='volume' (m³, canonical unit)
+    volume_m3: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
     first_weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     second_weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     first_weight_type: Mapped[str | None] = mapped_column(String(5))  # gross or tare

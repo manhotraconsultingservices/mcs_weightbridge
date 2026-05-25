@@ -100,6 +100,13 @@ interface CreateFormProps {
   onCreated: (token: Token) => void;
 }
 
+// Volume → weight conversion: weight_kg = volume_m3 × bulk_density × 1000
+const FT3_PER_M3 = 35.3147;
+function toCubicMetres(value: number, unit: 'm3' | 'ft3'): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return unit === 'm3' ? value : value / FT3_PER_M3;
+}
+
 function CreateTokenForm({ onCreated }: CreateFormProps) {
   const [form, setForm] = useState({
     vehicle_no: '',
@@ -112,6 +119,10 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     gate_pass: '',
     remarks: '',
   });
+  // Volume-based weighment (skips the bridge)
+  const [weightMethod, setWeightMethod] = useState<'weighbridge' | 'volume'>('weighbridge');
+  const [volumeValue, setVolumeValue] = useState('');
+  const [volumeUnit, setVolumeUnit] = useState<'m3' | 'ft3'>('m3');
   const [parties, setParties] = useState<Party[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -140,8 +151,17 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass: '', remarks: '' });
     setVehicleSearch('');
     setSelectedVehicle(null);
+    setVolumeValue('');
     setError('');
   }
+
+  // Selected product (used for volume mode)
+  const selectedProduct = form.product_id ? products.find(p => p.id === form.product_id) ?? null : null;
+  const volumeNum = parseFloat(volumeValue || '0');
+  const volumeM3 = toCubicMetres(volumeNum, volumeUnit);
+  const computedWeightKg = selectedProduct?.bulk_density
+    ? volumeM3 * Number(selectedProduct.bulk_density) * 1000
+    : 0;
 
   const handleTypeChange = (type: string) => {
     setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '' }));
@@ -165,6 +185,45 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
   async function handleSubmit() {
     if (!form.vehicle_no.trim()) { setError('Vehicle number is required'); return; }
+
+    // ── Volume mode: skip weighbridge, single POST creates + completes token ──
+    if (weightMethod === 'volume') {
+      if (!form.party_id) { setError('Party is required for volume-based tokens'); return; }
+      if (!form.product_id) { setError('Material is required for volume-based tokens'); return; }
+      if (!selectedProduct?.bulk_density) {
+        setError(`Bulk density not set for "${selectedProduct?.name ?? 'this product'}". Set it on the Products page first.`);
+        return;
+      }
+      if (!Number.isFinite(volumeNum) || volumeNum <= 0) {
+        setError('Enter a positive volume'); return;
+      }
+      setSaving(true); setError('');
+      try {
+        const { data } = await api.post<Token>('/api/v1/tokens/volume', {
+          token_date: today(),
+          vehicle_no: form.vehicle_no.trim().toUpperCase(),
+          vehicle_type: form.vehicle_type || undefined,
+          token_type: form.token_type,
+          direction: form.direction,
+          party_id: form.party_id,
+          product_id: form.product_id,
+          vehicle_id: form.vehicle_id || undefined,
+          volume_m3: Number(volumeM3.toFixed(3)),
+          gate_pass: form.gate_pass || undefined,
+          remarks: form.remarks || undefined,
+        });
+        onCreated(data);
+        resetForm();
+      } catch (e: unknown) {
+        const err = e as { response?: { data?: { detail?: string } } };
+        setError(err.response?.data?.detail ?? 'Failed to create volume-based token');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    // ── Weighbridge mode (default): two-step weighment workflow ──
     setSaving(true); setError('');
     try {
       const { data } = await api.post<Token>('/api/v1/tokens', {
@@ -369,6 +428,84 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           </Select>
         </div>
 
+        {/* Weighment method */}
+        <div className="space-y-1">
+          <Label className="text-xs">Measurement Method</Label>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { value: 'weighbridge', label: 'Weighbridge', sub: 'Gross + Tare' },
+              { value: 'volume',      label: 'Volume',      sub: 'm³ × density' },
+            ].map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setWeightMethod(opt.value as 'weighbridge' | 'volume')}
+                className={cn(
+                  'rounded-lg border-2 p-2 text-left transition-all',
+                  weightMethod === opt.value
+                    ? 'border-amber-400 bg-amber-50 text-amber-700'
+                    : 'border-border hover:border-primary/40'
+                )}
+              >
+                <p className="font-semibold text-xs">{opt.label}</p>
+                <p className="text-[10px] text-muted-foreground">{opt.sub}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Volume input (only in volume mode) */}
+        {weightMethod === 'volume' && (
+          <div className="space-y-2 rounded-lg border-2 border-amber-200 bg-amber-50/40 p-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Volume <span className="text-destructive">*</span></Label>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  className="h-8 text-xs flex-1"
+                  value={volumeValue}
+                  onChange={e => setVolumeValue(e.target.value)}
+                  placeholder="0.0"
+                  min="0"
+                  step="0.01"
+                />
+                <Select value={volumeUnit} onValueChange={v => setVolumeUnit(v as 'm3' | 'ft3')}>
+                  <SelectTrigger className="h-8 text-xs w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="m3">m³</SelectItem>
+                    <SelectItem value="ft3">ft³</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Live calculation preview */}
+            {!form.product_id ? (
+              <p className="text-[10px] text-muted-foreground">Select a material above to compute weight.</p>
+            ) : !selectedProduct?.bulk_density ? (
+              <p className="text-[10px] text-destructive">
+                Bulk density not set for {selectedProduct?.name}. Set it on the Products page first.
+              </p>
+            ) : (
+              <div className="rounded-md bg-white px-2.5 py-1.5 text-[10px]">
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Volume</span><span>{volumeM3.toFixed(3)} m³</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>× Density ({selectedProduct.name})</span>
+                  <span>{Number(selectedProduct.bulk_density).toFixed(3)} t/m³</span>
+                </div>
+                <div className="mt-1 flex justify-between border-t pt-1 font-semibold text-amber-700">
+                  <span>= Computed weight</span>
+                  <span>{(computedWeightKg / 1000).toFixed(3)} MT ({computedWeightKg.toFixed(0)} kg)</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Gate Pass */}
         <div className="space-y-1">
           <Label className="text-xs">Gate Pass <span className="text-muted-foreground">(optional)</span></Label>
@@ -403,7 +540,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           {saving
             ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             : <ArrowRight className="mr-2 h-4 w-4" />}
-          Start Weighment
+          {weightMethod === 'volume' ? 'Create Token (Volume)' : 'Start Weighment'}
         </Button>
       </div>
     </div>

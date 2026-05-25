@@ -424,6 +424,11 @@ def get_column_migrations() -> list[str]:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """,
+        # Bulk density on products (t/m³) — enables volume → weight conversion
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS bulk_density NUMERIC(6,3)",
+        # Volume-based weighment on tokens
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS weight_method VARCHAR(20) NOT NULL DEFAULT 'weighbridge'",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS volume_m3 NUMERIC(8,3)",
         # Invoice transport & dispatch metadata (Tally-compatible fields)
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS royalty_no VARCHAR(50)",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS delivery_note VARCHAR(100)",

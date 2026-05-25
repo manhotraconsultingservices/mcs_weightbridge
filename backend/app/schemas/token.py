@@ -31,6 +31,26 @@ class TokenSecondWeight(BaseModel):
     is_manual: bool = False
 
 
+class TokenVolumeCreate(BaseModel):
+    """Volume-based load: skip the bridge, compute weight from volume × bulk_density.
+
+    Used when small trucks are loaded by visual measurement (m³) rather than weighed.
+    """
+    token_date: date
+    direction: str = "outbound"
+    token_type: str = "sale"             # sale | purchase
+    party_id: UUID                       # required — auto-invoice needs a party
+    product_id: UUID                     # required — bulk_density must be on product
+    vehicle_no: str
+    vehicle_id: Optional[UUID] = None
+    vehicle_type: Optional[str] = None
+    driver_id: Optional[UUID] = None
+    transporter_id: Optional[UUID] = None
+    volume_m3: Decimal                   # canonical unit. Frontend converts ft³ → m³.
+    gate_pass: Optional[str] = None
+    remarks: Optional[str] = None
+
+
 class TokenUpdate(BaseModel):
     party_id: Optional[UUID] = None
     product_id: Optional[UUID] = None
@@ -107,6 +127,8 @@ class TokenResponse(BaseModel):
     second_weight: Optional[Decimal] = None
     first_weight_type: Optional[str] = None
     is_manual_weight: bool = False
+    weight_method: str = "weighbridge"   # 'weighbridge' | 'volume'
+    volume_m3: Optional[Decimal] = None
     is_supplement: bool = False
     gate_pass: Optional[str] = None
     remarks: Optional[str] = None
