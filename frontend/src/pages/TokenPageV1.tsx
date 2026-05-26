@@ -107,6 +107,17 @@ function toCubicMetres(value: number, unit: 'm3' | 'ft3'): number {
   return unit === 'm3' ? value : value / FT3_PER_M3;
 }
 
+// Tyre-count → default load volume (m³). These are industry-standard capacities
+// for Indian aggregate trucks; operators can still override the volume per token.
+const TYRE_VOLUME_M3: Record<number, number> = {
+  4: 3.0,    // Mini-truck / pickup (Tata Ace, Bolero pickup)
+  6: 7.0,    // Small truck (Eicher Pro 1110)
+  8: 10.0,   // Medium truck
+  10: 13.0,  // Heavy truck (Eicher 6028, Ashok Leyland 1616)
+  12: 17.0,  // Multi-axle
+};
+const TYRE_OPTIONS = [4, 6, 8, 10, 12];
+
 function CreateTokenForm({ onCreated }: CreateFormProps) {
   const [form, setForm] = useState({
     vehicle_no: '',
@@ -123,6 +134,15 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const [weightMethod, setWeightMethod] = useState<'weighbridge' | 'volume'>('weighbridge');
   const [volumeValue, setVolumeValue] = useState('');
   const [volumeUnit, setVolumeUnit] = useState<'m3' | 'ft3'>('m3');
+  const [tyreCount, setTyreCount] = useState<number | null>(null);   // 4/6/8/10/12 or null
+
+  // Picking a tyre count auto-fills the volume field with the standard capacity
+  // for that truck class. Operator can still edit the volume below.
+  function pickTyreCount(n: number) {
+    setTyreCount(n);
+    setVolumeValue(String(TYRE_VOLUME_M3[n] ?? ''));
+    setVolumeUnit('m3');
+  }
   const [parties, setParties] = useState<Party[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -152,6 +172,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     setVehicleSearch('');
     setSelectedVehicle(null);
     setVolumeValue('');
+    setTyreCount(null);
     setError('');
   }
 
@@ -191,11 +212,11 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       if (!form.party_id) { setError('Party is required for volume-based tokens'); return; }
       if (!form.product_id) { setError('Material is required for volume-based tokens'); return; }
       if (!selectedProduct?.bulk_density) {
-        setError(`Bulk density not set for "${selectedProduct?.name ?? 'this product'}". Set it on the Products page first.`);
+        setError(`Bulk density not set for "${selectedProduct?.name ?? 'this product'}". Open Products → edit this product → set Bulk Density.`);
         return;
       }
       if (!Number.isFinite(volumeNum) || volumeNum <= 0) {
-        setError('Enter a positive volume'); return;
+        setError('Enter a positive volume (or pick a tyre count to auto-fill)'); return;
       }
       setSaving(true); setError('');
       try {
@@ -210,13 +231,31 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           vehicle_id: form.vehicle_id || undefined,
           volume_m3: Number(volumeM3.toFixed(3)),
           gate_pass: form.gate_pass || undefined,
-          remarks: form.remarks || undefined,
+          remarks: form.remarks
+            ? `${form.remarks}${tyreCount ? ` | ${tyreCount}-tyre truck` : ''}`
+            : (tyreCount ? `${tyreCount}-tyre truck` : undefined),
         });
         onCreated(data);
         resetForm();
       } catch (e: unknown) {
-        const err = e as { response?: { data?: { detail?: string } } };
-        setError(err.response?.data?.detail ?? 'Failed to create volume-based token');
+        // Surface the real backend error — handle several axios error shapes
+        const err = e as {
+          response?: { status?: number; data?: { detail?: string | Array<{ msg: string; loc?: string[] }> } };
+          message?: string;
+        };
+        const detail = err.response?.data?.detail;
+        let msg: string;
+        if (typeof detail === 'string') {
+          msg = detail;
+        } else if (Array.isArray(detail)) {
+          // FastAPI validation errors: list of { msg, loc }
+          msg = detail.map(d => `${(d.loc ?? []).join('.')}: ${d.msg}`).join(' · ');
+        } else {
+          msg = err.message ?? 'Failed to create volume-based token';
+        }
+        const status = err.response?.status ?? '?';
+        setError(`HTTP ${status}: ${msg}`);
+        console.error('Volume token failed:', err);
       } finally {
         setSaving(false);
       }
@@ -456,7 +495,38 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
         {/* Volume input (only in volume mode) */}
         {weightMethod === 'volume' && (
-          <div className="space-y-2 rounded-lg border-2 border-amber-200 bg-amber-50/40 p-3">
+          <div className="space-y-3 rounded-lg border-2 border-amber-200 bg-amber-50/40 p-3">
+            {/* Step 1: Pick tyre count → volume auto-fills */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Truck size — tyre count</Label>
+              <div className="grid grid-cols-5 gap-1.5">
+                {TYRE_OPTIONS.map(n => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => pickTyreCount(n)}
+                    className={cn(
+                      'rounded-lg border-2 px-1 py-2 text-center transition-all',
+                      tyreCount === n
+                        ? 'border-amber-500 bg-amber-100 text-amber-800'
+                        : 'border-border hover:border-amber-300 bg-white',
+                    )}
+                  >
+                    <div className="text-xs font-bold leading-none">{n}</div>
+                    <div className="text-[9px] text-muted-foreground leading-tight mt-0.5">
+                      tyre<br/>{TYRE_VOLUME_M3[n]} m³
+                    </div>
+                  </button>
+                ))}
+              </div>
+              {tyreCount !== null && (
+                <p className="text-[10px] text-amber-700">
+                  Defaulted to {TYRE_VOLUME_M3[tyreCount]} m³ for a {tyreCount}-tyre truck. Adjust below if needed.
+                </p>
+              )}
+            </div>
+
+            {/* Step 2: Editable volume (auto-filled from tyre count, can override) */}
             <div className="space-y-1">
               <Label className="text-xs">Volume <span className="text-destructive">*</span></Label>
               <div className="flex gap-2">
@@ -464,8 +534,8 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
                   type="number"
                   className="h-8 text-xs flex-1"
                   value={volumeValue}
-                  onChange={e => setVolumeValue(e.target.value)}
-                  placeholder="0.0"
+                  onChange={e => { setVolumeValue(e.target.value); setTyreCount(null); }}
+                  placeholder="Pick a tyre count above, or enter m³ here"
                   min="0"
                   step="0.01"
                 />
@@ -481,15 +551,17 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
               </div>
             </div>
 
-            {/* Live calculation preview */}
+            {/* Step 3: Live calculation preview */}
             {!form.product_id ? (
-              <p className="text-[10px] text-muted-foreground">Select a material above to compute weight.</p>
+              <p className="text-[10px] text-muted-foreground">Select a material below to compute weight.</p>
             ) : !selectedProduct?.bulk_density ? (
               <p className="text-[10px] text-destructive">
-                Bulk density not set for {selectedProduct?.name}. Set it on the Products page first.
+                Bulk density not set for {selectedProduct?.name}. Open Products → edit this product → set Bulk Density (typical: aggregate 1.5, sand 1.7, GSB 1.9).
               </p>
+            ) : volumeNum <= 0 ? (
+              <p className="text-[10px] text-muted-foreground">Pick a tyre count or enter a volume to see the computed weight.</p>
             ) : (
-              <div className="rounded-md bg-white px-2.5 py-1.5 text-[10px]">
+              <div className="rounded-md bg-white px-2.5 py-2 text-[10px] border">
                 <div className="flex justify-between text-muted-foreground">
                   <span>Volume</span><span>{volumeM3.toFixed(3)} m³</span>
                 </div>
@@ -497,12 +569,18 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
                   <span>× Density ({selectedProduct.name})</span>
                   <span>{Number(selectedProduct.bulk_density).toFixed(3)} t/m³</span>
                 </div>
-                <div className="mt-1 flex justify-between border-t pt-1 font-semibold text-amber-700">
-                  <span>= Computed weight</span>
-                  <span>{(computedWeightKg / 1000).toFixed(3)} MT ({computedWeightKg.toFixed(0)} kg)</span>
+                <div className="mt-1 flex justify-between border-t pt-1 text-sm font-bold text-amber-700">
+                  <span>= Net weight</span>
+                  <span>{(computedWeightKg / 1000).toFixed(3)} MT</span>
                 </div>
+                <div className="text-[9px] text-muted-foreground text-right">({computedWeightKg.toFixed(0)} kg)</div>
               </div>
             )}
+
+            <div className="text-[10px] text-muted-foreground bg-white rounded p-2 border">
+              <strong>How this works:</strong> No weighbridge needed. One click creates the token,
+              auto-completes it, and generates a draft invoice.
+            </div>
           </div>
         )}
 
