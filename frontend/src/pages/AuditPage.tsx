@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Shield, Search, RefreshCw, User, Calendar, Tag, Activity } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Search, RefreshCw, Activity, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 
 interface AuditEntry {
@@ -325,71 +326,14 @@ export default function AuditPage() {
             </Button>
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
-          {loading && entries.length === 0 ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">Loading...</div>
-          ) : entries.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-                <Shield className="h-8 w-8 text-muted-foreground/40" />
-              </div>
-              <h3 className="text-sm font-semibold">No audit entries found</h3>
-              <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-                Try adjusting your filters, or activity will appear here as actions are taken.
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y">
-              {entries.map(e => (
-                <div key={e.id} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/30">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <Badge className={`text-xs px-2 py-0 ${actionBadgeClass(e.action)}`}>
-                        {e.action.replace(/_/g, ' ')}
-                      </Badge>
-                      <span className="text-sm font-medium capitalize">{(ENTITY_LABELS[e.entity_type] ?? e.entity_type).replace(/_/g, ' ')}</span>
-                      {e.entity_id && (
-                        <span className="text-xs text-muted-foreground font-mono">#{e.entity_id.slice(0, 8)}</span>
-                      )}
-                    </div>
-                    {e.details && (
-                      <p className="text-xs text-muted-foreground truncate">{parseDetails(e.details)}</p>
-                    )}
-                  </div>
-                  <div className="text-right shrink-0 space-y-1">
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end">
-                      <User className="h-3 w-3" />
-                      <span>{e.username ?? 'System'}</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end">
-                      <Calendar className="h-3 w-3" />
-                      <span>{formatDt(e.created_at)}</span>
-                    </div>
-                    {e.ip_address && (
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end">
-                        <Tag className="h-3 w-3" />
-                        <span>{e.ip_address}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Pagination */}
+        <CardContent className="p-3">
+          <AuditTable entries={entries} loading={loading && entries.length === 0} />
           {totalPages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t">
-              <p className="text-sm text-muted-foreground">
-                Page {page} of {totalPages}
-              </p>
+            <div className="flex items-center justify-between px-1 py-3 border-t mt-2">
+              <p className="text-sm text-muted-foreground">Page {page} of {totalPages}</p>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
-                  Previous
-                </Button>
-                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
-                  Next
-                </Button>
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
+                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
               </div>
             </div>
           )}
@@ -412,5 +356,56 @@ export default function AuditPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Audit DataTable
+// ------------------------------------------------------------------ //
+function AuditTable({ entries, loading }: { entries: AuditEntry[]; loading: boolean }) {
+  const columns = useMemo<ColumnDef<AuditEntry>[]>(() => [
+    {
+      key: 'created_at', label: 'When', type: 'date',
+      accessor: e => e.created_at,
+      format: v => formatDt(String(v)),
+      className: 'font-mono text-xs',
+    },
+    {
+      key: 'action', label: 'Action', type: 'enum',
+      enumOptions: ['create', 'update', 'delete', 'finalize', 'cancel', 'first_weight', 'completed', 'login', 'logout'],
+      accessor: e => e.action,
+      format: v => <Badge className={`text-xs px-2 py-0 ${actionBadgeClass(String(v))}`}>{String(v).replace(/_/g, ' ')}</Badge>,
+    },
+    {
+      key: 'entity_type', label: 'Entity', type: 'enum',
+      enumOptions: ['token', 'invoice', 'payment', 'party', 'product', 'vehicle', 'user', 'production_cycle'],
+      accessor: e => e.entity_type,
+      format: v => <span className="capitalize">{(ENTITY_LABELS[String(v)] ?? String(v)).replace(/_/g, ' ')}</span>,
+    },
+    {
+      key: 'entity_id', label: 'ID', defaultVisible: false,
+      accessor: e => e.entity_id ?? '',
+      format: v => v ? <span className="font-mono text-xs text-muted-foreground">#{String(v).slice(0, 8)}</span> : '—',
+    },
+    { key: 'username', label: 'User', accessor: e => e.username ?? 'System' },
+    {
+      key: 'details', label: 'Details',
+      accessor: e => e.details ? parseDetails(e.details) : '',
+      className: 'text-xs text-muted-foreground max-w-md truncate',
+    },
+    { key: 'ip_address', label: 'IP', defaultVisible: false, accessor: e => e.ip_address ?? '', className: 'font-mono text-xs' },
+  ], []);
+
+  return (
+    <DataTable<AuditEntry>
+      id="audit.log"
+      loading={loading}
+      data={entries}
+      columns={columns}
+      rowKey={e => e.id}
+      exportFilename="audit-log"
+      defaultSort={{ key: 'created_at', direction: 'desc' }}
+      emptyMessage="No audit entries found. Activity will appear here as actions are taken."
+    />
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Plus, Edit2, KeyRound, UserCheck, UserX, RefreshCw } from 'lucide-react';
@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 import { useAuth } from '@/hooks/useAuth';
 import api from '@/services/api';
 
@@ -309,63 +310,12 @@ export default function UserManagementPage() {
         </div>
       </div>
 
-      <div className="rounded-lg border bg-card">
-        {loading ? (
-          <p className="text-center text-sm text-muted-foreground py-10">Loading users…</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-xs text-muted-foreground">
-                  <th className="px-4 py-3 text-left font-medium">Name</th>
-                  <th className="px-4 py-3 text-left font-medium">Username</th>
-                  <th className="px-4 py-3 text-left font-medium">Role</th>
-                  <th className="px-4 py-3 text-left font-medium">Email</th>
-                  <th className="px-4 py-3 text-left font-medium">Phone</th>
-                  <th className="px-4 py-3 text-left font-medium">Status</th>
-                  <th className="px-4 py-3 text-right font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {users.map(u => (
-                  <tr key={u.id} className="hover:bg-muted/30">
-                    <td className="px-4 py-3 font-medium">{u.full_name || '—'}</td>
-                    <td className="px-4 py-3 font-mono text-xs">{u.username}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${ROLE_STYLES[u.role] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {ROLE_LABELS[u.role] ?? u.role}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{u.email || '—'}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{u.phone || '—'}</td>
-                    <td className="px-4 py-3">
-                      {u.is_active
-                        ? <span className="inline-flex items-center gap-1 text-xs text-green-600"><span className="h-1.5 w-1.5 rounded-full bg-green-500 inline-block" />Active</span>
-                        : <span className="inline-flex items-center gap-1 text-xs text-gray-400"><span className="h-1.5 w-1.5 rounded-full bg-gray-300 inline-block" />Inactive</span>
-                      }
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-1 justify-end">
-                        <Button size="icon" variant="ghost" className="h-7 w-7" title="Edit user"
-                          onClick={() => { setEditTarget(u); setAddEditOpen(true); }}>
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-7 w-7" title="Reset password"
-                          onClick={() => { setResetTarget(u); setResetOpen(true); }}>
-                          <KeyRound className="h-3.5 w-3.5 text-orange-500" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {users.length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-muted-foreground">No users found.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      <UsersTable
+        users={users}
+        loading={loading}
+        onEdit={u => { setEditTarget(u); setAddEditOpen(true); }}
+        onResetPassword={u => { setResetTarget(u); setResetOpen(true); }}
+      />
 
       <AddEditDialog
         open={addEditOpen}
@@ -379,5 +329,65 @@ export default function UserManagementPage() {
         onClose={() => { setResetOpen(false); setResetTarget(null); }}
       />
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Users DataTable
+// ------------------------------------------------------------------ //
+function UsersTable({
+  users, loading, onEdit, onResetPassword,
+}: {
+  users: ManagedUser[];
+  loading: boolean;
+  onEdit: (u: ManagedUser) => void;
+  onResetPassword: (u: ManagedUser) => void;
+}) {
+  const columns = useMemo<ColumnDef<ManagedUser>[]>(() => [
+    { key: 'full_name', label: 'Name', accessor: u => u.full_name ?? '', className: 'font-medium' },
+    { key: 'username', label: 'Username', accessor: u => u.username, className: 'font-mono text-xs' },
+    {
+      key: 'role', label: 'Role', type: 'enum',
+      enumOptions: Object.keys(ROLE_LABELS),
+      accessor: u => u.role,
+      format: (_, u) => (
+        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${ROLE_STYLES[u.role] ?? 'bg-gray-100 text-gray-600'}`}>
+          {ROLE_LABELS[u.role] ?? u.role}
+        </span>
+      ),
+    },
+    { key: 'email', label: 'Email', accessor: u => u.email ?? '', className: 'text-muted-foreground' },
+    { key: 'phone', label: 'Phone', accessor: u => u.phone ?? '', className: 'text-muted-foreground' },
+    {
+      key: 'is_active', label: 'Status', type: 'enum',
+      enumOptions: ['Active', 'Inactive'],
+      accessor: u => u.is_active ? 'Active' : 'Inactive',
+      format: v => v === 'Active'
+        ? <span className="inline-flex items-center gap-1 text-xs text-green-600"><span className="h-1.5 w-1.5 rounded-full bg-green-500 inline-block" />Active</span>
+        : <span className="inline-flex items-center gap-1 text-xs text-gray-400"><span className="h-1.5 w-1.5 rounded-full bg-gray-300 inline-block" />Inactive</span>,
+    },
+  ], []);
+
+  return (
+    <DataTable<ManagedUser>
+      id="users.main"
+      loading={loading}
+      data={users}
+      columns={columns}
+      rowKey={u => u.id}
+      exportFilename="users"
+      defaultSort={{ key: 'username', direction: 'asc' }}
+      emptyMessage="No users found."
+      rowActions={u => (
+        <div className="flex gap-1 justify-end">
+          <Button size="icon" variant="ghost" className="h-7 w-7" title="Edit user" onClick={() => onEdit(u)}>
+            <Edit2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button size="icon" variant="ghost" className="h-7 w-7" title="Reset password" onClick={() => onResetPassword(u)}>
+            <KeyRound className="h-3.5 w-3.5 text-orange-500" />
+          </Button>
+        </div>
+      )}
+    />
   );
 }

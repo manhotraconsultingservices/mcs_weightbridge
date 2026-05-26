@@ -1,13 +1,13 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
-import { Plus, Search, FileText, Send, XCircle, ArrowRight, Download } from 'lucide-react';
+import { Plus, Search, Send, XCircle, ArrowRight, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 import type { Quotation, QuotationListResponse, Party, Product } from '@/types';
 
@@ -388,103 +388,23 @@ export default function QuotationsPage() {
         </Tabs>
       </div>
 
-      {/* Table */}
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="text-left p-3 font-medium">Quotation No</th>
-                  <th className="text-left p-3 font-medium">Date</th>
-                  <th className="text-left p-3 font-medium">Valid Until</th>
-                  <th className="text-left p-3 font-medium">Party</th>
-                  <th className="text-right p-3 font-medium">Amount</th>
-                  <th className="text-center p-3 font-medium">Status</th>
-                  <th className="p-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={7} className="text-center p-8 text-muted-foreground">Loading…</td></tr>
-                ) : quotations.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="text-center p-12">
-                      <FileText className="mx-auto h-10 w-10 text-muted-foreground/40 mb-2" />
-                      <p className="text-muted-foreground">No quotations found</p>
-                    </td>
-                  </tr>
-                ) : (
-                  displayed.map(q => {
-                    const isExpired = q.valid_to && new Date(q.valid_to) < new Date() && q.status === 'sent';
-                    const displayStatus = isExpired ? 'expired' : q.status;
-                    return (
-                      <tr key={q.id} className="border-b hover:bg-muted/30 transition-colors">
-                        <td className="p-3 font-mono font-medium text-primary">{q.quotation_no}</td>
-                        <td className="p-3 text-muted-foreground">
-                          {new Date(q.quotation_date).toLocaleDateString('en-IN')}
-                        </td>
-                        <td className="p-3 text-muted-foreground">
-                          {q.valid_to ? new Date(q.valid_to).toLocaleDateString('en-IN') : '—'}
-                        </td>
-                        <td className="p-3">{q.party?.name ?? '—'}</td>
-                        <td className="p-3 text-right font-medium">{INR(q.grand_total)}</td>
-                        <td className="p-3 text-center">
-                          <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[displayStatus] ?? ''}`}>
-                            {displayStatus.toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-1">
-                            {q.status === 'draft' && (
-                              <Button
-                                variant="ghost" size="sm"
-                                disabled={actionLoading === q.id + 'send'}
-                                onClick={() => handleAction(q.id, 'send')}
-                                title="Mark as Sent"
-                              >
-                                <Send className="h-4 w-4" />
-                              </Button>
-                            )}
-                            {(q.status === 'sent' || q.status === 'accepted') && (
-                              <Button
-                                variant="ghost" size="sm"
-                                disabled={actionLoading === q.id + 'convert'}
-                                onClick={() => handleAction(q.id, 'convert')}
-                                title="Convert to Invoice"
-                                className="text-purple-600"
-                              >
-                                <ArrowRight className="h-4 w-4" />
-                              </Button>
-                            )}
-                            <Button variant="ghost" size="sm" title="Download PDF"
-                              onClick={() => downloadQuotationPdf(q)}
-                            >
-                              <Download className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+      <QuotationsTable
+        quotations={displayed}
+        loading={loading}
+        actionLoading={actionLoading}
+        onAction={handleAction}
+        onDownload={downloadQuotationPdf}
+      />
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between p-3 border-t text-sm">
+          <span className="text-muted-foreground">{total} quotations</span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Button>
+            <span className="flex items-center px-2">{page} / {totalPages}</span>
+            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
           </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between p-3 border-t text-sm">
-              <span className="text-muted-foreground">{total} quotations</span>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Button>
-                <span className="flex items-center px-2">{page} / {totalPages}</span>
-                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        </div>
+      )}
 
       <CreateQuotationDialog
         open={createOpen}
@@ -495,5 +415,86 @@ export default function QuotationsPage() {
         }}
       />
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Quotations DataTable
+// ------------------------------------------------------------------ //
+function QuotationsTable({
+  quotations, loading, actionLoading, onAction, onDownload,
+}: {
+  quotations: Quotation[];
+  loading: boolean;
+  actionLoading: string | null;
+  onAction: (id: string, action: 'send' | 'convert') => void;
+  onDownload: (q: Quotation) => void;
+}) {
+  const columns = useMemo<ColumnDef<Quotation>[]>(() => [
+    { key: 'quotation_no', label: 'Quotation No', accessor: q => q.quotation_no,
+      className: 'font-mono font-medium text-primary' },
+    { key: 'quotation_date', label: 'Date', type: 'date',
+      accessor: q => q.quotation_date,
+      format: v => new Date(String(v)).toLocaleDateString('en-IN'),
+      className: 'text-muted-foreground' },
+    { key: 'valid_to', label: 'Valid Until', type: 'date',
+      accessor: q => q.valid_to,
+      format: v => v ? new Date(String(v)).toLocaleDateString('en-IN') : '—',
+      className: 'text-muted-foreground' },
+    { key: 'party', label: 'Party', accessor: q => q.party?.name ?? '' },
+    { key: 'grand_total', label: 'Amount', type: 'number', align: 'right',
+      accessor: q => q.grand_total,
+      format: v => INR(Number(v)),
+      className: 'font-medium' },
+    {
+      key: 'status', label: 'Status', type: 'enum', align: 'center',
+      enumOptions: ['draft', 'sent', 'accepted', 'rejected', 'converted', 'expired'],
+      accessor: q => {
+        const isExpired = q.valid_to && new Date(q.valid_to) < new Date() && q.status === 'sent';
+        return isExpired ? 'expired' : q.status;
+      },
+      format: v => (
+        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[String(v)] ?? ''}`}>
+          {String(v).toUpperCase()}
+        </span>
+      ),
+    },
+  ], []);
+
+  return (
+    <DataTable<Quotation>
+      id="quotations.main"
+      loading={loading}
+      data={quotations}
+      columns={columns}
+      rowKey={q => q.id}
+      exportFilename="quotations"
+      defaultSort={{ key: 'quotation_date', direction: 'desc' }}
+      emptyMessage="No quotations found"
+      rowActions={q => (
+        <div className="flex items-center gap-1 justify-end">
+          {q.status === 'draft' && (
+            <Button variant="ghost" size="sm"
+                    disabled={actionLoading === q.id + 'send'}
+                    onClick={() => onAction(q.id, 'send')}
+                    title="Mark as Sent">
+              <Send className="h-4 w-4" />
+            </Button>
+          )}
+          {(q.status === 'sent' || q.status === 'accepted') && (
+            <Button variant="ghost" size="sm"
+                    disabled={actionLoading === q.id + 'convert'}
+                    onClick={() => onAction(q.id, 'convert')}
+                    title="Convert to Invoice"
+                    className="text-purple-600">
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" title="Download PDF" onClick={() => onDownload(q)}>
+            <Download className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+    />
   );
 }
