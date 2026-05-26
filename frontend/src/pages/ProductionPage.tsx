@@ -17,7 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import api from '@/services/api';
 import type { Product } from '@/types';
 
@@ -376,7 +376,7 @@ function CycleDialog({
 
   return (
     <Dialog open={open} onOpenChange={o => !o && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editing ? `Edit Cycle — ${editing.cycle_date}` : 'New Production Cycle'}</DialogTitle>
         </DialogHeader>
@@ -528,8 +528,8 @@ function CycleDialog({
               <table className="w-full text-sm">
                 <thead className="border-b">
                   <tr>
-                    <th className="text-left p-1 font-medium">Product</th>
-                    <th className="text-right p-1 font-medium w-32">Output (kg)</th>
+                    <th className="text-left p-1 font-medium" style={{ minWidth: '320px' }}>Product</th>
+                    <th className="text-right p-1 font-medium w-40">Output (kg)</th>
                     <th className="p-1 w-10"></th>
                   </tr>
                 </thead>
@@ -539,7 +539,11 @@ function CycleDialog({
                       <td className="p-1">
                         <Select value={o.product_id || undefined} onValueChange={v => updateOutput(i, 'product_id', v ?? '')}>
                           <SelectTrigger className="h-8 text-xs">
-                            <SelectValue placeholder="Select product…" />
+                            <span className="truncate text-left flex-1">
+                              {o.product_id
+                                ? (products.find(p => p.id === o.product_id)?.name ?? '…')
+                                : <span className="text-muted-foreground">Select product…</span>}
+                            </span>
                           </SelectTrigger>
                           <SelectContent>
                             {products.map(p => (
