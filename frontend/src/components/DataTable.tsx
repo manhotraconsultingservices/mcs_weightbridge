@@ -153,7 +153,7 @@ function matchFilter(rawValue: unknown, filter: string, type: ColumnDef<unknown>
   return v.toLowerCase().includes(filter.toLowerCase());
 }
 
-function escapeCsvCell(v: string | number | null | undefined): string {
+export function escapeCsvCell(v: string | number | null | undefined): string {
   if (v == null) return '';
   const s = String(v);
   // Quote if it contains comma, quote, or newline
@@ -163,7 +163,7 @@ function escapeCsvCell(v: string | number | null | undefined): string {
   return s;
 }
 
-function downloadCsv(filename: string, rows: string[][]) {
+export function downloadCsv(filename: string, rows: string[][]) {
   const csv = rows.map(r => r.map(escapeCsvCell).join(',')).join('\n');
   const blob = new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);

@@ -11,7 +11,8 @@
  *   DELETE /api/v1/parties/{party_id}/rates/{product_id} → clear one cell
  */
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { Search, Save, IndianRupee, Copy, AlertCircle, RotateCcw } from 'lucide-react';
+import { Search, Save, IndianRupee, Copy, AlertCircle, RotateCcw, Download } from 'lucide-react';
+import { downloadCsv } from '@/components/DataTable';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -262,6 +263,33 @@ export default function PricingMatrixPage() {
                     )}
                     <Button variant="outline" size="sm" onClick={handleResetAll} disabled={overrideCount === 0 && dirtyCount === 0}>
                       <RotateCcw className="mr-1 h-3 w-3" /> Reset all
+                    </Button>
+                    <Button
+                      variant="outline" size="sm"
+                      onClick={() => {
+                        // Export FULL matrix: parties as rows, products as columns
+                        const productNames = products.map(p => p.name);
+                        const headers = ['Customer', ...productNames.map(n => `${n} (Custom)`), ...productNames.map(n => `${n} (Default)`)];
+                        const productById = Object.fromEntries(products.map(p => [p.id, p]));
+                        const rowsByParty = new Map<string, Map<string, number>>();
+                        cells.forEach(c => {
+                          if (!rowsByParty.has(c.party_id)) rowsByParty.set(c.party_id, new Map());
+                          rowsByParty.get(c.party_id)!.set(c.product_id, c.rate);
+                        });
+                        const rows = parties.map(p => {
+                          const partyRates = rowsByParty.get(p.id) ?? new Map();
+                          const custom = products.map(pr => {
+                            const r = partyRates.get(pr.id);
+                            return r != null ? String(r) : '';
+                          });
+                          const def = products.map(pr => String(productById[pr.id]?.default_rate ?? ''));
+                          return [p.name, ...custom, ...def];
+                        });
+                        downloadCsv(`pricing-matrix-${new Date().toISOString().slice(0,10)}`, [headers, ...rows]);
+                      }}
+                      title="Export full pricing matrix as CSV"
+                    >
+                      <Download className="mr-1 h-3 w-3" /> CSV
                     </Button>
                     <Button size="sm" onClick={handleSave} disabled={dirtyCount === 0 || saving}>
                       <Save className="mr-1 h-3 w-3" />

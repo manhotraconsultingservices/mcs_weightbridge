@@ -9,9 +9,10 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Search, Scale, CheckCircle2, XCircle, Loader2,
   Truck, Package, User, Wifi, WifiOff, ArrowRight,
-  AlertCircle, RefreshCw, Camera,
+  AlertCircle, RefreshCw, Camera, Download,
 } from 'lucide-react';
 import { PrintButton } from '@/components/PrintButton';
+import { downloadCsv } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -1331,6 +1332,32 @@ export default function TokenPageV1() {
             >
               <RefreshCw className={cn('h-3 w-3', loading && 'animate-spin')} />
               Refresh
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground h-7 gap-1 text-xs shrink-0"
+              disabled={filtered.length === 0}
+              onClick={() => {
+                const headers = ['Token No', 'Date', 'Vehicle', 'Method', 'Party', 'Material', 'Gross (MT)', 'Tare (MT)', 'Net (MT)', 'Status'];
+                const rows = filtered.map(t => [
+                  t.token_no != null ? String(t.token_no) : '',
+                  t.token_date,
+                  t.vehicle_no,
+                  t.weight_method ?? 'weighbridge',
+                  t.party?.name ?? '',
+                  t.product?.name ?? '',
+                  t.gross_weight != null ? (Number(t.gross_weight) / 1000).toFixed(3) : '',
+                  t.tare_weight != null ? (Number(t.tare_weight) / 1000).toFixed(3) : '',
+                  t.net_weight != null ? (Number(t.net_weight) / 1000).toFixed(3) : '',
+                  t.status,
+                ]);
+                downloadCsv(`tokens-${new Date().toISOString().slice(0,10)}`, [headers, ...rows]);
+              }}
+              title="Download currently-filtered tokens as CSV"
+            >
+              <Download className="h-3 w-3" />
+              CSV
             </Button>
           </div>
 

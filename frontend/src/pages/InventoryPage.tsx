@@ -3,8 +3,9 @@ import { toast } from 'sonner';
 import {
   Package, Plus, ShoppingCart, History, Settings,
   Edit, X, Check, AlertTriangle, SlidersHorizontal, TrendingUp,
-  LayoutGrid, List,
+  LayoutGrid, List, Download,
 } from 'lucide-react';
+import { downloadCsv } from '@/components/DataTable';
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -2299,6 +2300,27 @@ export default function InventoryPage() {
           <Button onClick={() => setShowNewPO(true)} variant="outline" size="sm">
             <ShoppingCart className="h-4 w-4 mr-1.5" /> Order More
           </Button>
+          <Button
+            variant="outline" size="sm"
+            disabled={items.length === 0}
+            onClick={() => {
+              const headers = ['Item', 'Category', 'Stock', 'Min Level', 'Unit', 'Status', 'Preferred Supplier', 'Auto PO'];
+              const rows = items.map(it => [
+                it.name,
+                it.category,
+                String(it.current_stock),
+                String(it.min_stock_level),
+                it.unit,
+                it.stock_status,
+                it.suppliers?.find(s => s.is_preferred)?.supplier_name ?? '',
+                it.auto_po_enabled ? 'yes' : 'no',
+              ]);
+              downloadCsv(`inventory-stock-${new Date().toISOString().slice(0,10)}`, [headers, ...rows]);
+            }}
+            title="Download inventory items as CSV"
+          >
+            <Download className="h-4 w-4 mr-1.5" /> CSV
+          </Button>
           {isAdmin && (
             <Button onClick={() => { setEditingItem(null); setShowAddItem(true); }} size="sm">
               <Plus className="h-4 w-4 mr-1.5" /> Add Item
@@ -2561,6 +2583,27 @@ export default function InventoryPage() {
               </Button>
             )}
             <div className="flex-1" />
+            <Button
+              variant="outline" size="sm"
+              disabled={orders.length === 0}
+              onClick={() => {
+                const headers = ['PO No', 'Status', 'Created', 'Expected', 'Supplier', 'Requested By', 'Items', 'Total Qty'];
+                const rows = orders.map(po => [
+                  po.po_no,
+                  po.status,
+                  po.created_at?.slice(0, 10) ?? '',
+                  po.expected_date ?? '',
+                  po.supplier_name ?? '',
+                  po.requested_by_name,
+                  po.items.map(i => i.item_name).join('; '),
+                  String(po.items.reduce((s, i) => s + Number(i.quantity_ordered), 0)),
+                ]);
+                downloadCsv(`purchase-orders-${new Date().toISOString().slice(0,10)}`, [headers, ...rows]);
+              }}
+              title="Download orders as CSV"
+            >
+              <Download className="h-4 w-4 mr-1.5" /> CSV
+            </Button>
             <Button onClick={() => setShowNewPO(true)} size="sm">
               <Plus className="h-4 w-4 mr-1.5" /> New Order
             </Button>
@@ -2779,6 +2822,29 @@ export default function InventoryPage() {
                 <SelectItem value="adjustment">Adjustment</SelectItem>
               </SelectContent>
             </Select>
+            <div className="flex-1" />
+            <Button
+              variant="outline" size="sm"
+              disabled={transactions.length === 0}
+              onClick={() => {
+                const headers = ['Date', 'Item', 'Type', 'Quantity', 'Stock Before', 'Stock After', 'Reference', 'Notes', 'By'];
+                const rows = transactions.map(tx => [
+                  tx.created_at,
+                  tx.item_name,
+                  tx.transaction_type,
+                  String(tx.quantity),
+                  String(tx.stock_before),
+                  String(tx.stock_after),
+                  tx.reference_no ?? '',
+                  tx.notes ?? '',
+                  tx.created_by_name ?? '',
+                ]);
+                downloadCsv(`inventory-transactions-${new Date().toISOString().slice(0,10)}`, [headers, ...rows]);
+              }}
+              title="Download transaction history as CSV"
+            >
+              <Download className="h-4 w-4 mr-1.5" /> CSV
+            </Button>
           </div>
 
           {loadingTx ? (

@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { downloadCsv } from '@/components/DataTable';
 import api from '@/services/api';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
 import { useAuth } from '@/hooks/useAuth';
@@ -1505,6 +1506,28 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
             Clear filters ×
           </Button>
         )}
+        <Button
+          variant="outline" size="sm"
+          onClick={() => {
+            const headers = ['Invoice No', 'Date', 'Party / Customer', 'Vehicle', 'Token No', 'Net Wt (MT)', 'Amount', 'Payment Status', 'Status'];
+            const rows = displayed.map(inv => [
+              inv.invoice_no ?? '(draft)',
+              inv.invoice_date ?? '',
+              inv.party?.name ?? inv.customer_name ?? '',
+              inv.vehicle_no ?? '',
+              inv.token_no != null ? String(inv.token_no) : '',
+              inv.net_weight != null ? (Number(inv.net_weight) / 1000).toFixed(3) : '',
+              Number(inv.grand_total ?? 0).toFixed(2),
+              inv.payment_status ?? '',
+              inv.status ?? '',
+            ]);
+            downloadCsv(`invoices-${invoiceType}-${new Date().toISOString().slice(0,10)}`, [headers, ...rows]);
+          }}
+          disabled={displayed.length === 0}
+          title="Download currently-filtered invoices as CSV"
+        >
+          <Download className="mr-1 h-3.5 w-3.5" /> CSV
+        </Button>
         {someSelected && (
           <Button
             size="sm"
