@@ -1,14 +1,14 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Plus, Search, CreditCard, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Plus, Search, ArrowUpCircle } from 'lucide-react';
 import { PrintButton } from '@/components/PrintButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 import type { Party, Invoice } from '@/types';
 
@@ -287,72 +287,92 @@ function PaymentList({ type, refreshKey }: { type: 'receipt' | 'voucher'; refres
         )}
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="py-12 text-center text-muted-foreground text-sm">Loading…</div>
-          ) : records.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-                <CreditCard className="h-8 w-8 text-muted-foreground/40" />
-              </div>
-              <h3 className="text-sm font-semibold">No {type === 'receipt' ? 'receipts' : 'vouchers'} found</h3>
-              <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-                {type === 'receipt'
-                  ? 'Record a payment received against an invoice to see it here.'
-                  : 'Record a payment made to a supplier to see it here.'}
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y">
-              {records.map(r => {
-                const no = r.receipt_no || r.voucher_no || '—';
-                const date = r.receipt_date || r.voucher_date || '';
-                return (
-                  <div key={r.id} className="flex items-center gap-4 px-4 py-3 hover:bg-muted/30 transition-colors">
-                    <div className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 ${type === 'receipt' ? 'bg-green-100' : 'bg-orange-100'}`}>
-                      {type === 'receipt'
-                        ? <ArrowDownCircle className="h-5 w-5 text-green-700" />
-                        : <ArrowUpCircle className="h-5 w-5 text-orange-700" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium text-sm">{no}</p>
-                        <Badge variant="outline" className="text-[10px]">{r.payment_mode.replace('_', ' ').toUpperCase()}</Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground">{r.party_name} · {date}</p>
-                      {r.reference_no && <p className="text-xs text-muted-foreground">Ref: {r.reference_no}</p>}
-                    </div>
-                    <p className={`font-semibold text-sm shrink-0 ${type === 'receipt' ? 'text-green-700' : 'text-orange-700'}`}>
-                      {type === 'receipt' ? '+' : '−'}₹{Number(r.amount).toLocaleString('en-IN')}
-                    </p>
-                    <PrintButton
-                      url={`/api/v1/payments/${type === 'receipt' ? 'receipts' : 'vouchers'}/${r.id}/pdf`}
-                      a4Url={`/api/v1/payments/${type === 'receipt' ? 'receipts' : 'vouchers'}/${r.id}/pdf`}
-                      iconOnly
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t text-sm">
-              <span className="text-muted-foreground">
-                Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
-              </span>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Button>
-                <span className="flex items-center px-2">{page} / {totalPages}</span>
-                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <PaymentsTable type={type} records={records} loading={loading} />
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-1 py-2 text-sm">
+          <span className="text-muted-foreground">
+            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Button>
+            <span className="flex items-center px-2">{page} / {totalPages}</span>
+            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Payments DataTable (shared between receipts + vouchers)
+// ------------------------------------------------------------------ //
+function PaymentsTable({
+  type, records, loading,
+}: {
+  type: 'receipt' | 'voucher';
+  records: PaymentRecord[];
+  loading: boolean;
+}) {
+  const columns = useMemo<ColumnDef<PaymentRecord>[]>(() => [
+    {
+      key: 'no', label: type === 'receipt' ? 'Receipt No' : 'Voucher No',
+      accessor: r => r.receipt_no || r.voucher_no || '',
+      className: 'font-mono text-xs font-medium',
+    },
+    {
+      key: 'date', label: 'Date', type: 'date',
+      accessor: r => r.receipt_date || r.voucher_date || '',
+      format: v => v ? new Date(String(v)).toLocaleDateString('en-IN') : '—',
+      className: 'text-muted-foreground',
+    },
+    { key: 'party_name', label: 'Party', accessor: r => r.party_name },
+    {
+      key: 'payment_mode', label: 'Mode', type: 'enum',
+      enumOptions: PAYMENT_MODES,
+      accessor: r => r.payment_mode,
+      format: v => <Badge variant="outline" className="text-[10px]">{String(v).replace('_', ' ').toUpperCase()}</Badge>,
+    },
+    {
+      key: 'amount', label: 'Amount', type: 'number', align: 'right',
+      accessor: r => r.amount,
+      format: v => (
+        <span className={`font-semibold ${type === 'receipt' ? 'text-green-700' : 'text-orange-700'}`}>
+          {type === 'receipt' ? '+' : '−'}₹{Number(v).toLocaleString('en-IN')}
+        </span>
+      ),
+    },
+    { key: 'reference_no', label: 'Reference', accessor: r => r.reference_no ?? '', className: 'text-xs text-muted-foreground' },
+    { key: 'bank_name', label: 'Bank', defaultVisible: false, accessor: r => r.bank_name ?? '', className: 'text-xs' },
+    { key: 'notes', label: 'Notes', defaultVisible: false, accessor: r => r.notes ?? '' },
+    {
+      key: 'tally_synced', label: 'Tally', type: 'enum', align: 'center', defaultVisible: false,
+      enumOptions: ['Synced', 'Pending'],
+      accessor: r => r.tally_synced ? 'Synced' : 'Pending',
+      format: v => v === 'Synced'
+        ? <Badge className="bg-green-100 text-green-700 text-[10px]">Synced</Badge>
+        : <Badge variant="secondary" className="text-[10px]">Pending</Badge>,
+    },
+  ], [type]);
+
+  return (
+    <DataTable<PaymentRecord>
+      id={`payments.${type}`}
+      loading={loading}
+      data={records}
+      columns={columns}
+      rowKey={r => r.id}
+      exportFilename={type === 'receipt' ? 'payment-receipts' : 'payment-vouchers'}
+      defaultSort={{ key: 'date', direction: 'desc' }}
+      emptyMessage={`No ${type === 'receipt' ? 'receipts' : 'vouchers'} found.`}
+      rowActions={r => (
+        <PrintButton
+          url={`/api/v1/payments/${type === 'receipt' ? 'receipts' : 'vouchers'}/${r.id}/pdf`}
+          a4Url={`/api/v1/payments/${type === 'receipt' ? 'receipts' : 'vouchers'}/${r.id}/pdf`}
+          iconOnly
+        />
+      )}
+    />
   );
 }
 

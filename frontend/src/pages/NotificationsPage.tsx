@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { Bell, Send, Plus, Edit2, Trash2, Mail, MessageSquare, Phone, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 
 const EVENT_TYPES = [
@@ -435,36 +436,7 @@ export default function NotificationsPage() {
             <Button onClick={loadLog}>Refresh</Button>
           </div>
 
-          <Card><CardContent className="p-0">
-            <table className="w-full text-sm">
-              <thead><tr className="border-b bg-muted/50">
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Time</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Channel</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Event</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Recipient</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Subject / Preview</th>
-                <th className="px-3 py-2 text-center font-medium text-muted-foreground">Status</th>
-              </tr></thead>
-              <tbody>
-                {logItems.map(r => (
-                  <tr key={r.id} className="border-b hover:bg-muted/20">
-                    <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
-                      {r.sent_at ? new Date(r.sent_at).toLocaleString('en-IN') : '—'}
-                    </td>
-                    <td className="px-3 py-2">{channelBadge(r.channel)}</td>
-                    <td className="px-3 py-2 text-xs">{EVENT_TYPES.find(e => e.value === r.event_type)?.label || r.event_type}</td>
-                    <td className="px-3 py-2 text-xs font-mono">{r.recipient}</td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground truncate max-w-[200px]">
-                      {r.subject || r.body_preview || '—'}
-                      {r.error_message && <p className="text-red-600 mt-0.5 truncate">{r.error_message}</p>}
-                    </td>
-                    <td className="px-3 py-2 text-center">{statusBadge(r.status)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {logItems.length === 0 && <div className="py-12 text-center text-muted-foreground text-sm">No delivery log entries.</div>}
-          </CardContent></Card>
+          <NotificationsLogTable items={logItems} />
 
           {logTotal > 50 && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -647,5 +619,59 @@ export default function NotificationsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Notifications delivery log DataTable
+// ------------------------------------------------------------------ //
+function NotificationsLogTable({ items }: { items: LogEntry[] }) {
+  const columns = useMemo<ColumnDef<LogEntry>[]>(() => [
+    {
+      key: 'sent_at', label: 'Time', type: 'date',
+      accessor: r => r.sent_at ?? '',
+      format: v => v ? <span className="text-xs text-muted-foreground whitespace-nowrap">{new Date(String(v)).toLocaleString('en-IN')}</span> : '—',
+    },
+    {
+      key: 'channel', label: 'Channel', type: 'enum',
+      enumOptions: CHANNELS.map(c => c.value),
+      accessor: r => r.channel,
+      format: (_, r) => channelBadge(r.channel),
+    },
+    {
+      key: 'event_type', label: 'Event', type: 'enum',
+      enumOptions: EVENT_TYPES.map(e => e.value),
+      accessor: r => r.event_type,
+      format: v => <span className="text-xs">{EVENT_TYPES.find(e => e.value === v)?.label || String(v)}</span>,
+    },
+    { key: 'recipient', label: 'Recipient', accessor: r => r.recipient, className: 'text-xs font-mono' },
+    {
+      key: 'subject', label: 'Subject / Preview',
+      accessor: r => r.subject || r.body_preview || '',
+      format: (_, r) => (
+        <div className="text-xs text-muted-foreground truncate max-w-[280px]">
+          {r.subject || r.body_preview || '—'}
+          {r.error_message && <p className="text-red-600 mt-0.5 truncate">{r.error_message}</p>}
+        </div>
+      ),
+    },
+    {
+      key: 'status', label: 'Status', type: 'enum', align: 'center',
+      enumOptions: ['sent', 'failed', 'pending'],
+      accessor: r => r.status,
+      format: (_, r) => statusBadge(r.status),
+    },
+  ], []);
+
+  return (
+    <DataTable<LogEntry>
+      id="notifications.log"
+      data={items}
+      columns={columns}
+      rowKey={r => r.id}
+      exportFilename="notifications-log"
+      defaultSort={{ key: 'sent_at', direction: 'desc' }}
+      emptyMessage="No delivery log entries."
+    />
   );
 }
