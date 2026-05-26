@@ -265,7 +265,11 @@ async def update_min_level(
     stock = await _get_or_create_stock_row(db, co.id, product_id)
     stock.min_stock_level = payload.min_stock_level
     await db.commit()
+    # Re-load with attributes alive (commit expired them) — fetch product + stock fresh
     product = (await db.execute(select(Product).where(Product.id == product_id))).scalar_one()
+    stock = (await db.execute(
+        select(ProductStock).where(ProductStock.product_id == product_id)
+    )).scalar_one()
     return ProductStockResponse(
         id=stock.id, product_id=product_id,
         product_name=product.name, unit=product.unit,
