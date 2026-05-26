@@ -25,7 +25,13 @@ logger = logging.getLogger(__name__)
 async def _license_recheck_loop(app: FastAPI):
     """Periodically re-validate license to catch mid-day expiration.
     Runs in a supervised wrapper — crashes restart after 60 s.
+
+    Skipped entirely in multi-tenant SaaS mode (no per-machine license there).
     """
+    from app.config import get_settings as _gs
+    if _gs().MULTI_TENANT:
+        logger.info("Multi-tenant SaaS mode — license recheck loop disabled")
+        return   # _supervised treats clean return as "don't restart"
     while True:
         await asyncio.sleep(6 * 3600)  # 6 hours
         try:
@@ -70,103 +76,129 @@ async def _supervised(name: str, coro, restart_delay: int = 60):
 
 # ── Inventory daily Telegram report (runs every minute, fires at configured time) ─
 
-_last_inv_report_date = None   # module-level; prevents double-send within same minute
+async def _send_inventory_report_for_session(session_factory, label: str) -> None:
+    """Build + send the Telegram daily inventory report for one tenant/session.
 
+    Called from the per-tenant loop (multi-tenant) or the default session loop
+    (single-tenant). Each tenant's config + data lives in its own database.
+    Silently skips when the tenant has not configured the report.
+    """
+    from datetime import date as _date_cls
+    from sqlalchemy import text as _sql
+    import datetime as _dt
+
+    async with session_factory() as db:
+        try:
+            rows = (await db.execute(_sql(
+                "SELECT key, value FROM app_settings WHERE key IN ("
+                " 'inventory.telegram_bot_token',"
+                " 'inventory.telegram_chat_id',"
+                " 'inventory.telegram_report_time',"
+                " 'inventory.telegram_enabled'"
+                ")"
+            ))).fetchall()
+        except Exception:
+            # New tenant DB without app_settings yet — skip silently
+            return
+        cfg = {r[0]: r[1] for r in rows}
+
+        if cfg.get("inventory.telegram_enabled") != "true":
+            return
+
+        report_time = cfg.get("inventory.telegram_report_time", "20:00")
+        try:
+            hh, mm = map(int, report_time.split(":"))
+        except Exception:
+            hh, mm = 20, 0
+
+        now = _dt.datetime.now()
+        if now.hour != hh or now.minute != mm:
+            return
+
+        today = _date_cls.today()
+        if _last_inv_report_dates.get(label) == today:
+            return   # already sent today for this tenant
+        _last_inv_report_dates[label] = today
+
+        items_rows = (await db.execute(_sql(
+            "SELECT name, unit, current_stock, min_stock_level "
+            "FROM inventory_items WHERE is_active = TRUE ORDER BY category, name"
+        ))).fetchall()
+        items = [
+            {
+                "name": r[0], "unit": r[1],
+                "current_stock": float(r[2]),
+                "min_stock_level": float(r[3]),
+                "stock_status": (
+                    "out" if float(r[2]) <= 0
+                    else ("low" if float(r[2]) <= float(r[3]) else "ok")
+                ),
+            }
+            for r in items_rows
+        ]
+
+        today_str = today.isoformat()
+        today_issues = (await db.execute(_sql(
+            "SELECT COUNT(*) FROM inventory_transactions "
+            "WHERE transaction_type='issue' AND DATE(created_at)=:d"
+        ), {"d": today_str})).scalar() or 0
+        today_receipts = (await db.execute(_sql(
+            "SELECT COUNT(DISTINCT reference_id) FROM inventory_transactions "
+            "WHERE transaction_type='receipt' AND DATE(created_at)=:d "
+            "AND reference_id IS NOT NULL"
+        ), {"d": today_str})).scalar() or 0
+
+        company_name = (await db.execute(_sql(
+            "SELECT name FROM companies LIMIT 1"
+        ))).scalar() or "WeighBridge Pro"
+
+        token = cfg.get("inventory.telegram_bot_token", "")
+        chat  = cfg.get("inventory.telegram_chat_id", "")
+        if not token or not chat:
+            return
+
+        from app.integrations.notifications.telegram import (
+            send_telegram_message, build_daily_report
+        )
+        report_date = today.strftime("%d %b %Y")
+        msg = build_daily_report(
+            items, int(today_issues), int(today_receipts),
+            company_name, report_date
+        )
+        await send_telegram_message(token, chat, msg)
+        logger.info("Inventory daily Telegram report sent [%s] chat_id=%s", label, chat)
+
+
+# Per-tenant last-sent date keeps us from double-sending on a minute-resolution loop.
+_last_inv_report_dates: dict[str, "date"] = {}   # noqa: F821 — `date` is a typing forward ref
 
 async def _inventory_daily_report_loop():
-    """Send inventory Telegram report once per day at configured time (default 20:00)."""
-    global _last_inv_report_date
-    from datetime import date as _date_cls
+    """Send inventory Telegram report once per day at configured time (default 20:00).
 
+    Multi-tenant aware: iterates all active tenants and runs the per-tenant
+    send routine against each tenant's own database. Single-tenant mode just
+    uses the default async_session.
+    """
     while True:
         await asyncio.sleep(60)   # check every minute
         try:
-            from app.database import async_session
-            from sqlalchemy import text as _sql
-
-            async with async_session() as db:
-                rows = (await db.execute(_sql(
-                    "SELECT key, value FROM app_settings WHERE key IN ("
-                    " 'inventory.telegram_bot_token',"
-                    " 'inventory.telegram_chat_id',"
-                    " 'inventory.telegram_report_time',"
-                    " 'inventory.telegram_enabled'"
-                    ")"
-                ))).fetchall()
-                cfg = {r[0]: r[1] for r in rows}
-
-                if cfg.get("inventory.telegram_enabled") != "true":
-                    continue
-
-                report_time = cfg.get("inventory.telegram_report_time", "20:00")
-                try:
-                    hh, mm = map(int, report_time.split(":"))
-                except Exception:
-                    hh, mm = 20, 0
-
-                import datetime as _dt
-                now = _dt.datetime.now()
-                if now.hour != hh or now.minute != mm:
-                    continue
-
-                today = _date_cls.today()
-                if _last_inv_report_date == today:
-                    continue   # already sent today
-                _last_inv_report_date = today
-
-                # Fetch items
-                items_rows = (await db.execute(_sql(
-                    "SELECT name, unit, current_stock, min_stock_level "
-                    "FROM inventory_items WHERE is_active = TRUE ORDER BY category, name"
-                ))).fetchall()
-                items = [
-                    {
-                        "name": r[0], "unit": r[1],
-                        "current_stock": float(r[2]),
-                        "min_stock_level": float(r[3]),
-                        "stock_status": (
-                            "out" if float(r[2]) <= 0
-                            else ("low" if float(r[2]) <= float(r[3]) else "ok")
-                        ),
-                    }
-                    for r in items_rows
-                ]
-
-                today_str = today.isoformat()
-                today_issues = (await db.execute(_sql(
-                    "SELECT COUNT(*) FROM inventory_transactions "
-                    "WHERE transaction_type='issue' AND DATE(created_at)=:d"
-                ), {"d": today_str})).scalar() or 0
-                today_receipts = (await db.execute(_sql(
-                    "SELECT COUNT(DISTINCT reference_id) FROM inventory_transactions "
-                    "WHERE transaction_type='receipt' AND DATE(created_at)=:d "
-                    "AND reference_id IS NOT NULL"
-                ), {"d": today_str})).scalar() or 0
-
-                company_name = (await db.execute(_sql(
-                    "SELECT name FROM companies LIMIT 1"
-                ))).scalar() or "WeighBridge Pro"
-
-                token = cfg.get("inventory.telegram_bot_token", "")
-                chat  = cfg.get("inventory.telegram_chat_id", "")
-                if not token or not chat:
-                    continue
-
-                from app.integrations.notifications.telegram import (
-                    send_telegram_message, build_daily_report
-                )
-                report_date = today.strftime("%d %b %Y")
-                msg = build_daily_report(
-                    items, int(today_issues), int(today_receipts),
-                    company_name, report_date
-                )
-                await send_telegram_message(token, chat, msg)
-                logger.info("Inventory daily Telegram report sent to chat_id=%s", chat)
-
+            from app.config import get_settings as _gs
+            if _gs().MULTI_TENANT:
+                from app.multitenancy.registry import tenant_registry
+                tenants = await tenant_registry.list_active_tenants()
+                for t in tenants:
+                    try:
+                        factory = await tenant_registry.get_session_factory(t.slug)
+                        await _send_inventory_report_for_session(factory, label=t.slug)
+                    except Exception as e:
+                        logger.warning("Inventory daily report failed for tenant %s: %s", t.slug, e)
+            else:
+                from app.database import async_session
+                await _send_inventory_report_for_session(async_session, label="default")
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            logger.warning("Inventory daily report error: %s", exc)
+            logger.warning("Inventory daily report loop error: %s", exc)
 
 
 # ── AMC auto-expiry background task (multi-tenant only) ──────────────────────
@@ -314,16 +346,22 @@ async def _low_stock_alert_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── License validation ──────────────────────────────────────────────────
-    try:
-        lic = validate_license()
+    from app.config import get_settings as _gs_lic
+    if _gs_lic().MULTI_TENANT:
         app.state.license_valid = True
         app.state.license_error = None
-        logger.info("License valid: %s, serial=%s, expires=%s (%d days)",
-                     lic.customer, lic.serial, lic.expires, lic.days_remaining)
-    except LicenseError as e:
-        app.state.license_valid = False
-        app.state.license_error = str(e)
-        logger.critical("LICENSE ERROR: %s", e)
+        logger.info("Multi-tenant SaaS mode — local license check skipped")
+    else:
+        try:
+            lic = validate_license()
+            app.state.license_valid = True
+            app.state.license_error = None
+            logger.info("License valid: %s, serial=%s, expires=%s (%d days)",
+                         lic.customer, lic.serial, lic.expires, lic.days_remaining)
+        except LicenseError as e:
+            app.state.license_valid = False
+            app.state.license_error = str(e)
+            logger.critical("LICENSE ERROR: %s", e)
 
     # Start background tasks inside supervised wrappers — auto-restart on crash
     recheck_task = asyncio.create_task(
@@ -623,14 +661,18 @@ async def health_check(request: Request):
         overall = "unhealthy"
 
     # ── 2. License ─────────────────────────────────────────────────────────────
-    lic_valid = getattr(request.app.state, "license_valid", True)
-    lic_error = getattr(request.app.state, "license_error", None)
-    checks["license"] = {
-        "status": "valid" if lic_valid else "expired",
-        "detail": lic_error,
-    }
-    if not lic_valid:
-        overall = "degraded"
+    from app.config import get_settings as _gs_health
+    if _gs_health().MULTI_TENANT:
+        checks["license"] = {"status": "n/a", "detail": "multi-tenant SaaS mode"}
+    else:
+        lic_valid = getattr(request.app.state, "license_valid", True)
+        lic_error = getattr(request.app.state, "license_error", None)
+        checks["license"] = {
+            "status": "valid" if lic_valid else "expired",
+            "detail": lic_error,
+        }
+        if not lic_valid:
+            overall = "degraded"
 
     # ── 3. Weight scale ────────────────────────────────────────────────────────
     try:
