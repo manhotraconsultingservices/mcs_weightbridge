@@ -1,0 +1,110 @@
+"""Pydantic schemas for production cycles + yield metrics."""
+import uuid
+from datetime import date, datetime
+from decimal import Decimal
+from typing import List, Optional
+from pydantic import BaseModel, field_validator
+
+
+class CycleOutputCreate(BaseModel):
+    product_id: uuid.UUID
+    output_kg: Decimal
+
+    @field_validator("output_kg")
+    @classmethod
+    def non_negative(cls, v: Decimal) -> Decimal:
+        if v < 0:
+            raise ValueError("output_kg must be >= 0")
+        return v
+
+
+class CycleOutputResponse(BaseModel):
+    id: uuid.UUID
+    product_id: uuid.UUID
+    product_name: str = ""    # joined from products
+    output_kg: Decimal
+    model_config = {"from_attributes": True}
+
+
+class ProductionCycleCreate(BaseModel):
+    cycle_date: date
+    input_kg: Decimal
+    stage1_output_kg: Optional[Decimal] = None
+    stage2_output_kg: Optional[Decimal] = None
+    stage3_output_kg: Optional[Decimal] = None
+    notes: Optional[str] = None
+    outputs: List[CycleOutputCreate] = []
+
+    @field_validator("input_kg")
+    @classmethod
+    def input_positive(cls, v: Decimal) -> Decimal:
+        if v <= 0:
+            raise ValueError("input_kg must be greater than 0")
+        return v
+
+
+class ProductionCycleUpdate(BaseModel):
+    input_kg: Optional[Decimal] = None
+    stage1_output_kg: Optional[Decimal] = None
+    stage2_output_kg: Optional[Decimal] = None
+    stage3_output_kg: Optional[Decimal] = None
+    notes: Optional[str] = None
+    outputs: Optional[List[CycleOutputCreate]] = None  # if provided, replaces existing outputs
+
+
+class ProductionCycleResponse(BaseModel):
+    id: uuid.UUID
+    cycle_no: int
+    cycle_date: date
+    input_kg: Decimal
+    stage1_output_kg: Optional[Decimal]
+    stage2_output_kg: Optional[Decimal]
+    stage3_output_kg: Optional[Decimal]
+    total_output_kg: Decimal = Decimal("0")     # sum of outputs
+    yield_pct: Optional[float] = None           # total_output / input * 100
+    belt_loss_pct: Optional[float] = None       # (stage3 - total_output) / stage3 * 100
+    wastage_kg: Decimal = Decimal("0")          # input - total_output
+    is_finalised: bool
+    notes: Optional[str]
+    outputs: List[CycleOutputResponse]
+    created_at: datetime
+    updated_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class ProductionCycleListResponse(BaseModel):
+    items: List[ProductionCycleResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+# ── Dashboard schemas ─────────────────────────────────────────────────────────
+
+class YieldTrendPoint(BaseModel):
+    date: str           # "DD MMM"
+    yield_pct: float
+    input_kg: float
+    output_kg: float
+
+
+class WastageStagePoint(BaseModel):
+    date: str
+    stage1_loss_pct: float
+    stage2_loss_pct: float
+    stage3_loss_pct: float
+    belt_loss_pct: float
+
+
+class ProductWastage(BaseModel):
+    product_id: uuid.UUID
+    product_name: str
+    total_output_kg: float
+    avg_output_per_cycle: float
+
+
+class ProductionDashboardResponse(BaseModel):
+    yield_trend: List[YieldTrendPoint]
+    wastage_by_stage: List[WastageStagePoint]
+    top_outputs: List[ProductWastage]
+    summary: dict     # { input_total, output_total, avg_yield_pct, avg_belt_loss_pct, cycles_count }

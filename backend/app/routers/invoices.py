@@ -145,6 +145,37 @@ async def create_invoice(
     intra = is_intra_state(co.state_code, party.billing_state_code if party else co.state_code)
 
     items_data = [i.model_dump() for i in payload.items]
+
+    # Server-side safety net: if the client sent rate=0 or omitted it for a
+    # (party, product) combo where a customer-specific rate exists, swap it in.
+    # The UI should also do this, but we don't trust the client.
+    if payload.party_id and payload.invoice_type == "sale":
+        from app.models.party import PartyRate
+        from datetime import date as _date
+        for it in items_data:
+            sent_rate = Decimal(str(it.get("rate") or 0))
+            if sent_rate > 0:
+                continue   # caller knew the rate; honour it (could be a one-off override)
+            pr = (await db.execute(
+                select(PartyRate)
+                .where(
+                    PartyRate.party_id == payload.party_id,
+                    PartyRate.product_id == it["product_id"],
+                    PartyRate.effective_from <= _date.today(),
+                )
+                .order_by(PartyRate.effective_from.desc())
+                .limit(1)
+            )).scalar_one_or_none()
+            if pr:
+                it["rate"] = float(pr.rate)
+            else:
+                # Fall back to product default
+                prod = (await db.execute(
+                    select(Product).where(Product.id == it["product_id"])
+                )).scalar_one_or_none()
+                if prod:
+                    it["rate"] = float(prod.default_rate)
+
     totals = calculate_invoice_totals(
         items=items_data,
         discount_type=payload.discount_type,
@@ -448,6 +479,22 @@ async def finalise_invoice(
             inv.invoice_no = await _next_invoice_no(db, co.id, fy.id, inv.invoice_type, prefix)
 
     inv.status = "final"
+
+    # ── Auto-post product stock movements (finished goods inventory) ──────────
+    # Sale finalise → stock down; purchase finalise → stock up. Skip for revisions
+    # since they share invoice_no with the original and would double-count.
+    if not (inv.revision_no and inv.revision_no > 1):
+        try:
+            from app.routers.product_stock import post_invoice_movement
+            await post_invoice_movement(
+                db, inv, action="finalise",
+                user_id=current_user.id,
+                user_name=current_user.full_name or current_user.username,
+            )
+        except Exception as e:
+            # Stock posting failure shouldn't block finalisation — log and continue
+            import logging
+            logging.getLogger(__name__).warning("Stock auto-posting failed for invoice %s: %s", inv.id, e)
 
     # ── eInvoice IRN generation (if enabled + B2B party with GSTIN) ──────────
     await _try_generate_irn(db, inv, co)
@@ -1230,8 +1277,24 @@ async def cancel_invoice(
     inv = await _load_invoice(db, invoice_id)
     if inv.status == "cancelled":
         raise HTTPException(400, "Already cancelled")
+    was_finalised = inv.status == "final"
     inv.status = "cancelled"
     co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
+
+    # ── Reverse product stock movements if the invoice had been finalised ─────
+    # Drafts never posted stock so no reversal needed for those.
+    if was_finalised and not (inv.revision_no and inv.revision_no > 1):
+        try:
+            from app.routers.product_stock import post_invoice_movement
+            await post_invoice_movement(
+                db, inv, action="cancel",
+                user_id=current_user.id,
+                user_name=current_user.full_name or current_user.username,
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Stock reversal failed for cancelled invoice %s: %s", inv.id, e)
+
     from app.routers.audit import log_action
     if co:
         await log_action(db, co.id, current_user.id, "cancel", "invoice",

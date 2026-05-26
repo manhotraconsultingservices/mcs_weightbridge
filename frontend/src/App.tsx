@@ -14,6 +14,10 @@ import VehiclesPage from '@/pages/VehiclesPage';
 import InvoicesPage from '@/pages/InvoicesPage';
 import QuotationsPage from '@/pages/QuotationsPage';
 import ProductsPage from '@/pages/ProductsPage';
+import PricingMatrixPage from '@/pages/PricingMatrixPage';
+import ProductInventoryPage from '@/pages/ProductInventoryPage';
+import ProductionPage from '@/pages/ProductionPage';
+import ProductionDashboardPage from '@/pages/ProductionDashboardPage';
 import PaymentsPage from '@/pages/PaymentsPage';
 import LedgerPage from '@/pages/LedgerPage';
 import SettingsPage from '@/pages/SettingsPage';
@@ -113,6 +117,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/purchase-invoices" element={<InvoicesPage defaultType="purchase" />} />
             <Route path="/quotations" element={<QuotationsPage />} />
             <Route path="/products" element={<ProductsPage />} />
+            <Route path="/pricing-matrix" element={<PricingMatrixPage />} />
             <Route path="/parties" element={<PartiesPage />} />
             <Route path="/vehicles" element={<VehiclesPage />} />
             <Route path="/payments" element={<PaymentsPage />} />
@@ -127,6 +132,9 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/import" element={<ImportPage />} />
             <Route path="/compliance" element={<CompliancePage />} />
             <Route path="/inventory" element={<InventoryPage />} />
+            <Route path="/product-inventory" element={<ProductInventoryPage />} />
+            <Route path="/production" element={<ProductionPage />} />
+            <Route path="/production/dashboard" element={<ProductionDashboardPage />} />
             <Route path="/camera-scale" element={<CameraScalePage />} />
             <Route path="/snapshot-search" element={<SnapshotSearchPage />} />
             {/* Administration — admin only (each page self-guards via role check) */}

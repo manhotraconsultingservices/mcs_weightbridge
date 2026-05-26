@@ -4,6 +4,7 @@ import {
   Users, Truck, Settings, BarChart3, BookOpen, CreditCard,
   Receipt, FileBarChart, LogOut, Usb, Bell, Shield, HardDrive,
   Upload, Scale, ShieldCheck, UserCog, ImageIcon, Lock, MonitorPlay, Warehouse, ScanSearch,
+  IndianRupee, Boxes, Factory, Activity,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getTenantModules } from '@/hooks/useAuth';
@@ -69,6 +70,10 @@ const navGroups: { label: string | null; items: NavItem[] }[] = [
     items: [
       { to: '/parties', icon: Users, label: 'Parties' },
       { to: '/products', icon: Package, label: 'Products' },
+      { to: '/pricing-matrix', icon: IndianRupee, label: 'Pricing Matrix' },
+      { to: '/product-inventory', icon: Boxes, label: 'Product Stock' },
+      { to: '/production', icon: Factory, label: 'Production' },
+      { to: '/production/dashboard', icon: Activity, label: 'Production Dashboard' },
       { to: '/vehicles', icon: Truck, label: 'Vehicles' },
     ],
   },

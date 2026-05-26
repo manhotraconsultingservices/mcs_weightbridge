@@ -429,6 +429,72 @@ def get_column_migrations() -> list[str]:
         # Volume-based weighment on tokens
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS weight_method VARCHAR(20) NOT NULL DEFAULT 'weighbridge'",
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS volume_m3 NUMERIC(8,3)",
+        # ── Finished-goods inventory on products ──────────────────────────────
+        # One stock row per product. Auto-decremented on sale finalise,
+        # auto-incremented on purchase finalise + production cycle output.
+        """
+        CREATE TABLE IF NOT EXISTS product_stock (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id UUID REFERENCES companies(id),
+            product_id UUID NOT NULL REFERENCES products(id) UNIQUE,
+            current_stock NUMERIC(14,3) NOT NULL DEFAULT 0,
+            min_stock_level NUMERIC(14,3) NOT NULL DEFAULT 0,
+            last_alerted_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        # Append-only audit of every movement
+        """
+        CREATE TABLE IF NOT EXISTS product_stock_movements (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id UUID REFERENCES companies(id),
+            product_id UUID NOT NULL REFERENCES products(id),
+            movement_type VARCHAR(30) NOT NULL,
+            -- opening, sale, purchase, adjustment, cycle_output, sale_cancelled, purchase_cancelled
+            quantity NUMERIC(14,3) NOT NULL,
+            -- signed: positive = in, negative = out
+            stock_before NUMERIC(14,3) NOT NULL,
+            stock_after NUMERIC(14,3) NOT NULL,
+            reference_type VARCHAR(30),
+            reference_id UUID,
+            reference_no VARCHAR(50),
+            notes TEXT,
+            created_by UUID REFERENCES users(id),
+            created_by_name VARCHAR(200),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        # ── Production cycles (yield tracking) ────────────────────────────────
+        # One cycle per day per company. Tracks input boulder → stage outputs.
+        """
+        CREATE TABLE IF NOT EXISTS production_cycles (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id UUID REFERENCES companies(id),
+            cycle_no INTEGER NOT NULL,
+            cycle_date DATE NOT NULL,
+            input_kg NUMERIC(14,2) NOT NULL DEFAULT 0,
+            stage1_output_kg NUMERIC(14,2),
+            stage2_output_kg NUMERIC(14,2),
+            stage3_output_kg NUMERIC(14,2),
+            is_finalised BOOLEAN NOT NULL DEFAULT FALSE,
+            notes TEXT,
+            created_by UUID REFERENCES users(id),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (company_id, cycle_date)
+        )
+        """,
+        # Per-product finished outputs at stage 4 (after wash)
+        """
+        CREATE TABLE IF NOT EXISTS production_cycle_outputs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            cycle_id UUID NOT NULL REFERENCES production_cycles(id) ON DELETE CASCADE,
+            product_id UUID NOT NULL REFERENCES products(id),
+            output_kg NUMERIC(14,2) NOT NULL DEFAULT 0,
+            UNIQUE (cycle_id, product_id)
+        )
+        """,
         # Invoice transport & dispatch metadata (Tally-compatible fields)
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS royalty_no VARCHAR(50)",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS delivery_note VARCHAR(100)",

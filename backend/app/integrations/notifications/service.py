@@ -148,6 +148,13 @@ DEFAULT_TEMPLATES = [
         "subject": None,
         "body": "⚖️ <b>Weighment Completed</b>\n\nToken: <b>#{{ token_no }}</b>\nVehicle: {{ vehicle_no }}\nParty: {{ party_name }}\nNet Weight: <b>{{ net_weight }} MT</b>\nCompleted: {{ completed_at }}\n\n— {{ company_name }}",
     },
+    {
+        "event_type": "low_product_stock",
+        "channel": "telegram",
+        "name": "Low Product Stock Alert (Telegram)",
+        "subject": None,
+        "body": "⚠️ <b>Low Stock Alert</b>\n\n<b>{{ product_name }}</b> is at <b>{{ current_stock }} {{ unit }}</b> (min: {{ min_stock_level }} {{ unit }}).\n\nConsider replenishing — {{ status }}.\n\n— {{ company_name }}",
+    },
 ]
 
 

@@ -11,6 +11,7 @@ from app.routers import (
     weight, invoices, quotations, payments, dashboard, reports,
     usb_guard, private_invoices, notifications, audit, backup, import_data,
     tally, app_settings, license, compliance, cameras, inventory,
+    product_stock, production,
 )
 from app.middleware.license_guard import LicenseGuardMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -226,6 +227,90 @@ async def _amc_expiry_check_loop():
             logger.warning("AMC expiry check error: %s", exc)
 
 
+# ── Low-product-stock alert loop ───────────────────────────────────────────────
+# Scans product_stock for items at/below their min_stock_level and fires a
+# `low_product_stock` notification (Telegram by default). Throttle: 24h per row.
+
+async def _low_stock_alert_loop():
+    """Hourly scan; 24h throttle per product row via last_alerted_at."""
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    from sqlalchemy import text as _sql
+    from sqlalchemy import select as _select
+
+    while True:
+        await asyncio.sleep(3600)  # hourly
+        try:
+            # Helper to scan one DB
+            async def _scan_one(session_factory, label: str = "default"):
+                from app.models.company import Company
+                from app.models.product_stock import ProductStock
+                from app.models.product import Product
+                from app.integrations.notifications.service import send_notification
+
+                async with session_factory() as db:
+                    co = (await db.execute(_select(Company).limit(1))).scalar_one_or_none()
+                    if not co:
+                        return
+                    cutoff = _dt.now(_tz.utc) - _td(hours=24)
+                    rows = (await db.execute(
+                        _sql("""
+                            SELECT ps.id, ps.product_id, ps.current_stock, ps.min_stock_level,
+                                   p.name, p.unit
+                            FROM product_stock ps
+                            JOIN products p ON p.id = ps.product_id
+                            WHERE p.is_active = TRUE
+                              AND p.company_id = :cid
+                              AND ps.current_stock <= ps.min_stock_level
+                              AND ps.min_stock_level > 0
+                              AND (ps.last_alerted_at IS NULL OR ps.last_alerted_at < :cutoff)
+                        """),
+                        {"cid": str(co.id), "cutoff": cutoff},
+                    )).fetchall()
+
+                    for r in rows:
+                        try:
+                            ctx = {
+                                "product_name": r.name,
+                                "current_stock": f"{float(r.current_stock):.3f}",
+                                "min_stock_level": f"{float(r.min_stock_level):.3f}",
+                                "unit": r.unit,
+                                "status": "OUT OF STOCK" if float(r.current_stock) <= 0 else "LOW",
+                                "company_name": co.name,
+                            }
+                            await send_notification(
+                                db, co.id, "low_product_stock", ctx,
+                                entity_type="product", entity_id=str(r.product_id),
+                            )
+                            await db.execute(
+                                _sql("UPDATE product_stock SET last_alerted_at = NOW() WHERE id = :id"),
+                                {"id": str(r.id)},
+                            )
+                            await db.commit()
+                            logger.info("low_product_stock alert sent for %s [%s]", r.name, label)
+                        except Exception as e:
+                            logger.warning("low_product_stock send failed [%s] %s: %s", label, r.name, e)
+
+            # Run per-tenant when MULTI_TENANT, else single DB
+            from app.config import get_settings as _gs
+            if _gs().MULTI_TENANT:
+                from app.multitenancy.registry import tenant_registry
+                tenants = await tenant_registry.list_active_tenants()
+                for t in tenants:
+                    try:
+                        factory = await tenant_registry.get_session_factory(t.slug)
+                        await _scan_one(factory, label=t.slug)
+                    except Exception as e:
+                        logger.warning("low-stock scan failed for tenant %s: %s", t.slug, e)
+            else:
+                from app.database import async_session
+                await _scan_one(async_session, label="default")
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("low-stock alert loop error: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── License validation ──────────────────────────────────────────────────
@@ -249,6 +334,9 @@ async def lifespan(app: FastAPI):
     )
     amc_task = asyncio.create_task(
         _supervised("amc-expiry-check", _amc_expiry_check_loop(), restart_delay=300)
+    )
+    low_stock_task = asyncio.create_task(
+        _supervised("low-stock-alert", _low_stock_alert_loop(), restart_delay=300)
     )
 
     # ── Startup ─────────────────────────────────────────────────────────────
@@ -406,6 +494,8 @@ async def lifespan(app: FastAPI):
     # Shutdown
     recheck_task.cancel()
     daily_inv_task.cancel()
+    amc_task.cancel()
+    low_stock_task.cancel()
     from app.integrations.serial_port.manager import get_weight_manager
     mgr = get_weight_manager()
     if mgr:
@@ -502,6 +592,8 @@ app.include_router(compliance.router)
 app.include_router(cameras.router)
 app.include_router(cameras.router_tokens)
 app.include_router(inventory.router)
+app.include_router(product_stock.router)
+app.include_router(production.router)
 
 
 @app.get("/api/v1/health")
