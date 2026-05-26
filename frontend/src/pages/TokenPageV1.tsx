@@ -1162,13 +1162,15 @@ export default function TokenPageV1() {
   const [tokens, setTokens] = useState<Token[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Search + date + status filter
+  // Search + date + status filter + measurement-method filter
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState(today());
   const [dateTo, setDateTo] = useState(today());
   const [selectedStatuses, setSelectedStatuses] = useState<Set<TokenStatus>>(
     new Set(ACTIVE_STATUSES)
   );
+  // 'all' = show both; 'weighbridge' = bridge-weighed only; 'volume' = volume-computed only
+  const [measurementFilter, setMeasurementFilter] = useState<'all' | 'weighbridge' | 'volume'>('all');
 
   const [weightToken, setWeightToken] = useState<Token | null>(null);
   const [weightStage, setWeightStage] = useState<'first' | 'second'>('first');
@@ -1199,9 +1201,10 @@ export default function TokenPageV1() {
     return () => clearInterval(id);
   }, [fetchTokens, weightOpen]);
 
-  // Client-side filter: search + status
+  // Client-side filter: search + status + measurement method
   const filtered = tokens.filter(t => {
     if (selectedStatuses.size > 0 && !selectedStatuses.has(t.status as TokenStatus)) return false;
+    if (measurementFilter !== 'all' && t.weight_method !== measurementFilter) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
       const vehicleMatch = t.vehicle_no.toLowerCase().includes(q);
@@ -1211,6 +1214,10 @@ export default function TokenPageV1() {
     }
     return true;
   });
+
+  // Counts for filter chip badges
+  const volumeCount = tokens.filter(t => t.weight_method === 'volume').length;
+  const bridgeCount = tokens.filter(t => t.weight_method !== 'volume').length;
 
   function openWeight(token: Token) {
     setWeightToken(token);
@@ -1328,8 +1335,40 @@ export default function TokenPageV1() {
           </div>
 
           {/* Status filter pills */}
-          <div className="px-3 py-1.5 border-b bg-muted/10 shrink-0">
+          <div className="px-3 py-1.5 border-b bg-muted/10 shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1">
             <StatusFilterPills selected={selectedStatuses} onChange={setSelectedStatuses} />
+            <span className="text-[9px] text-muted-foreground/60 select-none">|</span>
+            <div className="flex gap-1">
+              {([
+                { key: 'all',         label: 'All Methods', count: tokens.length },
+                { key: 'weighbridge', label: 'Weighbridge',  count: bridgeCount  },
+                { key: 'volume',      label: 'Volume',       count: volumeCount  },
+              ] as const).map(opt => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setMeasurementFilter(opt.key)}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all',
+                    measurementFilter === opt.key
+                      ? (opt.key === 'volume'
+                          ? 'bg-amber-100 text-amber-800 border-amber-300 ring-1 ring-amber-300'
+                          : opt.key === 'weighbridge'
+                            ? 'bg-blue-100 text-blue-800 border-blue-300 ring-1 ring-blue-300'
+                            : 'bg-muted text-foreground border-border ring-1 ring-foreground/20')
+                      : 'border-border bg-muted/30 text-muted-foreground opacity-60 hover:opacity-100'
+                  )}
+                >
+                  {opt.label}
+                  <span className={cn(
+                    'rounded px-1 text-[9px]',
+                    measurementFilter === opt.key ? 'bg-white/60' : 'bg-muted-foreground/10',
+                  )}>
+                    {opt.count}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Table header */}
@@ -1388,9 +1427,19 @@ export default function TokenPageV1() {
 
                     {/* Vehicle — Indian plates: MH12AB1234 (10 chars), no break */}
                     <div className="min-w-0">
-                      <p className="font-mono font-semibold text-xs tracking-wide whitespace-nowrap overflow-hidden text-ellipsis" title={token.vehicle_no}>
-                        {token.vehicle_no}
-                      </p>
+                      <div className="flex items-center gap-1">
+                        <p className="font-mono font-semibold text-xs tracking-wide whitespace-nowrap overflow-hidden text-ellipsis" title={token.vehicle_no}>
+                          {token.vehicle_no}
+                        </p>
+                        {token.weight_method === 'volume' && (
+                          <span
+                            title={`Volume-based: ${token.volume_m3 ?? '?'} m³`}
+                            className="shrink-0 inline-flex items-center rounded border border-amber-300 bg-amber-100 px-1 text-[8px] font-bold text-amber-800 leading-tight"
+                          >
+                            VOL
+                          </span>
+                        )}
+                      </div>
                       {token.vehicle_type && (
                         <p className="text-[10px] capitalize text-muted-foreground leading-tight">
                           {token.vehicle_type.replace(/_/g, ' ')}

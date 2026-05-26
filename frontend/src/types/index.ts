@@ -197,6 +197,8 @@ export interface Token {
   first_weight_type: string | null;
   is_manual_weight: boolean;
   is_supplement: boolean;
+  weight_method: 'weighbridge' | 'volume';   // measurement method
+  volume_m3: number | null;                   // populated only when weight_method === 'volume'
   remarks: string | null;
   created_at: string;
   first_weight_at: string | null;
