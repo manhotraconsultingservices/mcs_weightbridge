@@ -1,12 +1,12 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Plus, Search, Pencil, Loader2, Users } from 'lucide-react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Plus, Search, Pencil, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 import type { Party } from '@/types';
 
@@ -238,12 +238,11 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
   );
 }
 
-const PARTY_PAGE_SIZE = 50;
+// DataTable filters in-memory; API max page_size=500.
+const PARTY_FETCH_SIZE = 500;
 
 export default function PartiesPage() {
   const [parties, setParties] = useState<Party[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('');
   const [loading, setLoading] = useState(false);
@@ -253,22 +252,16 @@ export default function PartiesPage() {
   const fetchParties = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), page_size: String(PARTY_PAGE_SIZE) });
+      const params = new URLSearchParams({ page: '1', page_size: String(PARTY_FETCH_SIZE) });
       if (search) params.set('search', search);
       if (filterType) params.set('party_type', filterType);
       const { data } = await api.get<{ items: Party[]; total: number } | Party[]>(`/api/v1/parties?${params}`);
-      if (Array.isArray(data)) {
-        setParties(data);
-        setTotal(data.length);
-      } else {
-        setParties(data.items ?? []);
-        setTotal(data.total ?? 0);
-      }
+      if (Array.isArray(data)) setParties(data);
+      else setParties(data.items ?? []);
     } catch { } finally { setLoading(false); }
-  }, [search, filterType, page]);
+  }, [search, filterType]);
 
   useEffect(() => { fetchParties(); }, [fetchParties]);
-  useEffect(() => { setPage(1); }, [search, filterType]);
 
   function handleSaved(_p: Party) {
     fetchParties();
@@ -279,7 +272,7 @@ export default function PartiesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Parties</h1>
-          <p className="text-muted-foreground">Customers & Suppliers — {total} records</p>
+          <p className="text-muted-foreground">Customers & Suppliers — {parties.length} records</p>
         </div>
         <Button onClick={() => { setEditing(null); setDialogOpen(true); }}>
           <Plus className="mr-2 h-4 w-4" /> Add Party
@@ -303,66 +296,90 @@ export default function PartiesPage() {
         </Select>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-          ) : parties.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-                <Users className="h-8 w-8 text-muted-foreground/40" />
-              </div>
-              <h3 className="text-sm font-semibold">No parties yet</h3>
-              <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-                Add your first customer or supplier to get started.
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y">
-              {parties.map(p => (
-                <div key={p.id} className="flex items-center gap-4 px-4 py-3 hover:bg-muted/30 transition-colors">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium text-sm">{p.name}</p>
-                      <Badge variant="outline" className="text-[10px] capitalize">{p.party_type}</Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {[p.gstin, p.phone, p.billing_city].filter(Boolean).join(' · ')}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-xs text-muted-foreground">Balance</p>
-                    <p className={`text-sm font-semibold ${p.current_balance < 0 ? 'text-red-600' : 'text-foreground'}`}>
-                      ₹{Math.abs(p.current_balance).toLocaleString('en-IN')}
-                      {p.current_balance < 0 ? ' Cr' : ''}
-                    </p>
-                  </div>
-                  <Button size="icon" variant="ghost" onClick={() => { setEditing(p); setDialogOpen(true); }}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Pagination */}
-          {total > PARTY_PAGE_SIZE && (
-            <div className="flex items-center justify-between px-4 py-3 border-t text-sm">
-              <span className="text-muted-foreground">
-                Showing {(page - 1) * PARTY_PAGE_SIZE + 1}–{Math.min(page * PARTY_PAGE_SIZE, total)} of {total}
-              </span>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Button>
-                <span className="flex items-center px-2">{page} / {Math.ceil(total / PARTY_PAGE_SIZE)}</span>
-                <Button variant="outline" size="sm" disabled={page * PARTY_PAGE_SIZE >= total} onClick={() => setPage(p => p + 1)}>Next</Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
+      <PartiesTable
+        parties={parties}
+        loading={loading}
+        onEdit={p => { setEditing(p); setDialogOpen(true); }}
+      />
 
       <PartyDialog open={dialogOpen} editing={editing} onClose={() => setDialogOpen(false)} onSaved={handleSaved} />
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Parties DataTable
+// ------------------------------------------------------------------ //
+function PartiesTable({
+  parties, loading, onEdit,
+}: {
+  parties: Party[];
+  loading: boolean;
+  onEdit: (p: Party) => void;
+}) {
+  const columns = useMemo<ColumnDef<Party>[]>(() => [
+    { key: 'name', label: 'Name', accessor: p => p.name, className: 'font-medium' },
+    {
+      key: 'party_type', label: 'Type', type: 'enum',
+      enumOptions: ['customer', 'supplier', 'both'],
+      accessor: p => p.party_type,
+      format: v => <Badge variant="outline" className="text-[10px] capitalize">{String(v)}</Badge>,
+    },
+    { key: 'gstin', label: 'GSTIN', accessor: p => p.gstin ?? '', className: 'font-mono text-xs' },
+    { key: 'phone', label: 'Phone', accessor: p => p.phone ?? '', className: 'font-mono text-xs' },
+    { key: 'email', label: 'Email', accessor: p => p.email ?? '', defaultVisible: false },
+    { key: 'contact_person', label: 'Contact', accessor: p => p.contact_person ?? '', defaultVisible: false },
+    { key: 'billing_city', label: 'City', accessor: p => p.billing_city ?? '' },
+    { key: 'billing_state', label: 'State', accessor: p => p.billing_state ?? '', defaultVisible: false },
+    {
+      key: 'current_balance', label: 'Balance (₹)', type: 'number', align: 'right',
+      accessor: p => p.current_balance,
+      format: (v, row) => {
+        const n = Number(v);
+        return (
+          <span className={`font-mono ${n < 0 ? 'text-red-600' : 'text-foreground'}`}>
+            ₹{Math.abs(n).toLocaleString('en-IN')}
+            {n < 0 ? ' Cr' : row.current_balance > 0 ? ' Dr' : ''}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'credit_limit', label: 'Credit Limit', type: 'number', align: 'right',
+      defaultVisible: false,
+      accessor: p => p.credit_limit,
+      format: v => `₹${Number(v).toLocaleString('en-IN')}`,
+    },
+    {
+      key: 'payment_terms_days', label: 'Terms (d)', type: 'number', align: 'right',
+      defaultVisible: false,
+      accessor: p => p.payment_terms_days,
+    },
+    {
+      key: 'is_active', label: 'Status', type: 'enum', align: 'center',
+      enumOptions: ['Active', 'Inactive'],
+      accessor: p => p.is_active ? 'Active' : 'Inactive',
+      format: v => v === 'Active'
+        ? <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Active</Badge>
+        : <Badge variant="secondary">Inactive</Badge>,
+    },
+  ], []);
+
+  return (
+    <DataTable<Party>
+      id="parties.main"
+      loading={loading}
+      data={parties}
+      columns={columns}
+      rowKey={p => p.id}
+      exportFilename="parties"
+      defaultSort={{ key: 'name', direction: 'asc' }}
+      emptyMessage="No parties yet. Add your first customer or supplier to get started."
+      rowActions={p => (
+        <Button size="icon" variant="ghost" onClick={() => onEdit(p)} title="Edit party">
+          <Pencil className="h-4 w-4" />
+        </Button>
+      )}
+    />
   );
 }
