@@ -74,6 +74,7 @@ const navGroups: { label: string | null; items: NavItem[] }[] = [
       { to: '/product-inventory', icon: Boxes, label: 'Product Stock' },
       { to: '/production', icon: Factory, label: 'Production' },
       { to: '/production/dashboard', icon: Activity, label: 'Production Dashboard' },
+      { to: '/production/settings', icon: Settings, label: 'Production Settings' },
       { to: '/vehicles', icon: Truck, label: 'Vehicles' },
     ],
   },

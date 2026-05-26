@@ -15,6 +15,7 @@ import InvoicesPage from '@/pages/InvoicesPage';
 import QuotationsPage from '@/pages/QuotationsPage';
 import ProductsPage from '@/pages/ProductsPage';
 import PricingMatrixPage from '@/pages/PricingMatrixPage';
+import ProductionSettingsPage from '@/pages/ProductionSettingsPage';
 import ProductInventoryPage from '@/pages/ProductInventoryPage';
 import ProductionPage from '@/pages/ProductionPage';
 import ProductionDashboardPage from '@/pages/ProductionDashboardPage';
@@ -135,6 +136,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/product-inventory" element={<ProductInventoryPage />} />
             <Route path="/production" element={<ProductionPage />} />
             <Route path="/production/dashboard" element={<ProductionDashboardPage />} />
+            <Route path="/production/settings" element={<ProductionSettingsPage />} />
             <Route path="/camera-scale" element={<CameraScalePage />} />
             <Route path="/snapshot-search" element={<SnapshotSearchPage />} />
             {/* Administration — admin only (each page self-guards via role check) */}

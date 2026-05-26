@@ -10,12 +10,25 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
-  ResponsiveContainer, CartesianGrid,
+  ResponsiveContainer, CartesianGrid, ReferenceLine,
 } from 'recharts';
-import { Activity, TrendingDown, Factory, AlertOctagon } from 'lucide-react';
+import { Activity, TrendingDown, Factory, AlertOctagon, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import api from '@/services/api';
+
+interface StageDefault {
+  stage_no: number;
+  stage_name: string;
+  loss_type: string;
+  expected_yield_pct: number;
+  warning_threshold_pct: number;
+}
+interface StageDefaultsResponse {
+  stages: StageDefault[];
+  overall_expected_yield_pct: number;
+}
 
 interface DashboardData {
   yield_trend: { date: string; yield_pct: number; input_kg: number; output_kg: number }[];
@@ -39,14 +52,19 @@ interface DashboardData {
 
 export default function ProductionDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [defaults, setDefaults] = useState<StageDefaultsResponse | null>(null);
   const [days, setDays] = useState(30);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: d } = await api.get<DashboardData>(`/api/v1/production/dashboard?days=${days}`);
-      setData(d);
+      const [d, sd] = await Promise.all([
+        api.get<DashboardData>(`/api/v1/production/dashboard?days=${days}`),
+        api.get<StageDefaultsResponse>('/api/v1/production/stage-defaults'),
+      ]);
+      setData(d.data);
+      setDefaults(sd.data);
     } finally {
       setLoading(false);
     }
@@ -55,6 +73,16 @@ export default function ProductionDashboardPage() {
   useEffect(() => { load(); }, [load]);
 
   const s = data?.summary;
+  const targetYield = defaults?.overall_expected_yield_pct ?? 80.8;
+  const yieldVariance = s ? s.avg_yield_pct - targetYield : 0;
+  const variancePositive = yieldVariance >= 0;
+
+  // Build labels for stacked-bar chart from stage defaults
+  const stageLabel = (n: number): string => {
+    if (!defaults) return `Stage ${n}`;
+    const sd = defaults.stages.find(x => x.stage_no === n);
+    return sd ? `S${n}: ${sd.stage_name}` : `Stage ${n}`;
+  };
 
   return (
     <div className="space-y-4">
@@ -88,11 +116,25 @@ export default function ProductionDashboardPage() {
           <CardContent className="pt-4 flex items-start gap-3">
             <Activity className={`h-8 w-8 opacity-70 ${(s?.avg_yield_pct ?? 0) > 80 ? 'text-green-600' : (s?.avg_yield_pct ?? 0) > 60 ? 'text-amber-600' : 'text-red-600'}`} />
             <div>
-              <p className="text-xs text-muted-foreground">Avg Yield</p>
+              <p className="text-xs text-muted-foreground">Avg Plant Yield</p>
               <p className={`text-2xl font-bold ${(s?.avg_yield_pct ?? 0) > 80 ? 'text-green-600' : (s?.avg_yield_pct ?? 0) > 60 ? 'text-amber-600' : 'text-red-600'}`}>
                 {(s?.avg_yield_pct ?? 0).toFixed(1)}%
               </p>
               <p className="text-xs text-muted-foreground">{((s?.output_total_kg ?? 0) / 1000).toFixed(1)} MT output</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 flex items-start gap-3">
+            <Target className={`h-8 w-8 opacity-70 ${variancePositive ? 'text-emerald-600' : 'text-red-600'}`} />
+            <div>
+              <p className="text-xs text-muted-foreground">vs Target ({targetYield.toFixed(1)}%)</p>
+              <p className={`text-2xl font-bold ${variancePositive ? 'text-emerald-700' : 'text-red-700'}`}>
+                {variancePositive ? '+' : ''}{yieldVariance.toFixed(2)}%
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {variancePositive ? 'Above target' : 'Below target'}
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -121,7 +163,12 @@ export default function ProductionDashboardPage() {
       {/* Yield Trend */}
       <Card>
         <CardContent className="pt-4">
-          <h2 className="font-semibold mb-2">Yield % Trend</h2>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-semibold">Plant Yield % Trend</h2>
+            <Badge variant="outline" className="text-xs">
+              <Target className="h-3 w-3 mr-1" /> Target {targetYield.toFixed(1)}%
+            </Badge>
+          </div>
           {loading ? (
             <div className="h-72 flex items-center justify-center text-muted-foreground text-sm">Loading…</div>
           ) : (
@@ -132,10 +179,20 @@ export default function ProductionDashboardPage() {
                 <YAxis domain={[0, 100]} tickFormatter={v => `${v}%`} />
                 <Tooltip formatter={(v: number) => `${v}%`} />
                 <Legend />
-                <Line type="monotone" dataKey="yield_pct" name="Yield %" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} />
+                <ReferenceLine
+                  y={targetYield}
+                  stroke="#dc2626"
+                  strokeDasharray="6 4"
+                  label={{ value: `Target ${targetYield.toFixed(1)}%`, position: 'right', fill: '#dc2626', fontSize: 11 }}
+                />
+                <Line type="monotone" dataKey="yield_pct" name="Actual Yield %" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} />
               </LineChart>
             </ResponsiveContainer>
           )}
+          <p className="text-xs text-muted-foreground mt-2">
+            Red dashed line is the configured target (Settings → Production Settings). Points above are over-performing;
+            below need investigation (worn liners, wet feed, oversize boulder, belt issues).
+          </p>
         </CardContent>
       </Card>
 
@@ -157,10 +214,10 @@ export default function ProductionDashboardPage() {
                 <YAxis tickFormatter={v => `${v}%`} />
                 <Tooltip formatter={(v: number) => `${v}%`} />
                 <Legend />
-                <Bar dataKey="stage1_loss_pct" stackId="a" name="Stage 1 (Primary)" fill="#3b82f6" />
-                <Bar dataKey="stage2_loss_pct" stackId="a" name="Stage 2 (Secondary)" fill="#06b6d4" />
-                <Bar dataKey="stage3_loss_pct" stackId="a" name="Stage 3 (Screening)" fill="#a855f7" />
-                <Bar dataKey="belt_loss_pct" stackId="a" name="Stage 4 (Conveyor Belt Wash)" fill="#f97316" />
+                <Bar dataKey="stage1_loss_pct" stackId="a" name={stageLabel(1)} fill="#3b82f6" />
+                <Bar dataKey="stage2_loss_pct" stackId="a" name={stageLabel(2)} fill="#06b6d4" />
+                <Bar dataKey="stage3_loss_pct" stackId="a" name={stageLabel(3)} fill="#a855f7" />
+                <Bar dataKey="belt_loss_pct"   stackId="a" name={stageLabel(4)} fill="#f97316" />
               </BarChart>
             </ResponsiveContainer>
           )}

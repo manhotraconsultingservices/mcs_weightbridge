@@ -28,6 +28,37 @@ interface CycleOutput {
   output_kg: number;
 }
 
+interface StageDefault {
+  stage_no: number;
+  stage_name: string;
+  loss_type: string;
+  expected_yield_pct: number;
+  warning_threshold_pct: number;
+}
+
+interface StageDefaultsResponse {
+  stages: StageDefault[];
+  overall_expected_yield_pct: number;
+}
+
+// Variance helper: returns class names for green/amber/red badges
+function varianceTone(actual: number, expected: number, threshold: number): {
+  bg: string; text: string; label: string; emoji: string;
+} {
+  const variance = actual - expected;
+  const absVar = Math.abs(variance);
+  if (absVar <= threshold / 2) {
+    return { bg: 'bg-emerald-100 border-emerald-300', text: 'text-emerald-800',
+             label: 'On Target', emoji: '✓' };
+  }
+  if (absVar <= threshold) {
+    return { bg: 'bg-amber-100 border-amber-300', text: 'text-amber-800',
+             label: variance > 0 ? 'Above Target' : 'Slightly Off', emoji: '◐' };
+  }
+  return { bg: 'bg-red-100 border-red-300', text: 'text-red-800',
+           label: variance > 0 ? 'Above Target' : 'Below Target', emoji: '✕' };
+}
+
 interface ProductionCycle {
   id: string;
   cycle_no: number;
@@ -256,10 +287,18 @@ function CycleDialog({
   const [stage3, setStage3] = useState('');
   const [notes, setNotes] = useState('');
   const [outputs, setOutputs] = useState<CycleOutput[]>([]);
+  const [stageDefaults, setStageDefaults] = useState<StageDefault[]>([]);
+  const [overallExpected, setOverallExpected] = useState<number>(80.8);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
+    // Load stage defaults each time the dialog opens
+    api.get<StageDefaultsResponse>('/api/v1/production/stage-defaults').then(res => {
+      setStageDefaults(res.data.stages);
+      setOverallExpected(res.data.overall_expected_yield_pct);
+    }).catch(() => {});
+
     if (editing) {
       setCycleDate(editing.cycle_date);
       setInputKg(String(editing.input_kg));
@@ -284,9 +323,23 @@ function CycleDialog({
 
   const totalOutputKg = outputs.reduce((s, o) => s + Number(o.output_kg || 0), 0);
   const inp = parseFloat(inputKg) || 0;
-  const yieldPct = inp > 0 ? (totalOutputKg / inp) * 100 : 0;
+  const s1 = parseFloat(stage1) || 0;
+  const s2 = parseFloat(stage2) || 0;
   const s3 = parseFloat(stage3) || 0;
+  const yieldPct = inp > 0 ? (totalOutputKg / inp) * 100 : 0;
   const beltLoss = s3 > 0 ? ((s3 - totalOutputKg) / s3) * 100 : null;
+
+  // Per-stage yield calculations (each stage's output / previous stage's input)
+  // Returns null if we don't have enough data to compute
+  const stage1Yield = (inp > 0 && s1 > 0) ? (s1 / inp) * 100 : null;
+  const stage2Yield = (s1 > 0 && s2 > 0) ? (s2 / s1) * 100 : null;
+  const stage3Yield = (s2 > 0 && s3 > 0) ? (s3 / s2) * 100 : null;
+  const stage4Yield = (s3 > 0 && totalOutputKg > 0) ? (totalOutputKg / s3) * 100 : null;
+  const stageYields: (number | null)[] = [stage1Yield, stage2Yield, stage3Yield, stage4Yield];
+
+  // Get default for a stage by number, with fallback
+  const defaultFor = (n: number): StageDefault | undefined =>
+    stageDefaults.find(s => s.stage_no === n);
 
   const handleSave = async () => {
     if (!inputKg || parseFloat(inputKg) <= 0) { toast.error('Input weight must be > 0'); return; }
@@ -340,33 +393,137 @@ function CycleDialog({
             </div>
           </div>
 
-          <div className="rounded border bg-muted/20 p-3 space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Optional intermediate weights (for wastage-by-stage tracking)</p>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Stage 1 output (kg)</Label>
-                <Input type="number" min="0" step="1" value={stage1} onChange={e => setStage1(e.target.value)} placeholder="Post primary crusher" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Stage 2 output (kg)</Label>
-                <Input type="number" min="0" step="1" value={stage2} onChange={e => setStage2(e.target.value)} placeholder="Post secondary crusher" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Stage 3 output (kg)</Label>
-                <Input type="number" min="0" step="1" value={stage3} onChange={e => setStage3(e.target.value)} placeholder="Post screening, pre-wash" />
-              </div>
-            </div>
+          {/* Stages 1-3: simple weight entry with live yield card per stage */}
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Process Stages</p>
+            {[
+              { n: 1, value: stage1, setter: setStage1, prevWeight: inp,
+                placeholder: 'Output after primary crusher' },
+              { n: 2, value: stage2, setter: setStage2, prevWeight: s1,
+                placeholder: 'Output after secondary crusher' },
+              { n: 3, value: stage3, setter: setStage3, prevWeight: s2,
+                placeholder: 'Output after screening (pre-wash)' },
+            ].map(({ n, value, setter, prevWeight, placeholder }) => {
+              const def = defaultFor(n);
+              const actualYield = stageYields[n - 1];
+              const expected = def?.expected_yield_pct ?? 0;
+              const threshold = def?.warning_threshold_pct ?? 2;
+              const tone = actualYield != null
+                ? varianceTone(actualYield, expected, threshold)
+                : null;
+              const lossKg = (prevWeight > 0 && parseFloat(value) > 0)
+                ? prevWeight - parseFloat(value)
+                : null;
+              const lossPct = actualYield != null ? 100 - actualYield : null;
+
+              return (
+                <div key={n} className={`rounded-lg border-2 p-3 ${tone?.bg ?? 'border-border bg-card'}`}>
+                  <div className="flex items-center justify-between mb-2 gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Badge variant="outline" className="shrink-0 h-5 px-1.5 text-[10px] font-bold">
+                        STAGE {n}
+                      </Badge>
+                      <span className="font-semibold text-sm truncate">
+                        {def?.stage_name ?? `Stage ${n}`}
+                      </span>
+                    </div>
+                    {def && (
+                      <span className="text-[10px] text-muted-foreground shrink-0">
+                        Target yield: {def.expected_yield_pct.toFixed(1)}%
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-12 gap-2 items-end">
+                    <div className="col-span-5">
+                      <Label className="text-[10px]">Output weight (kg)</Label>
+                      <Input
+                        type="number" min="0" step="1"
+                        value={value} onChange={e => setter(e.target.value)}
+                        placeholder={placeholder}
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    <div className="col-span-2 text-center">
+                      <Label className="text-[10px]">Yield %</Label>
+                      <p className={`font-mono font-bold text-sm ${tone?.text ?? 'text-muted-foreground'}`}>
+                        {actualYield != null ? `${actualYield.toFixed(2)}%` : '—'}
+                      </p>
+                    </div>
+                    <div className="col-span-3 text-center">
+                      <Label className="text-[10px]">{def?.loss_type ?? 'Loss'}</Label>
+                      <p className="font-mono text-xs">
+                        {lossKg != null && lossPct != null
+                          ? <>{lossPct.toFixed(2)}% <span className="text-muted-foreground">({lossKg.toLocaleString('en-IN', { maximumFractionDigits: 0 })} kg)</span></>
+                          : '—'}
+                      </p>
+                    </div>
+                    <div className="col-span-2 text-center">
+                      {tone ? (
+                        <Badge className={`${tone.bg} ${tone.text} border text-[9px] font-semibold`}>
+                          {tone.emoji} {tone.label}
+                        </Badge>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground italic">Enter weight</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="font-semibold">Stage 4 Outputs (per product, post-wash)</Label>
+          {/* Stage 4: per-product outputs */}
+          <div className={`rounded-lg border-2 p-3 ${
+            (() => {
+              const def = defaultFor(4);
+              const yp = stage4Yield;
+              if (yp == null || !def) return 'border-border bg-card';
+              return varianceTone(yp, def.expected_yield_pct, def.warning_threshold_pct).bg;
+            })()
+          }`}>
+            <div className="flex items-center justify-between mb-2 gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Badge variant="outline" className="shrink-0 h-5 px-1.5 text-[10px] font-bold">
+                  STAGE 4
+                </Badge>
+                <span className="font-semibold text-sm truncate">
+                  {defaultFor(4)?.stage_name ?? 'Washing (Conveyor Belt)'}
+                </span>
+              </div>
               <Button variant="outline" size="sm" onClick={addOutputRow}>
                 <Plus className="mr-1 h-3 w-3" /> Add Product
               </Button>
             </div>
+
+            {/* Stage 4 live metrics */}
+            <div className="grid grid-cols-4 gap-2 mb-3 text-center text-xs">
+              <div>
+                <p className="text-muted-foreground">Total Output</p>
+                <p className="font-mono font-semibold">{totalOutputKg.toLocaleString('en-IN', { maximumFractionDigits: 0 })} kg</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Stage 4 Yield</p>
+                <p className="font-mono font-semibold">
+                  {stage4Yield != null ? `${stage4Yield.toFixed(2)}%` : '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">{defaultFor(4)?.loss_type ?? 'Belt Loss'}</p>
+                <p className="font-mono font-semibold">
+                  {beltLoss != null ? `${beltLoss.toFixed(2)}%` : '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Target Yield</p>
+                <p className="font-mono font-semibold">
+                  {defaultFor(4)?.expected_yield_pct.toFixed(1) ?? '—'}%
+                </p>
+              </div>
+            </div>
+
+            {/* Per-product Stage 4 outputs table */}
             {outputs.length === 0 ? (
-              <p className="text-xs text-muted-foreground italic">No outputs added. Click "Add Product" to record finished goods.</p>
+              <p className="text-xs text-muted-foreground italic">No outputs added. Click "Add Product" above to record finished goods.</p>
             ) : (
               <table className="w-full text-sm">
                 <thead className="border-b">
@@ -414,23 +571,51 @@ function CycleDialog({
             <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional — anything unusual about this run" />
           </div>
 
-          {/* Live metrics preview */}
-          <div className="rounded-lg bg-amber-50/60 border-2 border-amber-200 p-3 grid grid-cols-3 gap-2 text-xs">
-            <div>
-              <p className="text-muted-foreground">Total Output</p>
-              <p className="font-mono font-semibold">{totalOutputKg.toLocaleString('en-IN')} kg</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Yield %</p>
-              <p className={`font-mono font-semibold ${yieldPct > 80 ? 'text-green-700' : yieldPct > 60 ? 'text-amber-700' : 'text-red-700'}`}>
-                {yieldPct.toFixed(2)}%
-              </p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Conveyor Belt Loss</p>
-              <p className="font-mono font-semibold">{beltLoss == null ? '—' : `${beltLoss.toFixed(2)}%`}</p>
-            </div>
-          </div>
+          {/* Plant-level overall metrics */}
+          {(() => {
+            const overallTone = (yieldPct > 0)
+              ? varianceTone(yieldPct, overallExpected, 3)
+              : null;
+            const processLoss = inp > 0 ? 100 - yieldPct : 0;
+            return (
+              <div className={`rounded-lg border-2 p-3 ${overallTone?.bg ?? 'bg-blue-50/60 border-blue-200'}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="font-bold text-sm">🏭 Plant-level Summary</p>
+                  {overallTone && (
+                    <Badge className={`${overallTone.bg} ${overallTone.text} border text-[10px] font-semibold`}>
+                      {overallTone.emoji} {overallTone.label}
+                    </Badge>
+                  )}
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                  <div>
+                    <p className="text-muted-foreground">Raw Input</p>
+                    <p className="font-mono font-semibold">{(inp / 1000).toFixed(2)} MT</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Final Output</p>
+                    <p className="font-mono font-semibold">{(totalOutputKg / 1000).toFixed(2)} MT</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Plant Yield</p>
+                    <p className={`font-mono font-bold text-sm ${overallTone?.text ?? 'text-muted-foreground'}`}>
+                      {inp > 0 ? `${yieldPct.toFixed(2)}%` : '—'}
+                    </p>
+                    <p className="text-[9px] text-muted-foreground">target {overallExpected.toFixed(1)}%</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Process Loss</p>
+                    <p className="font-mono font-semibold">
+                      {inp > 0 ? `${processLoss.toFixed(2)}%` : '—'}
+                    </p>
+                    <p className="text-[9px] text-muted-foreground">
+                      {inp > 0 ? `${((inp - totalOutputKg) / 1000).toFixed(2)} MT lost` : ''}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         <DialogFooter>

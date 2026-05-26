@@ -34,6 +34,7 @@ from app.schemas.production import (
     ProductionCycleCreate, ProductionCycleUpdate, ProductionCycleResponse,
     CycleOutputResponse, ProductionCycleListResponse,
     YieldTrendPoint, WastageStagePoint, ProductWastage, ProductionDashboardResponse,
+    StageDefault, StageDefaultsResponse, StageDefaultsUpdate,
 )
 
 router = APIRouter(prefix="/api/v1/production", tags=["Production"])
@@ -432,4 +433,116 @@ async def get_dashboard(
         wastage_by_stage=wastage_by_stage,
         top_outputs=top_outputs,
         summary=summary,
+    )
+
+
+# ── Stage defaults (configurable yield/loss expectations per stage) ──────────
+
+# Industry-standard defaults for a typical Indian stone-crusher with wet washing.
+# These are used as fallback values when no per-tenant overrides have been saved.
+#
+# Compound yield = 0.975 × 0.97 × 0.94 × 0.91 = ~80.8% plant yield, which is
+# typical for an Indian aggregate crusher with conveyor-belt washing.
+_DEFAULT_STAGES = [
+    {"stage_no": 1, "stage_name": "Primary Crushing",
+     "loss_type": "Dust & Spillage Loss",
+     "expected_yield_pct": 97.5, "warning_threshold_pct": 2.0},
+    {"stage_no": 2, "stage_name": "Secondary Crushing",
+     "loss_type": "Dust & Spillage Loss",
+     "expected_yield_pct": 97.0, "warning_threshold_pct": 2.0},
+    {"stage_no": 3, "stage_name": "Screening",
+     "loss_type": "Oversize Reject",
+     "expected_yield_pct": 94.0, "warning_threshold_pct": 3.0},
+    {"stage_no": 4, "stage_name": "Washing (Conveyor Belt)",
+     "loss_type": "Silt / Wash Loss",
+     "expected_yield_pct": 91.0, "warning_threshold_pct": 3.0},
+]
+
+# app_settings key for the stage defaults JSON blob
+_STAGE_DEFAULTS_KEY = "production.stage_defaults"
+
+
+async def _load_stage_defaults(db: AsyncSession) -> list[dict]:
+    """Read per-tenant stage defaults from app_settings, fall back to industry defaults."""
+    import json
+    try:
+        row = (await db.execute(
+            text("SELECT value FROM app_settings WHERE key = :k"),
+            {"k": _STAGE_DEFAULTS_KEY},
+        )).fetchone()
+        if row and row[0]:
+            data = json.loads(row[0])
+            if isinstance(data, list) and len(data) == 4:
+                return data
+    except Exception:
+        pass
+    return [dict(s) for s in _DEFAULT_STAGES]
+
+
+def _overall_yield(stages: list[dict]) -> float:
+    """Product of all stage expected yields (each as decimal)."""
+    pct = 1.0
+    for s in stages:
+        pct *= float(s.get("expected_yield_pct", 100)) / 100.0
+    return round(pct * 100, 2)
+
+
+@router.get("/stage-defaults", response_model=StageDefaultsResponse)
+async def get_stage_defaults(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the configured stage names, loss types, and expected yields.
+
+    If the tenant has never customised these, returns the industry-standard
+    defaults for an Indian wet-process aggregate crusher.
+    """
+    stages = await _load_stage_defaults(db)
+    return StageDefaultsResponse(
+        stages=[StageDefault(**s) for s in stages],
+        overall_expected_yield_pct=_overall_yield(stages),
+    )
+
+
+@router.put("/stage-defaults", response_model=StageDefaultsResponse)
+async def update_stage_defaults(
+    payload: StageDefaultsUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "store_manager")),
+):
+    """Replace all four stage defaults atomically. Stages must be 1-4."""
+    import json
+
+    if len(payload.stages) != 4:
+        raise HTTPException(400, "Must provide exactly 4 stages")
+    seen = set()
+    for s in payload.stages:
+        if s.stage_no not in (1, 2, 3, 4):
+            raise HTTPException(400, f"Invalid stage_no {s.stage_no} — must be 1-4")
+        if s.stage_no in seen:
+            raise HTTPException(400, f"Duplicate stage_no {s.stage_no}")
+        seen.add(s.stage_no)
+        if not (0 < s.expected_yield_pct <= 100):
+            raise HTTPException(400, f"expected_yield_pct for stage {s.stage_no} must be 0-100")
+        if s.warning_threshold_pct < 0 or s.warning_threshold_pct > 50:
+            raise HTTPException(400, f"warning_threshold_pct for stage {s.stage_no} must be 0-50")
+
+    # Sort by stage_no so the saved order is canonical
+    ordered = sorted(payload.stages, key=lambda s: s.stage_no)
+    serialised = json.dumps([s.model_dump() for s in ordered])
+
+    await db.execute(
+        text("""
+            INSERT INTO app_settings (key, value)
+            VALUES (:k, :v)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+        """),
+        {"k": _STAGE_DEFAULTS_KEY, "v": serialised},
+    )
+    await db.commit()
+
+    stages = [s.model_dump() for s in ordered]
+    return StageDefaultsResponse(
+        stages=[StageDefault(**s) for s in stages],
+        overall_expected_yield_pct=_overall_yield(stages),
     )

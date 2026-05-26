@@ -108,3 +108,28 @@ class ProductionDashboardResponse(BaseModel):
     wastage_by_stage: List[WastageStagePoint]
     top_outputs: List[ProductWastage]
     summary: dict     # { input_total, output_total, avg_yield_pct, avg_belt_loss_pct, cycles_count }
+
+
+# ── Stage defaults (configurable yield/loss expectations per stage) ──────────
+
+class StageDefault(BaseModel):
+    """One stage's default expected yield + naming.
+
+    The four stones-crusher stages are fixed in number (1-4), but their names
+    and expected yields can be tuned per operation.
+    """
+    stage_no: int                          # 1, 2, 3, 4
+    stage_name: str                        # "Primary Crushing", etc.
+    loss_type: str                         # "Dust & Spillage Loss", etc.
+    expected_yield_pct: float              # e.g. 97.5 — yield this stage targets
+    warning_threshold_pct: float = 2.0     # variance band: |actual - expected| above this → warning
+
+
+class StageDefaultsResponse(BaseModel):
+    stages: List[StageDefault]
+    overall_expected_yield_pct: float      # product of all stages: ~80.8% by default
+
+
+class StageDefaultsUpdate(BaseModel):
+    """Bulk update — replaces all four stages atomically."""
+    stages: List[StageDefault]
