@@ -18,6 +18,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 import type { Product } from '@/types';
 
@@ -82,6 +83,100 @@ const fmtKg = (n: number | null | undefined) =>
   n == null ? '—' : `${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })} kg`;
 const fmtPct = (n: number | null | undefined) =>
   n == null ? '—' : `${n.toFixed(2)}%`;
+
+// ─── Column definitions for the cycles DataTable ─────────────────────────────
+// Defined as a module-level constant so the DataTable's reference equality on
+// `columns` is stable across renders.
+const CYCLE_COLUMNS: ColumnDef<ProductionCycle>[] = [
+  {
+    key: 'cycle_date', label: 'Date', type: 'date',
+    accessor: c => c.cycle_date,
+    format: v => new Date(String(v)).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+    exportValue: c => c.cycle_date,
+  },
+  {
+    key: 'cycle_no', label: 'Cycle #', type: 'number', align: 'right',
+    accessor: c => c.cycle_no,
+    className: 'font-mono',
+  },
+  {
+    key: 'input_kg', label: 'Input', type: 'number', align: 'right',
+    accessor: c => c.input_kg,
+    format: v => fmtKg(v as number),
+    className: 'font-mono',
+  },
+  {
+    key: 'stage1_output_kg', label: 'Stage 1', type: 'number', align: 'right', defaultVisible: true,
+    accessor: c => c.stage1_output_kg,
+    format: v => fmtKg(v as number | null),
+    className: 'font-mono text-muted-foreground',
+  },
+  {
+    key: 'stage2_output_kg', label: 'Stage 2', type: 'number', align: 'right', defaultVisible: true,
+    accessor: c => c.stage2_output_kg,
+    format: v => fmtKg(v as number | null),
+    className: 'font-mono text-muted-foreground',
+  },
+  {
+    key: 'stage3_output_kg', label: 'Stage 3', type: 'number', align: 'right', defaultVisible: true,
+    accessor: c => c.stage3_output_kg,
+    format: v => fmtKg(v as number | null),
+    className: 'font-mono text-muted-foreground',
+  },
+  {
+    key: 'total_output_kg', label: 'Output (4)', type: 'number', align: 'right',
+    accessor: c => c.total_output_kg,
+    format: v => fmtKg(v as number),
+    className: 'font-mono',
+  },
+  {
+    // Products produced in this cycle — comma-separated, sortable by product count
+    key: 'products', label: 'Products', type: 'string',
+    accessor: c => c.outputs.map(o => o.product_name ?? '?').join(', '),
+    format: (_, row) => (
+      <div className="flex flex-wrap gap-1 max-w-[260px]">
+        {row.outputs.length === 0
+          ? <span className="text-muted-foreground italic text-xs">—</span>
+          : row.outputs.map(o => (
+              <Badge key={o.product_id} variant="secondary" className="text-[10px] font-normal">
+                {o.product_name ?? '?'}
+                <span className="ml-1 text-muted-foreground">
+                  {(Number(o.output_kg) / 1000).toFixed(1)}t
+                </span>
+              </Badge>
+            ))}
+      </div>
+    ),
+    exportValue: c => c.outputs.map(o => `${o.product_name ?? '?'} (${(Number(o.output_kg) / 1000).toFixed(2)} MT)`).join('; '),
+  },
+  {
+    key: 'yield_pct', label: 'Yield', type: 'number', align: 'right',
+    accessor: c => c.yield_pct,
+    format: v => {
+      const n = v as number | null;
+      const cls = (n ?? 0) > 80 ? 'text-green-600' : (n ?? 0) > 60 ? 'text-amber-600' : 'text-red-600';
+      return <span className={`font-mono ${cls}`}>{fmtPct(n)}</span>;
+    },
+  },
+  {
+    key: 'belt_loss_pct', label: 'Belt Loss', type: 'number', align: 'right',
+    accessor: c => c.belt_loss_pct,
+    format: v => fmtPct(v as number | null),
+    className: 'font-mono text-muted-foreground',
+  },
+  {
+    key: 'status', label: 'Status', type: 'enum', align: 'center',
+    enumOptions: ['Draft', 'Finalised'],
+    accessor: c => c.is_finalised ? 'Finalised' : 'Draft',
+    format: v => v === 'Finalised'
+      ? <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Finalised</Badge>
+      : <Badge variant="secondary">Draft</Badge>,
+  },
+  {
+    key: 'notes', label: 'Notes', type: 'string', defaultVisible: false,
+    accessor: c => c.notes ?? '',
+  },
+];
 
 export default function ProductionPage() {
   const [cycles, setCycles] = useState<ProductionCycle[]>([]);
@@ -178,83 +273,40 @@ export default function ProductionPage() {
         </CardContent></Card>
       </div>
 
-      {/* Cycles table */}
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="text-left p-3 font-medium">Date</th>
-                  <th className="text-right p-3 font-medium">Cycle #</th>
-                  <th className="text-right p-3 font-medium">Input</th>
-                  <th className="text-right p-3 font-medium">Stage 1</th>
-                  <th className="text-right p-3 font-medium">Stage 2</th>
-                  <th className="text-right p-3 font-medium">Stage 3</th>
-                  <th className="text-right p-3 font-medium">Output (4)</th>
-                  <th className="text-right p-3 font-medium">Yield</th>
-                  <th className="text-right p-3 font-medium">Belt Loss</th>
-                  <th className="text-center p-3 font-medium">Status</th>
-                  <th className="p-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={11} className="text-center p-8 text-muted-foreground">Loading…</td></tr>
-                ) : cycles.length === 0 ? (
-                  <tr>
-                    <td colSpan={11}>
-                      <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <Factory className="h-10 w-10 mb-3 text-muted-foreground/40" />
-                        <p className="text-sm font-medium">No cycles logged yet</p>
-                        <p className="text-xs text-muted-foreground mt-1">Click "New Cycle" to record today's production.</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : cycles.map(c => (
-                  <tr key={c.id} className="border-b hover:bg-muted/20">
-                    <td className="p-3 font-medium">{new Date(c.cycle_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                    <td className="p-3 text-right font-mono">{c.cycle_no}</td>
-                    <td className="p-3 text-right font-mono">{fmtKg(c.input_kg)}</td>
-                    <td className="p-3 text-right font-mono text-muted-foreground">{fmtKg(c.stage1_output_kg)}</td>
-                    <td className="p-3 text-right font-mono text-muted-foreground">{fmtKg(c.stage2_output_kg)}</td>
-                    <td className="p-3 text-right font-mono text-muted-foreground">{fmtKg(c.stage3_output_kg)}</td>
-                    <td className="p-3 text-right font-mono">{fmtKg(c.total_output_kg)}</td>
-                    <td className="p-3 text-right">
-                      <span className={`font-mono ${(c.yield_pct ?? 0) > 80 ? 'text-green-600' : (c.yield_pct ?? 0) > 60 ? 'text-amber-600' : 'text-red-600'}`}>
-                        {fmtPct(c.yield_pct)}
-                      </span>
-                    </td>
-                    <td className="p-3 text-right font-mono text-muted-foreground">{fmtPct(c.belt_loss_pct)}</td>
-                    <td className="p-3 text-center">
-                      {c.is_finalised
-                        ? <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Finalised</Badge>
-                        : <Badge variant="secondary">Draft</Badge>}
-                    </td>
-                    <td className="p-3">
-                      <div className="flex gap-1 justify-end">
-                        <Button variant="ghost" size="icon" title="Edit" onClick={() => openEdit(c)} disabled={c.is_finalised}>
-                          <FileEdit className="h-4 w-4" />
-                        </Button>
-                        {!c.is_finalised && (
-                          <Button variant="ghost" size="icon" title="Finalise" onClick={() => handleFinalise(c)}>
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                          </Button>
-                        )}
-                        {!c.is_finalised && (
-                          <Button variant="ghost" size="icon" title="Delete" onClick={() => handleDelete(c)}>
-                            <Trash2 className="h-4 w-4 text-red-600" />
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* Cycles table — uses reusable DataTable (sortable, filterable, column show/hide, CSV export) */}
+      <DataTable<ProductionCycle>
+        id="production.cycles"
+        loading={loading}
+        data={cycles}
+        rowKey={c => c.id}
+        exportFilename="production-cycles"
+        defaultSort={{ key: 'cycle_date', direction: 'desc' }}
+        emptyMessage={`No cycles logged yet. Click "New Cycle" to record today's production.`}
+        columns={CYCLE_COLUMNS}
+        rowActions={c => (
+          <div className="flex gap-1 justify-end">
+            <Button variant="ghost" size="icon" title="Edit" onClick={() => openEdit(c)} disabled={c.is_finalised}>
+              <FileEdit className="h-4 w-4" />
+            </Button>
+            {!c.is_finalised && (
+              <Button variant="ghost" size="icon" title="Finalise" onClick={() => handleFinalise(c)}>
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              </Button>
+            )}
+            {!c.is_finalised && (
+              <Button variant="ghost" size="icon" title="Delete" onClick={() => handleDelete(c)}>
+                <Trash2 className="h-4 w-4 text-red-600" />
+              </Button>
+            )}
           </div>
-        </CardContent>
-      </Card>
+        )}
+      />
+      {!loading && cycles.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-8 text-center">
+          <Factory className="h-10 w-10 mb-2 text-muted-foreground/40" />
+          <p className="text-sm font-medium">No cycles logged yet</p>
+        </div>
+      )}
 
       <CycleDialog
         open={dialogOpen}

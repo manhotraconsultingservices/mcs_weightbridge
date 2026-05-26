@@ -515,6 +515,56 @@ All endpoints prefixed `/api/v1` unless noted.
 
 ---
 
+## Shared UI Components
+
+### `DataTable<T>` — reusable sortable / filterable / exportable table
+
+Located at `frontend/src/components/DataTable.tsx`. Use this for any new tabular view. Migrate existing tables to it incrementally.
+
+**Features:**
+- Click column header to toggle sort: asc → desc → none (3-state).
+- Per-column filter inputs in a toggleable row. Number columns accept `>10`, `<5`, `10-20`, or plain substring. Enum columns get a dropdown of `enumOptions`.
+- Column show/hide via gear-icon menu with Reset.
+- CSV export of the *currently filtered + sorted* view (uses `exportValue` if provided, else the accessor).
+- Per-table state (sort + filters + visible columns) persisted to `localStorage` under `dt.<id>.<setting>` keys.
+
+**Usage pattern:**
+```tsx
+const COLUMNS: ColumnDef<MyRow>[] = [
+  { key: 'date',    label: 'Date',    type: 'date',   accessor: r => r.date,
+    format: v => new Date(String(v)).toLocaleDateString('en-IN') },
+  { key: 'amount',  label: 'Amount',  type: 'number', align: 'right',
+    accessor: r => r.amount,
+    format: v => `₹${(v as number).toFixed(2)}` },
+  { key: 'status',  label: 'Status',  type: 'enum',   enumOptions: ['draft', 'final'],
+    accessor: r => r.status },
+  { key: 'notes',   label: 'Notes',   defaultVisible: false,   // hidden by default
+    accessor: r => r.notes },
+];
+
+<DataTable<MyRow>
+  id="invoices.main"                              // stable; used as localStorage key
+  data={rows}
+  columns={COLUMNS}
+  rowKey={r => r.id}
+  exportFilename="invoices"
+  defaultSort={{ key: 'date', direction: 'desc' }}
+  emptyMessage="No invoices yet"
+  rowActions={r => <Button onClick={() => edit(r)}>Edit</Button>}
+/>
+```
+
+**Column types:** `string` (default), `number`, `date`, `enum`. Behaviour of sort + filter is type-aware.
+
+**Per-table localStorage keys** (all JSON):
+- `dt.{id}.sort` — `{ key, direction } | null`
+- `dt.{id}.filters` — `{ [colKey]: filterValue }`
+- `dt.{id}.visible` — `string[]` of column keys
+
+First migrated: ProductionPage (`/production`). Pattern is ready for InvoicesPage, ProductsPage, PartiesPage, etc. — migrate incrementally to keep diffs small.
+
+---
+
 ## USB Guard System
 
 ### How it works
@@ -786,3 +836,4 @@ SUPER_ADMIN_SECRET=change-this-to-a-strong-secret
 | 2026-05-26 | Low-product-stock notifications (Enh #3): new `low_product_stock` event with default Telegram template; hourly background loop `_low_stock_alert_loop` scans `product_stock WHERE current_stock <= min_stock_level`; 24h per-row throttle via `product_stock.last_alerted_at`; multi-tenant aware (iterates all active tenants per CLAUDE.md pattern) |
 | 2026-05-26 | Production cycles + yield tracking (Enh #5): new `production_cycles` (one per company per day, input_kg, stage1/2/3 outputs) + `production_cycle_outputs` (per-product Stage 4 finished weights) tables; endpoints: CRUD + `POST /cycles/{id}/finalise` (posts each output to product_stock as `cycle_output` movement); computed metrics — yield_pct = total_output/input × 100, belt_loss_pct = (stage3 − total_output) / stage3 × 100, wastage_kg = input − total_output; ProductionPage entry UI with live metrics preview; ProductionDashboardPage with yield trend (line), wastage by stage (stacked bar — orange=belt loss), top product outputs (horizontal bar), 4 KPI cards including conveyor-belt avg loss; 1-day cycle, manual input weight (per locked-in design decisions) |
 | 2026-05-26 | Production stage defaults: configurable per-stage names, loss-type labels (industry terminology), expected yield %, and warning thresholds. Stored in `app_settings` under key `production.stage_defaults` as JSON. Industry defaults: S1 Primary Crushing (Dust & Spillage Loss, 97.5%), S2 Secondary Crushing (Dust & Spillage Loss, 97%), S3 Screening (Oversize Reject, 94%), S4 Washing/Conveyor Belt (Silt / Wash Loss, 91%) → compound plant yield 80.8%. New endpoints `GET/PUT /api/v1/production/stage-defaults`. Production cycle entry rebuilt with per-stage cards showing live yield % vs target with green/amber/red variance badges. ProductionSettingsPage at `/production/settings` for tuning. Dashboard adds target reference line on yield chart, "vs Target" variance KPI card, and stacked-bar labels from configured stage names |
+| 2026-05-26 | Reusable `<DataTable<T>>` component (`frontend/src/components/DataTable.tsx`): generic sortable / per-column filterable / column-visibility toggleable / CSV-exportable table. Type-aware sort + filter (`string`/`number`/`date`/`enum`). Per-table state persisted to localStorage under `dt.{id}.{sort\|filters\|visible}` keys. Self-contained popover (no extra deps). First migration: ProductionPage cycles table — added a "Products" column showing badges of finished products + tonnage per cycle, CSV export, gear-icon column picker, and filter row. Pattern documented in CLAUDE.md → "Shared UI Components" section for incremental migration of remaining tables (Invoices, Products, Parties, etc.). |
