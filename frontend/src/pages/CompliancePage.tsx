@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
-  Plus, FileText, FolderOpen, Edit2, Trash2, Upload,
+  Plus, FolderOpen, Edit2, Trash2, Upload,
   AlertTriangle, CheckCircle, Clock, XCircle, RefreshCw, Settings2, X, Tag,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 
 // ── Types ───────────────────────────────────────────────────────────────── //
@@ -75,16 +76,7 @@ function AlertBadge({ level, days }: { level: string | null; days: number | null
   );
 }
 
-function StatusDot({ level }: { level: string | null }) {
-  if (!level) return <span className="h-2 w-2 rounded-full bg-gray-300 inline-block" />;
-  const colors: Record<string, string> = {
-    ok: 'bg-green-500',
-    warning: 'bg-yellow-500',
-    critical: 'bg-orange-500',
-    expired: 'bg-red-500',
-  };
-  return <span className={`h-2 w-2 rounded-full inline-block ${colors[level] ?? 'bg-gray-300'}`} />;
-}
+// StatusDot was used in the old card layout; AlertBadge now serves the role in the DataTable Status column.
 
 // ── Threshold Settings Panel ─────────────────────────────────────────────── //
 
@@ -777,117 +769,19 @@ export default function CompliancePage() {
         </div>
 
         <div className="p-4">
-          {loading ? (
-            <p className="text-center text-sm text-muted-foreground py-8">Loading…</p>
-          ) : displayedItems.length === 0 ? (
-            <div className="text-center py-12">
-              <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
-              <p className="text-sm text-muted-foreground">
-                {alertFilter ? `No ${alertFilter === 'ok' ? 'valid' : alertFilter} items found.` : 'No compliance items found.'}
-              </p>
-              {!alertFilter && <p className="text-xs text-muted-foreground mt-1">Click "Add Item" to get started.</p>}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-xs text-muted-foreground">
-                    <th className="px-3 py-2 text-left font-medium w-4"></th>
-                    <th className="px-3 py-2 text-left font-medium">Name</th>
-                    <th className="px-3 py-2 text-left font-medium">Type</th>
-                    <th className="px-3 py-2 text-left font-medium">Policy Holder</th>
-                    <th className="px-3 py-2 text-left font-medium">Issuer</th>
-                    <th className="px-3 py-2 text-left font-medium">Reference No.</th>
-                    <th className="px-3 py-2 text-left font-medium">Issue Date</th>
-                    <th className="px-3 py-2 text-left font-medium">Expiry Date</th>
-                    <th className="px-3 py-2 text-left font-medium">Status</th>
-                    <th className="px-3 py-2 text-right font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {displayedItems.map(item => (
-                    <tr key={item.id} className={`hover:bg-muted/30 ${item.alert_level === 'expired' ? 'bg-red-50/50' : ''}`}>
-                      <td className="px-3 py-2.5">
-                        <StatusDot level={item.alert_level} />
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <p className="font-medium">{item.name}</p>
-                        {item.notes && (
-                          <p className="text-[11px] text-muted-foreground truncate max-w-[200px]">{item.notes}</p>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Badge variant="outline" className="text-[10px]">
-                          {typeLabel(item.item_type)}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2.5 text-muted-foreground">
-                        {item.policy_holder ?? '—'}
-                      </td>
-                      <td className="px-3 py-2.5 text-muted-foreground">{item.issuer ?? '—'}</td>
-                      <td className="px-3 py-2.5 font-mono text-xs">{item.reference_no ?? '—'}</td>
-                      <td className="px-3 py-2.5 text-muted-foreground">
-                        {item.issue_date ? new Date(item.issue_date).toLocaleDateString('en-IN') : '—'}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {item.expiry_date ? (
-                          <span className={item.alert_level === 'expired' ? 'text-red-600 font-medium' : item.alert_level === 'critical' ? 'text-orange-600' : ''}>
-                            {new Date(item.expiry_date).toLocaleDateString('en-IN')}
-                          </span>
-                        ) : '—'}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {item.alert_level === 'ok' ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-green-600">
-                            <CheckCircle className="h-3 w-3" /> Valid
-                          </span>
-                        ) : (
-                          <AlertBadge level={item.alert_level} days={item.days_to_expiry} />
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex gap-0.5 justify-end">
-                          {item.file_path && (
-                            <>
-                              <Button
-                                size="icon" variant="ghost" className="h-7 w-7"
-                                title={`Open: ${item.file_path.split('/').pop()}`}
-                                disabled={openingFile === item.id}
-                                onClick={() => openFile(item)}
-                              >
-                                <FolderOpen className="h-3.5 w-3.5 text-blue-600" />
-                              </Button>
-                              <Button
-                                size="icon" variant="ghost" className="h-7 w-7"
-                                title="Delete file"
-                                onClick={() => deleteFile(item)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                              </Button>
-                            </>
-                          )}
-                          <Button
-                            size="icon" variant="ghost" className="h-7 w-7"
-                            title="Edit"
-                            onClick={() => { setEditItem(item); setDialogOpen(true); }}
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            size="icon" variant="ghost" className="h-7 w-7"
-                            title="Archive"
-                            onClick={() => deleteItem(item)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <ComplianceTable
+            items={displayedItems}
+            loading={loading}
+            itemTypes={itemTypes}
+            openingFile={openingFile}
+            onOpenFile={openFile}
+            onDeleteFile={deleteFile}
+            onEdit={item => { setEditItem(item); setDialogOpen(true); }}
+            onArchive={deleteItem}
+            emptyMessage={alertFilter
+              ? `No ${alertFilter === 'ok' ? 'valid' : alertFilter} items found.`
+              : 'No compliance items found.'}
+          />
         </div>
       </div>
 
@@ -913,5 +807,101 @@ export default function CompliancePage() {
         onSaved={newTypes => setItemTypes(newTypes)}
       />
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Compliance DataTable
+// ------------------------------------------------------------------ //
+function ComplianceTable({
+  items, loading, itemTypes, openingFile, onOpenFile, onDeleteFile, onEdit, onArchive, emptyMessage,
+}: {
+  items: ComplianceItem[];
+  loading: boolean;
+  itemTypes: string[];
+  openingFile: string | null;
+  onOpenFile: (item: ComplianceItem) => void;
+  onDeleteFile: (item: ComplianceItem) => void;
+  onEdit: (item: ComplianceItem) => void;
+  onArchive: (item: ComplianceItem) => void;
+  emptyMessage: string;
+}) {
+  const columns = useMemo<ColumnDef<ComplianceItem>[]>(() => [
+    { key: 'name', label: 'Name', accessor: i => i.name, className: 'font-medium' },
+    {
+      key: 'item_type', label: 'Type', type: 'enum',
+      enumOptions: itemTypes,
+      accessor: i => i.item_type,
+      format: v => <Badge variant="outline" className="text-[10px]">{typeLabel(String(v))}</Badge>,
+    },
+    { key: 'policy_holder', label: 'Policy Holder', accessor: i => i.policy_holder ?? '', className: 'text-muted-foreground' },
+    { key: 'issuer', label: 'Issuer', accessor: i => i.issuer ?? '', className: 'text-muted-foreground' },
+    { key: 'reference_no', label: 'Reference No.', accessor: i => i.reference_no ?? '', className: 'font-mono text-xs' },
+    {
+      key: 'issue_date', label: 'Issue Date', type: 'date',
+      defaultVisible: false,
+      accessor: i => i.issue_date ?? '',
+      format: v => v ? new Date(String(v)).toLocaleDateString('en-IN') : '—',
+      className: 'text-muted-foreground',
+    },
+    {
+      key: 'expiry_date', label: 'Expiry Date', type: 'date',
+      accessor: i => i.expiry_date ?? '',
+      format: (v, item) => v ? (
+        <span className={item.alert_level === 'expired' ? 'text-red-600 font-medium' : item.alert_level === 'critical' ? 'text-orange-600' : ''}>
+          {new Date(String(v)).toLocaleDateString('en-IN')}
+        </span>
+      ) : '—',
+    },
+    {
+      key: 'alert_level', label: 'Status', type: 'enum',
+      enumOptions: ['ok', 'warning', 'critical', 'expired'],
+      accessor: i => i.alert_level,
+      format: (v, item) => v === 'ok' ? (
+        <span className="inline-flex items-center gap-1 text-[10px] text-green-600">
+          <CheckCircle className="h-3 w-3" /> Valid
+        </span>
+      ) : <AlertBadge level={item.alert_level} days={item.days_to_expiry} />,
+    },
+    { key: 'notes', label: 'Notes', defaultVisible: false, accessor: i => i.notes ?? '' },
+  ], [itemTypes]);
+
+  return (
+    <DataTable<ComplianceItem>
+      id="compliance.items"
+      loading={loading}
+      data={items}
+      columns={columns}
+      rowKey={i => i.id}
+      exportFilename="compliance-items"
+      defaultSort={{ key: 'expiry_date', direction: 'asc' }}
+      emptyMessage={emptyMessage}
+      rowActions={item => (
+        <div className="flex gap-0.5 justify-end">
+          {item.file_path && (
+            <>
+              <Button size="icon" variant="ghost" className="h-7 w-7"
+                title={`Open: ${item.file_path.split('/').pop()}`}
+                disabled={openingFile === item.id}
+                onClick={() => onOpenFile(item)}>
+                <FolderOpen className="h-3.5 w-3.5 text-blue-600" />
+              </Button>
+              <Button size="icon" variant="ghost" className="h-7 w-7" title="Delete file"
+                onClick={() => onDeleteFile(item)}>
+                <Trash2 className="h-3.5 w-3.5 text-destructive" />
+              </Button>
+            </>
+          )}
+          <Button size="icon" variant="ghost" className="h-7 w-7" title="Edit"
+            onClick={() => onEdit(item)}>
+            <Edit2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button size="icon" variant="ghost" className="h-7 w-7" title="Archive"
+            onClick={() => onArchive(item)}>
+            <Trash2 className="h-3.5 w-3.5 text-red-500" />
+          </Button>
+        </div>
+      )}
+    />
   );
 }

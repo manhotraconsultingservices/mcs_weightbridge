@@ -8,8 +8,8 @@
  * purchase invoice finalise + production cycle finalise — see backend
  * routers/product_stock.py.
  */
-import { useEffect, useState, useCallback } from 'react';
-import { Package, Plus, Minus, History, TrendingDown, AlertTriangle, RotateCw } from 'lucide-react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Plus, Minus, History, TrendingDown, AlertTriangle, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 
 interface ProductStockRow {
@@ -141,61 +142,12 @@ export default function ProductInventoryPage() {
         ))}
       </div>
 
-      {/* Stock table */}
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="text-left p-3 font-medium">Product</th>
-                  <th className="text-right p-3 font-medium">Current Stock</th>
-                  <th className="text-right p-3 font-medium">Min Level</th>
-                  <th className="text-center p-3 font-medium">Status</th>
-                  <th className="text-right p-3 font-medium">Last Updated</th>
-                  <th className="p-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={6} className="text-center p-8 text-muted-foreground">Loading…</td></tr>
-                ) : rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={6}>
-                      <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <Package className="h-10 w-10 mb-3 text-muted-foreground/40" />
-                        <p className="text-sm font-medium">No products match this filter</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : rows.map(r => (
-                  <tr key={r.id} className="border-b hover:bg-muted/30 transition-colors">
-                    <td className="p-3 font-medium">{r.product_name}</td>
-                    <td className="p-3 text-right font-mono">{fmt(r.current_stock, r.unit)}</td>
-                    <td className="p-3 text-right text-muted-foreground">{fmt(r.min_stock_level, r.unit)}</td>
-                    <td className="p-3 text-center">
-                      <Badge className={STATUS_BADGE[r.stock_status]}>{r.stock_status.toUpperCase()}</Badge>
-                    </td>
-                    <td className="p-3 text-right text-xs text-muted-foreground">
-                      {new Date(r.updated_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                    </td>
-                    <td className="p-3">
-                      <div className="flex gap-1 justify-end">
-                        <Button variant="ghost" size="icon" title="Adjust stock" onClick={() => { setAdjustRow(r); setAdjustOpen(true); }}>
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" title="View history" onClick={() => setHistoryRow(r)}>
-                          <History className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      <ProductStockTable
+        rows={rows}
+        loading={loading}
+        onAdjust={r => { setAdjustRow(r); setAdjustOpen(true); }}
+        onHistory={r => setHistoryRow(r)}
+      />
 
       <AdjustDialog
         open={adjustOpen}
@@ -208,6 +160,71 @@ export default function ProductInventoryPage() {
         onClose={() => setHistoryRow(null)}
       />
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Product Stock DataTable
+// ------------------------------------------------------------------ //
+function ProductStockTable({
+  rows, loading, onAdjust, onHistory,
+}: {
+  rows: ProductStockRow[];
+  loading: boolean;
+  onAdjust: (r: ProductStockRow) => void;
+  onHistory: (r: ProductStockRow) => void;
+}) {
+  const columns = useMemo<ColumnDef<ProductStockRow>[]>(() => [
+    { key: 'product_name', label: 'Product', accessor: r => r.product_name, className: 'font-medium' },
+    {
+      key: 'current_stock', label: 'Current Stock', type: 'number', align: 'right',
+      accessor: r => r.current_stock,
+      format: (v, r) => <span className="font-mono">{fmt(Number(v), r.unit)}</span>,
+    },
+    {
+      key: 'min_stock_level', label: 'Min Level', type: 'number', align: 'right',
+      accessor: r => r.min_stock_level,
+      format: (v, r) => <span className="text-muted-foreground">{fmt(Number(v), r.unit)}</span>,
+    },
+    {
+      key: 'stock_status', label: 'Status', type: 'enum', align: 'center',
+      enumOptions: ['ok', 'low', 'out'],
+      accessor: r => r.stock_status,
+      format: v => <Badge className={STATUS_BADGE[String(v) as 'ok' | 'low' | 'out']}>{String(v).toUpperCase()}</Badge>,
+    },
+    {
+      key: 'updated_at', label: 'Last Updated', type: 'date', align: 'right',
+      accessor: r => r.updated_at,
+      format: v => (
+        <span className="text-xs text-muted-foreground">
+          {new Date(String(v)).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+        </span>
+      ),
+    },
+    { key: 'unit', label: 'Unit', defaultVisible: false, accessor: r => r.unit },
+  ], []);
+
+  return (
+    <DataTable<ProductStockRow>
+      id="product-stock.main"
+      loading={loading}
+      data={rows}
+      columns={columns}
+      rowKey={r => r.id}
+      exportFilename="product-stock"
+      defaultSort={{ key: 'product_name', direction: 'asc' }}
+      emptyMessage="No products match this filter"
+      rowActions={r => (
+        <div className="flex gap-1 justify-end">
+          <Button variant="ghost" size="icon" title="Adjust stock" onClick={() => onAdjust(r)}>
+            <Plus className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" title="View history" onClick={() => onHistory(r)}>
+            <History className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+    />
   );
 }
 

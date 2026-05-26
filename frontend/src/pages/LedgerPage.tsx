@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { BookOpen, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 import type { Party } from '@/types';
 
@@ -281,51 +282,73 @@ export default function LedgerPage() {
           {loadingOutstanding && <div className="py-8 text-center text-muted-foreground text-sm">Loading…</div>}
 
           {outstanding && !loadingOutstanding && (
-            <Card>
-              <CardContent className="p-0">
-                {outstanding.items.length === 0 ? (
-                  <div className="py-16 text-center">
-                    <TrendingDown className="mx-auto mb-3 h-10 w-10 text-green-500/50" />
-                    <p className="text-muted-foreground text-sm">No outstanding invoices</p>
-                  </div>
-                ) : (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted/50">
-                        <th className="px-4 py-2 text-left font-medium text-muted-foreground">Invoice</th>
-                        <th className="px-4 py-2 text-left font-medium text-muted-foreground">Party</th>
-                        <th className="px-4 py-2 text-right font-medium text-muted-foreground">Total</th>
-                        <th className="px-4 py-2 text-right font-medium text-muted-foreground">Paid</th>
-                        <th className="px-4 py-2 text-right font-medium text-muted-foreground">Balance</th>
-                        <th className="px-4 py-2 text-center font-medium text-muted-foreground">Age</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {outstanding.items.map(item => (
-                        <tr key={item.id} className="border-b hover:bg-muted/20 transition-colors">
-                          <td className="px-4 py-2">
-                            <p className="font-medium font-mono text-xs">{item.invoice_no}</p>
-                            <p className="text-xs text-muted-foreground">{item.invoice_date}{item.due_date ? ` · Due: ${item.due_date}` : ''}</p>
-                          </td>
-                          <td className="px-4 py-2 text-muted-foreground">{item.party_name}</td>
-                          <td className="px-4 py-2 text-right">{fmt(Number(item.grand_total))}</td>
-                          <td className="px-4 py-2 text-right text-green-700">{Number(item.amount_paid) > 0 ? fmt(Number(item.amount_paid)) : '—'}</td>
-                          <td className="px-4 py-2 text-right font-semibold text-destructive">{fmt(Number(item.balance))}</td>
-                          <td className="px-4 py-2 text-center">
-                            <Badge className={`text-[10px] ${AGE_COLORS[item.age_bucket] || ''}`}>
-                              {item.age_bucket === 'current' ? 'Current' : `${item.age_bucket} days`}
-                            </Badge>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </CardContent>
-            </Card>
+            outstanding.items.length === 0 ? (
+              <Card>
+                <CardContent className="py-16 text-center">
+                  <TrendingDown className="mx-auto mb-3 h-10 w-10 text-green-500/50" />
+                  <p className="text-muted-foreground text-sm">No outstanding invoices</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <OutstandingTable items={outstanding.items} />
+            )
           )}
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Outstanding DataTable
+// ------------------------------------------------------------------ //
+function OutstandingTable({ items }: { items: OutstandingItem[] }) {
+  const columns = useMemo<ColumnDef<OutstandingItem>[]>(() => [
+    { key: 'invoice_no', label: 'Invoice', accessor: i => i.invoice_no, className: 'font-mono text-xs font-medium' },
+    { key: 'invoice_date', label: 'Date', type: 'date', accessor: i => i.invoice_date, className: 'text-muted-foreground' },
+    { key: 'due_date', label: 'Due', type: 'date', accessor: i => i.due_date ?? '', defaultVisible: false },
+    {
+      key: 'invoice_type', label: 'Type', type: 'enum',
+      enumOptions: ['sale', 'purchase'],
+      accessor: i => i.invoice_type,
+      format: v => <span className="capitalize text-xs">{String(v)}</span>,
+    },
+    { key: 'party_name', label: 'Party', accessor: i => i.party_name, className: 'text-muted-foreground' },
+    {
+      key: 'grand_total', label: 'Total', type: 'number', align: 'right',
+      accessor: i => i.grand_total, format: v => fmt(Number(v)),
+    },
+    {
+      key: 'amount_paid', label: 'Paid', type: 'number', align: 'right',
+      accessor: i => i.amount_paid,
+      format: v => Number(v) > 0 ? <span className="text-green-700">{fmt(Number(v))}</span> : <span className="text-muted-foreground">—</span>,
+    },
+    {
+      key: 'balance', label: 'Balance', type: 'number', align: 'right',
+      accessor: i => i.balance,
+      format: v => <span className="font-semibold text-destructive">{fmt(Number(v))}</span>,
+    },
+    {
+      key: 'age_bucket', label: 'Age', type: 'enum', align: 'center',
+      enumOptions: ['current', '1-30', '31-60', '61-90', '90+'],
+      accessor: i => i.age_bucket,
+      format: v => (
+        <Badge className={`text-[10px] ${AGE_COLORS[String(v)] || ''}`}>
+          {v === 'current' ? 'Current' : `${v} days`}
+        </Badge>
+      ),
+    },
+  ], []);
+
+  return (
+    <DataTable<OutstandingItem>
+      id="ledger.outstanding"
+      data={items}
+      columns={columns}
+      rowKey={i => i.id}
+      exportFilename="outstanding-invoices"
+      defaultSort={{ key: 'invoice_date', direction: 'asc' }}
+      emptyMessage="No outstanding invoices"
+    />
   );
 }
