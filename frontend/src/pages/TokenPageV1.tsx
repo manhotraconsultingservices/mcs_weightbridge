@@ -1220,6 +1220,12 @@ export default function TokenPageV1() {
 
   function handleTokenCreated(token: Token) {
     setTokens(prev => [token, ...prev]);
+    // Skip the weight-capture dialog for volume-based tokens — they come back
+    // already COMPLETED (single-call workflow). Only weighbridge tokens (status
+    // OPEN or FIRST_WEIGHT) need the bridge weighment popup.
+    if (token.status === 'COMPLETED' || token.status === 'CANCELLED') {
+      return;
+    }
     openWeight(token);
   }
 
