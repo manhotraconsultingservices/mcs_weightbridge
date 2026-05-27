@@ -428,7 +428,7 @@ function CycleDialog({
 
   return (
     <Dialog open={open} onOpenChange={o => !o && onClose()}>
-      <DialogContent className="max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto">
+      <DialogContent className="max-w-6xl w-[95vw] max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editing ? `Edit Cycle — ${editing.cycle_date}` : 'New Production Cycle'}</DialogTitle>
         </DialogHeader>
