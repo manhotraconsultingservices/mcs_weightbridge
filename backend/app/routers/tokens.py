@@ -525,6 +525,57 @@ async def list_tokens(
     return TokenListResponse(items=list(items), total=total, page=page, page_size=page_size)
 
 
+@router.get("/last-by-vehicle/{vehicle_no}")
+async def last_by_vehicle(
+    vehicle_no: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Smart-suggest for kiosk: returns the most recent COMPLETED token for this
+    plate so we can offer 'Same as last time?'. Returns null if unseen.
+
+    Response shape (or `null` if no match):
+      { token_type, party: {id, name}, product: {id, name, unit, bulk_density},
+        vehicle_type, tare_weight, last_seen_date }
+    """
+    company, _ = await _get_company_and_fy(db)
+    plate = vehicle_no.upper().strip()
+    if not plate:
+        return None
+
+    last = (await db.execute(
+        select(Token)
+        .options(selectinload(Token.party), selectinload(Token.product))
+        .where(
+            Token.company_id == company.id,
+            Token.vehicle_no == plate,
+            Token.status == "COMPLETED",
+            Token.is_supplement == False,
+        )
+        .order_by(Token.completed_at.desc().nulls_last(), Token.created_at.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    if not last:
+        return None
+
+    return {
+        "token_type": last.token_type,
+        "vehicle_type": last.vehicle_type,
+        "tare_weight": float(last.tare_weight) if last.tare_weight is not None else None,
+        "party": {
+            "id": str(last.party.id),
+            "name": last.party.name,
+        } if last.party else None,
+        "product": {
+            "id": str(last.product.id),
+            "name": last.product.name,
+            "unit": last.product.unit,
+            "bulk_density": float(last.product.bulk_density) if last.product.bulk_density is not None else None,
+        } if last.product else None,
+        "last_seen_date": last.completed_at.date().isoformat() if last.completed_at else last.token_date.isoformat(),
+    }
+
+
 @router.get("/today", response_model=list[TokenResponse])
 async def today_tokens(
     db: AsyncSession = Depends(get_db),

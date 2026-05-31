@@ -234,6 +234,7 @@ All endpoints prefixed `/api/v1` unless noted.
 | POST | `/` | Create token |
 | GET | `/` | List tokens (paginated) |
 | GET | `/today` | Today's tokens |
+| GET | `/last-by-vehicle/{vehicle_no}` | Smart-suggest: returns last COMPLETED token's party + product + tare for this plate (used by Operator Kiosk's "Same as last time?" card) |
 | GET/PUT | `/{id}` | Get/update token |
 | POST | `/{id}/first-weight` | Record first weight |
 | POST | `/{id}/second-weight` | Record second weight + complete |
@@ -404,6 +405,7 @@ All endpoints prefixed `/api/v1` unless noted.
 | GET | `/wallpaper/info` | Any | Get wallpaper URL (`{"url": "/uploads/wallpaper/filename.jpg"}` or `{"url": null}`) |
 | POST | `/wallpaper` | admin | Upload wallpaper (multipart `file` field, image/*, max 5 MB) |
 | DELETE | `/wallpaper` | admin | Remove wallpaper (deletes file from disk + app_settings row) |
+| GET | `/manager-contacts` | Any | Returns active admin users with a phone — powers the Operator Kiosk SOS button (zero-config) |
 | GET | `/vehicle-types` | Any | List vehicle types (default: truck, tractor, trailer, tipper, mini_truck, tanker, dumper) |
 | PUT | `/vehicle-types` | admin | Save custom vehicle types list (deduplicated, lowercased, underscore-spaced) |
 | GET | `/einvoice-config` | admin | Get eInvoice config (passwords masked) |
@@ -508,6 +510,7 @@ All endpoints prefixed `/api/v1` unless noted.
 | `InventoryPage` | `/inventory` | Store Inventory — 5 tabs: Stock (cards with colour-coded levels + Use Stock dialog), Orders (PO workflow with approve/reject/receive), History (paginated transaction log), Analytics (trend/pie/top-consumed charts with date presets), Settings (Telegram config + custom categories) |
 | `SnapshotSearchPage` | `/snapshot-search` | Search camera snapshots by token number, vehicle number, or date range. Results grouped by token with 1st/2nd weight sections. Lightbox image viewer. Date presets (Today/7 Days/30 Days). Pagination. |
 | `CustomerProfilePage` | `/customers/:id` | Customer/Supplier 360 — KPIs (outstanding/LTV/AOV/last-order), aging chart, last 20 invoices, last 20 payments, custom rate cards. Linked from Parties names, Ledger outstanding, Dashboard Top Customers, and Dashboard Outstanding KPI. |
+| `OperatorKioskPage` | `/operator` | Full-bleed kiosk-mode UI for low-literacy bridge operators. 3-screen flow (Arrival → Weighing → Done) with photo-tile pickers, "Same as last time?" smart-suggest, voice confirm, floating SOS-call-manager button. Users with `role='operator'` land here by default on login. |
 
 ---
 
@@ -848,3 +851,4 @@ SUPER_ADMIN_SECRET=change-this-to-a-strong-secret
 | 2026-05-31 | TokenPage: inline party-add. `+` button next to the Party Select opens a quick-create dialog (name, party_type, GSTIN, phone, billing city/state). Newly created party is selected automatically. |
 | 2026-05-31 | Invoice write-off: `POST /api/v1/invoices/{id}/write-off` (admin + accountant). Records `write_off_amount`/`reason`/`at`/`by`; closes balance (sets `payment_status='paid'` when zero, else `'partial'`); writes a `write_off` audit-log entry. DB columns `write_off_amount NUMERIC(14,2)`, `write_off_reason VARCHAR(500)`, `write_off_at TIMESTAMPTZ`, `write_off_by UUID -> users`. InvoicesPage adds amber XCircle button next to Record Payment + a `W/O` badge with hover-detail on written-off rows. |
 | 2026-05-31 | Customer 360 view: `GET /api/v1/parties/{id}/360` returns one-shot aggregate (header + KPIs + aging buckets + last 20 invoices + last 20 payments + custom rates + lifetime tonnage). New `CustomerProfilePage` at `/customers/:id` with 8 KPI cards, stacked aging chart, 3 tabs (Invoices / Payments / Pricing), and quick-action footer. Dashboard Top Customers rows now link to `/customers/:id`; Outstanding KPI card links to `/ledger?tab=outstanding`. Parties names + Ledger outstanding party names are now clickable hyperlinks. Top-customers backend response includes `party_id` for linkability. |
+| 2026-05-31 | **Operator Kiosk Mode** (BCG strategic review · Sprint 1): new `/operator` route — full-bleed, no sidebar, no chrome. Three-screen state machine (Arrival → Weighing → Done) built for low-literacy operators. Every primary control ≥64px, vocabulary action-oriented ("Truck OUT" not "Sale Token"), photo-tile pickers (colored-circle avatars + initials, since `products.image` doesn't exist yet), tyre-count quick-select that auto-routes to `/tokens/volume` for skip-the-bridge tokens. Backend: new `GET /api/v1/tokens/last-by-vehicle/{plate}` powers "Same as last time?" smart-suggest. Web Speech API voice confirmation post-capture ("X tonne captured. Truck can move."). Floating red "Need Help" SOS button on every screen → modal with admin phone numbers (zero-config via new `GET /api/v1/app-settings/manager-contacts`, falls back to active admins with phone). Users with `role='operator'` land here automatically on login via `HomeRedirect`; power-users keep `/tokens-v1` (link in top bar). |

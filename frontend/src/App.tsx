@@ -11,6 +11,7 @@ import DashboardPage from '@/pages/DashboardPage';
 import TokenPage from '@/pages/TokenPage';
 import PartiesPage from '@/pages/PartiesPage';
 import CustomerProfilePage from '@/pages/CustomerProfilePage';
+import OperatorKioskPage from '@/pages/OperatorKioskPage';
 import VehiclesPage from '@/pages/VehiclesPage';
 import InvoicesPage from '@/pages/InvoicesPage';
 import QuotationsPage from '@/pages/QuotationsPage';
@@ -64,8 +65,10 @@ function isTenantSubdomain(): boolean {
   return sub !== 'www' && sub !== 'platform';
 }
 
-// Redirect to the first page the user has access to
-function HomeRedirect({ permissions }: { permissions: string[] }) {
+// Redirect to the first page the user has access to.
+// Operators get the simplified kiosk by default.
+function HomeRedirect({ permissions, role }: { permissions: string[]; role?: string }) {
+  if (role === 'operator') return <Navigate to="/operator" replace />;
   if (permissions.includes('*') || permissions.includes('/')) return <DashboardPage />;
   const first = permissions[0];
   if (first) return <Navigate to={first} replace />;
@@ -112,7 +115,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
         >
           <div className={wallpaperUrl ? 'min-h-full bg-background/80 backdrop-blur-sm rounded-lg p-4' : ''}>
             <Routes>
-            <Route path="/" element={<HomeRedirect permissions={permissions} />} />
+            <Route path="/" element={<HomeRedirect permissions={permissions} role={user.role} />} />
             <Route path="/tokens" element={<TokenPage />} />
             <Route path="/tokens-v1" element={<TokenPageV1 />} />
             <Route path="/invoices" element={<InvoicesPage defaultType="sale" />} />
@@ -145,7 +148,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/admin/users" element={<UserManagementPage />} />
             <Route path="/admin/permissions" element={<PermissionsPage />} />
             <Route path="/admin/wallpaper" element={<WallpaperSettingsPage />} />
-              <Route path="*" element={<HomeRedirect permissions={permissions} />} />
+              <Route path="*" element={<HomeRedirect permissions={permissions} role={user.role} />} />
             </Routes>
           </div>
         </main>
@@ -263,6 +266,13 @@ function RootRoutes() {
         (!isAuthenticated || !user)
           ? <LoginPage onLogin={login} />
           : <PrivateAdminPage />
+      } />
+      {/* Operator kiosk — full-bleed, no sidebar/header chrome. Operators
+          land here by default; admins can also visit /operator directly. */}
+      <Route path="/operator" element={
+        (!isAuthenticated || !user)
+          ? <LoginPage onLogin={login} />
+          : <OperatorKioskPage user={user} onLogout={logout} />
       } />
       <Route path="*" element={
         (!isAuthenticated || !user)

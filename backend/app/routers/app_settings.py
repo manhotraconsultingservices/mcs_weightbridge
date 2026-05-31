@@ -28,6 +28,27 @@ router = APIRouter(prefix="/api/v1/app-settings", tags=["App Settings"])
 
 TABLE = "app_settings"
 
+
+@router.get("/manager-contacts")
+async def manager_contacts(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Phone-list shown by the Operator Kiosk's "Need Help" SOS button.
+
+    Returns active admin users with a phone number. Zero-config: as soon as
+    an admin has a phone in their profile, the operator can reach them.
+    """
+    rows = (await db.execute(text(
+        "SELECT full_name, username, phone FROM users "
+        "WHERE role = 'admin' AND is_active = true AND phone IS NOT NULL AND phone <> '' "
+        "ORDER BY full_name NULLS LAST, username"
+    ))).fetchall()
+    return [
+        {"name": (r[0] or r[1]), "phone": r[2]}
+        for r in rows
+    ]
+
 URGENCY_KEY = "weighbridge_urgency"
 URGENCY_DEFAULTS = {"green_max": 30, "amber_max": 60, "orange_max": 120}
 
