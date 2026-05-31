@@ -43,7 +43,17 @@
 
 {% macro format_dt(dt) %}{% if dt %}{{ dt.strftime('%d-%b-%Y %H:%M:%S') }}{% endif %}{% endmacro %}
 {% macro format_date(dt) %}{% if dt %}{{ dt.strftime('%d-%b-%Y') }}{% endif %}{% endmacro %}
-{% macro format_wt(w) %}{% if w %}{{ '%.2f' % (w|float) }}{% else %}—{% endif %}{% endmacro %}
+{# Weight in MT (3 decimals) — universal display for gross/tare/net #}
+{% macro format_wt_mt(w) %}{% if w %}{{ '%.3f' % (w|float / 1000) }} MT{% else %}—{% endif %}{% endmacro %}
+{# Net weight with MT and CFT side by side. CFT computed via product.bulk_density (t/m³) ÷ density × 35.3147 ft³/m³ #}
+{% macro format_wt_dual(w, bulk_density) %}
+  {% if w %}
+    {{ '%.3f' % (w|float / 1000) }} MT
+    {% if bulk_density and (bulk_density|float) > 0 %}
+      / {{ '%.2f' % (w|float / (bulk_density|float) / 1000 * 35.3147) }} CFT
+    {% endif %}
+  {% else %}—{% endif %}
+{% endmacro %}
 
 {% macro token_copy(label) %}
 <div class="copy">
@@ -81,17 +91,17 @@
       {% set gross_first = (token.first_weight_type or 'gross') == 'gross' %}
       <tr>
         <td>Gross Weight</td>
-        <td class="col-wt">{{ format_wt(token.gross_weight) }}</td>
+        <td class="col-wt">{{ format_wt_mt(token.gross_weight) }}</td>
         <td class="col-dt">{{ format_dt(token.first_weight_at if gross_first else token.second_weight_at) }}</td>
       </tr>
       <tr>
         <td>Tare Weight</td>
-        <td class="col-wt">{{ format_wt(token.tare_weight) }}</td>
+        <td class="col-wt">{{ format_wt_mt(token.tare_weight) }}</td>
         <td class="col-dt">{{ format_dt(token.second_weight_at if gross_first else token.first_weight_at) }}</td>
       </tr>
       <tr class="net">
         <td>Net Weight</td>
-        <td class="col-wt">{{ format_wt(token.net_weight) }}</td>
+        <td class="col-wt">{{ format_wt_dual(token.net_weight, token.product.bulk_density if token.product else none) }}</td>
         <td class="col-dt">{{ format_dt(token.completed_at) }}</td>
       </tr>
     </tbody>

@@ -9,7 +9,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Search, Scale, CheckCircle2, XCircle, Loader2,
   Truck, Package, User, Wifi, WifiOff, ArrowRight,
-  AlertCircle, RefreshCw, Camera, Download,
+  AlertCircle, RefreshCw, Camera, Download, Plus,
 } from 'lucide-react';
 import { PrintButton } from '@/components/PrintButton';
 import { downloadCsv } from '@/components/DataTable';
@@ -152,6 +152,36 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // Inline party quick-create
+  const [partyDialogOpen, setPartyDialogOpen] = useState(false);
+  const [quickParty, setQuickParty] = useState({
+    name: '', party_type: 'customer' as 'customer' | 'supplier' | 'both', phone: '', gstin: '',
+  });
+  const [savingParty, setSavingParty] = useState(false);
+
+  async function handleCreateParty() {
+    const name = quickParty.name.trim();
+    if (!name) { setError('Party name is required'); return; }
+    setSavingParty(true);
+    try {
+      const { data } = await api.post<Party>('/api/v1/parties', {
+        name,
+        party_type: quickParty.party_type,
+        phone: quickParty.phone.trim() || null,
+        gstin: quickParty.gstin.trim() || null,
+      });
+      setParties(prev => [data, ...prev]);                     // prepend so it's at top of list
+      setForm(f => ({ ...f, party_id: data.id }));             // auto-select the new one
+      setPartyDialogOpen(false);
+      setQuickParty({ name: '', party_type: 'customer', phone: '', gstin: '' });
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      setError(err.response?.data?.detail ?? 'Failed to create party');
+    } finally {
+      setSavingParty(false);
+    }
+  }
 
   useEffect(() => {
     Promise.all([
@@ -422,29 +452,46 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
         {/* Party */}
         <div className="space-y-1">
           <Label className="text-xs">Party</Label>
-          <Select value={form.party_id || undefined} onValueChange={v => setForm(f => ({ ...f, party_id: v ?? '' }))}>
-            <SelectTrigger className="h-8 text-xs">
-              <span className="truncate text-left flex-1">
-                {form.party_id
-                  ? (parties.find(p => p.id === form.party_id)?.name ?? '…')
-                  : <span className="text-muted-foreground">Select party…</span>}
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              {parties
-                .filter(p => {
-                  if (form.token_type === 'sale') return p.party_type === 'customer' || p.party_type === 'both';
-                  if (form.token_type === 'purchase') return p.party_type === 'supplier' || p.party_type === 'both';
-                  return true;
-                })
-                .map(p => (
-                  <SelectItem key={p.id} value={String(p.id)}>
-                    <span className="font-medium">{p.name}</span>
-                    {p.gstin && <span className="text-muted-foreground text-xs ml-2">{p.gstin}</span>}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
+          <div className="flex gap-1.5">
+            <Select value={form.party_id || undefined} onValueChange={v => setForm(f => ({ ...f, party_id: v ?? '' }))}>
+              <SelectTrigger className="h-8 text-xs flex-1">
+                <span className="truncate text-left flex-1">
+                  {form.party_id
+                    ? (parties.find(p => p.id === form.party_id)?.name ?? '…')
+                    : <span className="text-muted-foreground">Select party…</span>}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                {parties
+                  .filter(p => {
+                    if (form.token_type === 'sale') return p.party_type === 'customer' || p.party_type === 'both';
+                    if (form.token_type === 'purchase') return p.party_type === 'supplier' || p.party_type === 'both';
+                    return true;
+                  })
+                  .map(p => (
+                    <SelectItem key={p.id} value={String(p.id)}>
+                      <span className="font-medium">{p.name}</span>
+                      {p.gstin && <span className="text-muted-foreground text-xs ml-2">{p.gstin}</span>}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <Button
+              type="button" size="sm" variant="outline" className="h-8 px-2 shrink-0"
+              onClick={() => {
+                // Pre-fill party_type to match the current token type
+                setQuickParty({
+                  name: '',
+                  party_type: form.token_type === 'purchase' ? 'supplier' : 'customer',
+                  phone: '', gstin: '',
+                });
+                setPartyDialogOpen(true);
+              }}
+              title="Add a new party — appears in the dropdown immediately"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
 
         {/* Material */}
@@ -622,6 +669,74 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           {weightMethod === 'volume' ? 'Create Token (Volume)' : 'Start Weighment'}
         </Button>
       </div>
+
+      {/* Quick-create Party dialog — opens from the + button next to Party dropdown */}
+      <Dialog open={partyDialogOpen} onOpenChange={o => !o && setPartyDialogOpen(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Party</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Party Type</Label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(['customer', 'supplier', 'both'] as const).map(t => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setQuickParty(q => ({ ...q, party_type: t }))}
+                    className={cn(
+                      'rounded-md border-2 p-2 text-xs font-medium capitalize transition-all',
+                      quickParty.party_type === t
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border text-muted-foreground hover:border-primary/40'
+                    )}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Name <span className="text-destructive">*</span></Label>
+              <Input
+                autoFocus
+                value={quickParty.name}
+                onChange={e => setQuickParty(q => ({ ...q, name: e.target.value }))}
+                placeholder="e.g. Rajesh Construction Co"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Phone <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                value={quickParty.phone}
+                onChange={e => setQuickParty(q => ({ ...q, phone: e.target.value }))}
+                placeholder="10-digit mobile"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">GSTIN <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                value={quickParty.gstin}
+                onChange={e => setQuickParty(q => ({ ...q, gstin: e.target.value.toUpperCase() }))}
+                placeholder="15-character GSTIN"
+                maxLength={15}
+                className="font-mono"
+              />
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              You can fill in the rest of the party details later from the Parties page.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPartyDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateParty} disabled={savingParty || !quickParty.name.trim()}>
+              {savingParty ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+              Add Party
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1104,11 +1219,20 @@ function CameraPanel({ cameraId, label }: CameraPanelProps) {
 }
 
 // ------------------------------------------------------------------ //
-// MT weight formatter
+// MT + CFT weight formatters
 // ------------------------------------------------------------------ //
+const FT3_PER_M3_CONST = 35.3147;
 function mtFmt(v: number | null | undefined) {
   if (v == null) return '—';
   return (v / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' MT';
+}
+/** Returns "9.750 MT / 344.34 CFT" when bulk_density available, else "9.750 MT" */
+function dualFmt(weightKg: number | null | undefined, bulkDensity: number | null | undefined): string {
+  if (weightKg == null) return '—';
+  const mt = (weightKg / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  if (!bulkDensity || bulkDensity <= 0) return `${mt} MT`;
+  const cft = (weightKg / (Number(bulkDensity) * 1000)) * FT3_PER_M3_CONST;
+  return `${mt} MT / ${cft.toFixed(2)} CFT`;
 }
 
 // Active statuses (default filter)
@@ -1339,19 +1463,26 @@ export default function TokenPageV1() {
               className="text-muted-foreground h-7 gap-1 text-xs shrink-0"
               disabled={filtered.length === 0}
               onClick={() => {
-                const headers = ['Token No', 'Date', 'Vehicle', 'Method', 'Party', 'Material', 'Gross (MT)', 'Tare (MT)', 'Net (MT)', 'Status'];
-                const rows = filtered.map(t => [
-                  t.token_no != null ? String(t.token_no) : '',
-                  t.token_date,
-                  t.vehicle_no,
-                  t.weight_method ?? 'weighbridge',
-                  t.party?.name ?? '',
-                  t.product?.name ?? '',
-                  t.gross_weight != null ? (Number(t.gross_weight) / 1000).toFixed(3) : '',
-                  t.tare_weight != null ? (Number(t.tare_weight) / 1000).toFixed(3) : '',
-                  t.net_weight != null ? (Number(t.net_weight) / 1000).toFixed(3) : '',
-                  t.status,
-                ]);
+                const headers = ['Token No', 'Date', 'Vehicle', 'Method', 'Party', 'Material', 'Gross (MT)', 'Tare (MT)', 'Net (MT)', 'Net (CFT)', 'Status'];
+                const rows = filtered.map(t => {
+                  const bd = t.product?.bulk_density;
+                  const cft = (t.net_weight != null && bd && Number(bd) > 0)
+                    ? ((Number(t.net_weight) / (Number(bd) * 1000)) * 35.3147).toFixed(2)
+                    : '';
+                  return [
+                    t.token_no != null ? String(t.token_no) : '',
+                    t.token_date,
+                    t.vehicle_no,
+                    t.weight_method ?? 'weighbridge',
+                    t.party?.name ?? '',
+                    t.product?.name ?? '',
+                    t.gross_weight != null ? (Number(t.gross_weight) / 1000).toFixed(3) : '',
+                    t.tare_weight != null ? (Number(t.tare_weight) / 1000).toFixed(3) : '',
+                    t.net_weight != null ? (Number(t.net_weight) / 1000).toFixed(3) : '',
+                    cft,
+                    t.status,
+                  ];
+                });
                 downloadCsv(`tokens-${new Date().toISOString().slice(0,10)}`, [headers, ...rows]);
               }}
               title="Download currently-filtered tokens as CSV"
@@ -1493,9 +1624,9 @@ export default function TokenPageV1() {
                     {/* Weights in MT — never wrap */}
                     <div className="text-right font-mono text-xs text-muted-foreground whitespace-nowrap">{mtFmt(token.gross_weight)}</div>
                     <div className="text-right font-mono text-xs text-muted-foreground whitespace-nowrap">{mtFmt(token.tare_weight)}</div>
-                    <div className="text-right font-mono text-xs font-bold whitespace-nowrap">
+                    <div className="text-right font-mono text-xs font-bold whitespace-nowrap" title={dualFmt(token.net_weight, token.product?.bulk_density)}>
                       {token.net_weight != null
-                        ? <span className="text-primary">{mtFmt(token.net_weight)}</span>
+                        ? <span className="text-primary">{dualFmt(token.net_weight, token.product?.bulk_density)}</span>
                         : <span className="text-muted-foreground">—</span>
                       }
                     </div>

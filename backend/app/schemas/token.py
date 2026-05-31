@@ -72,6 +72,7 @@ class ProductBrief(BaseModel):
     id: UUID
     name: str
     unit: str
+    bulk_density: Decimal | None = None    # for client-side CFT computation
     model_config = {"from_attributes": True}
 
 

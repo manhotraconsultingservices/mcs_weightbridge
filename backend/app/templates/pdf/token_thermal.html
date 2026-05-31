@@ -167,7 +167,13 @@
     <span class="wval">{% if token.net_weight %}{{ '%.2f'|format(token.net_weight|float) }} kg{% else %}—{% endif %}</span>
   </div>
   {% if token.net_weight %}
-  <div class="net-mt">= {{ '%.3f'|format(token.net_weight|float / 1000) }} MT</div>
+  <div class="net-mt">
+    = {{ '%.3f'|format(token.net_weight|float / 1000) }} MT
+    {% set bd = token.product.bulk_density if token.product else none %}
+    {% if bd and (bd|float) > 0 %}
+      / {{ '%.2f'|format(token.net_weight|float / (bd|float) / 1000 * 35.3147) }} CFT
+    {% endif %}
+  </div>
   {% endif %}
 </div>
 <hr class="sep">

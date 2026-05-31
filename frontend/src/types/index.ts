@@ -145,6 +145,7 @@ export interface TokenProduct {
   id: string;
   name: string;
   unit: string;
+  bulk_density: number | null;   // t/m³ — enables MT ↔ CFT conversion in UI
 }
 
 export interface TokenVehicle {
