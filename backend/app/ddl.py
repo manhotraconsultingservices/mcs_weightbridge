@@ -507,6 +507,11 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS lr_rr_no VARCHAR(50)",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS terms_of_delivery VARCHAR(200)",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS driver_name VARCHAR(100)",
+        # ── Invoice write-off tracking (admin/accountant action) ─────────────
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS write_off_amount NUMERIC(14,2) NOT NULL DEFAULT 0",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS write_off_reason VARCHAR(500)",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS write_off_at TIMESTAMPTZ",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS write_off_by UUID REFERENCES users(id)",
     ]
 
 

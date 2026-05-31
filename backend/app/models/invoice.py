@@ -68,6 +68,13 @@ class Invoice(Base):
     payment_status: Mapped[str] = mapped_column(String(15), default="unpaid")  # unpaid, partial, paid
     amount_paid: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     amount_due: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    # ── Write-off tracking ────────────────────────────────────────────────
+    # Recorded when admin/accountant writes off uncollectable balance. Closes
+    # the invoice (payment_status -> paid). Audit log captures the change.
+    write_off_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    write_off_reason: Mapped[str | None] = mapped_column(String(500))
+    write_off_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    write_off_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
 
     status: Mapped[str] = mapped_column(String(15), default="draft")  # draft, final, cancelled
     notes: Mapped[str | None] = mapped_column(Text)

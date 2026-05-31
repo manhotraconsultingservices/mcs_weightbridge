@@ -1218,6 +1218,8 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
   const canEditDraft = actionPerms.includes('edit_draft');
   const canCancelDraft = actionPerms.includes('cancel_draft');
   const canMoveToSupplement = actionPerms.includes('move_to_supplement');
+  // Write-off is admin + accountant only. Use isAdmin || role check.
+  const canWriteOff = isAdmin || user?.role === 'accountant';
   const PAGE_SIZE = 50;
 
   // Multi-select for bulk Tally sync
@@ -1361,6 +1363,45 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       toast.error(typeof detail === 'string' ? detail : 'Failed to cancel invoice');
+    }
+  }
+
+  async function writeOff(inv: Invoice) {
+    const balance = Number(inv.amount_due ?? 0);
+    if (balance <= 0) {
+      toast.error('Nothing to write off — invoice is already fully paid');
+      return;
+    }
+    const amountStr = window.prompt(
+      `Write off ${inv.invoice_no} for ${inv.party?.name ?? 'this customer'}.\n` +
+      `Current balance: ₹${balance.toLocaleString('en-IN')}\n\n` +
+      `Amount to write off (default = full balance):`,
+      String(balance.toFixed(2)),
+    );
+    if (amountStr === null) return;   // cancelled
+    const amount = parseFloat(amountStr);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('Invalid amount');
+      return;
+    }
+    if (amount > balance + 0.01) {
+      toast.error(`Cannot write off more than the balance (₹${balance.toFixed(2)})`);
+      return;
+    }
+    const reason = window.prompt(
+      `Reason for writing off ₹${amount.toFixed(2)}? (will be recorded in audit log)`,
+      'Bad debt — uncollectable',
+    );
+    if (!reason || !reason.trim()) return;
+    try {
+      const { data } = await api.post<Invoice>(`/api/v1/invoices/${inv.id}/write-off`, {
+        amount, reason: reason.trim(),
+      });
+      setInvoices(prev => prev.map(i => i.id === inv.id ? data : i));
+      toast.success(`Wrote off ₹${amount.toFixed(2)} on ${inv.invoice_no}`);
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Failed to write off invoice');
     }
   }
 
@@ -1784,6 +1825,23 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                             <Button size="icon" variant="ghost" className="h-7 w-7" title="Record Payment" onClick={() => setPaymentInvoice(inv)}>
                               <Banknote className="h-3.5 w-3.5 text-blue-600" />
                             </Button>
+                          )}
+                          {inv.status === 'final' && canWriteOff && inv.payment_status !== 'paid' && (
+                            <Button
+                              size="icon" variant="ghost" className="h-7 w-7"
+                              title="Write off balance (bad debt)"
+                              onClick={() => writeOff(inv)}
+                            >
+                              <XCircle className="h-3.5 w-3.5 text-amber-600" />
+                            </Button>
+                          )}
+                          {Number(inv.write_off_amount ?? 0) > 0 && (
+                            <span
+                              title={`Wrote off ₹${Number(inv.write_off_amount).toLocaleString('en-IN')}: ${inv.write_off_reason ?? ''}`}
+                              className="inline-flex items-center px-1 text-[9px] font-bold text-amber-700 bg-amber-100 rounded border border-amber-300"
+                            >
+                              W/O
+                            </span>
                           )}
                           {inv.status === 'final' && canRevise && (
                             <Button

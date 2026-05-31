@@ -158,6 +158,9 @@ class InvoiceResponse(BaseModel):
     payment_status: str
     amount_paid: Decimal
     amount_due: Decimal
+    write_off_amount: Decimal = Decimal("0")
+    write_off_reason: Optional[str] = None
+    write_off_at: Optional[datetime] = None
     status: str
     notes: Optional[str]
     tally_synced: bool
@@ -198,6 +201,18 @@ class InvoiceListResponse(BaseModel):
 
 
 # ── Revision / amendment schemas ──────────────────────────────────────────────
+
+class WriteOffRequest(BaseModel):
+    """Admin/accountant action — closes the invoice balance as uncollectable.
+
+    Records the amount written off (defaults to current balance), the reason,
+    who did it, and when. Sets payment_status to 'paid'. Audit log entry is
+    created. Cannot be reversed except by reverting via stock-style adjustment
+    (out of scope; tracked manually).
+    """
+    amount: Optional[Decimal] = None    # defaults to current amount_due
+    reason: str
+
 
 class CreateRevisionRequest(BaseModel):
     reason: Optional[str] = None  # Optional reason/notes for this revision

@@ -32,6 +32,7 @@ from app.models.user import User
 from app.schemas.invoice import (
     InvoiceCreate, InvoiceUpdate, InvoiceResponse, InvoiceListResponse,
     CreateRevisionRequest, InvoiceRevisionChain, InvoiceCompare,
+    WriteOffRequest,
 )
 from app.services.gst_service import calculate_invoice_totals, is_intra_state
 from app.utils.pdf_generator import generate_pdf, invoice_context, render_html
@@ -1299,5 +1300,65 @@ async def cancel_invoice(
     if co:
         await log_action(db, co.id, current_user.id, "cancel", "invoice",
                          entity_id=str(invoice_id), details={"invoice_no": inv.invoice_no})
+    await db.commit()
+    return await _load_invoice(db, invoice_id)
+
+
+@router.post("/{invoice_id}/write-off", response_model=InvoiceResponse)
+async def write_off_invoice(
+    invoice_id: uuid.UUID,
+    payload: WriteOffRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "accountant")),
+):
+    """Write off uncollectable balance on a finalised invoice.
+
+    - Amount defaults to the full current balance (amount_due).
+    - Records who/when/reason in the invoice row + audit log.
+    - Sets payment_status to 'paid' when balance reaches 0 (or 'partial' when
+      previous payments + write-off don't fully close it).
+    """
+    inv = await _load_invoice(db, invoice_id)
+    if inv.status != "final":
+        raise HTTPException(400, f"Cannot write off invoice in status '{inv.status}'. Only finalised invoices can be written off.")
+    if inv.payment_status == "paid" and Decimal(str(inv.amount_due or 0)) == 0:
+        raise HTTPException(400, "Invoice is already fully paid; nothing to write off.")
+    if not payload.reason or not payload.reason.strip():
+        raise HTTPException(400, "Reason is required for write-off.")
+
+    balance = Decimal(str(inv.amount_due or 0))
+    requested = Decimal(str(payload.amount)) if payload.amount is not None else balance
+    if requested <= 0:
+        raise HTTPException(400, "Write-off amount must be positive.")
+    if requested > balance:
+        raise HTTPException(400, f"Write-off amount ({requested}) exceeds current balance ({balance}).")
+
+    # Apply write-off
+    inv.write_off_amount = (Decimal(str(inv.write_off_amount or 0)) + requested).quantize(Decimal("0.01"))
+    inv.write_off_reason = payload.reason.strip()
+    inv.write_off_at = datetime.now(timezone.utc)
+    inv.write_off_by = current_user.id
+
+    # Close the balance — treat write-off as a settlement
+    inv.amount_due = (balance - requested).quantize(Decimal("0.01"))
+    if inv.amount_due <= Decimal("0.01"):
+        inv.payment_status = "paid"
+    elif Decimal(str(inv.amount_paid or 0)) > 0:
+        inv.payment_status = "partial"
+
+    co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
+    from app.routers.audit import log_action
+    if co:
+        await log_action(
+            db, co.id, current_user.id, "write_off", "invoice",
+            entity_id=str(invoice_id),
+            details={
+                "invoice_no": inv.invoice_no,
+                "amount": str(requested),
+                "reason": payload.reason.strip(),
+                "balance_before": str(balance),
+                "balance_after": str(inv.amount_due),
+            },
+        )
     await db.commit()
     return await _load_invoice(db, invoice_id)

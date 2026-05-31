@@ -288,6 +288,10 @@ export interface Invoice {
   payment_status: 'unpaid' | 'partial' | 'paid';
   amount_paid: number;
   amount_due: number;
+  // Write-off tracking — admin/accountant closes uncollectable balance
+  write_off_amount?: number;
+  write_off_reason?: string | null;
+  write_off_at?: string | null;
   status: 'draft' | 'final' | 'cancelled';
   notes: string | null;
   tally_synced: boolean;
