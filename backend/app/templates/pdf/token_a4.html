@@ -12,6 +12,11 @@
   .copy:last-child { border-right: none; }
 
   .title { text-align: center; font-size: 14px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 1px; }
+  .title.volume { color: #b45309; }
+  .badge { display: inline-block; padding: 1px 6px; border: 1px solid #000; border-radius: 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 4px; vertical-align: middle; }
+  .badge.volume { background: #fef3c7; border-color: #b45309; color: #92400e; }
+  .badge.weigh  { background: #dbeafe; border-color: #1d4ed8; color: #1e40af; }
+
   .company { text-align: center; font-size: 16px; font-weight: bold; text-transform: uppercase; margin-bottom: 1px; }
   .address { text-align: center; font-size: 11px; margin-bottom: 6px; }
 
@@ -26,6 +31,7 @@
   .row-split .right { display: flex; }
   .row-split .lbl { font-weight: bold; margin-right: 6px; }
 
+  /* Weighbridge mode: gross/tare/net table */
   .wt-tbl { width: 100%; border-collapse: collapse; margin-top: 2px; }
   .wt-tbl thead td { font-weight: bold; padding: 2px 0; border-bottom: 1px dashed #000; }
   .wt-tbl tbody td { padding: 2px 0; font-size: 12px; }
@@ -33,6 +39,18 @@
   .wt-tbl .col-wt { width: 20%; text-align: right; padding-right: 10px; }
   .wt-tbl .col-dt { width: 45%; text-align: right; }
   .wt-tbl .net td { font-weight: bold; }
+
+  /* Volume mode: equation block */
+  .vol-block { margin-top: 4px; padding: 4px 0; border-top: 1px dashed #000; border-bottom: 1px dashed #000; }
+  .vol-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 8px; margin: 4px 0; }
+  .vol-cell { text-align: center; padding: 2px; }
+  .vol-cell .lbl { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: #555; margin-bottom: 1px; }
+  .vol-cell .val { font-weight: bold; font-size: 11px; }
+  .vol-eq { text-align: center; font-size: 10px; margin-top: 3px; color: #555; }
+  .vol-net { text-align: center; margin-top: 4px; padding: 3px 0; border-top: 2px solid #000; }
+  .vol-net .lbl { font-size: 10px; text-transform: uppercase; font-weight: bold; }
+  .vol-net .val { font-size: 16px; font-weight: bold; }
+  .vol-net .sub { font-size: 9px; color: #555; }
 
   .footer { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 12px; padding-top: 4px; border-top: 1px solid #000; }
   .footer .timestamp { font-size: 10px; }
@@ -45,7 +63,7 @@
 {% macro format_date(dt) %}{% if dt %}{{ dt.strftime('%d-%b-%Y') }}{% endif %}{% endmacro %}
 {# Weight in MT (3 decimals) — universal display for gross/tare/net #}
 {% macro format_wt_mt(w) %}{% if w %}{{ '%.3f' % (w|float / 1000) }} MT{% else %}—{% endif %}{% endmacro %}
-{# Net weight with MT and CFT side by side. CFT computed via product.bulk_density (t/m³) ÷ density × 35.3147 ft³/m³ #}
+{# Net weight with MT and CFT side by side. CFT = kg ÷ bulk_density(t/m³) ÷ 1000 × 35.3147 ft³/m³ #}
 {% macro format_wt_dual(w, bulk_density) %}
   {% if w %}
     {{ '%.3f' % (w|float / 1000) }} MT
@@ -55,16 +73,34 @@
   {% else %}—{% endif %}
 {% endmacro %}
 
+{# Volume in m³ → CFT (ft³). 1 m³ = 35.3147 ft³ #}
+{% macro vol_dual(m3) %}{% if m3 %}{{ '%.2f' % (m3|float) }} m³ / {{ '%.2f' % (m3|float * 35.3147) }} CFT{% else %}—{% endif %}{% endmacro %}
+
+{# Slip-type label: "Volume Slip" or "Weight Slip" based on token.weight_method #}
+{% macro slip_title(token) %}
+  {% if token.weight_method == 'volume' %}Volume Slip{% else %}Weight Slip{% endif %}
+{% endmacro %}
+
 {% macro token_copy(label) %}
+{% set is_volume = (token.weight_method == 'volume') %}
 <div class="copy">
-  <div class="title">Weight Slip</div>
+  <div class="title{% if is_volume %} volume{% endif %}">
+    {{ slip_title(token) }}
+    {% if is_volume %}
+      <span class="badge volume">VOLUME · NO BRIDGE</span>
+    {% else %}
+      <span class="badge weigh">WEIGHED</span>
+    {% endif %}
+  </div>
   <div class="company">{{ company.name }}</div>
   <div class="address">
     {{ company.address_line1 or '' }}{% if company.city %}, {{ company.city }}{% endif %}{% if company.state %}, {{ company.state }}{% endif %}{% if company.pincode %} - {{ company.pincode }}{% endif %}
+    {% if company.gstin %} · GSTIN: {{ company.gstin }}{% endif %}
   </div>
 
   <div class="sep"></div>
 
+  {# ── Header block: common to both modes ── #}
   <div class="row-split">
     <div class="left"><span class="lbl">TNO:</span> <span>{{ token.token_no or '—' }}</span></div>
     <div class="right"><span class="lbl">DATE:</span> <span>{{ format_date(token.token_date) }}</span></div>
@@ -72,43 +108,100 @@
   {% if token.gate_pass %}
   <div class="row"><span class="lbl">Gate Pass:</span><span class="val">{{ token.gate_pass }}</span></div>
   {% endif %}
-  <div class="row"><span class="lbl">VEHICLE:</span><span class="val">{{ token.vehicle_no or '—' }}{% if token.vehicle_type %} ({{ token.vehicle_type | upper }}){% endif %}</span></div>
+  <div class="row">
+    <span class="lbl">VEHICLE:</span>
+    <span class="val">
+      {{ token.vehicle_no or '—' }}
+      {%- if token.tyre_count %} · {{ token.tyre_count }}-tyre
+        {%- if token.vehicle_type %} {{ token.vehicle_type | replace('_', ' ') | title }}{% endif %}
+      {%- elif token.vehicle_type %} ({{ token.vehicle_type | replace('_', ' ') | title }})
+      {%- endif %}
+    </span>
+  </div>
+  {% if token.driver and token.driver.name %}
+  <div class="row"><span class="lbl">DRIVER:</span><span class="val">{{ token.driver.name }}{% if token.driver.phone %} · {{ token.driver.phone }}{% endif %}</span></div>
+  {% endif %}
   <div class="row"><span class="lbl">PARTY:</span><span class="val">{{ token.party.name if token.party else 'Cash' }}</span></div>
-  <div class="row"><span class="lbl">ITEM:</span><span class="val">{{ token.product.name if token.product else '—' }}</span></div>
+  <div class="row">
+    <span class="lbl">ITEM:</span>
+    <span class="val">{{ token.product.name if token.product else '—' }}
+      {%- if token.product and token.product.bulk_density %} · {{ '%.2f' % (token.product.bulk_density|float) }} t/m³{% endif %}
+    </span>
+  </div>
 
-  <div class="sep" style="margin-top:4px;"></div>
+  {# ── Mode-specific body ── #}
+  {% if is_volume %}
+    {# ===== VOLUME MODE: show tyre + volume + density → net ===== #}
+    <div class="vol-block">
+      <div class="vol-grid">
+        <div class="vol-cell">
+          <div class="lbl">Volume</div>
+          <div class="val">{{ vol_dual(token.volume_m3) }}</div>
+        </div>
+        <div class="vol-cell">
+          <div class="lbl">×  Density</div>
+          <div class="val">
+            {% if token.product and token.product.bulk_density %}
+              {{ '%.2f' % (token.product.bulk_density|float) }} t/m³
+            {% else %}—{% endif %}
+          </div>
+        </div>
+        <div class="vol-cell">
+          <div class="lbl">Truck Class</div>
+          <div class="val">
+            {% if token.tyre_count %}{{ token.tyre_count }}-tyre{% else %}—{% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="vol-eq">
+        {% if token.volume_m3 and token.product and token.product.bulk_density %}
+          {{ '%.2f' % (token.volume_m3|float) }} m³  ×  {{ '%.2f' % (token.product.bulk_density|float) }} t/m³  =  computed weight
+        {% endif %}
+      </div>
+      <div class="vol-net">
+        <div class="lbl">Net Weight (computed)</div>
+        <div class="val">{{ format_wt_dual(token.net_weight, token.product.bulk_density if token.product else none) }}</div>
+        <div class="sub">Recorded on {{ format_dt(token.completed_at) }}</div>
+      </div>
+    </div>
+  {% else %}
+    {# ===== WEIGHBRIDGE MODE: gross / tare / net table ===== #}
+    <div class="sep" style="margin-top:4px;"></div>
+    <table class="wt-tbl">
+      <thead>
+        <tr>
+          <td class="col-label">PARTICULARS</td>
+          <td class="col-wt">WEIGHT</td>
+          <td class="col-dt">Date Time</td>
+        </tr>
+      </thead>
+      <tbody>
+        {% set gross_first = (token.first_weight_type or 'gross') == 'gross' %}
+        <tr>
+          <td>Gross Weight</td>
+          <td class="col-wt">{{ format_wt_mt(token.gross_weight) }}</td>
+          <td class="col-dt">{{ format_dt(token.first_weight_at if gross_first else token.second_weight_at) }}</td>
+        </tr>
+        <tr>
+          <td>Tare Weight</td>
+          <td class="col-wt">{{ format_wt_mt(token.tare_weight) }}</td>
+          <td class="col-dt">{{ format_dt(token.second_weight_at if gross_first else token.first_weight_at) }}</td>
+        </tr>
+        <tr class="net">
+          <td>Net Weight</td>
+          <td class="col-wt">{{ format_wt_dual(token.net_weight, token.product.bulk_density if token.product else none) }}</td>
+          <td class="col-dt">{{ format_dt(token.completed_at) }}</td>
+        </tr>
+      </tbody>
+    </table>
+  {% endif %}
 
-  <table class="wt-tbl">
-    <thead>
-      <tr>
-        <td class="col-label">PARTICULARS</td>
-        <td class="col-wt">WEIGHT</td>
-        <td class="col-dt">Date Time</td>
-      </tr>
-    </thead>
-    <tbody>
-      {# first_weight_type = 'gross' or 'tare' — determines which timestamp goes where #}
-      {% set gross_first = (token.first_weight_type or 'gross') == 'gross' %}
-      <tr>
-        <td>Gross Weight</td>
-        <td class="col-wt">{{ format_wt_mt(token.gross_weight) }}</td>
-        <td class="col-dt">{{ format_dt(token.first_weight_at if gross_first else token.second_weight_at) }}</td>
-      </tr>
-      <tr>
-        <td>Tare Weight</td>
-        <td class="col-wt">{{ format_wt_mt(token.tare_weight) }}</td>
-        <td class="col-dt">{{ format_dt(token.second_weight_at if gross_first else token.first_weight_at) }}</td>
-      </tr>
-      <tr class="net">
-        <td>Net Weight</td>
-        <td class="col-wt">{{ format_wt_dual(token.net_weight, token.product.bulk_density if token.product else none) }}</td>
-        <td class="col-dt">{{ format_dt(token.completed_at) }}</td>
-      </tr>
-    </tbody>
-  </table>
+  {% if token.remarks %}
+  <div style="margin-top:4px; font-size:10px;"><span style="font-weight:bold;">Remarks:</span> {{ token.remarks }}</div>
+  {% endif %}
 
   <div class="footer">
-    <div class="timestamp">{{ format_dt(token.completed_at if token.completed_at else token.first_weight_at) }}</div>
+    <div class="timestamp">Printed {{ format_dt(token.completed_at if token.completed_at else token.first_weight_at) }}</div>
     <div class="sig">Signature</div>
   </div>
 </div>

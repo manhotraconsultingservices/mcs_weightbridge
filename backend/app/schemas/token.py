@@ -15,6 +15,7 @@ class TokenCreate(BaseModel):
     vehicle_no: str
     vehicle_id: Optional[UUID] = None
     vehicle_type: Optional[str] = None
+    tyre_count: Optional[int] = None     # 4/6/8/10/12 — for slip + truck-class label
     driver_id: Optional[UUID] = None
     transporter_id: Optional[UUID] = None
     gate_pass: Optional[str] = None
@@ -44,6 +45,7 @@ class TokenVolumeCreate(BaseModel):
     vehicle_no: str
     vehicle_id: Optional[UUID] = None
     vehicle_type: Optional[str] = None
+    tyre_count: Optional[int] = None     # 4/6/8/10/12 — also drives default volume in UI
     driver_id: Optional[UUID] = None
     transporter_id: Optional[UUID] = None
     volume_m3: Decimal                   # canonical unit. Frontend converts ft³ → m³.
@@ -57,6 +59,7 @@ class TokenUpdate(BaseModel):
     vehicle_no: Optional[str] = None
     vehicle_id: Optional[UUID] = None
     vehicle_type: Optional[str] = None
+    tyre_count: Optional[int] = None
     driver_id: Optional[UUID] = None
     transporter_id: Optional[UUID] = None
     remarks: Optional[str] = None
@@ -115,6 +118,7 @@ class TokenResponse(BaseModel):
     token_type: str
     vehicle_no: str
     vehicle_type: Optional[str] = None
+    tyre_count: Optional[int] = None
     party: Optional[PartyBrief] = None
     product: Optional[ProductBrief] = None
     vehicle: Optional[VehicleBrief] = None

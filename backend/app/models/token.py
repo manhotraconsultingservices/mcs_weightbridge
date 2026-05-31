@@ -28,6 +28,9 @@ class Token(Base):
 
     vehicle_no: Mapped[str | None] = mapped_column(String(20))  # quick entry without vehicle master
     vehicle_type: Mapped[str | None] = mapped_column(String(50))  # truck, tractor, etc.
+    # Tyre count (4/6/8/10/12) — used by operator kiosk + printed slips.
+    # Tracked for both weighbridge AND volume tokens so the slip shows truck class.
+    tyre_count: Mapped[int | None] = mapped_column(Integer)
 
     gross_weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     tare_weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))

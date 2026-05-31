@@ -45,6 +45,26 @@
     word-break: break-word;
   }
 
+  .slip-title {
+    font-size: 11px;
+    font-weight: bold;
+    text-align: center;
+    margin-top: 2px;
+    text-transform: uppercase;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 1px 4px;
+    border: 1px solid #000;
+    font-size: 8px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-top: 2px;
+  }
+  .badge.volume { background: #fef3c7; }
+
   .sep {
     border: none;
     border-top: 1px dashed #000;
@@ -68,12 +88,38 @@
     word-break: break-all;
   }
 
+  /* Weighbridge mode: gross/tare/net rows */
   .weight-block { margin: 2px 0; }
   .weight-row   { display: flex; margin: 2px 0; }
   .wlabel       { width: 12ch; flex-shrink: 0; }
   .wval         { flex: 1; text-align: right; font-weight: bold; }
 
-  .net-mt       { text-align: right; font-weight: bold; margin-top: 1px; }
+  /* Volume mode block */
+  .vol-block {
+    border-top: 1px dashed #000;
+    border-bottom: 1px dashed #000;
+    padding: 3px 0;
+    margin: 3px 0;
+  }
+  .vol-eq {
+    text-align: center;
+    font-size: 9px;
+    margin: 2px 0;
+    color: #444;
+  }
+
+  .net-big {
+    text-align: center;
+    font-weight: bold;
+    margin: 4px 0 2px;
+    padding: 3px 0;
+    border-top: 1px solid #000;
+    border-bottom: 1px solid #000;
+  }
+  .net-big .lbl { font-size: 9px; text-transform: uppercase; }
+  .net-big .val { font-size: 13px; }
+  .net-big .sub { font-size: 8px; color: #666; }
+
   .thank-you    { text-align: center; margin-top: 4px; }
 
   /* Feed paper at the end so the cutter cuts cleanly */
@@ -112,11 +158,18 @@
   Chrome remembers these settings once set.
 </div>
 
+{% set is_volume = (token.weight_method == 'volume') %}
+
 <div class="co-name">{{ company.name }}</div>
 {% if company.gstin %}
 <div class="center" style="font-size:9px;">GSTIN: {{ company.gstin }}</div>
 {% endif %}
-<div class="center" style="font-size:10px; margin-top:1px;">WEIGHMENT SLIP</div>
+<div class="slip-title">
+  {% if is_volume %}VOLUME SLIP{% else %}WEIGHMENT SLIP{% endif %}
+</div>
+<div class="center">
+  {% if is_volume %}<span class="badge volume">NO BRIDGE</span>{% endif %}
+</div>
 <hr class="sep">
 
 <div class="row">
@@ -137,6 +190,17 @@
   <span class="row-label">VEHICLE</span>
   <span class="row-value">{{ token.vehicle_no or '—' }}</span>
 </div>
+{% if token.tyre_count %}
+<div class="row">
+  <span class="row-label">TYRES</span>
+  <span class="row-value">{{ token.tyre_count }}-tyre{% if token.vehicle_type %} {{ token.vehicle_type | replace('_', ' ') | title }}{% endif %}</span>
+</div>
+{% elif token.vehicle_type %}
+<div class="row">
+  <span class="row-label">CLASS</span>
+  <span class="row-value">{{ token.vehicle_type | replace('_', ' ') | title }}</span>
+</div>
+{% endif %}
 <div class="row">
   <span class="row-label">PARTY</span>
   <span class="row-value">{{ token.party.name if token.party else '—' }}</span>
@@ -151,33 +215,76 @@
   <span class="row-value">{{ token.driver.name }}</span>
 </div>
 {% endif %}
+{% if token.gate_pass %}
+<div class="row">
+  <span class="row-label">GATE PASS</span>
+  <span class="row-value">{{ token.gate_pass }}</span>
+</div>
+{% endif %}
 <hr class="sep">
 
-<div class="weight-block">
-  <div class="weight-row">
-    <span class="wlabel">GROSS WT  :</span>
-    <span class="wval">{% if token.gross_weight %}{{ '%.2f'|format(token.gross_weight|float) }} kg{% else %}—{% endif %}</span>
-  </div>
-  <div class="weight-row">
-    <span class="wlabel">TARE  WT  :</span>
-    <span class="wval">{% if token.tare_weight %}{{ '%.2f'|format(token.tare_weight|float) }} kg{% else %}—{% endif %}</span>
-  </div>
-  <div class="weight-row">
-    <span class="wlabel">NET   WT  :</span>
-    <span class="wval">{% if token.net_weight %}{{ '%.2f'|format(token.net_weight|float) }} kg{% else %}—{% endif %}</span>
-  </div>
-  {% if token.net_weight %}
-  <div class="net-mt">
-    = {{ '%.3f'|format(token.net_weight|float / 1000) }} MT
-    {% set bd = token.product.bulk_density if token.product else none %}
-    {% if bd and (bd|float) > 0 %}
-      / {{ '%.2f'|format(token.net_weight|float / (bd|float) / 1000 * 35.3147) }} CFT
+{% if is_volume %}
+  {# ===== VOLUME MODE ===== #}
+  <div class="vol-block">
+    <div class="row">
+      <span class="row-label">VOLUME</span>
+      <span class="row-value">
+        {% if token.volume_m3 %}{{ '%.2f'|format(token.volume_m3|float) }} m³{% else %}—{% endif %}
+      </span>
+    </div>
+    {% if token.volume_m3 %}
+    <div class="row">
+      <span class="row-label">  in CFT</span>
+      <span class="row-value">{{ '%.2f'|format(token.volume_m3|float * 35.3147) }} CFT</span>
+    </div>
+    {% endif %}
+    <div class="row">
+      <span class="row-label">DENSITY</span>
+      <span class="row-value">
+        {% if token.product and token.product.bulk_density %}
+          {{ '%.2f'|format(token.product.bulk_density|float) }} t/m³
+        {% else %}—{% endif %}
+      </span>
+    </div>
+    {% if token.volume_m3 and token.product and token.product.bulk_density %}
+    <div class="vol-eq">
+      {{ '%.2f'|format(token.volume_m3|float) }} × {{ '%.2f'|format(token.product.bulk_density|float) }} = {{ '%.3f'|format((token.volume_m3|float) * (token.product.bulk_density|float)) }} MT
+    </div>
     {% endif %}
   </div>
+{% else %}
+  {# ===== WEIGHBRIDGE MODE ===== #}
+  <div class="weight-block">
+    <div class="weight-row">
+      <span class="wlabel">GROSS WT  :</span>
+      <span class="wval">{% if token.gross_weight %}{{ '%.3f'|format(token.gross_weight|float / 1000) }} MT{% else %}—{% endif %}</span>
+    </div>
+    <div class="weight-row">
+      <span class="wlabel">TARE  WT  :</span>
+      <span class="wval">{% if token.tare_weight %}{{ '%.3f'|format(token.tare_weight|float / 1000) }} MT{% else %}—{% endif %}</span>
+    </div>
+  </div>
+{% endif %}
+
+{# Net weight — same prominent block for both modes #}
+<div class="net-big">
+  <div class="lbl">NET WEIGHT</div>
+  <div class="val">
+    {% if token.net_weight %}{{ '%.3f'|format(token.net_weight|float / 1000) }} MT{% else %}—{% endif %}
+  </div>
+  {% if token.net_weight and token.product and token.product.bulk_density and (token.product.bulk_density|float) > 0 %}
+  <div class="sub">{{ '%.2f'|format(token.net_weight|float / (token.product.bulk_density|float) / 1000 * 35.3147) }} CFT</div>
   {% endif %}
 </div>
+
 <hr class="sep">
 
+{% if is_volume %}
+<div class="row">
+  <span class="row-label">RECORDED</span>
+  <span class="row-value">{% if token.completed_at %}{{ token.completed_at.strftime('%d-%m-%Y %H:%M') }}{% else %}—{% endif %}</span>
+</div>
+{% else %}
 <div class="row">
   <span class="row-label">IN</span>
   <span class="row-value">{% if token.first_weight_at %}{{ token.first_weight_at.strftime('%d-%m-%Y %H:%M') }}{% else %}—{% endif %}</span>
@@ -186,7 +293,13 @@
   <span class="row-label">OUT</span>
   <span class="row-value">{% if token.second_weight_at %}{{ token.second_weight_at.strftime('%d-%m-%Y %H:%M') }}{% else %}—{% endif %}</span>
 </div>
+{% endif %}
 <hr class="sep">
+
+{% if token.remarks %}
+<div style="font-size: 9px; margin-bottom: 3px;"><b>Note:</b> {{ token.remarks }}</div>
+<hr class="sep">
+{% endif %}
 
 <div class="thank-you">Thank You</div>
 

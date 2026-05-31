@@ -429,6 +429,9 @@ def get_column_migrations() -> list[str]:
         # Volume-based weighment on tokens
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS weight_method VARCHAR(20) NOT NULL DEFAULT 'weighbridge'",
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS volume_m3 NUMERIC(8,3)",
+        # Tyre count — used by the operator kiosk + printed slips. Stored
+        # for ALL tokens (volume + weighbridge) so the slip shows truck class.
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS tyre_count SMALLINT",
         # ── Finished-goods inventory on products ──────────────────────────────
         # One stock row per product. Auto-decremented on sale finalise,
         # auto-incremented on purchase finalise + production cycle output.

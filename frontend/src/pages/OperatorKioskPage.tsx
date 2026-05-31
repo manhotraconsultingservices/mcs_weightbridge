@@ -289,16 +289,19 @@ function ArrivalScreen({ draft, setDraft, onProceed }: ArrivalScreenProps) {
     setError('');
     setSaving(true);
     try {
+      const today = new Date().toISOString().split('T')[0];
       // Volume path: tyre_count selected → one-shot create+complete+invoice
       if (draft.tyre_count != null) {
         const m3 = TYRE_VOLUME_M3[draft.tyre_count] ?? 0;
         const { data } = await api.post<Token>('/api/v1/tokens/volume', {
+          token_date: today,
           vehicle_no: draft.vehicle_no.trim().toUpperCase(),
           token_type: draft.token_type,
           direction: draft.token_type === 'sale' ? 'outbound' : 'inbound',
           party_id: draft.party.id,
           product_id: draft.product.id,
           volume_m3: m3,
+          tyre_count: draft.tyre_count,
         });
         speak(
           `Volume token created. ${draft.product.name}, ${m3} cubic meter, for ${draft.party.name}. Bill will print.`,
@@ -308,11 +311,13 @@ function ArrivalScreen({ draft, setDraft, onProceed }: ArrivalScreenProps) {
       }
       // Weighbridge path
       const { data } = await api.post<Token>('/api/v1/tokens', {
+        token_date: today,
         vehicle_no: draft.vehicle_no.trim().toUpperCase(),
         token_type: draft.token_type,
         direction: draft.token_type === 'sale' ? 'outbound' : 'inbound',
         party_id: draft.party.id,
         product_id: draft.product.id,
+        tyre_count: draft.tyre_count,    // null when "Weigh" is chosen — that's fine
       });
       speak(`Truck in. ${draft.product.name} for ${draft.party.name}. Drive onto the bridge.`);
       onProceed(data);

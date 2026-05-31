@@ -184,6 +184,7 @@ export interface Token {
   token_type: 'sale' | 'purchase' | 'general';
   vehicle_no: string;
   vehicle_type: string | null;
+  tyre_count: number | null;          // 4/6/8/10/12 — shown on printed slip
   party: TokenParty | null;
   product: TokenProduct | null;
   vehicle: TokenVehicle | null;
