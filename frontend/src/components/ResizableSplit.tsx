@@ -114,35 +114,41 @@ export default function ResizableSplit({
       ? { width: `${size}%`, minWidth: 0, height: '100%' }
       : { height: `${size}%`, minHeight: 0, width: '100%' };
 
-  // Divider — wider hit-zone (8px) but visually thin (2px); shows accent on hover/drag
+  // Divider — generous 12px hit zone, always-visible bar, prominent drag pill
+  // so users can FIND it. Highlights blue on hover/drag.
   const dividerCls =
     direction === 'horizontal'
-      ? 'group relative shrink-0 w-1.5 cursor-col-resize select-none flex items-center justify-center'
-      : 'group relative shrink-0 h-1.5 cursor-row-resize select-none flex items-center justify-center';
+      ? 'group relative shrink-0 w-3 cursor-col-resize select-none flex items-center justify-center touch-none'
+      : 'group relative shrink-0 h-3 cursor-row-resize select-none flex items-center justify-center touch-none';
 
-  const dividerBarCls =
+  // Background of the divider (always visible)
+  const dividerBgCls =
     direction === 'horizontal'
-      ? `h-full w-0.5 transition-colors ${
-          isDragging ? 'bg-primary' : 'bg-border group-hover:bg-primary/60'
+      ? `h-full w-full transition-colors ${
+          isDragging ? 'bg-blue-100' : 'bg-slate-100 group-hover:bg-blue-50'
         }`
-      : `w-full h-0.5 transition-colors ${
-          isDragging ? 'bg-primary' : 'bg-border group-hover:bg-primary/60'
+      : `w-full h-full transition-colors ${
+          isDragging ? 'bg-blue-100' : 'bg-slate-100 group-hover:bg-blue-50'
         }`;
 
-  // Drag handle indicator (3 dots) at midpoint
-  const handleCls =
+  // Always-visible drag handle pill (6 dots arranged into a grip pattern)
+  const gripCls =
     direction === 'horizontal'
-      ? 'absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-8 rounded bg-muted-foreground/0 group-hover:bg-muted-foreground/15 flex flex-col items-center justify-center gap-0.5'
-      : 'absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-3 w-8 rounded bg-muted-foreground/0 group-hover:bg-muted-foreground/15 flex flex-row items-center justify-center gap-0.5';
-
-  const dotCls =
-    direction === 'horizontal'
-      ? `w-0.5 h-0.5 rounded-full transition-colors ${
-          isDragging ? 'bg-primary' : 'bg-muted-foreground/40 group-hover:bg-muted-foreground/80'
+      ? `absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full px-1 py-2 flex flex-col items-center justify-center gap-1 shadow-sm border transition-all ${
+          isDragging
+            ? 'bg-blue-600 border-blue-700 scale-110'
+            : 'bg-white border-slate-300 group-hover:border-blue-400 group-hover:shadow-md group-hover:scale-105'
         }`
-      : `h-0.5 w-0.5 rounded-full transition-colors ${
-          isDragging ? 'bg-primary' : 'bg-muted-foreground/40 group-hover:bg-muted-foreground/80'
+      : `absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full py-1 px-2 flex flex-row items-center justify-center gap-1 shadow-sm border transition-all ${
+          isDragging
+            ? 'bg-blue-600 border-blue-700 scale-110'
+            : 'bg-white border-slate-300 group-hover:border-blue-400 group-hover:shadow-md group-hover:scale-105'
         }`;
+
+  // Individual dot in the grip
+  const dotCls = `h-1 w-1 rounded-full transition-colors ${
+    isDragging ? 'bg-white' : 'bg-slate-400 group-hover:bg-blue-500'
+  }`;
 
   return (
     <div ref={containerRef} className={[containerCls, className].filter(Boolean).join(' ')}>
@@ -157,8 +163,9 @@ export default function ResizableSplit({
         onDoubleClick={onDoubleClick}
         title={`Drag to resize${storageKey ? ' · double-click to reset' : ''}`}
       >
-        <div className={dividerBarCls} />
-        <div className={handleCls}>
+        <div className={dividerBgCls} />
+        <div className={gripCls}>
+          {/* 3 dots for the visible grip pattern */}
           <span className={dotCls} />
           <span className={dotCls} />
           <span className={dotCls} />
