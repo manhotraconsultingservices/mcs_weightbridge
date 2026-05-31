@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { Plus, Search, Pencil, Loader2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Plus, Search, Pencil, Loader2, ExternalLink } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -318,12 +318,18 @@ function PartiesTable({
   loading: boolean;
   onEdit: (p: Party) => void;
 }) {
+  const navigate = useNavigate();
   const columns = useMemo<ColumnDef<Party>[]>(() => [
     {
       key: 'name', label: 'Name', accessor: p => p.name, className: 'font-medium',
       format: (_v, row) => (
-        <Link to={`/customers/${row.id}`} className="text-blue-600 hover:underline" title="View 360 profile">
+        <Link
+          to={`/customers/${row.id}`}
+          className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+          title="View 360 profile"
+        >
           {row.name}
+          <ExternalLink className="h-3 w-3 opacity-60" />
         </Link>
       ),
     },
@@ -384,9 +390,18 @@ function PartiesTable({
       defaultSort={{ key: 'name', direction: 'asc' }}
       emptyMessage="No parties yet. Add your first customer or supplier to get started."
       rowActions={p => (
-        <Button size="icon" variant="ghost" onClick={() => onEdit(p)} title="Edit party">
-          <Pencil className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1 justify-end">
+          <Button
+            size="icon" variant="ghost"
+            onClick={() => navigate(`/customers/${p.id}`)}
+            title="View 360 profile"
+          >
+            <ExternalLink className="h-4 w-4 text-blue-600" />
+          </Button>
+          <Button size="icon" variant="ghost" onClick={() => onEdit(p)} title="Edit party">
+            <Pencil className="h-4 w-4" />
+          </Button>
+        </div>
       )}
     />
   );

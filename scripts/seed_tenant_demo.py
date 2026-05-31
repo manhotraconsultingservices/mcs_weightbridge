@@ -897,6 +897,43 @@ def seed_tokens(c: Client,
         if tok:
             completed_tokens.append(tok)
 
+    # ── (E) Volume tokens (skip-bridge) — verifies operator's volume flow ──
+    # Pick products that have a bulk_density set so the math is meaningful.
+    volume_products = [p for p in products.values() if p.get("bulk_density")]
+    if not volume_products:
+        # Fall back: any product (server will reject if no bulk_density — that's OK for demo logs)
+        volume_products = list(products.values())
+    tyre_options = [(4, 3.0), (6, 7.0), (8, 10.0), (10, 13.0), (12, 17.0)]
+    for i in range(5):
+        days_back = random.randint(0, 14)
+        tdate = TODAY - timedelta(days=days_back)
+        party = random.choice(customers)
+        product = random.choice(volume_products)
+        vehicle = _choose_vehicle(vehicles)
+        tyre_count, default_m3 = random.choice(tyre_options)
+        # Slight randomness around the standard volume
+        volume = round(default_m3 * (0.9 + random.random() * 0.2), 2)
+        payload = {
+            "token_date": tdate.isoformat(),
+            "direction": "outbound",
+            "token_type": "sale",
+            "party_id": party["id"],
+            "product_id": product["id"],
+            "vehicle_no": vehicle["registration_no"] if vehicle else "HR99VL9999",
+            "vehicle_id": vehicle["id"] if vehicle else None,
+            "vehicle_type": vehicle.get("vehicle_type") if vehicle else "truck",
+            "tyre_count": tyre_count,
+            "volume_m3": str(volume),
+            "remarks": f"Volume token ({tyre_count}-tyre, {volume} m³) — {DEMO_TAG}",
+        }
+        try:
+            tok = c.post("/api/v1/tokens/volume", payload,
+                         f"T-vol-{i+1}/5 → {party['name'][:18]} / {product['name'][:14]} / {volume} m³")
+            if tok:
+                completed_tokens.append(tok)
+        except Exception as e:
+            log.warning("volume token failed: %s", e)
+
     return completed_tokens
 
 

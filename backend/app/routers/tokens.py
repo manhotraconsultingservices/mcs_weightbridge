@@ -269,6 +269,13 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
         if driver:
             driver_name = driver.name
 
+    # Compute due_date from party's payment_terms_days (same logic as
+    # the manual invoice-create path). Drives the overdue-customer alert.
+    auto_due_date = token.token_date
+    if party and getattr(party, "payment_terms_days", 0) and party.payment_terms_days > 0:
+        from datetime import timedelta as _td
+        auto_due_date = token.token_date + _td(days=int(party.payment_terms_days))
+
     invoice = Invoice(
         company_id=company.id,
         fy_id=fy.id,
@@ -276,6 +283,7 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
         tax_type="gst",
         invoice_no=None,          # assigned at finalise (gap-free)
         invoice_date=token.token_date,
+        due_date=auto_due_date,
         party_id=token.party_id,
         token_id=token.id,
         vehicle_no=token.vehicle_no,

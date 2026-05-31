@@ -200,6 +200,15 @@ async def create_invoice(
             net_weight = net_weight or token.net_weight
             vehicle_no = vehicle_no or token.vehicle_no
 
+    # Compute due_date from party's payment_terms_days (if available).
+    # This drives the dashboard "Overdue customers" exception card. Falls back
+    # to invoice_date itself (so it counts as due immediately) when the party
+    # has no terms or there's no party (B2C walk-in).
+    due_date = payload.invoice_date
+    if party and party.payment_terms_days and party.payment_terms_days > 0:
+        from datetime import timedelta as _td
+        due_date = payload.invoice_date + _td(days=int(party.payment_terms_days))
+
     invoice = Invoice(
         company_id=co.id,
         fy_id=fy.id,
@@ -207,6 +216,7 @@ async def create_invoice(
         tax_type=payload.tax_type,
         invoice_no=None,          # gap-free: assigned at finalise
         invoice_date=payload.invoice_date,
+        due_date=due_date,
         party_id=payload.party_id,
         customer_name=payload.customer_name,
         token_id=payload.token_id,

@@ -795,7 +795,10 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
   const currentLabel = weightStage === 'first' ? stage1Label : stage2Label;
   const stageNum = weightStage === 'first' ? 1 : 2;
 
-  const liveWeight = manualMode ? (parseFloat(manualWeight) || 0) : reading.weight_kg;
+  // Manual entry is in MT (operator-friendly). Multiply by 1000 to get kg —
+  // the unit the backend stores and the bridge streams.
+  const manualKg = manualMode ? (parseFloat(manualWeight) || 0) * 1000 : 0;
+  const liveWeight = manualMode ? manualKg : reading.weight_kg;
   const stage1Weight = token.first_weight ?? 0;
   const liveNet = weightStage === 'second' && stage1Weight > 0
     ? Math.max(0, isSale ? liveWeight - stage1Weight : stage1Weight - liveWeight)
@@ -952,20 +955,20 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
             </div>
           ) : (
             <div className="space-y-2">
-              <Label>Enter Weight Manually (kg)</Label>
+              <Label>Enter Weight Manually (MT)</Label>
               <Input
                 ref={manualRef}
                 type="number"
-                step="0.01"
+                step="0.001"
                 min="0"
                 value={manualWeight}
                 onChange={e => setManualWeight(e.target.value)}
-                placeholder="0.00"
+                placeholder="0.000"
                 className="text-2xl font-mono h-14 text-center font-bold"
               />
               {parseFloat(manualWeight) > 0 && (
                 <p className="text-center text-xs text-muted-foreground">
-                  = {mtFromKg(parseFloat(manualWeight))}
+                  = {wFmt(parseFloat(manualWeight) * 1000)}
                 </p>
               )}
             </div>
@@ -1041,10 +1044,10 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
               onClick={() => capture(storedTare, true)}
               disabled={saving}
               className="min-w-44"
-              title={`Use vehicle's registered tare weight: ${storedTare} kg`}
+              title={`Use vehicle's registered tare weight: ${(storedTare / 1000).toFixed(3)} MT`}
             >
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}
-              Use Reg. Tare ({storedTare} kg)
+              Use Reg. Tare ({(storedTare / 1000).toFixed(3)} MT)
             </Button>
           )}
           {capturePhase === 'idle' && (
@@ -1059,7 +1062,7 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
               </Button>
             ) : (
               <Button
-                onClick={() => capture(parseFloat(manualWeight), true)}
+                onClick={() => capture(parseFloat(manualWeight) * 1000, true) /* MT → kg */}
                 disabled={saving || !manualWeight || parseFloat(manualWeight) <= 0}
                 className="min-w-32"
               >
@@ -1256,7 +1259,10 @@ function dualFmt(weightKg: number | null | undefined, bulkDensity: number | null
 }
 
 // Active statuses (default filter)
-const ACTIVE_STATUSES = ['OPEN', 'FIRST_WEIGHT', 'LOADING', 'SECOND_WEIGHT'] as const;
+// Default visible statuses on the Trip page. Includes COMPLETED so volume tokens
+// (which jump straight to COMPLETED on creation) are visible without changing
+// the filter. The status filter chips still let the user narrow further.
+const DEFAULT_VISIBLE_STATUSES = ['OPEN', 'FIRST_WEIGHT', 'LOADING', 'SECOND_WEIGHT', 'COMPLETED'] as const;
 type TokenStatus = keyof typeof STATUS_CONFIG;
 
 // Status multi-select filter pill
@@ -1312,7 +1318,7 @@ export default function TokenPageV1() {
   const [dateFrom, setDateFrom] = useState(today());
   const [dateTo, setDateTo] = useState(today());
   const [selectedStatuses, setSelectedStatuses] = useState<Set<TokenStatus>>(
-    new Set(ACTIVE_STATUSES)
+    new Set(DEFAULT_VISIBLE_STATUSES)
   );
   // 'all' = show both; 'weighbridge' = bridge-weighed only; 'volume' = volume-computed only
   const [measurementFilter, setMeasurementFilter] = useState<'all' | 'weighbridge' | 'volume'>('all');
