@@ -571,3 +571,87 @@ export interface TelegramSettings {
   enabled: boolean;
 }
 
+// ── Customer 360 view ─────────────────────────────────────────────────────────
+
+export interface Party360Header {
+  id: string;
+  name: string;
+  party_type: string;
+  gstin: string | null;
+  pan: string | null;
+  phone: string | null;
+  email: string | null;
+  billing_city: string | null;
+  billing_state: string | null;
+  credit_limit: number;
+  payment_terms_days: number;
+  current_balance: number;
+  opening_balance: number;
+  is_active: boolean;
+}
+
+export interface Party360AgingBuckets {
+  current: number;
+  bucket_1_30: number;
+  bucket_31_60: number;
+  bucket_61_90: number;
+  bucket_90_plus: number;
+}
+
+export interface Party360Stats {
+  lifetime_sales: number;
+  lifetime_paid: number;
+  lifetime_written_off: number;
+  invoice_count: number;
+  avg_order_value: number;
+  last_invoice_date: string | null;
+  days_since_last_order: number | null;
+  last_payment_date: string | null;
+  days_since_last_payment: number | null;
+  total_outstanding: number;
+  total_overdue: number;
+  aging: Party360AgingBuckets;
+  token_count: number;
+  lifetime_tonnage: number;
+}
+
+export interface Party360Invoice {
+  id: string;
+  invoice_no: string | null;
+  invoice_date: string;
+  due_date: string | null;
+  invoice_type: string;
+  grand_total: number;
+  amount_paid: number;
+  amount_due: number;
+  payment_status: string;
+  status: string;
+}
+
+export interface Party360Payment {
+  id: string;
+  kind: 'receipt' | 'voucher';
+  voucher_no: string;
+  payment_date: string;
+  amount: number;
+  payment_mode: string;
+  reference_no: string | null;
+}
+
+export interface Party360CustomRate {
+  product_id: string;
+  product_name: string;
+  product_unit: string;
+  default_rate: number;
+  custom_rate: number;
+  effective_from: string;
+}
+
+export interface Party360Response {
+  party: Party360Header;
+  stats: Party360Stats;
+  recent_invoices: Party360Invoice[];
+  recent_payments: Party360Payment[];
+  custom_rates: Party360CustomRate[];
+}
+

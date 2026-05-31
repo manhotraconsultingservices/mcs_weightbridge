@@ -43,7 +43,7 @@ interface DashboardSummary {
     net_weight: number | null;
     is_supplement?: boolean;
   }[];
-  top_customers: { name: string; total: number }[];
+  top_customers: { name: string; total: number; party_id: string | null }[];
 }
 
 interface ChartsData {
@@ -582,13 +582,18 @@ export default function DashboardPage() {
           icon={Package}
           accent="violet"
         />
-        <KpiCard
-          title="Outstanding"
-          value={INR(d.outstanding)}
-          sub="Total receivable"
-          icon={AlertCircle}
-          accent="orange"
-        />
+        <Link to="/ledger?tab=outstanding" className="block group" title="See outstanding by customer">
+          <div className="relative">
+            <KpiCard
+              title="Outstanding"
+              value={INR(d.outstanding)}
+              sub="Total receivable · click to see by customer"
+              icon={AlertCircle}
+              accent="orange"
+            />
+            <ExternalLink className="absolute right-3 top-3 h-3 w-3 text-orange-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
+        </Link>
       </div>
 
       {/* ── Trucks on Weighbridge ── */}
@@ -784,13 +789,30 @@ export default function DashboardPage() {
               <div className="px-6 pb-6 text-sm text-muted-foreground">No invoice data yet.</div>
             ) : (
               <div className="divide-y">
-                {d.top_customers.map((c, i) => (
-                  <div key={c.name} className="flex items-center gap-3 px-4 py-2.5">
-                    <span className="text-base font-bold text-muted-foreground/30 w-5 text-center shrink-0">{i + 1}</span>
-                    <p className="flex-1 text-sm font-medium truncate">{c.name}</p>
-                    <p className="text-sm font-semibold text-green-700 shrink-0">{INR(c.total)}</p>
-                  </div>
-                ))}
+                {d.top_customers.map((c, i) => {
+                  const RowInner = (
+                    <>
+                      <span className="text-base font-bold text-muted-foreground/30 w-5 text-center shrink-0">{i + 1}</span>
+                      <p className="flex-1 text-sm font-medium truncate">{c.name}</p>
+                      <p className="text-sm font-semibold text-green-700 shrink-0">{INR(c.total)}</p>
+                    </>
+                  );
+                  return c.party_id ? (
+                    <Link
+                      key={c.name}
+                      to={`/customers/${c.party_id}`}
+                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 group"
+                      title="View customer 360 profile"
+                    >
+                      {RowInner}
+                      <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100" />
+                    </Link>
+                  ) : (
+                    <div key={c.name} className="flex items-center gap-3 px-4 py-2.5">
+                      {RowInner}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>

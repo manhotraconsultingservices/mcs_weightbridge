@@ -10,9 +10,14 @@ from app.dependencies import get_current_user, require_role
 from app.models.user import User
 from app.models.party import Party, PartyRate
 from app.models.product import Product
+from app.models.invoice import Invoice
+from app.models.payment import PaymentReceipt, PaymentVoucher
+from app.models.token import Token
 from app.schemas.party import (
     PartyCreate, PartyUpdate, PartyResponse,
     PartyRateCreate, PartyRateResponse,
+    Party360Response, Party360Header, Party360Stats, Party360AgingBuckets,
+    Party360Invoice, Party360Payment, Party360CustomRate,
 )
 
 router = APIRouter()
@@ -300,3 +305,214 @@ async def bulk_set_party_rates(
 
     await db.commit()
     return {"saved": saved, "cleared": cleared}
+
+
+# --- Customer 360 view ---------------------------------------------------------
+
+@router.get("/{party_id}/360", response_model=Party360Response)
+async def party_360(
+    party_id: uuid.UUID,
+    recent_limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """One-shot aggregate view used by the customer/supplier profile page.
+
+    Returns header + KPIs + last N invoices + last N payments + custom rates,
+    so the page renders in a single round-trip.
+    """
+    party = (await db.execute(
+        select(Party).where(
+            Party.id == party_id, Party.company_id == current_user.company_id,
+        )
+    )).scalar_one_or_none()
+    if not party:
+        raise HTTPException(404, "Party not found")
+
+    today = date.today()
+
+    # ── All non-cancelled sale + purchase invoices for lifetime stats ─────
+    inv_rows = (await db.execute(
+        select(Invoice)
+        .where(
+            Invoice.company_id == current_user.company_id,
+            Invoice.party_id == party_id,
+            Invoice.status != "cancelled",
+        )
+        .order_by(Invoice.invoice_date.desc(), Invoice.created_at.desc())
+    )).scalars().all()
+
+    # Lifetime metrics — sale invoices only define LTV/AOV
+    sale_invoices = [i for i in inv_rows if i.invoice_type == "sale"]
+    lifetime_sales = sum((i.grand_total or Decimal("0")) for i in sale_invoices)
+    lifetime_paid = sum((i.amount_paid or Decimal("0")) for i in sale_invoices)
+    lifetime_written_off = sum((i.write_off_amount or Decimal("0")) for i in sale_invoices)
+    invoice_count = len(sale_invoices)
+    aov = (lifetime_sales / invoice_count) if invoice_count else Decimal("0")
+    last_invoice_date = max((i.invoice_date for i in sale_invoices), default=None)
+    days_since_last_order = (today - last_invoice_date).days if last_invoice_date else None
+
+    # ── Outstanding + aging buckets (final, unpaid invoices only) ─────────
+    aging = Party360AgingBuckets()
+    total_outstanding = Decimal("0")
+    total_overdue = Decimal("0")
+    for inv in inv_rows:
+        if inv.status != "final" or inv.payment_status == "paid":
+            continue
+        balance = (inv.grand_total or Decimal("0")) - (inv.amount_paid or Decimal("0"))
+        if balance <= 0:
+            continue
+        total_outstanding += balance
+        # Bucket by days-past-due (or due_today=current if no due_date)
+        if inv.due_date and inv.due_date < today:
+            days = (today - inv.due_date).days
+            total_overdue += balance
+            if days <= 30:
+                aging.bucket_1_30 += balance
+            elif days <= 60:
+                aging.bucket_31_60 += balance
+            elif days <= 90:
+                aging.bucket_61_90 += balance
+            else:
+                aging.bucket_90_plus += balance
+        else:
+            aging.current += balance
+
+    # ── Recent invoices (limit) ───────────────────────────────────────────
+    recent_invoices = [
+        Party360Invoice(
+            id=i.id,
+            invoice_no=i.invoice_no,
+            invoice_date=i.invoice_date,
+            due_date=i.due_date,
+            invoice_type=i.invoice_type,
+            grand_total=i.grand_total or Decimal("0"),
+            amount_paid=i.amount_paid or Decimal("0"),
+            amount_due=i.amount_due or Decimal("0"),
+            payment_status=i.payment_status,
+            status=i.status,
+        )
+        for i in inv_rows[:recent_limit]
+    ]
+
+    # ── Recent payments — merge receipts + vouchers, sort desc ─────────────
+    receipts = (await db.execute(
+        select(PaymentReceipt)
+        .where(
+            PaymentReceipt.company_id == current_user.company_id,
+            PaymentReceipt.party_id == party_id,
+        )
+        .order_by(PaymentReceipt.receipt_date.desc(), PaymentReceipt.created_at.desc())
+        .limit(recent_limit)
+    )).scalars().all()
+
+    vouchers = (await db.execute(
+        select(PaymentVoucher)
+        .where(
+            PaymentVoucher.company_id == current_user.company_id,
+            PaymentVoucher.party_id == party_id,
+        )
+        .order_by(PaymentVoucher.voucher_date.desc(), PaymentVoucher.created_at.desc())
+        .limit(recent_limit)
+    )).scalars().all()
+
+    pay_pool: list[tuple[date, Party360Payment]] = []
+    for r in receipts:
+        pay_pool.append((r.receipt_date, Party360Payment(
+            id=r.id, kind="receipt", voucher_no=r.receipt_no,
+            payment_date=r.receipt_date, amount=r.amount,
+            payment_mode=r.payment_mode, reference_no=r.reference_no,
+        )))
+    for v in vouchers:
+        pay_pool.append((v.voucher_date, Party360Payment(
+            id=v.id, kind="voucher", voucher_no=v.voucher_no,
+            payment_date=v.voucher_date, amount=v.amount,
+            payment_mode=v.payment_mode, reference_no=v.reference_no,
+        )))
+    pay_pool.sort(key=lambda t: t[0], reverse=True)
+    recent_payments = [p for _, p in pay_pool[:recent_limit]]
+    last_payment_date = pay_pool[0][0] if pay_pool else None
+    days_since_last_payment = (today - last_payment_date).days if last_payment_date else None
+
+    # ── Custom rates (most-recent per product) ─────────────────────────────
+    rate_rows = (await db.execute(
+        select(PartyRate, Product)
+        .join(Product, PartyRate.product_id == Product.id)
+        .where(
+            PartyRate.party_id == party_id,
+            PartyRate.effective_from <= today,
+        )
+        .order_by(PartyRate.party_id, PartyRate.product_id, PartyRate.effective_from.desc())
+    )).all()
+    seen: set[uuid.UUID] = set()
+    custom_rates: list[Party360CustomRate] = []
+    for r, p in rate_rows:
+        if r.product_id in seen:
+            continue
+        seen.add(r.product_id)
+        custom_rates.append(Party360CustomRate(
+            product_id=r.product_id,
+            product_name=p.name,
+            product_unit=p.unit,
+            default_rate=p.default_rate or Decimal("0"),
+            custom_rate=r.rate,
+            effective_from=r.effective_from,
+        ))
+
+    # ── Operations stats: token count + tonnage ────────────────────────────
+    tok_agg = (await db.execute(
+        select(
+            func.count(Token.id),
+            func.coalesce(func.sum(Token.net_weight), 0),
+        )
+        .where(
+            Token.company_id == current_user.company_id,
+            Token.party_id == party_id,
+            Token.status == "COMPLETED",
+        )
+    )).one()
+    token_count, tonnage_kg = tok_agg[0] or 0, Decimal(str(tok_agg[1] or 0))
+    # net_weight stored in kg → MT
+    lifetime_tonnage = (tonnage_kg / Decimal("1000")).quantize(Decimal("0.001"))
+
+    stats = Party360Stats(
+        lifetime_sales=lifetime_sales,
+        lifetime_paid=lifetime_paid,
+        lifetime_written_off=lifetime_written_off,
+        invoice_count=invoice_count,
+        avg_order_value=aov,
+        last_invoice_date=last_invoice_date,
+        days_since_last_order=days_since_last_order,
+        last_payment_date=last_payment_date,
+        days_since_last_payment=days_since_last_payment,
+        total_outstanding=total_outstanding,
+        total_overdue=total_overdue,
+        aging=aging,
+        token_count=int(token_count),
+        lifetime_tonnage=lifetime_tonnage,
+    )
+
+    header = Party360Header(
+        id=party.id,
+        name=party.name,
+        party_type=party.party_type,
+        gstin=party.gstin,
+        pan=party.pan,
+        phone=party.phone,
+        email=party.email,
+        billing_city=party.billing_city,
+        billing_state=party.billing_state,
+        credit_limit=party.credit_limit or Decimal("0"),
+        payment_terms_days=party.payment_terms_days or 0,
+        current_balance=party.current_balance or Decimal("0"),
+        opening_balance=party.opening_balance or Decimal("0"),
+        is_active=party.is_active,
+    )
+
+    return Party360Response(
+        party=header,
+        stats=stats,
+        recent_invoices=recent_invoices,
+        recent_payments=recent_payments,
+        custom_rates=custom_rates,
+    )

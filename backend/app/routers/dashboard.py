@@ -154,15 +154,18 @@ async def get_summary(
         })
 
     # ── Top customers (invoices) ──────────────────────────────────────────────
+    # Tracks both display name → total *and* party_id so the UI can link to /customers/:id.
     top_map: dict[str, float] = {}
+    id_map: dict[str, str] = {}   # name → party_id (None for supplement walk-in)
     inv_customers = await db.execute(
-        select(Party.name, func.sum(Invoice.grand_total).label("total"))
+        select(Party.id, Party.name, func.sum(Invoice.grand_total).label("total"))
         .join(Invoice, Invoice.party_id == Party.id)
         .where(Invoice.invoice_type == "sale", Invoice.status == "final")
         .group_by(Party.id, Party.name)
     )
-    for name, total in inv_customers.all():
+    for pid, name, total in inv_customers.all():
         top_map[name] = top_map.get(name, 0.0) + float(total)
+        id_map[name] = str(pid)
 
     # ── Supplement additions ──────────────────────────────────────────────────
     if with_supp and co:
@@ -176,7 +179,10 @@ async def get_summary(
             top_map[r["customer"]] = top_map.get(r["customer"], 0.0) + r["amount"]
 
     top_customers = sorted(
-        [{"name": k, "total": v} for k, v in top_map.items()],
+        [
+            {"name": k, "total": v, "party_id": id_map.get(k)}
+            for k, v in top_map.items()
+        ],
         key=lambda x: x["total"],
         reverse=True,
     )[:5]

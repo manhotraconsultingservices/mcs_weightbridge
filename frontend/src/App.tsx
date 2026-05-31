@@ -10,6 +10,7 @@ import LicenseExpiredPage from '@/pages/LicenseExpiredPage';
 import DashboardPage from '@/pages/DashboardPage';
 import TokenPage from '@/pages/TokenPage';
 import PartiesPage from '@/pages/PartiesPage';
+import CustomerProfilePage from '@/pages/CustomerProfilePage';
 import VehiclesPage from '@/pages/VehiclesPage';
 import InvoicesPage from '@/pages/InvoicesPage';
 import QuotationsPage from '@/pages/QuotationsPage';
@@ -120,6 +121,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/pricing-matrix" element={<PricingMatrixPage />} />
             <Route path="/parties" element={<PartiesPage />} />
+            <Route path="/customers/:id" element={<CustomerProfilePage />} />
             <Route path="/vehicles" element={<VehiclesPage />} />
             <Route path="/payments" element={<PaymentsPage />} />
             <Route path="/ledger" element={<LedgerPage />} />

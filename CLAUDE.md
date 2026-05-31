@@ -212,6 +212,11 @@ All endpoints prefixed `/api/v1` unless noted.
 | GET/POST | `/` | List/create parties |
 | GET/PUT/DELETE | `/{id}` | Get/update/delete party |
 | GET/POST | `/{id}/rates` | Party-specific product rates |
+| GET | `/{id}/effective-rate/{product_id}` | Effective rate (party_rate → product default → 0) |
+| GET | `/rates/matrix` | Sparse matrix of all (party, product, rate) cells |
+| POST | `/{id}/rates/bulk` | Bulk-set rates for one party (per-product entries) |
+| DELETE | `/{id}/rates/{product_id}` | Clear a custom rate (revert to default) |
+| GET | `/{id}/360` | Customer 360 — KPIs, aging, last 20 invoices+payments, custom rates, lifetime tonnage |
 
 ### Vehicles — `/api/v1`
 | Method | Path | Description |
@@ -251,6 +256,7 @@ All endpoints prefixed `/api/v1` unless noted.
 | POST | `/{id}/create-revision` | admin/accountant — creates a draft copy (revision_no+1, original_invoice_id set) |
 | GET | `/{id}/revisions` | List all versions in the revision chain (original + all amendments) |
 | GET | `/{id}/compare/{other_id}` | Side-by-side diff between any two invoice versions |
+| POST | `/{id}/write-off` | admin/accountant — write off uncollectable balance; closes invoice as bad debt |
 
 ### Quotations — `/api/v1/quotations`
 | Method | Path | Description |
@@ -501,6 +507,7 @@ All endpoints prefixed `/api/v1` unless noted.
 | `WallpaperSettingsPage` | `/admin/wallpaper` | Admin-only. Upload/preview/remove wallpaper image for main content area background |
 | `InventoryPage` | `/inventory` | Store Inventory — 5 tabs: Stock (cards with colour-coded levels + Use Stock dialog), Orders (PO workflow with approve/reject/receive), History (paginated transaction log), Analytics (trend/pie/top-consumed charts with date presets), Settings (Telegram config + custom categories) |
 | `SnapshotSearchPage` | `/snapshot-search` | Search camera snapshots by token number, vehicle number, or date range. Results grouped by token with 1st/2nd weight sections. Lightbox image viewer. Date presets (Today/7 Days/30 Days). Pagination. |
+| `CustomerProfilePage` | `/customers/:id` | Customer/Supplier 360 — KPIs (outstanding/LTV/AOV/last-order), aging chart, last 20 invoices, last 20 payments, custom rate cards. Linked from Parties names, Ledger outstanding, Dashboard Top Customers, and Dashboard Outstanding KPI. |
 
 ---
 
@@ -837,3 +844,7 @@ SUPER_ADMIN_SECRET=change-this-to-a-strong-secret
 | 2026-05-26 | Production cycles + yield tracking (Enh #5): new `production_cycles` (one per company per day, input_kg, stage1/2/3 outputs) + `production_cycle_outputs` (per-product Stage 4 finished weights) tables; endpoints: CRUD + `POST /cycles/{id}/finalise` (posts each output to product_stock as `cycle_output` movement); computed metrics — yield_pct = total_output/input × 100, belt_loss_pct = (stage3 − total_output) / stage3 × 100, wastage_kg = input − total_output; ProductionPage entry UI with live metrics preview; ProductionDashboardPage with yield trend (line), wastage by stage (stacked bar — orange=belt loss), top product outputs (horizontal bar), 4 KPI cards including conveyor-belt avg loss; 1-day cycle, manual input weight (per locked-in design decisions) |
 | 2026-05-26 | Production stage defaults: configurable per-stage names, loss-type labels (industry terminology), expected yield %, and warning thresholds. Stored in `app_settings` under key `production.stage_defaults` as JSON. Industry defaults: S1 Primary Crushing (Dust & Spillage Loss, 97.5%), S2 Secondary Crushing (Dust & Spillage Loss, 97%), S3 Screening (Oversize Reject, 94%), S4 Washing/Conveyor Belt (Silt / Wash Loss, 91%) → compound plant yield 80.8%. New endpoints `GET/PUT /api/v1/production/stage-defaults`. Production cycle entry rebuilt with per-stage cards showing live yield % vs target with green/amber/red variance badges. ProductionSettingsPage at `/production/settings` for tuning. Dashboard adds target reference line on yield chart, "vs Target" variance KPI card, and stacked-bar labels from configured stage names |
 | 2026-05-26 | Reusable `<DataTable<T>>` component (`frontend/src/components/DataTable.tsx`): generic sortable / per-column filterable / column-visibility toggleable / CSV-exportable table. Type-aware sort + filter (`string`/`number`/`date`/`enum`). Per-table state persisted to localStorage under `dt.{id}.{sort\|filters\|visible}` keys. Self-contained popover (no extra deps). First migration: ProductionPage cycles table — added a "Products" column showing badges of finished products + tonnage per cycle, CSV export, gear-icon column picker, and filter row. Pattern documented in CLAUDE.md → "Shared UI Components" section for incremental migration of remaining tables (Invoices, Products, Parties, etc.). |
+| 2026-05-31 | Tokens: dual-unit display (MT + CFT) everywhere. PDF macro `format_wt_dual` renders gross/tare/net in both MT and CFT (computed from `volume_m3 × bulk_density`). TokenPage CSV export adds "Net (CFT)" column. Volume Tokens and weighbridge tokens render identically. |
+| 2026-05-31 | TokenPage: inline party-add. `+` button next to the Party Select opens a quick-create dialog (name, party_type, GSTIN, phone, billing city/state). Newly created party is selected automatically. |
+| 2026-05-31 | Invoice write-off: `POST /api/v1/invoices/{id}/write-off` (admin + accountant). Records `write_off_amount`/`reason`/`at`/`by`; closes balance (sets `payment_status='paid'` when zero, else `'partial'`); writes a `write_off` audit-log entry. DB columns `write_off_amount NUMERIC(14,2)`, `write_off_reason VARCHAR(500)`, `write_off_at TIMESTAMPTZ`, `write_off_by UUID -> users`. InvoicesPage adds amber XCircle button next to Record Payment + a `W/O` badge with hover-detail on written-off rows. |
+| 2026-05-31 | Customer 360 view: `GET /api/v1/parties/{id}/360` returns one-shot aggregate (header + KPIs + aging buckets + last 20 invoices + last 20 payments + custom rates + lifetime tonnage). New `CustomerProfilePage` at `/customers/:id` with 8 KPI cards, stacked aging chart, 3 tabs (Invoices / Payments / Pricing), and quick-action footer. Dashboard Top Customers rows now link to `/customers/:id`; Outstanding KPI card links to `/ledger?tab=outstanding`. Parties names + Ledger outstanding party names are now clickable hyperlinks. Top-customers backend response includes `party_id` for linkability. |

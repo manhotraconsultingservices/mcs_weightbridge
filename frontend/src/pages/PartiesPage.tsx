@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Plus, Search, Pencil, Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -318,7 +319,14 @@ function PartiesTable({
   onEdit: (p: Party) => void;
 }) {
   const columns = useMemo<ColumnDef<Party>[]>(() => [
-    { key: 'name', label: 'Name', accessor: p => p.name, className: 'font-medium' },
+    {
+      key: 'name', label: 'Name', accessor: p => p.name, className: 'font-medium',
+      format: (_v, row) => (
+        <Link to={`/customers/${row.id}`} className="text-blue-600 hover:underline" title="View 360 profile">
+          {row.name}
+        </Link>
+      ),
+    },
     {
       key: 'party_type', label: 'Type', type: 'enum',
       enumOptions: ['customer', 'supplier', 'both'],

@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { BookOpen, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -70,7 +71,12 @@ function fmt(n: number) {
 }
 
 export default function LedgerPage() {
-  const [tab, setTab] = useState('ledger');
+  // Respect ?tab=outstanding (linked from Dashboard Outstanding KPI)
+  const initialTab =
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'outstanding'
+      ? 'outstanding'
+      : 'ledger';
+  const [tab, setTab] = useState(initialTab);
   const [parties, setParties] = useState<Party[]>([]);
   const [partyId, setPartyId] = useState('');
   const [ledger, setLedger] = useState<PartyLedger | null>(null);
@@ -313,7 +319,14 @@ function OutstandingTable({ items }: { items: OutstandingItem[] }) {
       accessor: i => i.invoice_type,
       format: v => <span className="capitalize text-xs">{String(v)}</span>,
     },
-    { key: 'party_name', label: 'Party', accessor: i => i.party_name, className: 'text-muted-foreground' },
+    {
+      key: 'party_name', label: 'Party', accessor: i => i.party_name,
+      format: (_v, row) => (
+        <Link to={`/customers/${row.party_id}`} className="text-blue-600 hover:underline" title="View customer 360">
+          {row.party_name}
+        </Link>
+      ),
+    },
     {
       key: 'grand_total', label: 'Total', type: 'number', align: 'right',
       accessor: i => i.grand_total, format: v => fmt(Number(v)),
