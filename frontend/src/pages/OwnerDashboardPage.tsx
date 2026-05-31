@@ -120,13 +120,29 @@ export default function OwnerDashboardPage() {
   }
   if (error || !data) {
     return (
-      <div className="mx-auto max-w-md py-12 text-center">
+      <div className="mx-auto max-w-xl py-12 text-center space-y-3">
         <AlertCircle className="mx-auto h-10 w-10 text-rose-400" />
-        <p className="mt-2 text-sm text-slate-600">{error ?? 'No data'}</p>
-        <button
-          className="mt-4 px-4 py-2 rounded border border-slate-300 hover:bg-slate-50"
-          onClick={() => load()}
-        >Retry</button>
+        <p className="text-sm font-semibold text-slate-800">Could not load dashboard</p>
+        {error && (
+          <pre className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3 whitespace-pre-wrap break-all text-left max-w-md mx-auto">
+            {error}
+          </pre>
+        )}
+        <p className="text-xs text-slate-500">
+          You can keep using the rest of the app — try the sidebar links above.
+        </p>
+        <div className="flex justify-center gap-2 pt-2">
+          <button
+            className="px-4 py-2 rounded border border-slate-300 hover:bg-slate-50 text-sm"
+            onClick={() => load()}
+          >Retry</button>
+          <Link
+            to="/dashboard-legacy"
+            className="px-4 py-2 rounded border border-slate-300 hover:bg-slate-50 text-sm"
+          >
+            Open old dashboard
+          </Link>
+        </div>
       </div>
     );
   }

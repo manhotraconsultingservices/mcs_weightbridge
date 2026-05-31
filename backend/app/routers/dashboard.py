@@ -388,28 +388,7 @@ async def dashboard_exceptions(
         }
     today = date.today()
 
-    # ── 1. Overdue customers (sale invoices past due_date, unpaid) ───────────
-    overdue_rows = (await db.execute(
-        select(
-            Invoice.party_id,
-            Party.name.label("party_name"),
-            Party.phone.label("phone"),
-            func.sum(Invoice.grand_total - Invoice.amount_paid).label("balance"),
-            func.max(today - Invoice.due_date).label("oldest_days"),
-        )
-        .join(Party, Invoice.party_id == Party.id)
-        .where(
-            Invoice.company_id == co.id,
-            Invoice.invoice_type == "sale",
-            Invoice.status == "final",
-            Invoice.payment_status != "paid",
-            Invoice.due_date.isnot(None),
-            Invoice.due_date < today,
-        )
-        .group_by(Invoice.party_id, Party.name, Party.phone)
-        .order_by(func.max(today - Invoice.due_date).desc())
-    )).all()
-
+    # Helper bucket
     def _bucket(days: int) -> str:
         if days <= 0: return "current"
         if days <= 30: return "1-30"
@@ -417,42 +396,78 @@ async def dashboard_exceptions(
         if days <= 90: return "61-90"
         return "90+"
 
-    overdue_items = [
-        {
-            "party_id": str(r.party_id),
-            "party_name": r.party_name,
-            "phone": r.phone,
-            "balance": float(r.balance or 0),
-            "oldest_overdue_days": int(r.oldest_days or 0),
-            "aging_bucket": _bucket(int(r.oldest_days or 0)),
-        }
-        for r in overdue_rows
-    ]
-    overdue_total = sum(i["balance"] for i in overdue_items)
+    # ── 1. Overdue customers (sale invoices past due_date, unpaid) ───────────
+    # Use func.min(due_date) and compute days in Python — avoids cross-vendor
+    # quirks with `today - column` arithmetic in SQL.
+    overdue_items: list[dict] = []
+    overdue_total = 0.0
+    try:
+        overdue_rows = (await db.execute(
+            select(
+                Invoice.party_id,
+                Party.name.label("party_name"),
+                Party.phone.label("phone"),
+                func.sum(Invoice.grand_total - Invoice.amount_paid).label("balance"),
+                func.min(Invoice.due_date).label("oldest_due_date"),
+            )
+            .join(Party, Invoice.party_id == Party.id)
+            .where(
+                Invoice.company_id == co.id,
+                Invoice.invoice_type == "sale",
+                Invoice.status == "final",
+                Invoice.payment_status != "paid",
+                Invoice.due_date.isnot(None),
+                Invoice.due_date < today,
+            )
+            .group_by(Invoice.party_id, Party.name, Party.phone)
+            .order_by(func.min(Invoice.due_date).asc())
+        )).all()
+
+        for r in overdue_rows:
+            days = (today - r.oldest_due_date).days if r.oldest_due_date else 0
+            bal = float(r.balance or 0)
+            overdue_items.append({
+                "party_id": str(r.party_id),
+                "party_name": r.party_name,
+                "phone": r.phone,
+                "balance": bal,
+                "oldest_overdue_days": days,
+                "aging_bucket": _bucket(days),
+            })
+            overdue_total += bal
+    except Exception as exc:
+        # Don't kill the whole dashboard if this one slice fails — log + continue
+        import logging
+        logging.getLogger(__name__).warning("dashboard.exceptions: overdue query failed: %s", exc)
 
     # ── 2. Low product stock ─────────────────────────────────────────────────
-    stock_rows = (await db.execute(
-        select(ProductStock, Product.name, Product.unit)
-        .join(Product, ProductStock.product_id == Product.id)
-        .where(
-            ProductStock.company_id == co.id,
-            ProductStock.current_stock <= ProductStock.min_stock_level,
-            ProductStock.min_stock_level > 0,   # ignore products with no threshold
-        )
-        .order_by((ProductStock.current_stock - ProductStock.min_stock_level).asc())
-    )).all()
-    low_stock_items = [
-        {
-            "product_id": str(s.ProductStock.product_id),
-            "product_name": name,
-            "unit": unit,
-            "current_stock": float(s.ProductStock.current_stock or 0),
-            "min_stock_level": float(s.ProductStock.min_stock_level or 0),
-            "deficit": float((s.ProductStock.min_stock_level or 0) - (s.ProductStock.current_stock or 0)),
-            "is_out": float(s.ProductStock.current_stock or 0) == 0,
-        }
-        for s, name, unit in stock_rows
-    ]
+    low_stock_items: list[dict] = []
+    try:
+        stock_rows = (await db.execute(
+            select(ProductStock, Product.name, Product.unit)
+            .join(Product, ProductStock.product_id == Product.id)
+            .where(
+                ProductStock.company_id == co.id,
+                ProductStock.current_stock <= ProductStock.min_stock_level,
+                ProductStock.min_stock_level > 0,   # ignore products with no threshold
+            )
+            .order_by((ProductStock.current_stock - ProductStock.min_stock_level).asc())
+        )).all()
+        low_stock_items = [
+            {
+                "product_id": str(s.ProductStock.product_id),
+                "product_name": name,
+                "unit": unit,
+                "current_stock": float(s.ProductStock.current_stock or 0),
+                "min_stock_level": float(s.ProductStock.min_stock_level or 0),
+                "deficit": float((s.ProductStock.min_stock_level or 0) - (s.ProductStock.current_stock or 0)),
+                "is_out": float(s.ProductStock.current_stock or 0) == 0,
+            }
+            for s, name, unit in stock_rows
+        ]
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("dashboard.exceptions: low-stock query failed: %s", exc)
 
     # ── 3. Compliance expiring (≤60 days or already expired) ─────────────────
     # Use the same threshold pattern as the compliance router; pull from app_settings.
@@ -478,43 +493,42 @@ async def dashboard_exceptions(
     except Exception:
         pass
 
-    comp_rows = (await db.execute(
-        select(ComplianceItem)
-        .where(
-            ComplianceItem.company_id == co.id,
-            ComplianceItem.is_active == True,
-            ComplianceItem.expiry_date.isnot(None),
-            ComplianceItem.expiry_date <= today + timedelta(days=warning_days),
-        )
-        .order_by(ComplianceItem.expiry_date.asc())
-    )).scalars().all()
-    comp_items = []
-    for c in comp_rows:
-        delta = (c.expiry_date - today).days
-        if delta < 0:
-            level = "expired"
-        elif delta <= critical_days:
-            level = "critical"
-        else:
-            level = "warning"
-        comp_items.append({
-            "item_id": str(c.id),
-            "name": c.name,
-            "type": c.item_type,
-            "expiry_date": c.expiry_date.isoformat(),
-            "days_to_expiry": delta,
-            "alert_level": level,
-        })
+    comp_items: list[dict] = []
+    try:
+        comp_rows = (await db.execute(
+            select(ComplianceItem)
+            .where(
+                ComplianceItem.company_id == co.id,
+                ComplianceItem.is_active == True,
+                ComplianceItem.expiry_date.isnot(None),
+                ComplianceItem.expiry_date <= today + timedelta(days=warning_days),
+            )
+            .order_by(ComplianceItem.expiry_date.asc())
+        )).scalars().all()
+        for c in comp_rows:
+            delta = (c.expiry_date - today).days
+            if delta < 0:
+                level = "expired"
+            elif delta <= critical_days:
+                level = "critical"
+            else:
+                level = "warning"
+            comp_items.append({
+                "item_id": str(c.id),
+                "name": c.name,
+                "type": c.item_type,
+                "expiry_date": c.expiry_date.isoformat(),
+                "days_to_expiry": delta,
+                "alert_level": level,
+            })
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("dashboard.exceptions: compliance query failed: %s", exc)
 
     # ── 4. Today's production yield vs target ────────────────────────────────
     yield_variance = None
-    cycle_today = (await db.execute(
-        select(ProductionCycle)
-        .where(ProductionCycle.company_id == co.id, ProductionCycle.cycle_date == today)
-    )).scalar_one_or_none()
-    target_yield_pct = None
+    target_yield_pct = round(0.975 * 0.97 * 0.94 * 0.91 * 100, 2)  # industry default
     try:
-        # Compute target = product of stage expected_yield_pct
         stage_row = (await db.execute(
             text("SELECT value FROM app_settings WHERE key = 'production.stage_defaults'")
         )).fetchone()
@@ -525,58 +539,67 @@ async def dashboard_exceptions(
                 for s in stages:
                     pct *= float(s.get("expected_yield_pct", 100)) / 100.0
                 target_yield_pct = round(pct * 100, 2)
-        if target_yield_pct is None:
-            # Industry default
-            target_yield_pct = round(0.975 * 0.97 * 0.94 * 0.91 * 100, 2)
     except Exception:
-        target_yield_pct = 80.8
+        pass
 
-    if cycle_today and cycle_today.input_kg and cycle_today.input_kg > 0:
-        # Sum stage 4 outputs
-        out_total = float((await db.execute(
-            text("SELECT COALESCE(SUM(output_kg), 0) FROM production_cycle_outputs WHERE cycle_id = :cid"),
-            {"cid": str(cycle_today.id)},
-        )).scalar() or 0)
-        today_yield_pct = round(out_total / float(cycle_today.input_kg) * 100, 2)
-        variance = round(today_yield_pct - target_yield_pct, 2)
-        if variance >= -1.0:
-            yvs = "on_track"
-        elif variance >= -5.0:
-            yvs = "below"
-        else:
-            yvs = "critical"
-        yield_variance = {
-            "cycle_id": str(cycle_today.id),
-            "today_yield_pct": today_yield_pct,
-            "target_yield_pct": target_yield_pct,
-            "variance_pct": variance,
-            "is_finalised": cycle_today.is_finalised,
-            "status": yvs,
-        }
+    try:
+        cycle_today = (await db.execute(
+            select(ProductionCycle)
+            .where(ProductionCycle.company_id == co.id, ProductionCycle.cycle_date == today)
+        )).scalar_one_or_none()
+        if cycle_today and cycle_today.input_kg and cycle_today.input_kg > 0:
+            out_total = float((await db.execute(
+                text("SELECT COALESCE(SUM(output_kg), 0) FROM production_cycle_outputs WHERE cycle_id = :cid"),
+                {"cid": str(cycle_today.id)},
+            )).scalar() or 0)
+            today_yield_pct = round(out_total / float(cycle_today.input_kg) * 100, 2)
+            variance = round(today_yield_pct - target_yield_pct, 2)
+            if variance >= -1.0:
+                yvs = "on_track"
+            elif variance >= -5.0:
+                yvs = "below"
+            else:
+                yvs = "critical"
+            yield_variance = {
+                "cycle_id": str(cycle_today.id),
+                "today_yield_pct": today_yield_pct,
+                "target_yield_pct": target_yield_pct,
+                "variance_pct": variance,
+                "is_finalised": cycle_today.is_finalised,
+                "status": yvs,
+            }
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("dashboard.exceptions: yield query failed: %s", exc)
 
     # ── 5. Today's revenue vs 30-day median ──────────────────────────────────
-    month_start = today - timedelta(days=30)
-    daily_rev_rows = (await db.execute(
-        select(Invoice.invoice_date, func.coalesce(func.sum(Invoice.grand_total), 0))
-        .where(
-            Invoice.company_id == co.id,
-            Invoice.invoice_type == "sale",
-            Invoice.status == "final",
-            Invoice.invoice_date >= month_start,
-            Invoice.invoice_date <= today,
-        )
-        .group_by(Invoice.invoice_date)
-    )).all()
-    daily_map = {d: float(amt) for d, amt in daily_rev_rows}
-    today_rev = daily_map.get(today, 0.0)
-    # Median over last 30 days (excluding today) — pads with 0 for missing days
-    past = [daily_map.get(month_start + timedelta(days=i), 0.0) for i in range(30)]
-    past_sorted = sorted(past)
-    median_30d = past_sorted[len(past_sorted) // 2] if past_sorted else 0.0
-    if median_30d > 0:
-        rev_variance_pct = round((today_rev - median_30d) / median_30d * 100, 1)
-    else:
-        rev_variance_pct = 0.0
+    today_rev = 0.0
+    median_30d = 0.0
+    rev_variance_pct = 0.0
+    try:
+        month_start = today - timedelta(days=30)
+        daily_rev_rows = (await db.execute(
+            select(Invoice.invoice_date, func.coalesce(func.sum(Invoice.grand_total), 0))
+            .where(
+                Invoice.company_id == co.id,
+                Invoice.invoice_type == "sale",
+                Invoice.status == "final",
+                Invoice.invoice_date >= month_start,
+                Invoice.invoice_date <= today,
+            )
+            .group_by(Invoice.invoice_date)
+        )).all()
+        daily_map = {d: float(amt) for d, amt in daily_rev_rows}
+        today_rev = daily_map.get(today, 0.0)
+        past = [daily_map.get(month_start + timedelta(days=i), 0.0) for i in range(30)]
+        past_sorted = sorted(past)
+        median_30d = past_sorted[len(past_sorted) // 2] if past_sorted else 0.0
+        if median_30d > 0:
+            rev_variance_pct = round((today_rev - median_30d) / median_30d * 100, 1)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("dashboard.exceptions: revenue query failed: %s", exc)
+
     today_revenue = {
         "today": round(today_rev, 2),
         "median_30d": round(median_30d, 2),
