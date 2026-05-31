@@ -79,11 +79,17 @@ export function useWeight() {
     };
   }, [connect]);
 
-  /** Formatted weight string like "1,234.50 kg" */
+  /** Formatted weight in kg, e.g. "1,234.50 kg" (kept for compat). */
   const formatted = reading.weight_kg.toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }) + ' kg';
 
-  return { reading, formatted };
+  /** Formatted weight in metric tonnes, e.g. "1.235 MT" (primary unit). */
+  const formattedMT = (reading.weight_kg / 1000).toLocaleString('en-IN', {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  }) + ' MT';
+
+  return { reading, formatted, formattedMT };
 }

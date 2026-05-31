@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { PrintButton } from '@/components/PrintButton';
 import { downloadCsv } from '@/components/DataTable';
+import ResizableSplit from '@/components/ResizableSplit';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -59,7 +60,7 @@ const canWeigh = (t: Token) =>
 // Scale Status bar
 // ------------------------------------------------------------------ //
 function ScaleStatus() {
-  const { reading, formatted } = useWeight();
+  const { reading, formatted, formattedMT } = useWeight();
   return (
     <div className={cn(
       'flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition-colors',
@@ -82,12 +83,15 @@ function ScaleStatus() {
             ? reading.is_stable ? 'text-green-600' : 'text-amber-600'
             : 'text-muted-foreground/50'
         )}>
-          {reading.scale_connected ? formatted : '—'}
+          {reading.scale_connected ? formattedMT : '—'}
         </span>
         {reading.scale_connected && (
-          <p className={cn('text-[10px]', reading.is_stable ? 'text-green-600' : 'text-amber-500 animate-pulse')}>
-            {reading.is_stable ? `Stable ${reading.stable_duration_sec.toFixed(1)}s` : 'Stabilising…'}
-          </p>
+          <>
+            <p className="text-[10px] font-mono text-muted-foreground tabular-nums">{formatted}</p>
+            <p className={cn('text-[10px]', reading.is_stable ? 'text-green-600' : 'text-amber-500 animate-pulse')}>
+              {reading.is_stable ? `Stable ${reading.stable_duration_sec.toFixed(1)}s` : 'Stabilising…'}
+            </p>
+          </>
         )}
       </div>
     </div>
@@ -752,8 +756,13 @@ interface WeightDialogProps {
   onDone: (updated: Token) => void;
 }
 
+// Convert kg → "x.xxx MT" for the live readout
+function mtFromKg(kg: number) {
+  return (kg / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' MT';
+}
+
 function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: WeightDialogProps) {
-  const { reading, formatted } = useWeight();
+  const { reading, formatted, formattedMT } = useWeight();
   const [manualMode, setManualMode] = useState(false);
   const [manualWeight, setManualWeight] = useState('');
   const [saving, setSaving] = useState(false);
@@ -926,8 +935,13 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
                   ? canCapture ? 'text-green-600' : 'text-amber-600'
                   : 'text-muted-foreground/40'
               )}>
-                {reading.scale_connected ? formatted : '— . — —  kg'}
+                {reading.scale_connected ? formattedMT : '— . — — —  MT'}
               </div>
+              {reading.scale_connected && (
+                <div className="font-mono text-sm text-muted-foreground tabular-nums mt-0.5">
+                  {formatted}
+                </div>
+              )}
               <div className="h-5 mt-1">
                 {reading.scale_connected && (
                   canCapture
@@ -949,6 +963,11 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
                 placeholder="0.00"
                 className="text-2xl font-mono h-14 text-center font-bold"
               />
+              {parseFloat(manualWeight) > 0 && (
+                <p className="text-center text-xs text-muted-foreground">
+                  = {mtFromKg(parseFloat(manualWeight))}
+                </p>
+              )}
             </div>
           )}
 
@@ -956,7 +975,8 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
             <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 flex items-center justify-between">
               <div>
                 <p className="text-xs text-muted-foreground">Live Net Weight Preview</p>
-                <p className="font-mono text-2xl font-black text-primary">{wFmt(liveNet)}</p>
+                <p className="font-mono text-2xl font-black text-primary">{mtFromKg(liveNet)}</p>
+                <p className="font-mono text-[10px] text-muted-foreground">{wFmt(liveNet)}</p>
               </div>
               <div className="text-xs text-muted-foreground text-right">
                 <p>{wFmt(isSale ? liveWeight : stage1Weight)} (gross)</p>
@@ -1381,25 +1401,37 @@ export default function TokenPageV1() {
   const COLS = '48px 120px 1fr 90px 80px 80px 80px 60px';
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] gap-3 overflow-hidden">
-
-      {/* ==================== LEFT — 30% ==================== */}
-      <div className="w-[30%] shrink-0 flex flex-col gap-2 overflow-hidden">
-        <ScaleStatus />
-        <CreateTokenForm onCreated={handleTokenCreated} />
-      </div>
-
-      {/* ==================== RIGHT — 70% ==================== */}
-      <div className="flex-1 flex flex-col gap-3 overflow-hidden min-w-0">
-
-        {/* ---- RIGHT TOP — Live Cameras ---- */}
-        <div className="flex-1 grid grid-cols-2 gap-3 min-h-0">
-          <CameraPanel cameraId="front" label="Front Camera" />
-          <CameraPanel cameraId="top" label="Top Camera" />
+    <div className="h-[calc(100vh-7rem)] overflow-hidden">
+      <ResizableSplit
+        direction="horizontal"
+        defaultSize={30}
+        minSize={20}
+        maxSize={60}
+        storageKey="tokens.formSplit"
+      >
+        {/* ==================== LEFT pane ==================== */}
+        <div className="h-full flex flex-col gap-2 overflow-hidden pr-1">
+          <ScaleStatus />
+          <CreateTokenForm onCreated={handleTokenCreated} />
         </div>
 
-        {/* ---- RIGHT BOTTOM — Token List ---- */}
-        <div className="flex-1 rounded-xl border bg-card shadow-sm flex flex-col min-h-0 overflow-hidden">
+        {/* ==================== RIGHT pane ==================== */}
+        <div className="h-full flex flex-col overflow-hidden min-w-0 pl-1">
+          <ResizableSplit
+            direction="vertical"
+            defaultSize={45}
+            minSize={15}
+            maxSize={80}
+            storageKey="tokens.camerasSplit"
+          >
+            {/* ---- TOP — Live Cameras ---- */}
+            <div className="h-full grid grid-cols-2 gap-3 min-h-0 pb-1">
+              <CameraPanel cameraId="front" label="Front Camera" />
+              <CameraPanel cameraId="top" label="Top Camera" />
+            </div>
+
+            {/* ---- BOTTOM — Token List ---- */}
+            <div className="h-full rounded-xl border bg-card shadow-sm flex flex-col min-h-0 overflow-hidden mt-1">
 
           {/* Header row */}
           <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30 shrink-0 flex-wrap">
@@ -1668,8 +1700,10 @@ export default function TokenPageV1() {
               </div>
             )}
           </div>
+            </div>
+          </ResizableSplit>
         </div>
-      </div>
+      </ResizableSplit>
 
       {/* ==================== DIALOGS ==================== */}
       <WeightCaptureDialog

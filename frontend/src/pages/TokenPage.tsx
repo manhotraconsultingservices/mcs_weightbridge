@@ -43,8 +43,9 @@ function mtFmt(kg: number | null | undefined) {
 }
 
 function kgFmt(kg: number | null | undefined) {
+  // Legacy name; now renders MT-primary (matching token-creation UI).
   if (kg == null || isNaN(Number(kg))) return '—';
-  return Number(kg).toLocaleString('en-IN', { minimumFractionDigits: 2 }) + ' kg';
+  return (Number(kg) / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' MT';
 }
 
 const STATUS_CONFIG = {
@@ -438,7 +439,7 @@ export default function TokenPage() {
             className="grid text-xs font-medium text-muted-foreground bg-muted/40 border-b"
             style={{ gridTemplateColumns: '55px 85px 70px 1fr 95px 95px 90px 80px 36px' }}
           >
-            {['Token', 'Date', 'Type', 'Vehicle / Party', 'Gross', 'Tare', 'Net', 'Status', ''].map(h => (
+            {['Token', 'Date', 'Type', 'Vehicle / Party', 'Gross (MT)', 'Tare (MT)', 'Net (MT)', 'Status', ''].map(h => (
               <div key={h || '_print'} className="px-2 py-2">{h}</div>
             ))}
           </div>
