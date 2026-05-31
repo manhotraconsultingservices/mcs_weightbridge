@@ -1873,7 +1873,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                                 </Button>
                               )}
                               {canFinalize && (!isSalesExec && !isPurchaseExec || (isSalesExec && inv.invoice_type !== 'purchase') || (isPurchaseExec && inv.invoice_type === 'purchase')) && (
-                                <Button size="icon" variant="ghost" className="h-7 w-7" title="Finalise Invoice" onClick={() => finalise(inv.id)}>
+                                <Button size="icon" variant="ghost" className="h-7 w-7" title="Send Bill (lock + assign number)" onClick={() => finalise(inv.id)}>
                                   <CheckCircle className="h-3.5 w-3.5 text-green-600" />
                                 </Button>
                               )}

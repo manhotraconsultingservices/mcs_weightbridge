@@ -13,6 +13,11 @@ import PartiesPage from '@/pages/PartiesPage';
 import CustomerProfilePage from '@/pages/CustomerProfilePage';
 import OperatorKioskPage from '@/pages/OperatorKioskPage';
 import OwnerDashboardPage from '@/pages/OwnerDashboardPage';
+// Sprint 3 — hub pages that consolidate the old 28-item sidebar
+import SalesHubPage from '@/pages/SalesHubPage';
+import MaterialsHubPage from '@/pages/MaterialsHubPage';
+import OperationsHubPage from '@/pages/OperationsHubPage';
+import ReportsHubPage from '@/pages/ReportsHubPage';
 import VehiclesPage from '@/pages/VehiclesPage';
 import InvoicesPage from '@/pages/InvoicesPage';
 import QuotationsPage from '@/pages/QuotationsPage';
@@ -125,6 +130,10 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/invoices" element={<InvoicesPage defaultType="sale" />} />
             <Route path="/purchase-invoices" element={<InvoicesPage defaultType="purchase" />} />
             <Route path="/quotations" element={<QuotationsPage />} />
+            {/* Sprint 3 hubs — consolidate sub-pages into tabbed views */}
+            <Route path="/sales" element={<SalesHubPage />} />
+            <Route path="/materials" element={<MaterialsHubPage />} />
+            <Route path="/operations" element={<OperationsHubPage />} />
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/pricing-matrix" element={<PricingMatrixPage />} />
             <Route path="/parties" element={<PartiesPage />} />
@@ -132,7 +141,9 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/vehicles" element={<VehiclesPage />} />
             <Route path="/payments" element={<PaymentsPage />} />
             <Route path="/ledger" element={<LedgerPage />} />
-            <Route path="/reports" element={<ReportsPage />} />
+            {/* /reports now serves the hub (with old ReportsPage as a tab). */}
+            <Route path="/reports" element={<ReportsHubPage />} />
+            <Route path="/reports-classic" element={<ReportsPage />} />
             <Route path="/gst-reports" element={<GstReportsPage />} />
             <Route path="/private-invoices" element={<PrivateInvoicesPage />} />
             <Route path="/settings" element={<SettingsPage />} />
