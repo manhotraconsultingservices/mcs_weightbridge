@@ -343,6 +343,209 @@ async def _low_stock_alert_loop():
             logger.warning("low-stock alert loop error: %s", exc)
 
 
+# ── Owner daily Telegram digest (Sprint 2) ─────────────────────────────────
+# Single message at 20:00 (configurable) summarising the day, sent to every
+# notification_recipient subscribed to event `owner_digest`. Multi-tenant aware.
+
+_last_owner_digest_dates: dict[str, "date"] = {}  # noqa: F821
+
+async def _send_owner_digest_for_session(session_factory, label: str) -> None:
+    """Compute the digest context and dispatch via send_notification."""
+    from datetime import date as _date_cls, timedelta as _td
+    import datetime as _dt
+    from sqlalchemy import text as _sql, select as _select
+
+    async with session_factory() as db:
+        try:
+            # Configured send time (defaults to 20:00). Stored under app_settings
+            # 'owner_digest.time' — admins can change later from settings UI.
+            r = (await db.execute(
+                _sql("SELECT value FROM app_settings WHERE key = 'owner_digest.time'"),
+            )).fetchone()
+            send_time = (r[0] if r and r[0] else "20:00")
+        except Exception:
+            # Tenant DB missing tables → skip
+            return
+
+        try:
+            hh, mm = map(int, send_time.split(":"))
+        except Exception:
+            hh, mm = 20, 0
+
+        now = _dt.datetime.now()
+        if now.hour != hh or now.minute != mm:
+            return
+
+        today = _date_cls.today()
+        if _last_owner_digest_dates.get(label) == today:
+            return
+        _last_owner_digest_dates[label] = today
+
+        # Pull the same metrics the dashboard exception aggregator uses, but
+        # inline (no FastAPI request available here).
+        from app.models.company import Company
+        from app.models.invoice import Invoice
+        from app.models.token import Token
+        from app.models.payment import PaymentReceipt
+        from app.models.product_stock import ProductStock
+        from app.models.compliance import ComplianceItem
+        from app.models.production import ProductionCycle
+        from app.integrations.notifications.service import send_notification
+        from sqlalchemy import func as _func
+
+        co = (await db.execute(_select(Company).limit(1))).scalar_one_or_none()
+        if not co:
+            return
+
+        # Today's tokens + tonnage
+        tok_agg = (await db.execute(
+            _select(_func.count(Token.id), _func.coalesce(_func.sum(Token.net_weight), 0))
+            .where(Token.company_id == co.id, Token.token_date == today, Token.status == "COMPLETED")
+        )).one()
+        tokens_today = int(tok_agg[0] or 0)
+        tonnage_today_kg = float(tok_agg[1] or 0)
+        tonnage_today_mt = round(tonnage_today_kg / 1000, 2)
+
+        # Today's revenue
+        rev_today = float((await db.execute(
+            _select(_func.coalesce(_func.sum(Invoice.grand_total), 0))
+            .where(Invoice.company_id == co.id,
+                   Invoice.invoice_type == "sale",
+                   Invoice.status == "final",
+                   Invoice.invoice_date == today)
+        )).scalar() or 0)
+
+        # Today's collections
+        collected_today = float((await db.execute(
+            _select(_func.coalesce(_func.sum(PaymentReceipt.amount), 0))
+            .where(PaymentReceipt.company_id == co.id,
+                   PaymentReceipt.receipt_date == today)
+        )).scalar() or 0)
+
+        # Exception counts (re-used logic, inlined for one-shot use)
+        overdue_rows = (await db.execute(_sql("""
+            SELECT COUNT(DISTINCT party_id),
+                   COALESCE(SUM(grand_total - amount_paid), 0)
+            FROM invoices
+            WHERE company_id = :cid AND invoice_type = 'sale' AND status = 'final'
+              AND payment_status != 'paid' AND due_date IS NOT NULL
+              AND due_date < :today
+        """), {"cid": str(co.id), "today": today})).one()
+        overdue_count = int(overdue_rows[0] or 0)
+        overdue_total = float(overdue_rows[1] or 0)
+
+        low_stock_count = int((await db.execute(_sql("""
+            SELECT COUNT(*) FROM product_stock
+            WHERE company_id = :cid AND current_stock <= min_stock_level
+              AND min_stock_level > 0
+        """), {"cid": str(co.id)})).scalar() or 0)
+
+        compliance_count = int((await db.execute(_sql("""
+            SELECT COUNT(*) FROM compliance_items
+            WHERE company_id = :cid AND is_active = TRUE
+              AND expiry_date IS NOT NULL
+              AND expiry_date <= :cutoff
+        """), {"cid": str(co.id), "cutoff": today + _td(days=60)})).scalar() or 0)
+
+        # Today's yield, if a cycle exists
+        cycle_today = (await db.execute(
+            _select(ProductionCycle).where(
+                ProductionCycle.company_id == co.id,
+                ProductionCycle.cycle_date == today,
+            )
+        )).scalar_one_or_none()
+        yield_pct = None
+        target_yield_pct = round(0.975 * 0.97 * 0.94 * 0.91 * 100, 2)
+        try:
+            sr = (await db.execute(_sql("SELECT value FROM app_settings WHERE key = 'production.stage_defaults'"))).fetchone()
+            if sr and sr[0]:
+                import json as _json
+                stages = _json.loads(sr[0])
+                if isinstance(stages, list) and len(stages) == 4:
+                    p = 1.0
+                    for s in stages:
+                        p *= float(s.get("expected_yield_pct", 100)) / 100.0
+                    target_yield_pct = round(p * 100, 2)
+        except Exception:
+            pass
+        if cycle_today and cycle_today.input_kg and cycle_today.input_kg > 0:
+            out_total = float((await db.execute(
+                _sql("SELECT COALESCE(SUM(output_kg), 0) FROM production_cycle_outputs WHERE cycle_id = :cid"),
+                {"cid": str(cycle_today.id)},
+            )).scalar() or 0)
+            yield_pct = round(out_total / float(cycle_today.input_kg) * 100, 2)
+
+        # Status emoji
+        problem_count = (
+            (1 if overdue_count else 0)
+            + (1 if low_stock_count else 0)
+            + (1 if compliance_count else 0)
+            + (1 if (yield_pct is not None and yield_pct < target_yield_pct - 1) else 0)
+        )
+        if problem_count == 0:
+            status_emoji = "🟢"
+            status_headline = "All clear today"
+        elif problem_count >= 3:
+            status_emoji = "🔴"
+            status_headline = f"{problem_count} things need you"
+        else:
+            status_emoji = "🟡"
+            status_headline = f"{problem_count} thing{'s' if problem_count != 1 else ''} need you"
+
+        ctx = {
+            "company_name": co.name,
+            "date": today.strftime("%d %b %Y"),
+            "tokens_today": tokens_today,
+            "tonnage_today": f"{tonnage_today_mt:.2f}",
+            "revenue_today": f"{rev_today:,.0f}",
+            "collected_today": f"{collected_today:,.0f}",
+            "status_emoji": status_emoji,
+            "status_headline": status_headline,
+            "overdue_count": overdue_count,
+            "overdue_total": f"{overdue_total:,.0f}",
+            "low_stock_count": low_stock_count,
+            "compliance_count": compliance_count,
+            "yield_variance": yield_pct is not None,
+            "yield_pct": f"{yield_pct:.1f}" if yield_pct is not None else "",
+            "target_yield_pct": f"{target_yield_pct:.1f}",
+            "yield_emoji": (
+                "🟢" if (yield_pct is None or yield_pct >= target_yield_pct - 1)
+                else ("🟡" if yield_pct >= target_yield_pct - 5 else "🔴")
+            ),
+        }
+
+        try:
+            await send_notification(db, co.id, "owner_digest", ctx,
+                                    entity_type="company", entity_id=str(co.id))
+            logger.info("owner_digest sent [%s]", label)
+        except Exception as e:
+            logger.warning("owner_digest send failed [%s]: %s", label, e)
+
+
+async def _owner_digest_loop():
+    """Multi-tenant aware: minute-resolution check, sends once per day at configured time."""
+    while True:
+        await asyncio.sleep(60)
+        try:
+            from app.config import get_settings as _gs
+            if _gs().MULTI_TENANT:
+                from app.multitenancy.registry import tenant_registry
+                tenants = await tenant_registry.list_active_tenants()
+                for t in tenants:
+                    try:
+                        factory = await tenant_registry.get_session_factory(t.slug)
+                        await _send_owner_digest_for_session(factory, label=t.slug)
+                    except Exception as e:
+                        logger.warning("owner_digest failed for tenant %s: %s", t.slug, e)
+            else:
+                from app.database import async_session
+                await _send_owner_digest_for_session(async_session, label="default")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("owner_digest loop error: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── License validation ──────────────────────────────────────────────────
@@ -375,6 +578,9 @@ async def lifespan(app: FastAPI):
     )
     low_stock_task = asyncio.create_task(
         _supervised("low-stock-alert", _low_stock_alert_loop(), restart_delay=300)
+    )
+    owner_digest_task = asyncio.create_task(
+        _supervised("owner-digest", _owner_digest_loop(), restart_delay=120)
     )
 
     # ── Startup ─────────────────────────────────────────────────────────────
@@ -534,6 +740,7 @@ async def lifespan(app: FastAPI):
     daily_inv_task.cancel()
     amc_task.cancel()
     low_stock_task.cancel()
+    owner_digest_task.cancel()
     from app.integrations.serial_port.manager import get_weight_manager
     mgr = get_weight_manager()
     if mgr:

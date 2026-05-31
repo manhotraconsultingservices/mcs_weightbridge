@@ -155,6 +155,51 @@ DEFAULT_TEMPLATES = [
         "subject": None,
         "body": "⚠️ <b>Low Stock Alert</b>\n\n<b>{{ product_name }}</b> is at <b>{{ current_stock }} {{ unit }}</b> (min: {{ min_stock_level }} {{ unit }}).\n\nConsider replenishing — {{ status }}.\n\n— {{ company_name }}",
     },
+    # ── Sprint 2: overdue payment reminders (one-tap from owner dashboard) ──
+    {
+        "event_type": "payment_overdue_reminder",
+        "channel": "whatsapp",
+        "name": "Payment Overdue Reminder (WhatsApp)",
+        "subject": None,
+        "body": "Dear {{ party_name }},\n\nThis is a gentle reminder that *₹{{ balance }}* is outstanding on your account ({{ oldest_overdue_days }} days past due).\n\nKindly arrange payment at your earliest convenience.\n\nThank you,\n{{ company_name }}",
+    },
+    {
+        "event_type": "payment_overdue_reminder",
+        "channel": "sms",
+        "name": "Payment Overdue Reminder (SMS)",
+        "subject": None,
+        "body": "Dear {{ party_name }}, Rs.{{ balance }} is overdue on your account ({{ oldest_overdue_days }} days). Please arrange payment. - {{ company_name }}",
+    },
+    {
+        "event_type": "payment_overdue_reminder",
+        "channel": "email",
+        "name": "Payment Overdue Reminder (Email)",
+        "subject": "Payment Reminder - ₹{{ balance }} overdue - {{ company_name }}",
+        "body": """<p>Dear {{ party_name }},</p>
+<p>This is a gentle reminder that <strong>₹{{ balance }}</strong> is outstanding on your account ({{ oldest_overdue_days }} days past due).</p>
+<p>Kindly arrange payment at your earliest convenience. If you have already paid, please share the payment details with us.</p>
+<p>Thank you,<br>{{ company_name }}</p>""",
+    },
+    # ── Sprint 2: 8 PM owner Telegram digest ─────────────────────────────────
+    {
+        "event_type": "owner_digest",
+        "channel": "telegram",
+        "name": "Daily Owner Digest (Telegram)",
+        "subject": None,
+        "body": (
+            "📊 <b>Daily Brief — {{ date }}</b>\n\n"
+            "<b>Today:</b>\n"
+            "• {{ tokens_today }} trucks · {{ tonnage_today }} MT\n"
+            "• Sales: ₹{{ revenue_today }}\n"
+            "• Collected: ₹{{ collected_today }}\n\n"
+            "<b>Status:</b> {{ status_emoji }} {{ status_headline }}\n\n"
+            "{% if overdue_count > 0 %}🔴 {{ overdue_count }} customer(s) overdue (₹{{ overdue_total }})\n{% endif %}"
+            "{% if low_stock_count > 0 %}🟡 {{ low_stock_count }} product(s) low stock\n{% endif %}"
+            "{% if compliance_count > 0 %}🟡 {{ compliance_count }} compliance expiring\n{% endif %}"
+            "{% if yield_variance %}{{ yield_emoji }} Yield: {{ yield_pct }}% (target {{ target_yield_pct }}%)\n{% endif %}"
+            "\n— {{ company_name }}"
+        ),
+    },
 ]
 
 

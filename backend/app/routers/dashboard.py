@@ -357,3 +357,397 @@ async def get_charts(
         "payment_pipeline": payment_pipeline,
         "supplement_included": with_supp,
     }
+
+
+# ── Owner exception aggregator (Sprint 2: exception-first dashboard) ──────────
+#
+# Returns the 4 exception buckets owners actually act on, plus a
+# traffic-light status for the new home page. One round-trip; the new
+# OwnerDashboardPage renders entirely from this response.
+#
+@router.get("/exceptions")
+async def dashboard_exceptions(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    import json
+    from app.models.product_stock import ProductStock
+    from app.models.compliance import ComplianceItem
+    from app.models.production import ProductionCycle
+
+    co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
+    if not co:
+        return {
+            "status": "healthy",
+            "headline": "No company configured",
+            "overdue_customers": {"items": [], "count": 0, "total_balance": 0},
+            "low_stock_products": {"items": [], "count": 0},
+            "compliance_expiring": {"items": [], "count": 0},
+            "yield_variance": None,
+            "today_revenue": {"today": 0, "median_30d": 0, "variance_pct": 0},
+        }
+    today = date.today()
+
+    # ── 1. Overdue customers (sale invoices past due_date, unpaid) ───────────
+    overdue_rows = (await db.execute(
+        select(
+            Invoice.party_id,
+            Party.name.label("party_name"),
+            Party.phone.label("phone"),
+            func.sum(Invoice.grand_total - Invoice.amount_paid).label("balance"),
+            func.max(today - Invoice.due_date).label("oldest_days"),
+        )
+        .join(Party, Invoice.party_id == Party.id)
+        .where(
+            Invoice.company_id == co.id,
+            Invoice.invoice_type == "sale",
+            Invoice.status == "final",
+            Invoice.payment_status != "paid",
+            Invoice.due_date.isnot(None),
+            Invoice.due_date < today,
+        )
+        .group_by(Invoice.party_id, Party.name, Party.phone)
+        .order_by(func.max(today - Invoice.due_date).desc())
+    )).all()
+
+    def _bucket(days: int) -> str:
+        if days <= 0: return "current"
+        if days <= 30: return "1-30"
+        if days <= 60: return "31-60"
+        if days <= 90: return "61-90"
+        return "90+"
+
+    overdue_items = [
+        {
+            "party_id": str(r.party_id),
+            "party_name": r.party_name,
+            "phone": r.phone,
+            "balance": float(r.balance or 0),
+            "oldest_overdue_days": int(r.oldest_days or 0),
+            "aging_bucket": _bucket(int(r.oldest_days or 0)),
+        }
+        for r in overdue_rows
+    ]
+    overdue_total = sum(i["balance"] for i in overdue_items)
+
+    # ── 2. Low product stock ─────────────────────────────────────────────────
+    stock_rows = (await db.execute(
+        select(ProductStock, Product.name, Product.unit)
+        .join(Product, ProductStock.product_id == Product.id)
+        .where(
+            ProductStock.company_id == co.id,
+            ProductStock.current_stock <= ProductStock.min_stock_level,
+            ProductStock.min_stock_level > 0,   # ignore products with no threshold
+        )
+        .order_by((ProductStock.current_stock - ProductStock.min_stock_level).asc())
+    )).all()
+    low_stock_items = [
+        {
+            "product_id": str(s.ProductStock.product_id),
+            "product_name": name,
+            "unit": unit,
+            "current_stock": float(s.ProductStock.current_stock or 0),
+            "min_stock_level": float(s.ProductStock.min_stock_level or 0),
+            "deficit": float((s.ProductStock.min_stock_level or 0) - (s.ProductStock.current_stock or 0)),
+            "is_out": float(s.ProductStock.current_stock or 0) == 0,
+        }
+        for s, name, unit in stock_rows
+    ]
+
+    # ── 3. Compliance expiring (≤60 days or already expired) ─────────────────
+    # Use the same threshold pattern as the compliance router; pull from app_settings.
+    def _setting(k: str, default: int) -> int:
+        try:
+            r = db.sync_session.execute(text("SELECT value FROM app_settings WHERE key = :k"), {"k": k}).fetchone()
+            if r and r[0]:
+                return int(r[0])
+        except Exception:
+            pass
+        return default
+    critical_days = 30
+    warning_days = 60
+    try:
+        for k, default in (("compliance_critical_days", 30), ("compliance_warning_days", 60)):
+            r = (await db.execute(
+                text("SELECT value FROM app_settings WHERE key = :k"), {"k": k},
+            )).fetchone()
+            if r and r[0]:
+                v = int(r[0])
+                if k == "compliance_critical_days": critical_days = v
+                else: warning_days = v
+    except Exception:
+        pass
+
+    comp_rows = (await db.execute(
+        select(ComplianceItem)
+        .where(
+            ComplianceItem.company_id == co.id,
+            ComplianceItem.is_active == True,
+            ComplianceItem.expiry_date.isnot(None),
+            ComplianceItem.expiry_date <= today + timedelta(days=warning_days),
+        )
+        .order_by(ComplianceItem.expiry_date.asc())
+    )).scalars().all()
+    comp_items = []
+    for c in comp_rows:
+        delta = (c.expiry_date - today).days
+        if delta < 0:
+            level = "expired"
+        elif delta <= critical_days:
+            level = "critical"
+        else:
+            level = "warning"
+        comp_items.append({
+            "item_id": str(c.id),
+            "name": c.name,
+            "type": c.item_type,
+            "expiry_date": c.expiry_date.isoformat(),
+            "days_to_expiry": delta,
+            "alert_level": level,
+        })
+
+    # ── 4. Today's production yield vs target ────────────────────────────────
+    yield_variance = None
+    cycle_today = (await db.execute(
+        select(ProductionCycle)
+        .where(ProductionCycle.company_id == co.id, ProductionCycle.cycle_date == today)
+    )).scalar_one_or_none()
+    target_yield_pct = None
+    try:
+        # Compute target = product of stage expected_yield_pct
+        stage_row = (await db.execute(
+            text("SELECT value FROM app_settings WHERE key = 'production.stage_defaults'")
+        )).fetchone()
+        if stage_row and stage_row[0]:
+            stages = json.loads(stage_row[0])
+            if isinstance(stages, list) and len(stages) == 4:
+                pct = 1.0
+                for s in stages:
+                    pct *= float(s.get("expected_yield_pct", 100)) / 100.0
+                target_yield_pct = round(pct * 100, 2)
+        if target_yield_pct is None:
+            # Industry default
+            target_yield_pct = round(0.975 * 0.97 * 0.94 * 0.91 * 100, 2)
+    except Exception:
+        target_yield_pct = 80.8
+
+    if cycle_today and cycle_today.input_kg and cycle_today.input_kg > 0:
+        # Sum stage 4 outputs
+        out_total = float((await db.execute(
+            text("SELECT COALESCE(SUM(output_kg), 0) FROM production_cycle_outputs WHERE cycle_id = :cid"),
+            {"cid": str(cycle_today.id)},
+        )).scalar() or 0)
+        today_yield_pct = round(out_total / float(cycle_today.input_kg) * 100, 2)
+        variance = round(today_yield_pct - target_yield_pct, 2)
+        if variance >= -1.0:
+            yvs = "on_track"
+        elif variance >= -5.0:
+            yvs = "below"
+        else:
+            yvs = "critical"
+        yield_variance = {
+            "cycle_id": str(cycle_today.id),
+            "today_yield_pct": today_yield_pct,
+            "target_yield_pct": target_yield_pct,
+            "variance_pct": variance,
+            "is_finalised": cycle_today.is_finalised,
+            "status": yvs,
+        }
+
+    # ── 5. Today's revenue vs 30-day median ──────────────────────────────────
+    month_start = today - timedelta(days=30)
+    daily_rev_rows = (await db.execute(
+        select(Invoice.invoice_date, func.coalesce(func.sum(Invoice.grand_total), 0))
+        .where(
+            Invoice.company_id == co.id,
+            Invoice.invoice_type == "sale",
+            Invoice.status == "final",
+            Invoice.invoice_date >= month_start,
+            Invoice.invoice_date <= today,
+        )
+        .group_by(Invoice.invoice_date)
+    )).all()
+    daily_map = {d: float(amt) for d, amt in daily_rev_rows}
+    today_rev = daily_map.get(today, 0.0)
+    # Median over last 30 days (excluding today) — pads with 0 for missing days
+    past = [daily_map.get(month_start + timedelta(days=i), 0.0) for i in range(30)]
+    past_sorted = sorted(past)
+    median_30d = past_sorted[len(past_sorted) // 2] if past_sorted else 0.0
+    if median_30d > 0:
+        rev_variance_pct = round((today_rev - median_30d) / median_30d * 100, 1)
+    else:
+        rev_variance_pct = 0.0
+    today_revenue = {
+        "today": round(today_rev, 2),
+        "median_30d": round(median_30d, 2),
+        "variance_pct": rev_variance_pct,
+    }
+
+    # ── Traffic-light overall status + headline ──────────────────────────────
+    # critical: anything expired, anything fully out of stock, or critical yield miss
+    # warning: any overdue, any low stock, any expiring compliance, yield below target
+    # healthy: clean across the board
+    has_expired = any(i["alert_level"] == "expired" for i in comp_items)
+    has_critical_compliance = any(i["alert_level"] in ("expired", "critical") for i in comp_items)
+    has_out_of_stock = any(i["is_out"] for i in low_stock_items)
+    has_overdue_60plus = any(i["oldest_overdue_days"] > 60 for i in overdue_items)
+    yield_critical = yield_variance and yield_variance["status"] == "critical"
+
+    problem_count = (
+        (1 if overdue_items else 0)
+        + (1 if low_stock_items else 0)
+        + (1 if comp_items else 0)
+        + (1 if (yield_variance and yield_variance["status"] != "on_track") else 0)
+    )
+
+    if has_expired or has_out_of_stock or yield_critical or has_overdue_60plus:
+        status = "critical"
+    elif problem_count > 0:
+        status = "warning"
+    else:
+        status = "healthy"
+
+    if status == "healthy":
+        headline = "All clear · plant healthy today"
+    else:
+        bits = []
+        if has_overdue_60plus or overdue_items:
+            bits.append(f"₹{overdue_total/100000:.2f}L overdue")
+        if has_out_of_stock:
+            bits.append(f"{sum(1 for i in low_stock_items if i['is_out'])} product(s) out of stock")
+        elif low_stock_items:
+            bits.append(f"{len(low_stock_items)} product(s) low")
+        if has_critical_compliance:
+            bits.append(f"{sum(1 for i in comp_items if i['alert_level'] in ('expired', 'critical'))} compliance critical")
+        elif comp_items:
+            bits.append(f"{len(comp_items)} compliance expiring")
+        if yield_variance and yield_variance["status"] != "on_track":
+            bits.append(f"Yield {yield_variance['variance_pct']:+.1f}% vs target")
+        headline = f"{problem_count} thing{'s' if problem_count != 1 else ''} need you — " + " · ".join(bits)
+
+    return {
+        "status": status,
+        "headline": headline,
+        "problem_count": problem_count,
+        "overdue_customers": {
+            "items": overdue_items,
+            "count": len(overdue_items),
+            "total_balance": round(overdue_total, 2),
+        },
+        "low_stock_products": {
+            "items": low_stock_items,
+            "count": len(low_stock_items),
+            "out_of_stock_count": sum(1 for i in low_stock_items if i["is_out"]),
+        },
+        "compliance_expiring": {
+            "items": comp_items,
+            "count": len(comp_items),
+        },
+        "yield_variance": yield_variance,
+        "today_revenue": today_revenue,
+    }
+
+
+# ── Sprint 2: One-tap WhatsApp batch for overdue customers ─────────────────────
+#
+# POST /api/v1/dashboard/whatsapp-overdue
+# Body: { "party_ids": ["uuid", ...] }
+# Returns: { "sent": N, "skipped": N (no phone), "failed": N }
+#
+from fastapi import HTTPException
+from pydantic import BaseModel as _BaseModel
+
+
+class _OverdueReminderRequest(_BaseModel):
+    party_ids: list[str]
+
+
+@router.post("/whatsapp-overdue")
+async def whatsapp_overdue(
+    payload: _OverdueReminderRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Batch-send 'payment_overdue_reminder' to a set of customer party_ids.
+
+    Uses the existing notifications pipeline — looks up templates for event
+    `payment_overdue_reminder` on enabled channels, renders per party, and
+    dispatches. Each party gets one message per channel (whatsapp / sms / email
+    / telegram — whichever template is configured AND has a destination on
+    the party record).
+    """
+    from app.integrations.notifications.service import send_notification
+    from app.models.invoice import Invoice as _Inv
+    import uuid as _uuid
+
+    co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
+    if not co:
+        raise HTTPException(500, "Company not configured")
+    if not payload.party_ids:
+        return {"sent": 0, "skipped": 0, "failed": 0}
+
+    try:
+        pids = [_uuid.UUID(p) for p in payload.party_ids]
+    except ValueError:
+        raise HTTPException(400, "Invalid party_ids")
+
+    today = date.today()
+    sent = 0
+    skipped = 0
+    failed = 0
+
+    # Pull the parties + per-party overdue summary in one shot
+    rows = (await db.execute(
+        select(
+            Party,
+            func.sum(_Inv.grand_total - _Inv.amount_paid).label("balance"),
+            func.max(today - _Inv.due_date).label("oldest_days"),
+        )
+        .join(_Inv, _Inv.party_id == Party.id)
+        .where(
+            Party.id.in_(pids),
+            _Inv.company_id == co.id,
+            _Inv.invoice_type == "sale",
+            _Inv.status == "final",
+            _Inv.payment_status != "paid",
+            _Inv.due_date.isnot(None),
+            _Inv.due_date < today,
+        )
+        .group_by(Party.id)
+    )).all()
+
+    for party, balance, oldest_days in rows:
+        if not party.phone and not party.email:
+            skipped += 1
+            continue
+        try:
+            ctx = {
+                "company_name": co.name,
+                "party_name": party.name,
+                "party_phone": party.phone or "",
+                "party_email": party.email or "",
+                "balance": f"{float(balance or 0):,.2f}",
+                "oldest_overdue_days": int(oldest_days or 0),
+                "date": today.strftime("%d %b %Y"),
+            }
+            await send_notification(
+                db, co.id, "payment_overdue_reminder", ctx,
+                entity_type="party", entity_id=str(party.id),
+            )
+            sent += 1
+        except Exception:
+            failed += 1
+
+    # Audit log
+    try:
+        from app.routers.audit import log_action
+        await log_action(
+            db, co.id, current_user.id, "send_overdue_reminders", "dashboard",
+            entity_id=None,
+            details={"sent": sent, "skipped": skipped, "failed": failed,
+                     "party_count": len(payload.party_ids)},
+        )
+    except Exception:
+        pass
+
+    return {"sent": sent, "skipped": skipped, "failed": failed}

@@ -12,6 +12,7 @@ import TokenPage from '@/pages/TokenPage';
 import PartiesPage from '@/pages/PartiesPage';
 import CustomerProfilePage from '@/pages/CustomerProfilePage';
 import OperatorKioskPage from '@/pages/OperatorKioskPage';
+import OwnerDashboardPage from '@/pages/OwnerDashboardPage';
 import VehiclesPage from '@/pages/VehiclesPage';
 import InvoicesPage from '@/pages/InvoicesPage';
 import QuotationsPage from '@/pages/QuotationsPage';
@@ -66,13 +67,14 @@ function isTenantSubdomain(): boolean {
 }
 
 // Redirect to the first page the user has access to.
-// Operators get the simplified kiosk by default.
+// Operators get the simplified kiosk; everyone else gets the exception-first
+// owner dashboard. Legacy chart-heavy dashboard still reachable at /dashboard-legacy.
 function HomeRedirect({ permissions, role }: { permissions: string[]; role?: string }) {
   if (role === 'operator') return <Navigate to="/operator" replace />;
-  if (permissions.includes('*') || permissions.includes('/')) return <DashboardPage />;
+  if (permissions.includes('*') || permissions.includes('/')) return <OwnerDashboardPage />;
   const first = permissions[0];
   if (first) return <Navigate to={first} replace />;
-  return <DashboardPage />; // absolute fallback
+  return <OwnerDashboardPage />; // absolute fallback
 }
 
 // AMC expired banner
@@ -116,6 +118,8 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
           <div className={wallpaperUrl ? 'min-h-full bg-background/80 backdrop-blur-sm rounded-lg p-4' : ''}>
             <Routes>
             <Route path="/" element={<HomeRedirect permissions={permissions} role={user.role} />} />
+            {/* Legacy chart-heavy dashboard kept reachable for "View 30-day trends" link */}
+            <Route path="/dashboard-legacy" element={<DashboardPage />} />
             <Route path="/tokens" element={<TokenPage />} />
             <Route path="/tokens-v1" element={<TokenPageV1 />} />
             <Route path="/invoices" element={<InvoicesPage defaultType="sale" />} />
