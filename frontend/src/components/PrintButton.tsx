@@ -30,7 +30,10 @@ export function PrintButton({
       const printUrl = a4Url ?? `${url}?format=a5`;
       const res = await api.get(printUrl, { responseType: 'blob' });
 
-      const contentType = res.headers['content-type'] || '';
+      // axios v1.12+ types headers as string | number | string[] | AxiosHeaders.
+      // Coerce to string for our content-type sniff.
+      const rawType = res.headers['content-type'];
+      const contentType = typeof rawType === 'string' ? rawType : String(rawType ?? '');
       const blob = res.data as Blob;
 
       // If response is HTML (e.g. token weighment slip), open as HTML page
