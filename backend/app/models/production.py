@@ -24,6 +24,10 @@ class ProductionCycle(Base):
     company_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("companies.id"))
     cycle_no: Mapped[int] = mapped_column(Integer)
     cycle_date: Mapped[date] = mapped_column(Date)
+    # Optional FK to the raw material consumed by this cycle. NULL = legacy
+    # cycles that didn't track raw stock. On finalise, a negative cycle_input
+    # movement is posted to product_stock for this product.
+    raw_material_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("products.id"))
     input_kg: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     stage1_output_kg: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     stage2_output_kg: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))

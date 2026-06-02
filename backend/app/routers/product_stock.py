@@ -164,6 +164,39 @@ async def post_cycle_outputs(
         )
 
 
+async def post_cycle_input(
+    db: AsyncSession, cycle,
+    user_id: Optional[uuid.UUID] = None, user_name: Optional[str] = None,
+) -> None:
+    """Auto-post a NEGATIVE stock movement for the raw material consumed by a
+    finalised cycle. Mirror of post_cycle_outputs but for the input side.
+
+    Skip silently if raw_material_id is None or input_kg is 0/null — keeps
+    backward compat with legacy cycles that didn't track raw stock.
+    """
+    if not cycle.raw_material_id or not cycle.input_kg or cycle.input_kg <= 0:
+        return
+    product = (await db.execute(
+        select(Product).where(Product.id == cycle.raw_material_id)
+    )).scalar_one_or_none()
+    if not product:
+        return
+    qty = Decimal(str(cycle.input_kg))
+    if product.unit == "MT":
+        qty = qty / Decimal("1000")
+    await _record_movement(
+        db, cycle.company_id, cycle.raw_material_id,
+        movement_type="cycle_input",
+        # Consumption is a stock-OUT — negate the qty.
+        quantity=-qty,
+        reference_type="production_cycle",
+        reference_id=cycle.id,
+        reference_no=f"CYC/{cycle.cycle_date}/{cycle.cycle_no}",
+        notes=f"Production cycle {cycle.cycle_date} — raw material consumed",
+        user_id=user_id, user_name=user_name,
+    )
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 async def _company(db: AsyncSession) -> Company:

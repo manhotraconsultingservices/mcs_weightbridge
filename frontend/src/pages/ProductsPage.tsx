@@ -25,6 +25,7 @@ interface ProductForm {
   default_rate: string;
   gst_rate: string;
   bulk_density: string;
+  is_raw_material: boolean;
   description: string;
   is_active: boolean;
 }
@@ -33,6 +34,7 @@ const emptyForm = (): ProductForm => ({
   name: '', code: '', category_id: '', hsn_code: '',
   unit: 'MT', default_rate: '0', gst_rate: '5',
   bulk_density: '',
+  is_raw_material: false,
   description: '', is_active: true,
 });
 
@@ -61,6 +63,7 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
           default_rate: String(editing.default_rate),
           gst_rate: String(editing.gst_rate),
           bulk_density: editing.bulk_density != null ? String(editing.bulk_density) : '',
+          is_raw_material: !!editing.is_raw_material,
           description: editing.description ?? '',
           is_active: editing.is_active,
         });
@@ -88,6 +91,7 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
         default_rate: parseFloat(form.default_rate) || 0,
         gst_rate: parseFloat(form.gst_rate) || 0,
         bulk_density: form.bulk_density.trim() ? parseFloat(form.bulk_density) : null,
+        is_raw_material: form.is_raw_material,
         description: form.description.trim() || null,
         is_active: form.is_active,
       };
@@ -187,6 +191,23 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
               Used to convert volume (m³) to weight when the truck isn't weighed on the bridge.
               Typical values: aggregate 1.50, sand 1.70, GSB 1.90, stone dust 1.55.
             </p>
+          </div>
+
+          <div className="col-span-2 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+            <input
+              type="checkbox"
+              id="is_raw_material"
+              checked={form.is_raw_material}
+              onChange={e => set('is_raw_material', e.target.checked)}
+              className="h-4 w-4"
+            />
+            <label htmlFor="is_raw_material" className="text-sm font-medium cursor-pointer">
+              Mark as raw material (input to production)
+            </label>
+            <span className="text-xs text-amber-700 ml-2">
+              When ticked, this product can be selected as the input on a production cycle —
+              finalising the cycle will decrement stock by the input weight.
+            </span>
           </div>
 
           <div className="col-span-2 space-y-1">
@@ -377,6 +398,15 @@ function ProductsTable({
       accessor: p => p.bulk_density,
       format: v => v == null ? '—' : Number(v).toFixed(3),
       className: 'text-muted-foreground',
+    },
+    {
+      key: 'is_raw_material', label: 'Raw', type: 'enum', align: 'center',
+      enumOptions: ['Raw', 'Finished'],
+      accessor: p => p.is_raw_material ? 'Raw' : 'Finished',
+      format: v => v === 'Raw'
+        ? <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-300">RAW</span>
+        : <span className="text-xs text-muted-foreground">finished</span>,
+      defaultVisible: false,
     },
     {
       key: 'status', label: 'Status', type: 'enum', align: 'center',

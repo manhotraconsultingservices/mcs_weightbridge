@@ -92,9 +92,17 @@ async def _load_cycle_response(db: AsyncSession, cycle_id: uuid.UUID) -> Product
         )
         for o in cycle.outputs
     ]
+    # Pull raw material name if set (single extra round-trip; cycles list is small)
+    raw_mat_name: Optional[str] = None
+    if cycle.raw_material_id:
+        raw_mat_name = (await db.execute(
+            select(Product.name).where(Product.id == cycle.raw_material_id)
+        )).scalar_one_or_none()
     metrics = _compute_metrics(cycle, cycle.outputs)
     return ProductionCycleResponse(
         id=cycle.id, cycle_no=cycle.cycle_no, cycle_date=cycle.cycle_date,
+        raw_material_id=cycle.raw_material_id,
+        raw_material_name=raw_mat_name,
         input_kg=cycle.input_kg,
         stage1_output_kg=cycle.stage1_output_kg,
         stage2_output_kg=cycle.stage2_output_kg,
@@ -135,10 +143,25 @@ async def create_cycle(
     if existing:
         raise HTTPException(400, f"A cycle already exists for {payload.cycle_date}. Edit it instead.")
 
+    # Validate raw_material_id (must be a product flagged is_raw_material=true if provided)
+    if payload.raw_material_id:
+        raw_mat = (await db.execute(
+            select(Product).where(Product.id == payload.raw_material_id, Product.company_id == co.id)
+        )).scalar_one_or_none()
+        if not raw_mat:
+            raise HTTPException(404, "Raw material product not found")
+        if not raw_mat.is_raw_material:
+            raise HTTPException(
+                400,
+                f"Product '{raw_mat.name}' is not marked as raw material. "
+                "Open the product in the catalog and tick 'Is raw material'.",
+            )
+
     cycle = ProductionCycle(
         company_id=co.id,
         cycle_no=await _next_cycle_no(db, co.id),
         cycle_date=payload.cycle_date,
+        raw_material_id=payload.raw_material_id,
         input_kg=payload.input_kg,
         stage1_output_kg=payload.stage1_output_kg,
         stage2_output_kg=payload.stage2_output_kg,
@@ -247,7 +270,7 @@ async def update_cycle(
     if cycle.is_finalised:
         raise HTTPException(400, "Cannot edit a finalised cycle")
 
-    for field in ("input_kg", "stage1_output_kg", "stage2_output_kg", "stage3_output_kg", "notes"):
+    for field in ("raw_material_id", "input_kg", "stage1_output_kg", "stage2_output_kg", "stage3_output_kg", "notes"):
         v = getattr(payload, field, None)
         if v is not None:
             setattr(cycle, field, v)
@@ -287,9 +310,19 @@ async def finalise_cycle(
     if not cycle.outputs:
         raise HTTPException(400, "Cycle has no per-product outputs to post to stock")
 
-    # Post stock-in movements for each output
+    # Post stock movements:
+    #   1. Negative movement for raw material consumed (input)
+    #   2. Positive movements for each finished-goods output
     try:
-        from app.routers.product_stock import post_cycle_outputs
+        from app.routers.product_stock import post_cycle_outputs, post_cycle_input
+        # Raw material consumption (optional — only when raw_material_id set)
+        if cycle.raw_material_id and cycle.input_kg and cycle.input_kg > 0:
+            await post_cycle_input(
+                db, cycle,
+                user_id=current_user.id,
+                user_name=current_user.full_name or current_user.username,
+            )
+        # Stage 4 outputs → stock in
         await post_cycle_outputs(
             db, cycle, cycle.outputs,
             user_id=current_user.id,

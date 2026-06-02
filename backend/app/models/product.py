@@ -34,6 +34,10 @@ class Product(Base):
     # Bulk density in t/m³ — enables volume → weight conversion at token creation.
     # NULL means volume mode is not available for this product.
     bulk_density: Mapped[Decimal | None] = mapped_column(Numeric(6, 3))
+    # Raw-material flag — only relevant for products that are INPUTS to production
+    # (e.g. "Raw Boulder"). When a production cycle's raw_material_id points
+    # here, finalising the cycle posts a negative stock movement = input consumed.
+    is_raw_material: Mapped[bool] = mapped_column(Boolean, default=False)
     description: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -69,18 +69,25 @@ async def update_category(
 async def list_products(
     category_id: uuid.UUID | None = None,
     active_only: bool = True,
+    is_raw_material: bool | None = None,    # True → only raw materials, False → only finished goods
     search: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List products with pagination. Pass page_size=9999 for dropdown use."""
+    """List products with pagination. Pass page_size=9999 for dropdown use.
+
+    `is_raw_material=true` filter is used by the Production page's raw-material
+    picker. Default (None) returns all products.
+    """
     base_q = select(Product).where(Product.company_id == current_user.company_id)
     if active_only:
         base_q = base_q.where(Product.is_active == True)
     if category_id:
         base_q = base_q.where(Product.category_id == category_id)
+    if is_raw_material is not None:
+        base_q = base_q.where(Product.is_raw_material == is_raw_material)
     if search:
         base_q = base_q.where(Product.name.ilike(f"%{search}%"))
 

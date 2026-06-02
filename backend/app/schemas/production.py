@@ -28,6 +28,7 @@ class CycleOutputResponse(BaseModel):
 
 class ProductionCycleCreate(BaseModel):
     cycle_date: date
+    raw_material_id: Optional[uuid.UUID] = None   # input material (Product with is_raw_material=True)
     input_kg: Decimal
     stage1_output_kg: Optional[Decimal] = None
     stage2_output_kg: Optional[Decimal] = None
@@ -44,6 +45,7 @@ class ProductionCycleCreate(BaseModel):
 
 
 class ProductionCycleUpdate(BaseModel):
+    raw_material_id: Optional[uuid.UUID] = None
     input_kg: Optional[Decimal] = None
     stage1_output_kg: Optional[Decimal] = None
     stage2_output_kg: Optional[Decimal] = None
@@ -56,6 +58,8 @@ class ProductionCycleResponse(BaseModel):
     id: uuid.UUID
     cycle_no: int
     cycle_date: date
+    raw_material_id: Optional[uuid.UUID] = None
+    raw_material_name: Optional[str] = None           # joined for display
     input_kg: Decimal
     stage1_output_kg: Optional[Decimal]
     stage2_output_kg: Optional[Decimal]

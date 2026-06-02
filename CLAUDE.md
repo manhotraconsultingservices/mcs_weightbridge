@@ -126,7 +126,7 @@ require_role("admin")  # Role guard — returns 403 if not matching
 | `financial_years` | id, company_id, label, start_date, end_date, is_active | |
 | `parties` | id, company_id, party_type, name, gstin, phone, current_balance | party_type: customer/supplier/both |
 | `party_rates` | id, party_id, product_id, rate, effective_from | Custom rate per party+product |
-| `products` | id, company_id, category_id, name, hsn_code, unit, default_rate, gst_rate, bulk_density | bulk_density (t/m³) enables volume→weight conversion for volume-based tokens |
+| `products` | id, company_id, category_id, name, hsn_code, unit, default_rate, gst_rate, bulk_density, is_raw_material | bulk_density (t/m³) enables volume→weight conversion for volume-based tokens; is_raw_material flag marks production inputs |
 | `product_categories` | id, company_id, name | |
 | `vehicles` | id, company_id, registration_no, default_tare_weight | |
 | `tare_weight_history` | id, vehicle_id, tare_weight, recorded_at | |

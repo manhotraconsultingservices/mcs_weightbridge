@@ -64,6 +64,8 @@ interface ProductionCycle {
   id: string;
   cycle_no: number;
   cycle_date: string;
+  raw_material_id: string | null;
+  raw_material_name: string | null;
   input_kg: number;
   stage1_output_kg: number | null;
   stage2_output_kg: number | null;
@@ -101,6 +103,14 @@ const CYCLE_COLUMNS: ColumnDef<ProductionCycle>[] = [
     key: 'cycle_no', label: 'Cycle #', type: 'number', align: 'right',
     accessor: c => c.cycle_no,
     className: 'font-mono',
+  },
+  {
+    key: 'raw_material_name', label: 'Raw Material', type: 'string',
+    accessor: c => c.raw_material_name ?? '',
+    format: v => v ? (
+      <Badge variant="outline" className="text-[10px] border-amber-300 bg-amber-50 text-amber-800">{String(v)}</Badge>
+    ) : <span className="text-xs text-muted-foreground italic">—</span>,
+    defaultVisible: true,
   },
   {
     key: 'input_kg', label: 'Input', type: 'number', align: 'right',
@@ -336,6 +346,8 @@ function CycleDialog({
   onSaved: () => void;
 }) {
   const [cycleDate, setCycleDate] = useState(today());
+  const [rawMaterialId, setRawMaterialId] = useState<string>('');
+  const [rawMaterials, setRawMaterials] = useState<Product[]>([]);
   const [inputKg, setInputKg] = useState('');
   const [stage1, setStage1] = useState('');
   const [stage2, setStage2] = useState('');
@@ -353,12 +365,17 @@ function CycleDialog({
       setStageDefaults(res.data.stages);
       setOverallExpected(res.data.overall_expected_yield_pct);
     }).catch(() => {});
+    // Load raw materials (products with is_raw_material=true)
+    api.get<{ items: Product[] }>('/api/v1/products?is_raw_material=true&page_size=200')
+      .then(res => setRawMaterials(res.data.items ?? []))
+      .catch(() => setRawMaterials([]));
 
     if (editing) {
       // API returns kg; convert to MT for the form (3 decimals).
       const kgToMtStr = (kg: number | null | undefined) =>
         kg == null ? '' : (Number(kg) / KG_PER_MT).toFixed(3);
       setCycleDate(editing.cycle_date);
+      setRawMaterialId(editing.raw_material_id ?? '');
       setInputKg(kgToMtStr(editing.input_kg));
       setStage1(kgToMtStr(editing.stage1_output_kg));
       setStage2(kgToMtStr(editing.stage2_output_kg));
@@ -371,6 +388,7 @@ function CycleDialog({
       })));
     } else {
       setCycleDate(today());
+      setRawMaterialId('');
       setInputKg('');
       setStage1(''); setStage2(''); setStage3('');
       setNotes('');
@@ -422,6 +440,7 @@ function CycleDialog({
     try {
       const payload = {
         cycle_date: cycleDate,
+        raw_material_id: rawMaterialId || null,
         input_kg: mtToKg(inputKg),
         stage1_output_kg: stage1 ? mtToKg(stage1) : null,
         stage2_output_kg: stage2 ? mtToKg(stage2) : null,
@@ -453,10 +472,35 @@ function CycleDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1">
               <Label>Cycle Date *</Label>
               <Input type="date" value={cycleDate} onChange={e => setCycleDate(e.target.value)} disabled={!!editing} />
+            </div>
+            <div className="space-y-1">
+              <Label>Raw Material</Label>
+              <Select value={rawMaterialId || 'none'} onValueChange={v => setRawMaterialId(v === 'none' ? '' : (v ?? ''))}>
+                <SelectTrigger>
+                  <span className="truncate text-left flex-1">
+                    {rawMaterialId
+                      ? (rawMaterials.find(p => p.id === rawMaterialId)?.name ?? '…')
+                      : <span className="text-muted-foreground">None (untracked)</span>}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None — don't track raw stock</SelectItem>
+                  {rawMaterials.length === 0 ? (
+                    <SelectItem value="_empty" disabled>
+                      No raw materials yet — add via Materials → Catalog, tick "Mark as raw material"
+                    </SelectItem>
+                  ) : rawMaterials.map(p => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                Finalising will decrement this product's stock by the input weight.
+              </p>
             </div>
             <div className="space-y-1">
               <Label>Input Weight (MT) — raw boulder *</Label>

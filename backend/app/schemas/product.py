@@ -28,6 +28,7 @@ class ProductCreate(BaseModel):
     default_rate: Decimal = Decimal("0")
     gst_rate: Decimal = Decimal("5.00")
     bulk_density: Decimal | None = None   # t/m³
+    is_raw_material: bool = False         # mark inputs to production
     description: str | None = None
 
 
@@ -40,6 +41,7 @@ class ProductUpdate(BaseModel):
     default_rate: Decimal | None = None
     gst_rate: Decimal | None = None
     bulk_density: Decimal | None = None
+    is_raw_material: bool | None = None
     description: str | None = None
     is_active: bool | None = None
 
@@ -54,6 +56,7 @@ class ProductResponse(BaseModel):
     default_rate: Decimal
     gst_rate: Decimal
     bulk_density: Decimal | None = None
+    is_raw_material: bool = False
     description: str | None
     is_active: bool
 

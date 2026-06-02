@@ -85,6 +85,7 @@ export interface Product {
   default_rate: number;
   gst_rate: number;
   bulk_density: number | null;   // t/m³ — enables volume → weight conversion in tokens
+  is_raw_material: boolean;       // marks raw inputs to production (e.g., raw boulder)
   description: string | null;
   is_active: boolean;
 }

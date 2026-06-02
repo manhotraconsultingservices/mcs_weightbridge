@@ -426,6 +426,11 @@ def get_column_migrations() -> list[str]:
         """,
         # Bulk density on products (t/m³) — enables volume → weight conversion
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS bulk_density NUMERIC(6,3)",
+        # Raw material flag — marks products that are inputs to production (e.g.,
+        # raw boulder). When a production cycle is finalised, the raw_material_id
+        # gets a negative stock movement = input weight consumed.
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_raw_material BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE production_cycles ADD COLUMN IF NOT EXISTS raw_material_id UUID REFERENCES products(id)",
         # Volume-based weighment on tokens
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS weight_method VARCHAR(20) NOT NULL DEFAULT 'weighbridge'",
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS volume_m3 NUMERIC(8,3)",
