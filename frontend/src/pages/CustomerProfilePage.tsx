@@ -35,7 +35,9 @@ const INR = (v: number | string | null | undefined) => {
 const fmtDate = (s: string | null | undefined) =>
   s ? new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
-const fmtMT = (n: number) => `${n.toFixed(3)} MT`;
+// Backend serialises pydantic Decimal as a STRING in JSON. Always coerce
+// with Number(...) before any numeric operation/method like .toFixed().
+const fmtMT = (n: number | string | null | undefined) => `${Number(n ?? 0).toFixed(3)} MT`;
 
 // ── Mini stat card ──────────────────────────────────────────────────────────
 function KpiCard({
@@ -639,8 +641,11 @@ export default function CustomerProfilePage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {custom_rates.map(r => {
-                      const diff = r.custom_rate - r.default_rate;
-                      const pct = r.default_rate > 0 ? (diff / r.default_rate) * 100 : 0;
+                      // Backend Decimals arrive as strings; coerce explicitly.
+                      const customRate = Number(r.custom_rate ?? 0);
+                      const defaultRate = Number(r.default_rate ?? 0);
+                      const diff = customRate - defaultRate;
+                      const pct = defaultRate > 0 ? (diff / defaultRate) * 100 : 0;
                       return (
                         <tr key={r.product_id} className="hover:bg-slate-50">
                           <td className="px-3 py-2 font-medium">{r.product_name}</td>
