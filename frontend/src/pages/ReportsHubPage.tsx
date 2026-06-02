@@ -5,7 +5,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield } from 'lucide-react';
+import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield, XCircle } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import PaymentsPage from './PaymentsPage';
 import LedgerPage from './LedgerPage';
@@ -13,14 +13,16 @@ import GstReportsPage from './GstReportsPage';
 import ReportsPage from './ReportsPage';
 import CompliancePage from './CompliancePage';
 import AuditPage from './AuditPage';
+import WriteOffsReportPage from './WriteOffsReportPage';
 
-type Tab = 'payments' | 'statement' | 'gst' | 'reports' | 'compliance' | 'activity';
+type Tab = 'payments' | 'statement' | 'gst' | 'reports' | 'write-offs' | 'compliance' | 'activity';
 
 const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
   { value: 'payments', label: 'Payments', icon: CreditCard },
   { value: 'statement', label: 'Account Statement', icon: BookOpen },
   { value: 'gst', label: 'GST', icon: FileBarChart },
   { value: 'reports', label: 'P&L + Sales', icon: BarChart3 },
+  { value: 'write-offs', label: 'Write-offs', icon: XCircle },
   { value: 'compliance', label: 'Documents', icon: ShieldCheck },
   { value: 'activity', label: 'Activity Log', icon: Shield },
 ];
@@ -58,6 +60,7 @@ export default function ReportsHubPage() {
         <TabsContent value="statement" className="mt-4"><LedgerPage /></TabsContent>
         <TabsContent value="gst" className="mt-4"><GstReportsPage /></TabsContent>
         <TabsContent value="reports" className="mt-4"><ReportsPage /></TabsContent>
+        <TabsContent value="write-offs" className="mt-4"><WriteOffsReportPage /></TabsContent>
         <TabsContent value="compliance" className="mt-4"><CompliancePage /></TabsContent>
         <TabsContent value="activity" className="mt-4"><AuditPage /></TabsContent>
       </Tabs>

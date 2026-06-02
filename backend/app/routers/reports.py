@@ -4,6 +4,7 @@ GSTR-3B, Profit & Loss, Stock Summary.
 """
 import io
 import json
+import uuid
 from datetime import date
 from decimal import Decimal
 from typing import Optional
@@ -560,6 +561,27 @@ async def profit_loss(
         .order_by(yr, mo)
     )
 
+    # Monthly bad-debt write-offs (group by write_off_at month, not invoice month —
+    # writes-offs are recorded when the decision is made, not when the invoice was raised)
+    wo_yr = func.extract("year", Invoice.write_off_at)
+    wo_mo = func.extract("month", Invoice.write_off_at)
+    wo_result = await db.execute(
+        select(
+            wo_yr.label("yr"),
+            wo_mo.label("mo"),
+            func.sum(Invoice.write_off_amount).label("total"),
+            func.count(Invoice.id).label("count"),
+        )
+        .where(
+            Invoice.invoice_type == "sale",
+            Invoice.write_off_amount > 0,
+            Invoice.write_off_at.isnot(None),
+            func.date(Invoice.write_off_at) >= from_date,
+            func.date(Invoice.write_off_at) <= to_date,
+        )
+        .group_by(wo_yr, wo_mo)
+    )
+
     import calendar
 
     def _month_label(yr_val, mo_val) -> tuple[str, str]:
@@ -576,36 +598,54 @@ async def profit_loss(
         key, label = _month_label(r.yr, r.mo)
         cogs_by_month[key] = {"month": key, "label": label, "cogs": _r2(r.total), "cogs_taxable": _r2(r.taxable), "purchase_count": int(r.count)}
 
+    wo_by_month: dict[str, dict] = {}
+    for r in wo_result.all():
+        if r.yr is None or r.mo is None:
+            continue
+        key, label = _month_label(r.yr, r.mo)
+        wo_by_month[key] = {"month": key, "label": label, "write_off": _r2(r.total or 0), "write_off_count": int(r.count or 0)}
+
     # Merge by month
-    all_months = sorted(set(list(rev_by_month.keys()) + list(cogs_by_month.keys())))
+    all_months = sorted(set(list(rev_by_month.keys()) + list(cogs_by_month.keys()) + list(wo_by_month.keys())))
     monthly = []
-    total_revenue = total_cogs = 0.0
+    total_revenue = total_cogs = total_write_off = 0.0
     for key in all_months:
         rev = rev_by_month.get(key, {})
         cogs = cogs_by_month.get(key, {})
-        label = rev.get("label") or cogs.get("label") or key
+        wo = wo_by_month.get(key, {})
+        label = rev.get("label") or cogs.get("label") or wo.get("label") or key
         revenue = rev.get("revenue", 0.0)
         cost = cogs.get("cogs", 0.0)
-        profit = _r2(revenue - cost)
-        margin = _r2((profit / revenue * 100) if revenue > 0 else 0)
+        write_off = wo.get("write_off", 0.0)
+        gross_profit = _r2(revenue - cost)
+        net_profit = _r2(gross_profit - write_off)
+        margin = _r2((net_profit / revenue * 100) if revenue > 0 else 0)
         total_revenue += revenue
         total_cogs += cost
+        total_write_off += write_off
         monthly.append({
             "month": key, "label": label,
             "revenue": revenue, "cogs": cost,
-            "gross_profit": profit, "margin_pct": margin,
+            "write_off": write_off,
+            "gross_profit": gross_profit,
+            "net_profit": net_profit,
+            "margin_pct": margin,
             "sale_count": rev.get("sale_count", 0),
             "purchase_count": cogs.get("purchase_count", 0),
+            "write_off_count": wo.get("write_off_count", 0),
         })
 
-    total_profit = _r2(total_revenue - total_cogs)
+    total_gross = _r2(total_revenue - total_cogs)
+    total_net = _r2(total_gross - total_write_off)
     return {
         "period": f"{from_date.isoformat()} to {to_date.isoformat()}",
         "summary": {
             "total_revenue": _r2(total_revenue),
             "total_cogs": _r2(total_cogs),
-            "gross_profit": total_profit,
-            "margin_pct": _r2((total_profit / total_revenue * 100) if total_revenue > 0 else 0),
+            "total_write_off": _r2(total_write_off),
+            "gross_profit": total_gross,
+            "net_profit": total_net,
+            "margin_pct": _r2((total_net / total_revenue * 100) if total_revenue > 0 else 0),
         },
         "monthly": monthly,
     }
@@ -699,5 +739,102 @@ async def stock_summary(
             "qty_purchased": _r2(total_purchased),
             "qty_sold": _r2(total_sold),
             "closing_value": _r2(total_closing_value),
+        },
+    }
+
+
+# ── Write-off report ───────────────────────────────────────────────────────
+
+@router.get("/write-offs")
+async def write_off_report(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    party_id: uuid.UUID | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """All write-offs in the period, with per-row + per-customer + totals.
+
+    Filter by date range (write_off_at) and optionally by party_id.
+    """
+    filters = [
+        Invoice.write_off_amount > 0,
+        Invoice.write_off_at.isnot(None),
+        func.date(Invoice.write_off_at) >= from_date,
+        func.date(Invoice.write_off_at) <= to_date,
+    ]
+    if party_id:
+        filters.append(Invoice.party_id == party_id)
+
+    rows = (await db.execute(
+        select(
+            Invoice.id,
+            Invoice.invoice_no,
+            Invoice.invoice_date,
+            Invoice.invoice_type,
+            Invoice.party_id,
+            Party.name.label("party_name"),
+            Party.phone.label("party_phone"),
+            Invoice.grand_total,
+            Invoice.write_off_amount,
+            Invoice.write_off_reason,
+            Invoice.write_off_at,
+            User.full_name.label("written_off_by_name"),
+            User.username.label("written_off_by_username"),
+        )
+        .join(Party, Invoice.party_id == Party.id, isouter=True)
+        .join(User, Invoice.write_off_by == User.id, isouter=True)
+        .where(*filters)
+        .order_by(Invoice.write_off_at.desc())
+    )).all()
+
+    items = []
+    by_party: dict[str, dict] = {}
+    total_amount = Decimal("0")
+    for r in rows:
+        amt = Decimal(str(r.write_off_amount or 0))
+        total_amount += amt
+        party_label = r.party_name or "Walk-in / Cash"
+        items.append({
+            "invoice_id": str(r.id),
+            "invoice_no": r.invoice_no,
+            "invoice_date": r.invoice_date.isoformat() if r.invoice_date else None,
+            "invoice_type": r.invoice_type,
+            "party_id": str(r.party_id) if r.party_id else None,
+            "party_name": party_label,
+            "party_phone": r.party_phone,
+            "grand_total": float(r.grand_total or 0),
+            "write_off_amount": float(amt),
+            "write_off_reason": r.write_off_reason or "",
+            "write_off_at": r.write_off_at.isoformat() if r.write_off_at else None,
+            "written_off_by": r.written_off_by_name or r.written_off_by_username or "",
+        })
+        # Per-party aggregate
+        key = str(r.party_id) if r.party_id else "_walkin_"
+        if key not in by_party:
+            by_party[key] = {
+                "party_id": str(r.party_id) if r.party_id else None,
+                "party_name": party_label,
+                "party_phone": r.party_phone,
+                "count": 0,
+                "total_amount": 0.0,
+            }
+        by_party[key]["count"] += 1
+        by_party[key]["total_amount"] = float(
+            Decimal(str(by_party[key]["total_amount"])) + amt
+        )
+
+    by_party_list = sorted(
+        by_party.values(), key=lambda x: x["total_amount"], reverse=True
+    )
+
+    return {
+        "period": f"{from_date.isoformat()} to {to_date.isoformat()}",
+        "items": items,
+        "by_party": by_party_list,
+        "totals": {
+            "count": len(items),
+            "amount": float(total_amount),
+            "customer_count": len(by_party_list),
         },
     }

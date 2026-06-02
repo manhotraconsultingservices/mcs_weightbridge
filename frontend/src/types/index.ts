@@ -603,6 +603,7 @@ export interface Party360Stats {
   lifetime_sales: number;
   lifetime_paid: number;
   lifetime_written_off: number;
+  write_off_count: number;
   invoice_count: number;
   avg_order_value: number;
   last_invoice_date: string | null;

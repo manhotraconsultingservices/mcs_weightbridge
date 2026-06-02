@@ -9,13 +9,14 @@
  * Linked from every party name in the app (Parties table, Invoices,
  * Payments, Ledger).
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Phone, Mail, MapPin, IndianRupee, FileText, Banknote,
   Receipt, Clock, TrendingUp, AlertCircle, Loader2, Truck, Tag,
-  Calendar, Edit, CheckCircle2,
+  Calendar, Edit, CheckCircle2, XCircle,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +24,7 @@ import {
   Tabs, TabsList, TabsTrigger, TabsContent,
 } from '@/components/ui/tabs';
 import api from '@/services/api';
+import { useAuth } from '@/hooks/useAuth';
 import type { Party360Response } from '@/types';
 
 const INR = (v: number | string | null | undefined) => {
@@ -125,9 +127,15 @@ function AgingChart({ aging }: { aging: Party360Response['stats']['aging'] }) {
 export default function CustomerProfilePage() {
   const { id } = useParams<{ id: string }>();
   const nav = useNavigate();
+  const { user } = useAuth();
+  const canWriteOff = user?.role === 'admin' || user?.role === 'accountant';
   const [data, setData] = useState<Party360Response | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Mass write-off selection (per-invoice checkbox)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -136,6 +144,7 @@ export default function CustomerProfilePage() {
     try {
       const { data } = await api.get<Party360Response>(`/api/v1/parties/${id}/360`);
       setData(data);
+      setSelectedIds(new Set());   // clear selection after refresh
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(typeof detail === 'string' ? detail : 'Failed to load customer profile');
@@ -145,6 +154,79 @@ export default function CustomerProfilePage() {
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Invoices eligible for write-off: finalised + has outstanding balance
+  const writeOffEligible = useMemo(() => {
+    if (!data) return new Set<string>();
+    return new Set(
+      data.recent_invoices
+        .filter(i => i.status === 'final' && i.payment_status !== 'paid' && (i.amount_due > 0))
+        .map(i => i.id),
+    );
+  }, [data]);
+
+  const selectedTotal = useMemo(() => {
+    if (!data) return 0;
+    return data.recent_invoices
+      .filter(i => selectedIds.has(i.id))
+      .reduce((s, i) => s + Number(i.amount_due || 0), 0);
+  }, [selectedIds, data]);
+
+  function toggleSelect(invoiceId: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(invoiceId)) next.delete(invoiceId);
+      else next.add(invoiceId);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === writeOffEligible.size) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(writeOffEligible));
+    }
+  }
+
+  async function performBulkWriteOff() {
+    if (selectedIds.size === 0) return;
+    const totalStr = '₹' + selectedTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const confirmMsg =
+      `Write off ${selectedIds.size} invoice${selectedIds.size === 1 ? '' : 's'} totalling ${totalStr}?\n\n` +
+      `This is irreversible. The customer's balance will be reduced by ${totalStr} and the amounts ` +
+      `will appear as bad-debt expense on your Profit & Loss report.\n\n` +
+      `Enter reason for write-off (will be saved on every selected invoice):`;
+    const reason = window.prompt(confirmMsg, 'Bad debt — uncollectable');
+    if (!reason || !reason.trim()) return;
+
+    setBulkBusy(true);
+    try {
+      const { data: result } = await api.post<{
+        written: number; skipped: number; total_amount: number;
+        skipped_details: string[]; parties_affected: number;
+      }>('/api/v1/invoices/write-off-bulk', {
+        invoice_ids: Array.from(selectedIds),
+        reason: reason.trim(),
+      });
+      if (result.written > 0) {
+        toast.success(
+          `Wrote off ${result.written} invoice${result.written === 1 ? '' : 's'} (₹${result.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })})`
+          + (result.skipped ? ` · ${result.skipped} skipped` : ''),
+        );
+      } else {
+        toast.message('Nothing written off', {
+          description: result.skipped_details.join(' · ') || 'All invoices ineligible',
+        });
+      }
+      load();
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Bulk write-off failed');
+    } finally {
+      setBulkBusy(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -274,10 +356,11 @@ export default function CustomerProfilePage() {
           label="Lifetime Paid"
           value={INR(stats.lifetime_paid)}
           sub={
-            stats.lifetime_written_off > 0
-              ? `${INR(stats.lifetime_written_off)} written off`
+            stats.write_off_count > 0
+              ? `${INR(stats.lifetime_written_off)} written off (${stats.write_off_count} inv)`
               : 'no write-offs'
           }
+          tone={stats.write_off_count > 0 ? 'warn' : 'default'}
         />
         <KpiCard
           icon={Calendar}
@@ -334,11 +417,44 @@ export default function CustomerProfilePage() {
 
         {/* ── Recent invoices ─────────────────────────────────────────── */}
         <TabsContent value="invoices" className="mt-3">
+          {canWriteOff && writeOffEligible.size > 0 && (
+            <div className="mb-2 flex items-center justify-between flex-wrap gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
+              <div className="flex items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={toggleSelectAll}
+                  className="font-semibold text-amber-800 hover:underline"
+                >
+                  {selectedIds.size === writeOffEligible.size && writeOffEligible.size > 0
+                    ? 'Deselect all'
+                    : `Select all ${writeOffEligible.size} eligible`}
+                </button>
+                <span className="text-amber-700">
+                  {selectedIds.size > 0
+                    ? `· ${selectedIds.size} selected · ${INR(selectedTotal)} total`
+                    : '· tick rows to write off in bulk'}
+                </span>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={selectedIds.size === 0 || bulkBusy}
+                onClick={performBulkWriteOff}
+                className="border-amber-400 bg-white text-amber-800 hover:bg-amber-100 disabled:opacity-40"
+              >
+                {bulkBusy
+                  ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  : <XCircle className="h-3.5 w-3.5 mr-1.5" />}
+                Write off {selectedIds.size || ''} invoice{selectedIds.size === 1 ? '' : 's'}
+              </Button>
+            </div>
+          )}
           <Card>
             <CardContent className="p-0">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                   <tr>
+                    {canWriteOff && <th className="px-2 py-2 w-8" />}
                     <th className="px-3 py-2 text-left">Invoice #</th>
                     <th className="px-3 py-2 text-left">Date</th>
                     <th className="px-3 py-2 text-left">Type</th>
@@ -350,12 +466,27 @@ export default function CustomerProfilePage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {recent_invoices.length === 0 && (
-                    <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-400">
+                    <tr><td colSpan={canWriteOff ? 8 : 7} className="px-3 py-8 text-center text-slate-400">
                       No invoices yet
                     </td></tr>
                   )}
-                  {recent_invoices.map(inv => (
-                    <tr key={inv.id} className="hover:bg-slate-50">
+                  {recent_invoices.map(inv => {
+                    const eligible = writeOffEligible.has(inv.id);
+                    const checked = selectedIds.has(inv.id);
+                    return (
+                    <tr key={inv.id} className={`hover:bg-slate-50 ${checked ? 'bg-amber-50/50' : ''}`}>
+                      {canWriteOff && (
+                        <td className="px-2 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={!eligible}
+                            onChange={() => toggleSelect(inv.id)}
+                            title={eligible ? 'Select for bulk write-off' : 'Not eligible (paid, cancelled, or draft)'}
+                            className="h-4 w-4 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
+                          />
+                        </td>
+                      )}
                       <td className="px-3 py-2 font-mono text-xs">
                         <Link to={`/${inv.invoice_type === 'purchase' ? 'purchase-' : ''}invoices?inv=${inv.id}`}
                               className="text-blue-600 hover:underline">
@@ -392,7 +523,7 @@ export default function CustomerProfilePage() {
                         </Badge>
                       </td>
                     </tr>
-                  ))}
+                  );})}
                 </tbody>
               </table>
             </CardContent>

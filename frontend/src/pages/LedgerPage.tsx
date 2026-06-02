@@ -64,6 +64,16 @@ const VOUCHER_TYPE_LABELS: Record<string, string> = {
   purchase_invoice: 'Purchase Invoice',
   receipt: 'Receipt',
   voucher: 'Payment',
+  write_off: 'Write-off',
+};
+
+// CSS for voucher-type pill (write-off gets an amber tint to stand out)
+const VOUCHER_TYPE_CLASSES: Record<string, string> = {
+  sale_invoice: 'bg-blue-100 text-blue-800',
+  purchase_invoice: 'bg-amber-100 text-amber-800',
+  receipt: 'bg-emerald-100 text-emerald-800',
+  voucher: 'bg-orange-100 text-orange-800',
+  write_off: 'bg-rose-100 text-rose-800 ring-1 ring-rose-300',
 };
 
 function fmt(n: number) {
@@ -72,13 +82,16 @@ function fmt(n: number) {
 
 export default function LedgerPage() {
   // Respect ?tab=outstanding (linked from Dashboard Outstanding KPI)
+  // Respect ?party=<id> (linked from Customer 360 / Parties / Dashboard)
   const initialTab =
     typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'outstanding'
       ? 'outstanding'
       : 'ledger';
+  const initialParty =
+    typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('party') ?? '') : '';
   const [tab, setTab] = useState(initialTab);
   const [parties, setParties] = useState<Party[]>([]);
-  const [partyId, setPartyId] = useState('');
+  const [partyId, setPartyId] = useState(initialParty);
   const [ledger, setLedger] = useState<PartyLedger | null>(null);
   const [outstanding, setOutstanding] = useState<OutstandingData | null>(null);
   const [loadingLedger, setLoadingLedger] = useState(false);
@@ -209,7 +222,7 @@ export default function LedgerPage() {
                         <tr key={i} className="border-b hover:bg-muted/20 transition-colors">
                           <td className="px-4 py-2 text-muted-foreground whitespace-nowrap">{e.entry_date}</td>
                           <td className="px-4 py-2">
-                            <span className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${VOUCHER_TYPE_CLASSES[e.voucher_type] || 'bg-muted'}`}>
                               {VOUCHER_TYPE_LABELS[e.voucher_type] || e.voucher_type}
                             </span>
                           </td>

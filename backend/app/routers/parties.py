@@ -347,6 +347,7 @@ async def party_360(
     lifetime_sales = sum((i.grand_total or Decimal("0")) for i in sale_invoices)
     lifetime_paid = sum((i.amount_paid or Decimal("0")) for i in sale_invoices)
     lifetime_written_off = sum((i.write_off_amount or Decimal("0")) for i in sale_invoices)
+    write_off_count = sum(1 for i in sale_invoices if (i.write_off_amount or Decimal("0")) > 0)
     invoice_count = len(sale_invoices)
     aov = (lifetime_sales / invoice_count) if invoice_count else Decimal("0")
     last_invoice_date = max((i.invoice_date for i in sale_invoices), default=None)
@@ -479,6 +480,7 @@ async def party_360(
         lifetime_sales=lifetime_sales,
         lifetime_paid=lifetime_paid,
         lifetime_written_off=lifetime_written_off,
+        write_off_count=write_off_count,
         invoice_count=invoice_count,
         avg_order_value=aov,
         last_invoice_date=last_invoice_date,

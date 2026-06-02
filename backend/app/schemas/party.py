@@ -160,6 +160,7 @@ class Party360Stats(BaseModel):
     lifetime_sales: Decimal = Decimal("0")       # sum of grand_total for all non-cancelled sale invoices
     lifetime_paid: Decimal = Decimal("0")        # sum of amount_paid on those invoices
     lifetime_written_off: Decimal = Decimal("0") # sum of write_off_amount on those invoices
+    write_off_count: int = 0                     # how many invoices have been written off for this party
     invoice_count: int = 0                       # non-cancelled sale invoices only
     avg_order_value: Decimal = Decimal("0")      # lifetime_sales / invoice_count
     last_invoice_date: date | None = None

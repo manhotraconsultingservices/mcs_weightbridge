@@ -1356,6 +1356,23 @@ async def write_off_invoice(
     elif Decimal(str(inv.amount_paid or 0)) > 0:
         inv.payment_status = "partial"
 
+    # ── Accounting: write-off is a credit to the customer's account ─────
+    # A sale write-off means the customer no longer owes us this amount
+    # → reduce party.current_balance (which tracks net receivable).
+    # For purchase write-off (rare — supplier credit gone), it's the inverse.
+    if inv.party_id:
+        party_obj = (await db.execute(
+            select(Party).where(Party.id == inv.party_id)
+        )).scalar_one_or_none()
+        if party_obj:
+            current = Decimal(str(party_obj.current_balance or 0))
+            if inv.invoice_type == "sale":
+                # Customer owes less now
+                party_obj.current_balance = (current - requested).quantize(Decimal("0.01"))
+            else:
+                # Supplier credit forgiven
+                party_obj.current_balance = (current + requested).quantize(Decimal("0.01"))
+
     co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
     from app.routers.audit import log_action
     if co:
@@ -1372,3 +1389,103 @@ async def write_off_invoice(
         )
     await db.commit()
     return await _load_invoice(db, invoice_id)
+
+
+# ── Bulk write-off (mass action from Customer 360) ─────────────────────────
+
+from pydantic import BaseModel as _BulkBaseModel
+
+
+class _BulkWriteOffRequest(_BulkBaseModel):
+    invoice_ids: list[uuid.UUID]
+    reason: str
+
+
+@router.post("/write-off-bulk")
+async def write_off_bulk(
+    payload: _BulkWriteOffRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "accountant")),
+):
+    """Write off the full remaining balance on every invoice in the list.
+
+    Use case: an accountant decides to close out an entire customer's
+    outstanding (e.g. write off all 14 bad invoices for a defaulting
+    customer in one click). The reason is shared across all invoices —
+    callers should pre-confirm with the user before invoking.
+
+    Skips invoices that are already paid, cancelled, or not finalised.
+    Updates party.current_balance once per affected party. Returns a
+    summary { written: N, skipped: N, total_amount: X, errors: [...] }.
+    """
+    if not payload.invoice_ids:
+        raise HTTPException(400, "No invoices selected")
+    if not payload.reason or not payload.reason.strip():
+        raise HTTPException(400, "Reason is required for write-off.")
+
+    co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
+    if not co:
+        raise HTTPException(500, "Company not configured")
+
+    reason_clean = payload.reason.strip()
+    now_utc = datetime.now(timezone.utc)
+    written = 0
+    skipped: list[str] = []
+    total_amount = Decimal("0")
+    # Accumulate per-party balance deltas so we only touch each party row once.
+    party_deltas: dict[uuid.UUID, Decimal] = {}
+
+    from app.routers.audit import log_action
+
+    for inv_id in payload.invoice_ids:
+        try:
+            inv = await _load_invoice(db, inv_id)
+        except HTTPException:
+            skipped.append(f"{inv_id}: not found")
+            continue
+        if inv.status != "final":
+            skipped.append(f"{inv.invoice_no or inv_id}: status={inv.status}")
+            continue
+        balance = Decimal(str(inv.amount_due or 0))
+        if balance <= 0:
+            skipped.append(f"{inv.invoice_no or inv_id}: already settled")
+            continue
+
+        inv.write_off_amount = (Decimal(str(inv.write_off_amount or 0)) + balance).quantize(Decimal("0.01"))
+        inv.write_off_reason = reason_clean
+        inv.write_off_at = now_utc
+        inv.write_off_by = current_user.id
+        inv.amount_due = Decimal("0")
+        inv.payment_status = "paid"
+
+        # Track party balance delta. Sale → reduce; purchase → increase.
+        if inv.party_id:
+            delta = balance if inv.invoice_type == "sale" else -balance
+            party_deltas[inv.party_id] = party_deltas.get(inv.party_id, Decimal("0")) + delta
+
+        await log_action(
+            db, co.id, current_user.id, "write_off", "invoice",
+            entity_id=str(inv_id),
+            details={
+                "invoice_no": inv.invoice_no, "amount": str(balance),
+                "reason": reason_clean, "bulk": True,
+            },
+        )
+        written += 1
+        total_amount += balance
+
+    # Apply accumulated party balance changes
+    for pid, delta in party_deltas.items():
+        party_obj = (await db.execute(select(Party).where(Party.id == pid))).scalar_one_or_none()
+        if party_obj:
+            cur = Decimal(str(party_obj.current_balance or 0))
+            party_obj.current_balance = (cur - delta).quantize(Decimal("0.01"))
+
+    await db.commit()
+    return {
+        "written": written,
+        "skipped": len(skipped),
+        "skipped_details": skipped,
+        "total_amount": float(total_amount),
+        "parties_affected": len(party_deltas),
+    }

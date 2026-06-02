@@ -333,6 +333,21 @@ async def party_ledger(
                     "no": inv.invoice_no,
                     "narration": f"{inv.invoice_type.title()} Invoice",
                     "debit": dr, "credit": cr, "ts": inv.created_at})
+        # ── Write-off as a separate ledger entry on its own date ──────
+        # For a sale: write-off CREDITS the party (their balance owed goes down).
+        # For a purchase: write-off DEBITS the party (we no longer owe them).
+        wo_amount = Decimal(str(inv.write_off_amount or 0))
+        if wo_amount > 0 and inv.write_off_at is not None:
+            wo_date = inv.write_off_at.date()
+            wo_dr = wo_amount if inv.invoice_type == "purchase" else Decimal("0")
+            wo_cr = wo_amount if inv.invoice_type == "sale" else Decimal("0")
+            reason = (inv.write_off_reason or "Bad debt").strip()
+            raw.append({
+                "date": wo_date, "type": "write_off",
+                "no": inv.invoice_no,
+                "narration": f"Write-off ({reason})",
+                "debit": wo_dr, "credit": wo_cr, "ts": inv.write_off_at,
+            })
     for rec in receipts:
         raw.append({"date": rec.receipt_date, "type": "receipt", "no": rec.receipt_no,
                     "narration": f"Payment received ({rec.payment_mode})",
