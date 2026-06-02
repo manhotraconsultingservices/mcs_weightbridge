@@ -11,6 +11,7 @@ import DashboardPage from '@/pages/DashboardPage';
 import TokenPage from '@/pages/TokenPage';
 import PartiesPage from '@/pages/PartiesPage';
 import CustomerProfilePage from '@/pages/CustomerProfilePage';
+import CustomerPickerPage from '@/pages/CustomerPickerPage';
 import OperatorKioskPage from '@/pages/OperatorKioskPage';
 import OwnerDashboardPage from '@/pages/OwnerDashboardPage';
 // Sprint 3 — hub pages that consolidate the old 28-item sidebar
@@ -137,6 +138,8 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/pricing-matrix" element={<PricingMatrixPage />} />
             <Route path="/parties" element={<PartiesPage />} />
+            {/* Customer 360 — picker landing at /customers, full profile at /customers/:id */}
+            <Route path="/customers" element={<CustomerPickerPage />} />
             <Route path="/customers/:id" element={<CustomerProfilePage />} />
             <Route path="/vehicles" element={<VehiclesPage />} />
             <Route path="/payments" element={<PaymentsPage />} />

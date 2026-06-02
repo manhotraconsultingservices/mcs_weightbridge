@@ -29,6 +29,9 @@ import type { User } from '@/types';
 // is shown. Same for tenant `modules` flags: if any child module is enabled,
 // the hub is enabled.
 const HUB_CHILDREN: Record<string, string[]> = {
+  // Customers sidebar entry points to the 360 picker; permissions that
+  // referenced /parties still unlock the entry.
+  '/customers':   ['/parties', '/customers'],
   '/sales':       ['/invoices', '/quotations'],
   '/materials':   ['/products', '/pricing-matrix', '/product-inventory', '/production', '/production/dashboard', '/production/settings'],
   '/operations':  ['/vehicles', '/inventory', '/camera-scale', '/snapshot-search'],
@@ -60,7 +63,9 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/tokens-v1',        icon: Truck,           label: 'Trips' },
   { to: '/sales',            icon: FileText,        label: 'Sales' },
   { to: '/purchase-invoices', icon: ShoppingCart,   label: 'Purchases' },
-  { to: '/parties',          icon: Users,           label: 'Customers' },
+  // Customers points to the Customer 360 picker. Parties master list is
+  // reachable from there via the "Master list" link, or directly at /parties.
+  { to: '/customers',        icon: Users,           label: 'Customers' },
   { to: '/materials',        icon: Box,             label: 'Materials' },
   { to: '/operations',       icon: Wrench,          label: 'Operations' },
   { to: '/reports',          icon: BarChart3,       label: 'Reports' },
