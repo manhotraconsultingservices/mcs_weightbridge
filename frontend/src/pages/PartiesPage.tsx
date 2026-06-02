@@ -44,7 +44,7 @@ const EMPTY: PartyForm = {
   phone: '', email: '', contact_person: '',
   billing_address: '', billing_city: '', billing_state: '', billing_state_code: '', billing_pincode: '',
   credit_limit: 0, payment_terms_days: 0,
-  default_payment_mode: 'online',
+  default_payment_mode: 'cash',     // default: cash (non-GST, Bill of Supply)
   tally_ledger_name: '',
 };
 
@@ -79,7 +79,7 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
           billing_pincode: '',
           credit_limit: editing.credit_limit,
           payment_terms_days: editing.payment_terms_days,
-          default_payment_mode: (editing.default_payment_mode === 'cash' ? 'cash' : 'online'),
+          default_payment_mode: (editing.default_payment_mode === 'online' ? 'online' : 'cash'),
           tally_ledger_name: editing.tally_ledger_name ?? '',
         });
       } else {
@@ -213,12 +213,12 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
                 <Label>Mode of Payment</Label>
                 <Select
                   value={form.default_payment_mode}
-                  onValueChange={v => set('default_payment_mode', (v === 'cash' ? 'cash' : 'online'))}
+                  onValueChange={v => set('default_payment_mode', (v === 'online' ? 'online' : 'cash'))}
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="online">Online (GST invoice)</SelectItem>
                     <SelectItem value="cash">Cash (Bill of Supply · no GST · no Tally)</SelectItem>
+                    <SelectItem value="online">Online (GST invoice)</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-[10px] text-muted-foreground">
@@ -405,11 +405,11 @@ function PartiesTable({
     },
     {
       key: 'default_payment_mode', label: 'Mode', type: 'enum', align: 'center',
-      enumOptions: ['online', 'cash'],
-      accessor: p => p.default_payment_mode ?? 'online',
-      format: v => v === 'cash'
-        ? <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 text-[10px]">CASH · BoS</Badge>
-        : <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 text-[10px]">ONLINE · GST</Badge>,
+      enumOptions: ['cash', 'online'],   // cash listed first to match default
+      accessor: p => p.default_payment_mode ?? 'cash',
+      format: v => v === 'online'
+        ? <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 text-[10px]">ONLINE · GST</Badge>
+        : <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 text-[10px]">CASH · BoS</Badge>,
     },
     {
       key: 'is_active', label: 'Status', type: 'enum', align: 'center',

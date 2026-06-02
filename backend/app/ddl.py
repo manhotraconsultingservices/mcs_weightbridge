@@ -352,8 +352,10 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE parties ADD COLUMN IF NOT EXISTS tally_sync_at TIMESTAMPTZ",
         # Default payment mode — drives whether new invoices for this party are
         # GST or non-GST (Bill of Supply). 'online' = GST invoice + Tally sync;
-        # 'cash' = non-GST + blocked from Tally. Default 'online' for back-compat.
-        "ALTER TABLE parties ADD COLUMN IF NOT EXISTS default_payment_mode VARCHAR(20) NOT NULL DEFAULT 'online'",
+        # 'cash' = non-GST + blocked from Tally. Default 'cash' (most stone-
+        # crusher customers pay in cash; online/GST customers are flagged
+        # explicitly).
+        "ALTER TABLE parties ADD COLUMN IF NOT EXISTS default_payment_mode VARCHAR(20) NOT NULL DEFAULT 'cash'",
         "ALTER TABLE quotations ADD COLUMN IF NOT EXISTS tally_synced BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE quotations ADD COLUMN IF NOT EXISTS tally_sync_at TIMESTAMPTZ",
         "ALTER TABLE inventory_purchase_orders ADD COLUMN IF NOT EXISTS tally_synced BOOLEAN NOT NULL DEFAULT FALSE",

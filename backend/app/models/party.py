@@ -38,9 +38,11 @@ class Party(Base):
     opening_balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     current_balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     # Default payment mode → drives invoice tax_type:
-    #   'online' (default)  → GST invoice + syncable to Tally
-    #   'cash'              → non-GST (Bill of Supply) + blocked from Tally
-    default_payment_mode: Mapped[str] = mapped_column(String(20), default="online")
+    #   'cash' (default)    → non-GST (Bill of Supply) + blocked from Tally
+    #   'online'            → GST invoice + syncable to Tally
+    # Default is 'cash' because the typical stone-crusher SME's walk-in
+    # customers are cash-based; GST customers are flagged explicitly.
+    default_payment_mode: Mapped[str] = mapped_column(String(20), default="cash")
     tally_ledger_name: Mapped[str | None] = mapped_column(String(200))
 
     tally_synced: Mapped[bool] = mapped_column(Boolean, default=False)
