@@ -278,10 +278,15 @@ async def list_pending_invoices(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return finalised invoices not yet pushed to Tally."""
+    """Return finalised invoices not yet pushed to Tally.
+
+    Excludes non-GST invoices (Bill of Supply) — those are cash-mode
+    parties that don't go through the GST books.
+    """
     q = select(Invoice).where(
         Invoice.company_id == current_user.company_id,
         Invoice.status == "final",
+        Invoice.tax_type == "gst",
         Invoice.tally_synced == False,  # noqa: E712
     )
     if invoice_type:
@@ -325,6 +330,14 @@ async def sync_invoice_to_tally(
         raise HTTPException(404, "Invoice not found")
     if invoice.status != "final":
         raise HTTPException(400, "Only finalised invoices can be synced to Tally")
+    # Block non-GST invoices (Bill of Supply) — these are cash-mode and
+    # shouldn't appear in the GST books that Tally is sync'd to.
+    if invoice.tax_type != "gst":
+        raise HTTPException(
+            400,
+            f"Invoice {invoice.invoice_no} is non-GST (Bill of Supply) and "
+            f"cannot be synced to Tally. Tally sync is only for GST invoices.",
+        )
 
     company = await _get_company(db, current_user.company_id)
     success, message = await _push_invoice(invoice, company, db)
@@ -643,10 +656,15 @@ async def bulk_sync_to_tally(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Push multiple finalised invoices to Tally in one call."""
+    """Push multiple finalised invoices to Tally in one call.
+
+    Non-GST invoices (Bill of Supply, tax_type='non_gst') are silently
+    excluded — they are cash-mode parties and not part of the GST books.
+    """
     q = select(Invoice).options(selectinload(Invoice.items)).where(
         Invoice.company_id == current_user.company_id,
         Invoice.status == "final",
+        Invoice.tax_type == "gst",        # only GST invoices go to Tally
     )
     if payload.invoice_type:
         q = q.where(Invoice.invoice_type == payload.invoice_type)

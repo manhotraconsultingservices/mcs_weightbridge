@@ -5,7 +5,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield, XCircle } from 'lucide-react';
+import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield, XCircle, PieChart } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import PaymentsPage from './PaymentsPage';
 import LedgerPage from './LedgerPage';
@@ -14,13 +14,15 @@ import ReportsPage from './ReportsPage';
 import CompliancePage from './CompliancePage';
 import AuditPage from './AuditPage';
 import WriteOffsReportPage from './WriteOffsReportPage';
+import GstSplitReportPage from './GstSplitReportPage';
 
-type Tab = 'payments' | 'statement' | 'gst' | 'reports' | 'write-offs' | 'compliance' | 'activity';
+type Tab = 'payments' | 'statement' | 'gst' | 'gst-split' | 'reports' | 'write-offs' | 'compliance' | 'activity';
 
 const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
   { value: 'payments', label: 'Payments', icon: CreditCard },
   { value: 'statement', label: 'Account Statement', icon: BookOpen },
-  { value: 'gst', label: 'GST', icon: FileBarChart },
+  { value: 'gst', label: 'GST Returns', icon: FileBarChart },
+  { value: 'gst-split', label: 'GST vs Cash Split', icon: PieChart },
   { value: 'reports', label: 'P&L + Sales', icon: BarChart3 },
   { value: 'write-offs', label: 'Write-offs', icon: XCircle },
   { value: 'compliance', label: 'Documents', icon: ShieldCheck },
@@ -59,6 +61,7 @@ export default function ReportsHubPage() {
         <TabsContent value="payments" className="mt-4"><PaymentsPage /></TabsContent>
         <TabsContent value="statement" className="mt-4"><LedgerPage /></TabsContent>
         <TabsContent value="gst" className="mt-4"><GstReportsPage /></TabsContent>
+        <TabsContent value="gst-split" className="mt-4"><GstSplitReportPage /></TabsContent>
         <TabsContent value="reports" className="mt-4"><ReportsPage /></TabsContent>
         <TabsContent value="write-offs" className="mt-4"><WriteOffsReportPage /></TabsContent>
         <TabsContent value="compliance" className="mt-4"><CompliancePage /></TabsContent>

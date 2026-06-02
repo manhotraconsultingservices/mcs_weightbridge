@@ -124,7 +124,7 @@ require_role("admin")  # Role guard — returns 403 if not matching
 | `users` | id, company_id, username, password_hash, role, is_active | Roles as plain string |
 | `companies` | id, name, gstin, pan, address, bank details, invoice_prefix | Single row per deployment |
 | `financial_years` | id, company_id, label, start_date, end_date, is_active | |
-| `parties` | id, company_id, party_type, name, gstin, phone, current_balance | party_type: customer/supplier/both |
+| `parties` | id, company_id, party_type, name, gstin, phone, current_balance, default_payment_mode | party_type: customer/supplier/both; default_payment_mode: 'online' (GST invoice + Tally) or 'cash' (Bill of Supply, blocked from Tally) |
 | `party_rates` | id, party_id, product_id, rate, effective_from | Custom rate per party+product |
 | `products` | id, company_id, category_id, name, hsn_code, unit, default_rate, gst_rate, bulk_density, is_raw_material | bulk_density (t/m³) enables volume→weight conversion for volume-based tokens; is_raw_material flag marks production inputs |
 | `product_categories` | id, company_id, name | |

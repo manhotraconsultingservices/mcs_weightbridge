@@ -838,3 +838,129 @@ async def write_off_report(
             "customer_count": len(by_party_list),
         },
     }
+
+
+# ── GST split report (with vs without GST) ──────────────────────────────────
+
+@router.get("/gst-split")
+async def gst_split_report(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    invoice_type: Optional[str] = Query(None, description="'sale' or 'purchase' to filter"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Counts + totals of GST vs non-GST (Bill of Supply) invoices in a date range.
+
+    Returns:
+      - summary: { gst_count, non_gst_count, gst_amount, non_gst_amount, gst_tax_collected }
+      - monthly: list of { month, label, gst_count, non_gst_count, gst_amount, non_gst_amount }
+      - top_cash_customers: customers with the most non-GST invoices in the window
+    """
+    filters = [
+        Invoice.status == "final",
+        Invoice.invoice_date >= from_date,
+        Invoice.invoice_date <= to_date,
+    ]
+    if invoice_type:
+        filters.append(Invoice.invoice_type == invoice_type)
+
+    # Aggregate by tax_type
+    summary_rows = (await db.execute(
+        select(
+            Invoice.tax_type,
+            func.count(Invoice.id).label("cnt"),
+            func.coalesce(func.sum(Invoice.grand_total), 0).label("total"),
+            func.coalesce(func.sum(Invoice.cgst_amount + Invoice.sgst_amount + Invoice.igst_amount), 0).label("tax"),
+        )
+        .where(*filters)
+        .group_by(Invoice.tax_type)
+    )).all()
+
+    gst_count = gst_amount = gst_tax = 0
+    non_gst_count = non_gst_amount = 0
+    for r in summary_rows:
+        if r.tax_type == "gst":
+            gst_count = int(r.cnt or 0)
+            gst_amount = _r2(r.total)
+            gst_tax = _r2(r.tax)
+        else:
+            non_gst_count = int(r.cnt or 0)
+            non_gst_amount = _r2(r.total)
+
+    # Monthly breakdown
+    yr = func.extract("year", Invoice.invoice_date)
+    mo = func.extract("month", Invoice.invoice_date)
+    monthly_rows = (await db.execute(
+        select(
+            yr.label("yr"), mo.label("mo"),
+            Invoice.tax_type,
+            func.count(Invoice.id).label("cnt"),
+            func.coalesce(func.sum(Invoice.grand_total), 0).label("total"),
+        )
+        .where(*filters)
+        .group_by(yr, mo, Invoice.tax_type)
+        .order_by(yr, mo)
+    )).all()
+
+    import calendar
+    by_month: dict[str, dict] = {}
+    for r in monthly_rows:
+        key = f"{int(r.yr)}-{int(r.mo):02d}"
+        if key not in by_month:
+            by_month[key] = {
+                "month": key,
+                "label": f"{calendar.month_abbr[int(r.mo)]} {int(r.yr)}",
+                "gst_count": 0, "non_gst_count": 0,
+                "gst_amount": 0.0, "non_gst_amount": 0.0,
+            }
+        if r.tax_type == "gst":
+            by_month[key]["gst_count"] = int(r.cnt or 0)
+            by_month[key]["gst_amount"] = _r2(r.total)
+        else:
+            by_month[key]["non_gst_count"] = int(r.cnt or 0)
+            by_month[key]["non_gst_amount"] = _r2(r.total)
+    monthly = [by_month[k] for k in sorted(by_month.keys())]
+
+    # Top cash (non-GST) customers
+    top_cash_rows = (await db.execute(
+        select(
+            Invoice.party_id,
+            Party.name.label("party_name"),
+            func.count(Invoice.id).label("cnt"),
+            func.coalesce(func.sum(Invoice.grand_total), 0).label("total"),
+        )
+        .join(Party, Invoice.party_id == Party.id, isouter=True)
+        .where(*filters, Invoice.tax_type == "non_gst")
+        .group_by(Invoice.party_id, Party.name)
+        .order_by(func.sum(Invoice.grand_total).desc())
+        .limit(10)
+    )).all()
+    top_cash_customers = [
+        {
+            "party_id": str(r.party_id) if r.party_id else None,
+            "party_name": r.party_name or "Walk-in / Cash",
+            "count": int(r.cnt or 0),
+            "total_amount": _r2(r.total),
+        }
+        for r in top_cash_rows
+    ]
+
+    total_count = gst_count + non_gst_count
+    total_amount = gst_amount + non_gst_amount
+    return {
+        "period": f"{from_date.isoformat()} to {to_date.isoformat()}",
+        "summary": {
+            "gst_count": gst_count,
+            "non_gst_count": non_gst_count,
+            "gst_amount": gst_amount,
+            "non_gst_amount": non_gst_amount,
+            "gst_tax_collected": gst_tax,
+            "total_count": total_count,
+            "total_amount": total_amount,
+            "gst_share_pct": _r2(gst_amount / total_amount * 100) if total_amount > 0 else 0,
+            "non_gst_share_pct": _r2(non_gst_amount / total_amount * 100) if total_amount > 0 else 0,
+        },
+        "monthly": monthly,
+        "top_cash_customers": top_cash_customers,
+    }

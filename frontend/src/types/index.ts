@@ -115,6 +115,7 @@ export interface Party {
   payment_terms_days: number;
   opening_balance: number;
   current_balance: number;
+  default_payment_mode: 'online' | 'cash';   // drives tax_type + Tally eligibility
   tally_ledger_name: string | null;
   is_active: boolean;
 }

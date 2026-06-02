@@ -27,6 +27,7 @@ class PartyCreate(BaseModel):
     credit_limit: Decimal = Decimal("0")
     payment_terms_days: int = 0
     opening_balance: Decimal = Decimal("0")
+    default_payment_mode: str = "online"   # 'online' (GST) | 'cash' (Bill of Supply, no Tally)
     tally_ledger_name: str | None = None
 
 
@@ -52,6 +53,7 @@ class PartyUpdate(BaseModel):
     shipping_pincode: str | None = None
     credit_limit: Decimal | None = None
     payment_terms_days: int | None = None
+    default_payment_mode: str | None = None
     tally_ledger_name: str | None = None
     is_active: bool | None = None
 
@@ -73,6 +75,7 @@ class PartyResponse(BaseModel):
     payment_terms_days: int
     opening_balance: Decimal
     current_balance: Decimal
+    default_payment_mode: str = "online"
     tally_ledger_name: str | None
     is_active: bool
 

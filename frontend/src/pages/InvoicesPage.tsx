@@ -1301,7 +1301,8 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
   const syncableFinal = displayed.filter(inv => inv.status === 'final');
   const allSelected = syncableFinal.length > 0 && syncableFinal.every(inv => selectedIds.has(inv.id));
   const someSelected = syncableFinal.some(inv => selectedIds.has(inv.id));
-  const selectedNeedingSync = displayed.filter(inv => selectedIds.has(inv.id) && inv.tally_needs_sync && inv.status === 'final');
+  // Only GST invoices are syncable to Tally — non-GST (Bill of Supply) excluded
+  const selectedNeedingSync = displayed.filter(inv => selectedIds.has(inv.id) && inv.tally_needs_sync && inv.status === 'final' && inv.tax_type === 'gst');
 
   function toggleSelect(id: string) {
     setSelectedIds(prev => {
@@ -1779,7 +1780,9 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                             <Download className="h-3.5 w-3.5" />
                           </Button>
                           {/* ── Finalized invoice actions (role-gated) ── */}
-                          {inv.status === 'final' && canTallySync && (
+                          {/* Tally sync — only shown for GST invoices. Non-GST
+                              (Bill of Supply) invoices skip Tally entirely. */}
+                          {inv.status === 'final' && canTallySync && inv.tax_type === 'gst' && (
                             <Button
                               size="icon" variant="ghost" className="h-7 w-7"
                               disabled={!inv.tally_needs_sync || syncingIds.has(inv.id)}
@@ -1801,6 +1804,16 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                                     ? <RefreshCw className="h-3.5 w-3.5 text-amber-500" />
                                     : <Send className="h-3.5 w-3.5 text-orange-500" />}
                             </Button>
+                          )}
+                          {/* Visual marker for non-GST invoices so the operator
+                              knows Tally doesn't apply to this row. */}
+                          {inv.status === 'final' && inv.tax_type !== 'gst' && (
+                            <span
+                              title="Bill of Supply (non-GST) — not synced to Tally"
+                              className="inline-flex items-center text-[9px] font-semibold bg-amber-100 text-amber-700 border border-amber-300 rounded px-1 py-0.5"
+                            >
+                              BoS
+                            </span>
                           )}
                           {inv.status === 'final' && canEInvoice && (inv.einvoice_status === 'failed' || inv.einvoice_status === 'none') && inv.party && (inv.party as { gstin?: string | null })?.gstin && (
                             <Button

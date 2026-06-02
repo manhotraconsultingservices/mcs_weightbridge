@@ -35,6 +35,7 @@ interface PartyForm {
   billing_pincode: string;
   credit_limit: number;
   payment_terms_days: number;
+  default_payment_mode: 'online' | 'cash';
   tally_ledger_name: string;
 }
 
@@ -43,6 +44,7 @@ const EMPTY: PartyForm = {
   phone: '', email: '', contact_person: '',
   billing_address: '', billing_city: '', billing_state: '', billing_state_code: '', billing_pincode: '',
   credit_limit: 0, payment_terms_days: 0,
+  default_payment_mode: 'online',
   tally_ledger_name: '',
 };
 
@@ -77,6 +79,7 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
           billing_pincode: '',
           credit_limit: editing.credit_limit,
           payment_terms_days: editing.payment_terms_days,
+          default_payment_mode: (editing.default_payment_mode === 'cash' ? 'cash' : 'online'),
           tally_ledger_name: editing.tally_ledger_name ?? '',
         });
       } else {
@@ -197,7 +200,7 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
           {/* Financial */}
           <div className="border-t pt-4">
             <p className="text-sm font-medium mb-3">Financial Settings</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label>Credit Limit (₹)</Label>
                 <Input type="number" min="0" value={form.credit_limit ?? 0} onChange={e => set('credit_limit', parseFloat(e.target.value) || 0)} />
@@ -205,6 +208,22 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
               <div className="space-y-1">
                 <Label>Payment Terms (days)</Label>
                 <Input type="number" min="0" value={form.payment_terms_days ?? 0} onChange={e => set('payment_terms_days', parseInt(e.target.value) || 0)} />
+              </div>
+              <div className="space-y-1">
+                <Label>Mode of Payment</Label>
+                <Select
+                  value={form.default_payment_mode}
+                  onValueChange={v => set('default_payment_mode', (v === 'cash' ? 'cash' : 'online'))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="online">Online (GST invoice)</SelectItem>
+                    <SelectItem value="cash">Cash (Bill of Supply · no GST · no Tally)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  Drives invoice tax type + Tally eligibility.
+                </p>
               </div>
             </div>
           </div>
@@ -383,6 +402,14 @@ function PartiesTable({
       key: 'payment_terms_days', label: 'Terms (d)', type: 'number', align: 'right',
       defaultVisible: false,
       accessor: p => p.payment_terms_days,
+    },
+    {
+      key: 'default_payment_mode', label: 'Mode', type: 'enum', align: 'center',
+      enumOptions: ['online', 'cash'],
+      accessor: p => p.default_payment_mode ?? 'online',
+      format: v => v === 'cash'
+        ? <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 text-[10px]">CASH · BoS</Badge>
+        : <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 text-[10px]">ONLINE · GST</Badge>,
     },
     {
       key: 'is_active', label: 'Status', type: 'enum', align: 'center',

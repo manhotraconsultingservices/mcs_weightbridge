@@ -145,6 +145,14 @@ async def create_invoice(
 
     intra = is_intra_state(co.state_code, party.billing_state_code if party else co.state_code)
 
+    # Server-side rule: party with default_payment_mode='cash' → non-GST
+    # invoice (Bill of Supply). Cash-mode parties can NEVER produce a GST
+    # invoice; we override the payload silently to keep the books clean.
+    # 'online' parties keep payload.tax_type (defaults to 'gst').
+    effective_tax_type = payload.tax_type
+    if party and party.default_payment_mode == "cash":
+        effective_tax_type = "non_gst"
+
     items_data = [i.model_dump() for i in payload.items]
 
     # Server-side safety net: if the client sent rate=0 or omitted it for a
@@ -184,7 +192,7 @@ async def create_invoice(
         freight=payload.freight,
         tcs_rate=payload.tcs_rate,
         intra_state=intra,
-        tax_type=payload.tax_type,
+        tax_type=effective_tax_type,
     )
 
     gross_weight = payload.gross_weight
@@ -213,7 +221,7 @@ async def create_invoice(
         company_id=co.id,
         fy_id=fy.id,
         invoice_type=payload.invoice_type,
-        tax_type=payload.tax_type,
+        tax_type=effective_tax_type,
         invoice_no=None,          # gap-free: assigned at finalise
         invoice_date=payload.invoice_date,
         due_date=due_date,
