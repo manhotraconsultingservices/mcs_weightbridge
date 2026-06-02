@@ -155,21 +155,25 @@ export default function CustomerProfilePage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Invoices eligible for write-off: finalised + has outstanding balance
+  // Invoices eligible for write-off: finalised + has outstanding balance.
+  // Defensive ?? [] in case the API response is missing the field (e.g.
+  // older backend version on a freshly-onboarded tenant).
   const writeOffEligible = useMemo(() => {
     if (!data) return new Set<string>();
+    const invoices = data.recent_invoices ?? [];
     return new Set(
-      data.recent_invoices
-        .filter(i => i.status === 'final' && i.payment_status !== 'paid' && (i.amount_due > 0))
+      invoices
+        .filter(i => i.status === 'final' && i.payment_status !== 'paid' && Number(i.amount_due ?? 0) > 0)
         .map(i => i.id),
     );
   }, [data]);
 
   const selectedTotal = useMemo(() => {
     if (!data) return 0;
-    return data.recent_invoices
+    const invoices = data.recent_invoices ?? [];
+    return invoices
       .filter(i => selectedIds.has(i.id))
-      .reduce((s, i) => s + Number(i.amount_due || 0), 0);
+      .reduce((s, i) => s + Number(i.amount_due ?? 0), 0);
   }, [selectedIds, data]);
 
   function toggleSelect(invoiceId: string) {
@@ -248,9 +252,36 @@ export default function CustomerProfilePage() {
     );
   }
 
-  const { party, stats, recent_invoices, recent_payments, custom_rates } = data;
+  // Defensive defaults — the backend always emits these but we guard anyway
+  // so a malformed/old response never white-screens the whole page.
+  const party = data.party;
+  const stats = data.stats ?? ({
+    lifetime_sales: 0, lifetime_paid: 0, lifetime_written_off: 0, write_off_count: 0,
+    invoice_count: 0, avg_order_value: 0,
+    last_invoice_date: null, days_since_last_order: null,
+    last_payment_date: null, days_since_last_payment: null,
+    total_outstanding: 0, total_overdue: 0,
+    aging: { current: 0, bucket_1_30: 0, bucket_31_60: 0, bucket_61_90: 0, bucket_90_plus: 0 },
+    token_count: 0, lifetime_tonnage: 0,
+  } as Party360Response['stats']);
+  const recent_invoices = data.recent_invoices ?? [];
+  const recent_payments = data.recent_payments ?? [];
+  const custom_rates = data.custom_rates ?? [];
+
+  if (!party) {
+    return (
+      <div className="mx-auto max-w-md py-12 text-center">
+        <AlertCircle className="mx-auto h-10 w-10 text-rose-400" />
+        <p className="mt-2 text-sm text-slate-600">Customer record is malformed.</p>
+        <Button variant="outline" className="mt-4" onClick={() => nav('/customers')}>
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Customers
+        </Button>
+      </div>
+    );
+  }
+
   const outstandingTone: 'good' | 'warn' | 'bad' =
-    stats.total_overdue > 0 ? 'bad' : stats.total_outstanding > 0 ? 'warn' : 'good';
+    (stats.total_overdue ?? 0) > 0 ? 'bad' : (stats.total_outstanding ?? 0) > 0 ? 'warn' : 'good';
 
   return (
     <div className="space-y-4 px-4 py-4">

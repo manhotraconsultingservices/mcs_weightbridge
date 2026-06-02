@@ -13,6 +13,7 @@ import PartiesPage from '@/pages/PartiesPage';
 import CustomerProfilePage from '@/pages/CustomerProfilePage';
 import CustomerPickerPage from '@/pages/CustomerPickerPage';
 import OperatorKioskPage from '@/pages/OperatorKioskPage';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import OwnerDashboardPage from '@/pages/OwnerDashboardPage';
 // Sprint 3 — hub pages that consolidate the old 28-item sidebar
 import SalesHubPage from '@/pages/SalesHubPage';
@@ -122,6 +123,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
           }
         >
           <div className={wallpaperUrl ? 'min-h-full bg-background/80 backdrop-blur-sm rounded-lg p-4' : ''}>
+            <ErrorBoundary>
             <Routes>
             <Route path="/" element={<HomeRedirect permissions={permissions} role={user.role} />} />
             {/* Legacy chart-heavy dashboard kept reachable for "View 30-day trends" link */}
@@ -168,6 +170,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/admin/wallpaper" element={<WallpaperSettingsPage />} />
               <Route path="*" element={<HomeRedirect permissions={permissions} role={user.role} />} />
             </Routes>
+            </ErrorBoundary>
           </div>
         </main>
       </div>
