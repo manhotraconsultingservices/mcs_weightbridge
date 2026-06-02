@@ -87,8 +87,10 @@ function getPreset(preset: string): [string, string] {
 // ── CSV export ─────────────────────────────────────────────────────────── //
 
 function exportCsv(tokens: Token[]) {
+  const mt = (kg: number | null | undefined) =>
+    kg == null ? '' : (Number(kg) / 1000).toFixed(3);
   const rows = [
-    ['Token No', 'Date', 'Type', 'Status', 'Vehicle', 'Party', 'Product', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Net (MT)'],
+    ['Token No', 'Date', 'Type', 'Status', 'Vehicle', 'Party', 'Product', 'Gross (MT)', 'Tare (MT)', 'Net (MT)'],
     ...tokens.map(t => [
       t.token_no ?? '',
       t.token_date ?? '',
@@ -97,10 +99,9 @@ function exportCsv(tokens: Token[]) {
       t.vehicle_no ?? '',
       t.party?.name ?? '',
       t.product?.name ?? '',
-      t.gross_weight ?? '',
-      t.tare_weight ?? '',
-      t.net_weight ?? '',
-      t.net_weight ? (t.net_weight / 1000).toFixed(3) : '',
+      mt(t.gross_weight),
+      mt(t.tare_weight),
+      mt(t.net_weight),
     ]),
   ];
   const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');

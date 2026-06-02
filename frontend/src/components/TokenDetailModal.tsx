@@ -6,9 +6,10 @@ import {
 import api from '@/services/api';
 import type { Token, SnapshotResult, TokenSnapshotsResponse } from '@/types';
 
+// DB stores kg; UI displays MT (3 decimals).
 function wFmt(v: number | null | undefined) {
   if (v == null) return '—';
-  return v.toLocaleString('en-IN', { minimumFractionDigits: 2 }) + ' kg';
+  return (Number(v) / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' MT';
 }
 
 function mtFmt(v: number | null | undefined) {

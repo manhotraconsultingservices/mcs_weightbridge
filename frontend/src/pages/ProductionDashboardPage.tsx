@@ -239,10 +239,14 @@ export default function ProductionDashboardPage() {
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={data.top_outputs} layout="vertical" margin={{ left: 80 }}>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.4} />
-                <XAxis type="number" tickFormatter={v => `${(v / 1000).toFixed(1)}`} />
+                <XAxis
+                  type="number"
+                  tickFormatter={v => `${(v / 1000).toFixed(1)}`}
+                  label={{ value: 'MT', position: 'insideBottomRight', offset: -2 }}
+                />
                 <YAxis dataKey="product_name" type="category" width={140} />
                 <Tooltip formatter={(v: number) => `${(v / 1000).toFixed(2)} MT`} />
-                <Bar dataKey="total_output_kg" name="Total Output" fill="#10b981" />
+                <Bar dataKey="total_output_kg" name="Total Output (MT)" fill="#10b981" />
               </BarChart>
             </ResponsiveContainer>
           )}

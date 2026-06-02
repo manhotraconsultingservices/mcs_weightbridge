@@ -389,7 +389,7 @@ function ActiveTrucksTable({ onSelectToken }: { onSelectToken: (id: string) => v
                     <td className="p-3 max-w-[120px] truncate text-muted-foreground">{t.product?.name ?? '—'}</td>
                     <td className="p-3 font-mono text-xs">
                       {t.first_weight != null
-                        ? `${Number(t.first_weight).toLocaleString('en-IN', { minimumFractionDigits: 0 })} kg`
+                        ? `${(Number(t.first_weight) / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} MT`
                         : <span className="text-muted-foreground">—</span>}
                     </td>
                     <td className={`p-3 font-mono text-xs ${urgentColor}`}>

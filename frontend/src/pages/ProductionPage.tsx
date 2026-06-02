@@ -79,8 +79,11 @@ interface ProductionCycle {
 }
 
 const today = () => new Date().toISOString().split('T')[0];
-const fmtKg = (n: number | null | undefined) =>
-  n == null ? '—' : `${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })} kg`;
+// API/DB stores in kg; UI uses MT. Convert at boundaries.
+const KG_PER_MT = 1000;
+// Display a kg value as MT (3-decimal default, configurable).
+const fmtMt = (kg: number | null | undefined, decimals = 3) =>
+  kg == null ? '—' : `${(Number(kg) / KG_PER_MT).toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })} MT`;
 const fmtPct = (n: number | null | undefined) =>
   n == null ? '—' : `${n.toFixed(2)}%`;
 
@@ -102,31 +105,31 @@ const CYCLE_COLUMNS: ColumnDef<ProductionCycle>[] = [
   {
     key: 'input_kg', label: 'Input', type: 'number', align: 'right',
     accessor: c => c.input_kg,
-    format: v => fmtKg(v as number),
+    format: v => fmtMt(v as number),
     className: 'font-mono',
   },
   {
     key: 'stage1_output_kg', label: 'Stage 1', type: 'number', align: 'right', defaultVisible: true,
     accessor: c => c.stage1_output_kg,
-    format: v => fmtKg(v as number | null),
+    format: v => fmtMt(v as number | null),
     className: 'font-mono text-muted-foreground',
   },
   {
     key: 'stage2_output_kg', label: 'Stage 2', type: 'number', align: 'right', defaultVisible: true,
     accessor: c => c.stage2_output_kg,
-    format: v => fmtKg(v as number | null),
+    format: v => fmtMt(v as number | null),
     className: 'font-mono text-muted-foreground',
   },
   {
     key: 'stage3_output_kg', label: 'Stage 3', type: 'number', align: 'right', defaultVisible: true,
     accessor: c => c.stage3_output_kg,
-    format: v => fmtKg(v as number | null),
+    format: v => fmtMt(v as number | null),
     className: 'font-mono text-muted-foreground',
   },
   {
     key: 'total_output_kg', label: 'Output (4)', type: 'number', align: 'right',
     accessor: c => c.total_output_kg,
-    format: v => fmtKg(v as number),
+    format: v => fmtMt(v as number),
     className: 'font-mono',
   },
   {
@@ -352,13 +355,20 @@ function CycleDialog({
     }).catch(() => {});
 
     if (editing) {
+      // API returns kg; convert to MT for the form (3 decimals).
+      const kgToMtStr = (kg: number | null | undefined) =>
+        kg == null ? '' : (Number(kg) / KG_PER_MT).toFixed(3);
       setCycleDate(editing.cycle_date);
-      setInputKg(String(editing.input_kg));
-      setStage1(editing.stage1_output_kg != null ? String(editing.stage1_output_kg) : '');
-      setStage2(editing.stage2_output_kg != null ? String(editing.stage2_output_kg) : '');
-      setStage3(editing.stage3_output_kg != null ? String(editing.stage3_output_kg) : '');
+      setInputKg(kgToMtStr(editing.input_kg));
+      setStage1(kgToMtStr(editing.stage1_output_kg));
+      setStage2(kgToMtStr(editing.stage2_output_kg));
+      setStage3(kgToMtStr(editing.stage3_output_kg));
       setNotes(editing.notes ?? '');
-      setOutputs(editing.outputs.map(o => ({ product_id: o.product_id, output_kg: o.output_kg })));
+      // outputs[].output_kg is stored in MT in the form state for editing
+      setOutputs(editing.outputs.map(o => ({
+        product_id: o.product_id,
+        output_kg: Number(o.output_kg) / KG_PER_MT,    // MT in form
+      })));
     } else {
       setCycleDate(today());
       setInputKg('');
@@ -395,18 +405,27 @@ function CycleDialog({
 
   const handleSave = async () => {
     if (!inputKg || parseFloat(inputKg) <= 0) { toast.error('Input weight must be > 0'); return; }
+    // Form values are MT; convert to kg before sending to API.
+    const mtToKg = (mtStr: string): number | null => {
+      const n = parseFloat(mtStr);
+      return Number.isFinite(n) ? Math.round(n * KG_PER_MT * 100) / 100 : null;
+    };
     const cleanedOutputs = outputs
       .filter(o => o.product_id && Number(o.output_kg) > 0)
-      .map(o => ({ product_id: o.product_id, output_kg: Number(o.output_kg) }));
+      .map(o => ({
+        product_id: o.product_id,
+        // outputs[].output_kg is held in MT in the form; convert.
+        output_kg: Math.round(Number(o.output_kg) * KG_PER_MT * 100) / 100,
+      }));
 
     setSaving(true);
     try {
       const payload = {
         cycle_date: cycleDate,
-        input_kg: parseFloat(inputKg),
-        stage1_output_kg: stage1 ? parseFloat(stage1) : null,
-        stage2_output_kg: stage2 ? parseFloat(stage2) : null,
-        stage3_output_kg: stage3 ? parseFloat(stage3) : null,
+        input_kg: mtToKg(inputKg),
+        stage1_output_kg: stage1 ? mtToKg(stage1) : null,
+        stage2_output_kg: stage2 ? mtToKg(stage2) : null,
+        stage3_output_kg: stage3 ? mtToKg(stage3) : null,
         notes: notes.trim() || null,
         outputs: cleanedOutputs,
       };
@@ -440,8 +459,12 @@ function CycleDialog({
               <Input type="date" value={cycleDate} onChange={e => setCycleDate(e.target.value)} disabled={!!editing} />
             </div>
             <div className="space-y-1">
-              <Label>Input Weight (kg) — raw boulder *</Label>
-              <Input type="number" min="0" step="1" value={inputKg} onChange={e => setInputKg(e.target.value)} />
+              <Label>Input Weight (MT) — raw boulder *</Label>
+              <Input
+                type="number" min="0" step="0.001"
+                value={inputKg} onChange={e => setInputKg(e.target.value)}
+                placeholder="e.g. 120.000"
+              />
             </div>
           </div>
 
@@ -487,9 +510,9 @@ function CycleDialog({
                   </div>
                   <div className="grid grid-cols-12 gap-2 items-end">
                     <div className="col-span-5">
-                      <Label className="text-[10px]">Output weight (kg)</Label>
+                      <Label className="text-[10px]">Output weight (MT)</Label>
                       <Input
-                        type="number" min="0" step="1"
+                        type="number" min="0" step="0.001"
                         value={value} onChange={e => setter(e.target.value)}
                         placeholder={placeholder}
                         className="h-8 text-sm"
@@ -505,7 +528,7 @@ function CycleDialog({
                       <Label className="text-[10px]">{def?.loss_type ?? 'Loss'}</Label>
                       <p className="font-mono text-xs">
                         {lossKg != null && lossPct != null
-                          ? <>{lossPct.toFixed(2)}% <span className="text-muted-foreground">({lossKg.toLocaleString('en-IN', { maximumFractionDigits: 0 })} kg)</span></>
+                          ? <>{lossPct.toFixed(2)}% <span className="text-muted-foreground">({lossKg.toFixed(3)} MT)</span></>
                           : '—'}
                       </p>
                     </div>
@@ -551,7 +574,7 @@ function CycleDialog({
             <div className="grid grid-cols-4 gap-2 mb-3 text-center text-xs">
               <div>
                 <p className="text-muted-foreground">Total Output</p>
-                <p className="font-mono font-semibold">{totalOutputKg.toLocaleString('en-IN', { maximumFractionDigits: 0 })} kg</p>
+                <p className="font-mono font-semibold">{totalOutputKg.toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} MT</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Stage 4 Yield</p>
@@ -581,7 +604,7 @@ function CycleDialog({
                 <thead className="border-b">
                   <tr>
                     <th className="text-left p-1 font-medium" style={{ minWidth: '320px' }}>Product</th>
-                    <th className="text-right p-1 font-medium w-40">Output (kg)</th>
+                    <th className="text-right p-1 font-medium w-40">Output (MT)</th>
                     <th className="p-1 w-10"></th>
                   </tr>
                 </thead>
@@ -607,8 +630,9 @@ function CycleDialog({
                         </Select>
                       </td>
                       <td className="p-1">
-                        <Input type="number" min="0" step="1" className="h-8 text-xs text-right"
-                          value={o.output_kg || ''} onChange={e => updateOutput(i, 'output_kg', parseFloat(e.target.value) || 0)} />
+                        <Input type="number" min="0" step="0.001" className="h-8 text-xs text-right"
+                          value={o.output_kg || ''} onChange={e => updateOutput(i, 'output_kg', parseFloat(e.target.value) || 0)}
+                          placeholder="0.000" />
                       </td>
                       <td className="p-1">
                         <Button variant="ghost" size="icon" onClick={() => removeOutput(i)}>

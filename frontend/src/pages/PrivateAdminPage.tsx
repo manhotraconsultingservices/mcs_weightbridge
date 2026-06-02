@@ -153,7 +153,7 @@ export default function PrivateAdminPage() {
                     <th className="text-left p-3 font-medium">Date</th>
                     <th className="text-left p-3 font-medium">Customer</th>
                     <th className="text-left p-3 font-medium">Vehicle</th>
-                    <th className="text-right p-3 font-medium">Net Wt (kg)</th>
+                    <th className="text-right p-3 font-medium">Net Wt (MT)</th>
                     <th className="text-right p-3 font-medium">Rate</th>
                     <th className="text-right p-3 font-medium">Amount</th>
                     <th className="text-left p-3 font-medium">Mode</th>
@@ -173,7 +173,7 @@ export default function PrivateAdminPage() {
                       <td className="p-3 text-muted-foreground whitespace-nowrap">{inv.invoice_date}</td>
                       <td className="p-3">{inv.customer_name ?? '—'}</td>
                       <td className="p-3 font-mono text-xs">{inv.vehicle_no ?? '—'}</td>
-                      <td className="p-3 text-right">{inv.net_weight != null ? inv.net_weight.toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '—'}</td>
+                      <td className="p-3 text-right font-mono text-xs">{inv.net_weight != null ? (Number(inv.net_weight) / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : '—'}</td>
                       <td className="p-3 text-right text-muted-foreground">{inv.rate != null ? INR(inv.rate) : '—'}</td>
                       <td className="p-3 text-right font-semibold">{INR(inv.amount)}</td>
                       <td className="p-3"><span className="text-xs bg-muted px-1.5 py-0.5 rounded">{inv.payment_mode.toUpperCase()}</span></td>

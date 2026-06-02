@@ -332,23 +332,23 @@ function WeightPanel() {
             <div className={`font-mono font-black leading-none tracking-tight transition-colors duration-500 ${
               !scale_connected ? 'text-slate-600' : is_stable ? 'text-emerald-400' : 'text-amber-400'
             }`} style={{ fontSize: 'clamp(2.4rem, 4vw, 3.5rem)' }}>
-              {scale_connected ? weightStr : '——.——'}
+              {scale_connected ? mtStr : '—.———'}
             </div>
-            <div className={`text-lg font-semibold mt-1 ${scale_connected ? 'text-slate-400' : 'text-slate-600'}`}>kg</div>
+            <div className={`text-lg font-semibold mt-1 ${scale_connected ? 'text-slate-400' : 'text-slate-600'}`}>MT</div>
           </div>
 
           <div className="w-full border-t border-slate-700/60" />
 
           <div className="text-center">
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Metric Tons</p>
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Raw scale reading</p>
             <p className={`font-mono font-bold text-2xl ${scale_connected ? 'text-slate-300' : 'text-slate-600'}`}>
-              {scale_connected ? mtStr : '—.———'}
+              {scale_connected ? weightStr : '——.——'}
             </p>
-            <p className="text-sm text-slate-500 mt-0.5">MT</p>
+            <p className="text-sm text-slate-500 mt-0.5">kg</p>
           </div>
 
           <div className="w-full space-y-1">
-            <div className="flex justify-between text-[9px] text-slate-600 font-mono"><span>0 kg</span><span>50,000 kg</span></div>
+            <div className="flex justify-between text-[9px] text-slate-600 font-mono"><span>0 MT</span><span>50 MT</span></div>
             <div className="h-2 rounded-full bg-slate-800 border border-slate-700/50 overflow-hidden">
               <div className={`h-full rounded-full transition-all duration-500 ${
                 !scale_connected ? 'bg-slate-700' : is_stable ? 'bg-emerald-500' : 'bg-amber-500'

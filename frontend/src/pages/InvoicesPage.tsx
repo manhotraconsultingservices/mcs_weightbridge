@@ -322,14 +322,19 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
                 <SelectTrigger>
                   <span className="truncate text-left flex-1">
                     {form.token_id
-                      ? (() => { const t = completedTokens.find(x => x.id === form.token_id); return t ? `#${t.token_no} — ${t.vehicle_no}${t.net_weight != null ? ` (${t.net_weight} kg)` : ''}` : 'Token'; })()
+                      ? (() => {
+                          const t = completedTokens.find(x => x.id === form.token_id);
+                          if (!t) return 'Token';
+                          const mt = t.net_weight != null ? ` (${(Number(t.net_weight) / 1000).toFixed(3)} MT)` : '';
+                          return `#${t.token_no} — ${t.vehicle_no}${mt}`;
+                        })()
                       : <span className="text-muted-foreground">Select completed token…</span>}
                   </span>
                 </SelectTrigger>
                 <SelectContent>
                   {completedTokens.map(t => (
                     <SelectItem key={t.id} value={t.id}>
-                      #{t.token_no} — {t.vehicle_no} {t.net_weight != null ? `(${t.net_weight} kg)` : ''}
+                      #{t.token_no} — {t.vehicle_no} {t.net_weight != null ? `(${(Number(t.net_weight) / 1000).toFixed(3)} MT)` : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>

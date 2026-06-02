@@ -44,9 +44,10 @@ const STATUS_CONFIG = {
 } as const;
 
 
+// Weight values are stored in kg in the DB. UI displays MT.
 function wFmt(v: number | null | undefined) {
   if (v == null) return '—';
-  return v.toLocaleString('en-IN', { minimumFractionDigits: 2 }) + ' kg';
+  return (Number(v) / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' MT';
 }
 
 function today() {
@@ -968,7 +969,7 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
               />
               {parseFloat(manualWeight) > 0 && (
                 <p className="text-center text-xs text-muted-foreground">
-                  = {wFmt(parseFloat(manualWeight) * 1000)}
+                  = {(parseFloat(manualWeight) * 1000).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} kg
                 </p>
               )}
             </div>
