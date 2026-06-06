@@ -376,15 +376,15 @@ async def create_volume_token(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Volume-based token: load measured by volume (m³) rather than the weighbridge.
+    Volume-based token: load measured by volume (CFT) rather than the weighbridge.
 
     Truck does not go on the bridge. net_weight is computed from
-        weight_kg = volume_m3 × product.bulk_density × 1000
+        weight_kg = volume_cft × product.bulk_density(kg/CFT)
     and the token jumps directly to COMPLETED. Same auto-invoice + notification
     flow fires as for a normal second-weight completion.
     """
-    if payload.volume_m3 <= 0:
-        raise HTTPException(400, "volume_m3 must be greater than zero")
+    if payload.volume_cft <= 0:
+        raise HTTPException(400, "volume_cft must be greater than zero")
 
     company, fy = await _get_company_and_fy(db)
 
@@ -396,12 +396,12 @@ async def create_volume_token(
     if not product.bulk_density or product.bulk_density <= 0:
         raise HTTPException(
             400,
-            f"Bulk density is not set for product '{product.name}'. "
+            f"Bulk density (kg/CFT) is not set for product '{product.name}'. "
             f"Set it on the product before using volume-based tokens.",
         )
 
-    # weight_kg = m³ × (t/m³) × 1000  → kg
-    net_kg = (payload.volume_m3 * product.bulk_density * Decimal("1000")).quantize(Decimal("0.01"))
+    # weight_kg = CFT × (kg/CFT)  → kg
+    net_kg = (payload.volume_cft * product.bulk_density).quantize(Decimal("0.01"))
 
     token = Token(
         company_id=company.id,
@@ -428,7 +428,7 @@ async def create_volume_token(
         tare_weight=None,
         net_weight=net_kg,
         weight_method="volume",
-        volume_m3=payload.volume_m3,
+        volume_cft=payload.volume_cft,
         is_manual_weight=True,
     )
     db.add(token)
@@ -446,7 +446,7 @@ async def create_volume_token(
         from app.routers.audit import log_action
         await log_action(db, company.id, current_user.id, "completed", "token",
                          str(token.id), {"token_no": token.token_no, "vehicle_no": token.vehicle_no,
-                                         "method": "volume", "volume_m3": float(payload.volume_m3),
+                                         "method": "volume", "volume_cft": float(payload.volume_cft),
                                          "net_kg": float(net_kg)})
     except Exception:
         pass

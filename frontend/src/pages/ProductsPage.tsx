@@ -178,18 +178,22 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
           </div>
 
           <div className="col-span-2 space-y-1">
-            <Label>Bulk Density (t/m³)</Label>
+            <Label>Bulk Density (kg/CFT)</Label>
             <Input
               type="number"
               value={form.bulk_density}
               onChange={e => set('bulk_density', e.target.value)}
               min="0"
-              step="0.001"
-              placeholder="e.g. 1.50 — leave blank if not applicable"
+              step="0.01"
+              placeholder="e.g. 42.5 — leave blank if not applicable"
             />
             <p className="text-xs text-muted-foreground">
-              Used to convert volume (m³) to weight when the truck isn't weighed on the bridge.
-              Typical values: aggregate 1.50, sand 1.70, GSB 1.90, stone dust 1.55.
+              Used to convert volume (CFT) to weight when the truck isn't weighed on the bridge.
+              Typical values (kg per CFT): aggregate 42.5, sand 48.1, GSB 53.8, stone dust 43.9.
+              <br />
+              <span className="text-[10px] text-muted-foreground/80">
+                Tip: kg/CFT = (t/m³) × 28.32 — e.g. 1.5 t/m³ becomes 42.5 kg/CFT.
+              </span>
             </p>
           </div>
 
@@ -394,9 +398,9 @@ function ProductsTable({
       accessor: p => p.gst_rate, format: v => `${v}%`,
     },
     {
-      key: 'bulk_density', label: 'Density (t/m³)', type: 'number', align: 'right',
+      key: 'bulk_density', label: 'Density (kg/CFT)', type: 'number', align: 'right',
       accessor: p => p.bulk_density,
-      format: v => v == null ? '—' : Number(v).toFixed(3),
+      format: v => v == null ? '—' : Number(v).toFixed(2),
       className: 'text-muted-foreground',
     },
     {

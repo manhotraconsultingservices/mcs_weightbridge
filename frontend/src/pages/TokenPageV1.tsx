@@ -22,7 +22,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from '@/components/ui/dialog';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+  Select, SelectContent, SelectItem, SelectTrigger
 } from '@/components/ui/select';
 import { useWeight } from '@/hooks/useWeight';
 import { useAuth } from '@/hooks/useAuth';
@@ -106,21 +106,18 @@ interface CreateFormProps {
   onCreated: (token: Token) => void;
 }
 
-// Volume → weight conversion: weight_kg = volume_m3 × bulk_density × 1000
-const FT3_PER_M3 = 35.3147;
-function toCubicMetres(value: number, unit: 'm3' | 'ft3'): number {
-  if (!Number.isFinite(value) || value <= 0) return 0;
-  return unit === 'm3' ? value : value / FT3_PER_M3;
-}
+// Volume → weight conversion: weight_kg = volume_cft × bulk_density(kg/CFT)
+// CFT (cubic feet) is the standard unit in the Indian stone-crusher trade.
 
-// Tyre-count → default load volume (m³). These are industry-standard capacities
-// for Indian aggregate trucks; operators can still override the volume per token.
-const TYRE_VOLUME_M3: Record<number, number> = {
-  4: 3.0,    // Mini-truck / pickup (Tata Ace, Bolero pickup)
-  6: 7.0,    // Small truck (Eicher Pro 1110)
-  8: 10.0,   // Medium truck
-  10: 13.0,  // Heavy truck (Eicher 6028, Ashok Leyland 1616)
-  12: 17.0,  // Multi-axle
+// Tyre-count → default load volume (CFT). These are industry-standard capacities
+// for Indian aggregate trucks (rounded m³ × 35.3147 ft³/m³);
+// operators can still override the volume per token.
+const TYRE_VOLUME_CFT: Record<number, number> = {
+  4: 106,    // Mini-truck / pickup (Tata Ace, Bolero pickup) — ~3 m³
+  6: 247,    // Small truck (Eicher Pro 1110) — ~7 m³
+  8: 353,    // Medium truck — ~10 m³
+  10: 459,   // Heavy truck (Eicher 6028, Ashok Leyland 1616) — ~13 m³
+  12: 600,   // Multi-axle — ~17 m³
 };
 const TYRE_OPTIONS = [4, 6, 8, 10, 12];
 
@@ -136,18 +133,16 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     gate_pass: '',
     remarks: '',
   });
-  // Volume-based weighment (skips the bridge)
+  // Volume-based weighment (skips the bridge) — volume entered in CFT only
   const [weightMethod, setWeightMethod] = useState<'weighbridge' | 'volume'>('weighbridge');
   const [volumeValue, setVolumeValue] = useState('');
-  const [volumeUnit, setVolumeUnit] = useState<'m3' | 'ft3'>('m3');
   const [tyreCount, setTyreCount] = useState<number | null>(null);   // 4/6/8/10/12 or null
 
   // Picking a tyre count auto-fills the volume field with the standard capacity
   // for that truck class. Operator can still edit the volume below.
   function pickTyreCount(n: number) {
     setTyreCount(n);
-    setVolumeValue(String(TYRE_VOLUME_M3[n] ?? ''));
-    setVolumeUnit('m3');
+    setVolumeValue(String(TYRE_VOLUME_CFT[n] ?? ''));
   }
   const [parties, setParties] = useState<Party[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -212,12 +207,11 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     setError('');
   }
 
-  // Selected product (used for volume mode)
+  // Selected product (used for volume mode). bulk_density is now kg/CFT.
   const selectedProduct = form.product_id ? products.find(p => p.id === form.product_id) ?? null : null;
-  const volumeNum = parseFloat(volumeValue || '0');
-  const volumeM3 = toCubicMetres(volumeNum, volumeUnit);
+  const volumeCft = parseFloat(volumeValue || '0');
   const computedWeightKg = selectedProduct?.bulk_density
-    ? volumeM3 * Number(selectedProduct.bulk_density) * 1000
+    ? volumeCft * Number(selectedProduct.bulk_density)
     : 0;
 
   const handleTypeChange = (type: string) => {
@@ -248,11 +242,11 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       if (!form.party_id) { setError('Party is required for volume-based tokens'); return; }
       if (!form.product_id) { setError('Material is required for volume-based tokens'); return; }
       if (!selectedProduct?.bulk_density) {
-        setError(`Bulk density not set for "${selectedProduct?.name ?? 'this product'}". Open Products → edit this product → set Bulk Density.`);
+        setError(`Bulk density (kg/CFT) not set for "${selectedProduct?.name ?? 'this product'}". Open Products → edit this product → set Bulk Density.`);
         return;
       }
-      if (!Number.isFinite(volumeNum) || volumeNum <= 0) {
-        setError('Enter a positive volume (or pick a tyre count to auto-fill)'); return;
+      if (!Number.isFinite(volumeCft) || volumeCft <= 0) {
+        setError('Enter a positive volume in CFT (or pick a tyre count to auto-fill)'); return;
       }
       setSaving(true); setError('');
       try {
@@ -265,7 +259,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           party_id: form.party_id,
           product_id: form.product_id,
           vehicle_id: form.vehicle_id || undefined,
-          volume_m3: Number(volumeM3.toFixed(3)),
+          volume_cft: Number(volumeCft.toFixed(3)),
           gate_pass: form.gate_pass || undefined,
           remarks: form.remarks
             ? `${form.remarks}${tyreCount ? ` | ${tyreCount}-tyre truck` : ''}`
@@ -526,7 +520,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           <div className="grid grid-cols-2 gap-2">
             {[
               { value: 'weighbridge', label: 'Weighbridge', sub: 'Gross + Tare' },
-              { value: 'volume',      label: 'Volume',      sub: 'm³ × density' },
+              { value: 'volume',      label: 'Volume',      sub: 'CFT × density' },
             ].map(opt => (
               <button
                 key={opt.value}
@@ -567,40 +561,32 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
                   >
                     <div className="text-xs font-bold leading-none">{n}</div>
                     <div className="text-[9px] text-muted-foreground leading-tight mt-0.5">
-                      tyre<br/>{TYRE_VOLUME_M3[n]} m³
+                      tyre<br/>{TYRE_VOLUME_CFT[n]} CFT
                     </div>
                   </button>
                 ))}
               </div>
               {tyreCount !== null && (
                 <p className="text-[10px] text-amber-700">
-                  Defaulted to {TYRE_VOLUME_M3[tyreCount]} m³ for a {tyreCount}-tyre truck. Adjust below if needed.
+                  Defaulted to {TYRE_VOLUME_CFT[tyreCount]} CFT for a {tyreCount}-tyre truck. Adjust below if needed.
                 </p>
               )}
             </div>
 
-            {/* Step 2: Editable volume (auto-filled from tyre count, can override) */}
+            {/* Step 2: Editable volume in CFT (auto-filled from tyre count, can override) */}
             <div className="space-y-1">
-              <Label className="text-xs">Volume <span className="text-destructive">*</span></Label>
-              <div className="flex gap-2">
+              <Label className="text-xs">Volume (CFT) <span className="text-destructive">*</span></Label>
+              <div className="flex gap-2 items-center">
                 <Input
                   type="number"
                   className="h-8 text-xs flex-1"
                   value={volumeValue}
                   onChange={e => { setVolumeValue(e.target.value); setTyreCount(null); }}
-                  placeholder="Pick a tyre count above, or enter m³ here"
+                  placeholder="Pick a tyre count above, or type CFT here"
                   min="0"
                   step="0.01"
                 />
-                <Select value={volumeUnit} onValueChange={v => setVolumeUnit(v as 'm3' | 'ft3')}>
-                  <SelectTrigger className="h-8 text-xs w-20">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="m3">m³</SelectItem>
-                    <SelectItem value="ft3">ft³</SelectItem>
-                  </SelectContent>
-                </Select>
+                <span className="text-xs font-semibold text-muted-foreground px-2">CFT</span>
               </div>
             </div>
 
@@ -609,18 +595,18 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
               <p className="text-[10px] text-muted-foreground">Select a material below to compute weight.</p>
             ) : !selectedProduct?.bulk_density ? (
               <p className="text-[10px] text-destructive">
-                Bulk density not set for {selectedProduct?.name}. Open Products → edit this product → set Bulk Density (typical: aggregate 1.5, sand 1.7, GSB 1.9).
+                Bulk density not set for {selectedProduct?.name}. Open Products → edit this product → set Bulk Density in kg/CFT (typical: aggregate 42.5, sand 48.1, GSB 53.8).
               </p>
-            ) : volumeNum <= 0 ? (
+            ) : volumeCft <= 0 ? (
               <p className="text-[10px] text-muted-foreground">Pick a tyre count or enter a volume to see the computed weight.</p>
             ) : (
               <div className="rounded-md bg-white px-2.5 py-2 text-[10px] border">
                 <div className="flex justify-between text-muted-foreground">
-                  <span>Volume</span><span>{volumeM3.toFixed(3)} m³</span>
+                  <span>Volume</span><span>{volumeCft.toFixed(2)} CFT</span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
                   <span>× Density ({selectedProduct.name})</span>
-                  <span>{Number(selectedProduct.bulk_density).toFixed(3)} t/m³</span>
+                  <span>{Number(selectedProduct.bulk_density).toFixed(2)} kg/CFT</span>
                 </div>
                 <div className="mt-1 flex justify-between border-t pt-1 text-sm font-bold text-amber-700">
                   <span>= Net weight</span>
@@ -1245,17 +1231,17 @@ function CameraPanel({ cameraId, label }: CameraPanelProps) {
 // ------------------------------------------------------------------ //
 // MT + CFT weight formatters
 // ------------------------------------------------------------------ //
-const FT3_PER_M3_CONST = 35.3147;
 function mtFmt(v: number | null | undefined) {
   if (v == null) return '—';
   return (v / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' MT';
 }
-/** Returns "9.750 MT / 344.34 CFT" when bulk_density available, else "9.750 MT" */
+/** Returns "9.750 MT / 344.34 CFT" when bulk_density(kg/CFT) available, else "9.750 MT" */
 function dualFmt(weightKg: number | null | undefined, bulkDensity: number | null | undefined): string {
   if (weightKg == null) return '—';
   const mt = (weightKg / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
   if (!bulkDensity || bulkDensity <= 0) return `${mt} MT`;
-  const cft = (weightKg / (Number(bulkDensity) * 1000)) * FT3_PER_M3_CONST;
+  // bulk_density is kg/CFT, so CFT = kg ÷ kg_per_cft
+  const cft = weightKg / Number(bulkDensity);
   return `${mt} MT / ${cft.toFixed(2)} CFT`;
 }
 
@@ -1502,11 +1488,12 @@ export default function TokenPageV1() {
               className="text-muted-foreground h-7 gap-1 text-xs shrink-0"
               disabled={filtered.length === 0}
               onClick={() => {
-                const headers = ['Token No', 'Date', 'Vehicle', 'Method', 'Party', 'Material', 'Gross (MT)', 'Tare (MT)', 'Net (MT)', 'Net (CFT)', 'Status'];
+                const headers = ['Token No', 'Date', 'Vehicle', 'Method', 'Party', 'Material', 'Gross (MT)', 'Tare (MT)', 'Net (MT)', 'Net (CFT)', 'Volume (CFT)', 'Status'];
                 const rows = filtered.map(t => {
+                  // bulk_density is kg/CFT, so CFT = kg ÷ kg_per_cft
                   const bd = t.product?.bulk_density;
                   const cft = (t.net_weight != null && bd && Number(bd) > 0)
-                    ? ((Number(t.net_weight) / (Number(bd) * 1000)) * 35.3147).toFixed(2)
+                    ? (Number(t.net_weight) / Number(bd)).toFixed(2)
                     : '';
                   return [
                     t.token_no != null ? String(t.token_no) : '',
@@ -1519,6 +1506,7 @@ export default function TokenPageV1() {
                     t.tare_weight != null ? (Number(t.tare_weight) / 1000).toFixed(3) : '',
                     t.net_weight != null ? (Number(t.net_weight) / 1000).toFixed(3) : '',
                     cft,
+                    t.volume_cft != null ? Number(t.volume_cft).toFixed(2) : '',
                     t.status,
                   ];
                 });
@@ -1630,7 +1618,7 @@ export default function TokenPageV1() {
                         </p>
                         {token.weight_method === 'volume' && (
                           <span
-                            title={`Volume-based: ${token.volume_m3 ?? '?'} m³`}
+                            title={`Volume-based: ${token.volume_cft != null ? Number(token.volume_cft).toFixed(2) + ' CFT' : '?'}`}
                             className="shrink-0 inline-flex items-center rounded border border-amber-300 bg-amber-100 px-1 text-[8px] font-bold text-amber-800 leading-tight"
                           >
                             VOL

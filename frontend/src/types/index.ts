@@ -84,7 +84,7 @@ export interface Product {
   unit: string;
   default_rate: number;
   gst_rate: number;
-  bulk_density: number | null;   // t/m³ — enables volume → weight conversion in tokens
+  bulk_density: number | null;   // kg/CFT — enables volume → weight conversion in tokens
   is_raw_material: boolean;       // marks raw inputs to production (e.g., raw boulder)
   description: string | null;
   is_active: boolean;
@@ -147,7 +147,7 @@ export interface TokenProduct {
   id: string;
   name: string;
   unit: string;
-  bulk_density: number | null;   // t/m³ — enables MT ↔ CFT conversion in UI
+  bulk_density: number | null;   // kg/CFT — enables MT ↔ CFT conversion in UI
 }
 
 export interface TokenVehicle {
@@ -202,7 +202,7 @@ export interface Token {
   is_manual_weight: boolean;
   is_supplement: boolean;
   weight_method: 'weighbridge' | 'volume';   // measurement method
-  volume_m3: number | null;                   // populated only when weight_method === 'volume'
+  volume_cft: number | null;                  // cubic feet — populated only when weight_method === 'volume'
   remarks: string | null;
   created_at: string;
   first_weight_at: string | null;

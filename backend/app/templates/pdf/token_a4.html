@@ -63,18 +63,19 @@
 {% macro format_date(dt) %}{% if dt %}{{ dt.strftime('%d-%b-%Y') }}{% endif %}{% endmacro %}
 {# Weight in MT (3 decimals) — universal display for gross/tare/net #}
 {% macro format_wt_mt(w) %}{% if w %}{{ '%.3f' % (w|float / 1000) }} MT{% else %}—{% endif %}{% endmacro %}
-{# Net weight with MT and CFT side by side. CFT = kg ÷ bulk_density(t/m³) ÷ 1000 × 35.3147 ft³/m³ #}
+{# Net weight with MT and CFT side by side.
+   bulk_density is in kg/CFT, so CFT = kg ÷ kg_per_cft. #}
 {% macro format_wt_dual(w, bulk_density) %}
   {% if w %}
     {{ '%.3f' % (w|float / 1000) }} MT
     {% if bulk_density and (bulk_density|float) > 0 %}
-      / {{ '%.2f' % (w|float / (bulk_density|float) / 1000 * 35.3147) }} CFT
+      / {{ '%.2f' % (w|float / (bulk_density|float)) }} CFT
     {% endif %}
   {% else %}—{% endif %}
 {% endmacro %}
 
-{# Volume in m³ → CFT (ft³). 1 m³ = 35.3147 ft³ #}
-{% macro vol_dual(m3) %}{% if m3 %}{{ '%.2f' % (m3|float) }} m³ / {{ '%.2f' % (m3|float * 35.3147) }} CFT{% else %}—{% endif %}{% endmacro %}
+{# Volume in CFT (cubic feet) — canonical unit. #}
+{% macro vol_fmt(cft) %}{% if cft %}{{ '%.2f' % (cft|float) }} CFT{% else %}—{% endif %}{% endmacro %}
 
 {# Slip-type label: "Volume Slip" or "Weight Slip" based on token.weight_method #}
 {% macro slip_title(token) %}
@@ -125,7 +126,7 @@
   <div class="row">
     <span class="lbl">ITEM:</span>
     <span class="val">{{ token.product.name if token.product else '—' }}
-      {%- if token.product and token.product.bulk_density %} · {{ '%.2f' % (token.product.bulk_density|float) }} t/m³{% endif %}
+      {%- if token.product and token.product.bulk_density %} · {{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT{% endif %}
     </span>
   </div>
 
@@ -136,13 +137,13 @@
       <div class="vol-grid">
         <div class="vol-cell">
           <div class="lbl">Volume</div>
-          <div class="val">{{ vol_dual(token.volume_m3) }}</div>
+          <div class="val">{{ vol_fmt(token.volume_cft) }}</div>
         </div>
         <div class="vol-cell">
           <div class="lbl">×  Density</div>
           <div class="val">
             {% if token.product and token.product.bulk_density %}
-              {{ '%.2f' % (token.product.bulk_density|float) }} t/m³
+              {{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT
             {% else %}—{% endif %}
           </div>
         </div>
@@ -154,8 +155,8 @@
         </div>
       </div>
       <div class="vol-eq">
-        {% if token.volume_m3 and token.product and token.product.bulk_density %}
-          {{ '%.2f' % (token.volume_m3|float) }} m³  ×  {{ '%.2f' % (token.product.bulk_density|float) }} t/m³  =  computed weight
+        {% if token.volume_cft and token.product and token.product.bulk_density %}
+          {{ '%.2f' % (token.volume_cft|float) }} CFT  ×  {{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT  =  {{ '%.3f' % ((token.volume_cft|float * token.product.bulk_density|float) / 1000) }} MT
         {% endif %}
       </div>
       <div class="vol-net">

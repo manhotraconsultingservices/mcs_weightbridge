@@ -27,7 +27,7 @@ class ProductCreate(BaseModel):
     unit: str = "MT"
     default_rate: Decimal = Decimal("0")
     gst_rate: Decimal = Decimal("5.00")
-    bulk_density: Decimal | None = None   # t/m³
+    bulk_density: Decimal | None = None   # kg/CFT
     is_raw_material: bool = False         # mark inputs to production
     description: str | None = None
 

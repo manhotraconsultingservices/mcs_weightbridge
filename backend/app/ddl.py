@@ -430,16 +430,58 @@ def get_column_migrations() -> list[str]:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """,
-        # Bulk density on products (t/m³) — enables volume → weight conversion
+        # Bulk density on products — originally t/m³, migrated to kg/CFT (see
+        # units_migrated_to_cft_v1 marker below). Enables volume → weight at token.
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS bulk_density NUMERIC(6,3)",
         # Raw material flag — marks products that are inputs to production (e.g.,
         # raw boulder). When a production cycle is finalised, the raw_material_id
         # gets a negative stock movement = input weight consumed.
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_raw_material BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE production_cycles ADD COLUMN IF NOT EXISTS raw_material_id UUID REFERENCES products(id)",
-        # Volume-based weighment on tokens
+        # Volume-based weighment on tokens — canonical unit is CFT (cubic feet),
+        # the standard in the Indian stone-crusher trade. Old tenants migrated
+        # from volume_m3 in the units_migrated_to_cft_v1 DO block below.
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS weight_method VARCHAR(20) NOT NULL DEFAULT 'weighbridge'",
-        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS volume_m3 NUMERIC(8,3)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS volume_cft NUMERIC(10,3)",
+        # ── ONE-SHOT unit migration: m³ → CFT  +  t/m³ → kg/CFT ───────────────
+        # Guarded by an app_settings marker so it runs EXACTLY ONCE per DB.
+        # Without the marker the UPDATE statements would multiply values on
+        # every app startup, silently corrupting data. Conversion factors:
+        #   1 m³  = 35.3147 ft³ (CFT)
+        #   t/m³  ×  1000 / 35.3147  =  kg/CFT   (≈ × 28.3168)
+        # Sanity:  10 m³ × 1.5 t/m³ × 1000 = 15,000 kg
+        #         353.147 CFT × 42.475 kg/CFT  = 15,000 kg ✓
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM app_settings WHERE key = 'units_migrated_to_cft_v1'
+            ) THEN
+                -- Step 1: tokens.volume_m3 → tokens.volume_cft  (if old col exists)
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='tokens' AND column_name='volume_m3'
+                ) THEN
+                    UPDATE tokens
+                    SET volume_cft = ROUND((volume_m3 * 35.3147)::NUMERIC, 3)
+                    WHERE volume_m3 IS NOT NULL AND volume_cft IS NULL;
+                    ALTER TABLE tokens DROP COLUMN volume_m3;
+                END IF;
+
+                -- Step 2: products.bulk_density  t/m³ → kg/CFT  (× 28.3168)
+                -- NULL rows untouched. Existing kg/CFT rows would only exist in
+                -- a partially-migrated DB; the marker prevents that path.
+                UPDATE products
+                SET bulk_density = ROUND((bulk_density * 28.3168)::NUMERIC, 3)
+                WHERE bulk_density IS NOT NULL;
+
+                -- Mark complete so subsequent startups skip this block.
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES ('units_migrated_to_cft_v1', 'true', NOW())
+                ON CONFLICT (key) DO NOTHING;
+            END IF;
+        END $$
+        """,
         # Tyre count — used by the operator kiosk + printed slips. Stored
         # for ALL tokens (volume + weighbridge) so the slip shows truck class.
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS tyre_count SMALLINT",

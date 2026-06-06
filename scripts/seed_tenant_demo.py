@@ -196,24 +196,25 @@ CATEGORIES = [
 ]
 
 PRODUCTS = [
-    # bulk_density values are industry rule-of-thumb (t/m³); operator can fine-tune later.
+    # bulk_density values in kg/CFT (the canonical unit, the standard in the
+    # Indian stone-crusher trade). Conversion from t/m³: × 28.3168.
     # Aggregate (HSN 2517, GST 5%)
-    {"category": "Aggregate",  "name": "20mm Stone Aggregate",  "code": "AGG-20",  "hsn_code": "2517", "unit": "MT", "default_rate": "560.00", "gst_rate": "5.00", "bulk_density": "1.500"},
-    {"category": "Aggregate",  "name": "10mm Stone Aggregate",  "code": "AGG-10",  "hsn_code": "2517", "unit": "MT", "default_rate": "580.00", "gst_rate": "5.00", "bulk_density": "1.520"},
-    {"category": "Aggregate",  "name": "6mm Stone Aggregate",   "code": "AGG-06",  "hsn_code": "2517", "unit": "MT", "default_rate": "620.00", "gst_rate": "5.00", "bulk_density": "1.480"},
-    {"category": "Aggregate",  "name": "40mm Stone Boulder",    "code": "AGG-40",  "hsn_code": "2517", "unit": "MT", "default_rate": "490.00", "gst_rate": "5.00", "bulk_density": "1.450"},
+    {"category": "Aggregate",  "name": "20mm Stone Aggregate",  "code": "AGG-20",  "hsn_code": "2517", "unit": "MT", "default_rate": "560.00", "gst_rate": "5.00", "bulk_density": "42.48"},
+    {"category": "Aggregate",  "name": "10mm Stone Aggregate",  "code": "AGG-10",  "hsn_code": "2517", "unit": "MT", "default_rate": "580.00", "gst_rate": "5.00", "bulk_density": "43.04"},
+    {"category": "Aggregate",  "name": "6mm Stone Aggregate",   "code": "AGG-06",  "hsn_code": "2517", "unit": "MT", "default_rate": "620.00", "gst_rate": "5.00", "bulk_density": "41.91"},
+    {"category": "Aggregate",  "name": "40mm Stone Boulder",    "code": "AGG-40",  "hsn_code": "2517", "unit": "MT", "default_rate": "490.00", "gst_rate": "5.00", "bulk_density": "41.06"},
     # Sand (HSN 2505, GST 5%)
-    {"category": "Sand",       "name": "M-Sand (Fine)",          "code": "SND-MF",  "hsn_code": "2505", "unit": "MT", "default_rate": "650.00", "gst_rate": "5.00", "bulk_density": "1.700"},
-    {"category": "Sand",       "name": "M-Sand (Plaster)",       "code": "SND-MP",  "hsn_code": "2505", "unit": "MT", "default_rate": "680.00", "gst_rate": "5.00", "bulk_density": "1.720"},
-    {"category": "Sand",       "name": "Crushed Sand",           "code": "SND-CR",  "hsn_code": "2505", "unit": "MT", "default_rate": "540.00", "gst_rate": "5.00", "bulk_density": "1.550"},
+    {"category": "Sand",       "name": "M-Sand (Fine)",          "code": "SND-MF",  "hsn_code": "2505", "unit": "MT", "default_rate": "650.00", "gst_rate": "5.00", "bulk_density": "48.14"},
+    {"category": "Sand",       "name": "M-Sand (Plaster)",       "code": "SND-MP",  "hsn_code": "2505", "unit": "MT", "default_rate": "680.00", "gst_rate": "5.00", "bulk_density": "48.71"},
+    {"category": "Sand",       "name": "Crushed Sand",           "code": "SND-CR",  "hsn_code": "2505", "unit": "MT", "default_rate": "540.00", "gst_rate": "5.00", "bulk_density": "43.89"},
     # Stone Dust (HSN 2517, GST 5%)
-    {"category": "Stone Dust", "name": "Stone Dust",             "code": "DUS-01",  "hsn_code": "2517", "unit": "MT", "default_rate": "320.00", "gst_rate": "5.00", "bulk_density": "1.550"},
-    {"category": "Stone Dust", "name": "Fine Stone Powder",      "code": "DUS-FP",  "hsn_code": "2517", "unit": "MT", "default_rate": "380.00", "gst_rate": "5.00", "bulk_density": "1.600"},
+    {"category": "Stone Dust", "name": "Stone Dust",             "code": "DUS-01",  "hsn_code": "2517", "unit": "MT", "default_rate": "320.00", "gst_rate": "5.00", "bulk_density": "43.89"},
+    {"category": "Stone Dust", "name": "Fine Stone Powder",      "code": "DUS-FP",  "hsn_code": "2517", "unit": "MT", "default_rate": "380.00", "gst_rate": "5.00", "bulk_density": "45.31"},
     # GSB (HSN 2517, GST 5%)
-    {"category": "GSB & Base", "name": "GSB Grade-I",            "code": "GSB-I",   "hsn_code": "2517", "unit": "MT", "default_rate": "440.00", "gst_rate": "5.00", "bulk_density": "1.900"},
-    {"category": "GSB & Base", "name": "GSB Grade-II",           "code": "GSB-II",  "hsn_code": "2517", "unit": "MT", "default_rate": "410.00", "gst_rate": "5.00", "bulk_density": "1.880"},
-    {"category": "GSB & Base", "name": "Wet Mix Macadam (WMM)",  "code": "WMM",     "hsn_code": "2517", "unit": "MT", "default_rate": "520.00", "gst_rate": "5.00", "bulk_density": "1.850"},
-    {"category": "GSB & Base", "name": "Recycled Building Material", "code": "RBM", "hsn_code": "2517", "unit": "MT", "default_rate": "290.00", "gst_rate": "5.00", "bulk_density": "1.500"},
+    {"category": "GSB & Base", "name": "GSB Grade-I",            "code": "GSB-I",   "hsn_code": "2517", "unit": "MT", "default_rate": "440.00", "gst_rate": "5.00", "bulk_density": "53.80"},
+    {"category": "GSB & Base", "name": "GSB Grade-II",           "code": "GSB-II",  "hsn_code": "2517", "unit": "MT", "default_rate": "410.00", "gst_rate": "5.00", "bulk_density": "53.24"},
+    {"category": "GSB & Base", "name": "Wet Mix Macadam (WMM)",  "code": "WMM",     "hsn_code": "2517", "unit": "MT", "default_rate": "520.00", "gst_rate": "5.00", "bulk_density": "52.39"},
+    {"category": "GSB & Base", "name": "Recycled Building Material", "code": "RBM", "hsn_code": "2517", "unit": "MT", "default_rate": "290.00", "gst_rate": "5.00", "bulk_density": "42.48"},
 ]
 
 
@@ -903,16 +904,17 @@ def seed_tokens(c: Client,
     if not volume_products:
         # Fall back: any product (server will reject if no bulk_density — that's OK for demo logs)
         volume_products = list(products.values())
-    tyre_options = [(4, 3.0), (6, 7.0), (8, 10.0), (10, 13.0), (12, 17.0)]
+    # Default CFT capacities by tyre count (industry-standard for Indian trucks)
+    tyre_options = [(4, 106.0), (6, 247.0), (8, 353.0), (10, 459.0), (12, 600.0)]
     for i in range(5):
         days_back = random.randint(0, 14)
         tdate = TODAY - timedelta(days=days_back)
         party = random.choice(customers)
         product = random.choice(volume_products)
         vehicle = _choose_vehicle(vehicles)
-        tyre_count, default_m3 = random.choice(tyre_options)
+        tyre_count, default_cft = random.choice(tyre_options)
         # Slight randomness around the standard volume
-        volume = round(default_m3 * (0.9 + random.random() * 0.2), 2)
+        volume = round(default_cft * (0.9 + random.random() * 0.2), 2)
         payload = {
             "token_date": tdate.isoformat(),
             "direction": "outbound",
@@ -923,12 +925,12 @@ def seed_tokens(c: Client,
             "vehicle_id": vehicle["id"] if vehicle else None,
             "vehicle_type": vehicle.get("vehicle_type") if vehicle else "truck",
             "tyre_count": tyre_count,
-            "volume_m3": str(volume),
-            "remarks": f"Volume token ({tyre_count}-tyre, {volume} m³) — {DEMO_TAG}",
+            "volume_cft": str(volume),
+            "remarks": f"Volume token ({tyre_count}-tyre, {volume} CFT) — {DEMO_TAG}",
         }
         try:
             tok = c.post("/api/v1/tokens/volume", payload,
-                         f"T-vol-{i+1}/5 → {party['name'][:18]} / {product['name'][:14]} / {volume} m³")
+                         f"T-vol-{i+1}/5 → {party['name'][:18]} / {product['name'][:14]} / {volume} CFT")
             if tok:
                 completed_tokens.append(tok)
         except Exception as e:

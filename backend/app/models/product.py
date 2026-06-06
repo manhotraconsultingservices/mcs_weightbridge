@@ -31,8 +31,10 @@ class Product(Base):
     unit: Mapped[str] = mapped_column(String(10))  # MT, CFT, BRASS, CUM, NOS
     default_rate: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
     gst_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=5.00)
-    # Bulk density in t/m³ — enables volume → weight conversion at token creation.
+    # Bulk density in kg/CFT — enables volume → weight conversion at token creation.
     # NULL means volume mode is not available for this product.
+    # Industry typicals (per CFT, kg): aggregate ≈ 42.5, sand ≈ 48.1, GSB ≈ 53.8,
+    # stone dust ≈ 43.9. Conversion from older t/m³ units: ×28.3168.
     bulk_density: Mapped[Decimal | None] = mapped_column(Numeric(6, 3))
     # Raw-material flag — only relevant for products that are INPUTS to production
     # (e.g. "Raw Boulder"). When a production cycle's raw_material_id points
