@@ -8,7 +8,7 @@ interface WeightDisplayProps {
 }
 
 export default function WeightDisplay({ onCapture, className }: WeightDisplayProps) {
-  const { reading, formatted, formattedMT } = useWeight();
+  const { reading, formattedMT } = useWeight();
 
   return (
     <div className={cn('rounded-xl border-2 bg-card p-4 text-center', className,
@@ -29,9 +29,6 @@ export default function WeightDisplay({ onCapture, className }: WeightDisplayPro
       )}>
         {reading.scale_connected ? formattedMT : '—'}
       </div>
-      {reading.scale_connected && (
-        <div className="font-mono text-xs text-muted-foreground tabular-nums">{formatted}</div>
-      )}
 
       <div className="mt-1 h-4">
         {reading.scale_connected && (

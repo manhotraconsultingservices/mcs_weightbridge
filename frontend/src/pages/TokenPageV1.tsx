@@ -61,7 +61,7 @@ const canWeigh = (t: Token) =>
 // Scale Status bar
 // ------------------------------------------------------------------ //
 function ScaleStatus() {
-  const { reading, formatted, formattedMT } = useWeight();
+  const { reading, formattedMT } = useWeight();
   return (
     <div className={cn(
       'flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition-colors',
@@ -87,12 +87,9 @@ function ScaleStatus() {
           {reading.scale_connected ? formattedMT : '—'}
         </span>
         {reading.scale_connected && (
-          <>
-            <p className="text-[10px] font-mono text-muted-foreground tabular-nums">{formatted}</p>
-            <p className={cn('text-[10px]', reading.is_stable ? 'text-green-600' : 'text-amber-500 animate-pulse')}>
-              {reading.is_stable ? `Stable ${reading.stable_duration_sec.toFixed(1)}s` : 'Stabilising…'}
-            </p>
-          </>
+          <p className={cn('text-[10px]', reading.is_stable ? 'text-green-600' : 'text-amber-500 animate-pulse')}>
+            {reading.is_stable ? `Stable ${reading.stable_duration_sec.toFixed(1)}s` : 'Stabilising…'}
+          </p>
         )}
       </div>
     </div>
@@ -612,7 +609,6 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
                   <span>= Net weight</span>
                   <span>{(computedWeightKg / 1000).toFixed(3)} MT</span>
                 </div>
-                <div className="text-[9px] text-muted-foreground text-right">({computedWeightKg.toFixed(0)} kg)</div>
               </div>
             )}
 
@@ -749,7 +745,7 @@ function mtFromKg(kg: number) {
 }
 
 function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: WeightDialogProps) {
-  const { reading, formatted, formattedMT } = useWeight();
+  const { reading, formattedMT } = useWeight();
   const [manualMode, setManualMode] = useState(false);
   const [manualWeight, setManualWeight] = useState('');
   const [saving, setSaving] = useState(false);
@@ -927,11 +923,6 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
               )}>
                 {reading.scale_connected ? formattedMT : '— . — — —  MT'}
               </div>
-              {reading.scale_connected && (
-                <div className="font-mono text-sm text-muted-foreground tabular-nums mt-0.5">
-                  {formatted}
-                </div>
-              )}
               <div className="h-5 mt-1">
                 {reading.scale_connected && (
                   canCapture
@@ -953,11 +944,6 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
                 placeholder="0.000"
                 className="text-2xl font-mono h-14 text-center font-bold"
               />
-              {parseFloat(manualWeight) > 0 && (
-                <p className="text-center text-xs text-muted-foreground">
-                  = {(parseFloat(manualWeight) * 1000).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} kg
-                </p>
-              )}
             </div>
           )}
 
@@ -966,7 +952,6 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
               <div>
                 <p className="text-xs text-muted-foreground">Live Net Weight Preview</p>
                 <p className="font-mono text-2xl font-black text-primary">{mtFromKg(liveNet)}</p>
-                <p className="font-mono text-[10px] text-muted-foreground">{wFmt(liveNet)}</p>
               </div>
               <div className="text-xs text-muted-foreground text-right">
                 <p>{wFmt(isSale ? liveWeight : stage1Weight)} (gross)</p>

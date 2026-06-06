@@ -299,7 +299,6 @@ function WeightPanel() {
   const { weight_kg, is_stable, scale_connected } = reading;
   const weightMT = weight_kg / 1000;
 
-  const weightStr = weight_kg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const mtStr = weightMT.toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 
   return (
@@ -335,16 +334,6 @@ function WeightPanel() {
               {scale_connected ? mtStr : '—.———'}
             </div>
             <div className={`text-lg font-semibold mt-1 ${scale_connected ? 'text-slate-400' : 'text-slate-600'}`}>MT</div>
-          </div>
-
-          <div className="w-full border-t border-slate-700/60" />
-
-          <div className="text-center">
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Raw scale reading</p>
-            <p className={`font-mono font-bold text-2xl ${scale_connected ? 'text-slate-300' : 'text-slate-600'}`}>
-              {scale_connected ? weightStr : '——.——'}
-            </p>
-            <p className="text-sm text-slate-500 mt-0.5">kg</p>
           </div>
 
           <div className="w-full space-y-1">

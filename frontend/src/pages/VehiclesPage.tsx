@@ -192,9 +192,16 @@ function VehicleDialog({ open, editing, vehicleTypes, onClose, onSaved }: {
             </div>
           </div>
           <div className="space-y-1">
-            <Label>Default Tare Weight (kg)</Label>
-            <Input type="number" min="0" step="0.01" value={form.default_tare_weight}
-              onChange={e => set('default_tare_weight', parseFloat(e.target.value) || 0)} />
+            <Label>Default Tare Weight (MT)</Label>
+            <Input
+              type="number" min="0" step="0.001"
+              value={form.default_tare_weight ? (Number(form.default_tare_weight) / 1000).toString() : ''}
+              onChange={e => set('default_tare_weight', (parseFloat(e.target.value) || 0) * 1000)}
+              placeholder="0.000"
+            />
+            <p className="text-[10px] text-muted-foreground">
+              Enter empty-truck weight in metric tonnes (e.g. 7.500 for a 7.5 MT truck).
+            </p>
           </div>
         </div>
         <DialogFooter>
@@ -455,7 +462,7 @@ export default function VehiclesPage() {
                       </div>
                       <div className="text-right">
                         <p className="text-xs text-muted-foreground">Tare</p>
-                        <p className="text-sm font-mono">{v.default_tare_weight.toLocaleString('en-IN')} kg</p>
+                        <p className="text-sm font-mono">{(Number(v.default_tare_weight) / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} MT</p>
                       </div>
                       <Button size="icon" variant="ghost" onClick={() => { setEditV(v); setVDialog(true); }}>
                         <Pencil className="h-4 w-4" />
