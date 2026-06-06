@@ -22,10 +22,11 @@ import {
   Truck, ArrowRight, ArrowDownToLine, ArrowUpFromLine, Scale,
   CheckCircle2, Printer, MessageCircle, RefreshCw, X, LogOut,
   PhoneCall, AlertTriangle, Loader2, Search, Sparkles, ChevronLeft,
+  Pencil,
 } from 'lucide-react';
 import api from '@/services/api';
 import { useWeight } from '@/hooks/useWeight';
-import type { User, Party, Product, Token } from '@/types';
+import type { User, Party, Product, Token, TokenListResponse } from '@/types';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -130,12 +131,43 @@ export default function OperatorKioskPage({ user, onLogout }: OperatorKioskPageP
   });
   const [activeToken, setActiveToken] = useState<Token | null>(null);
   const [sosOpen, setSosOpen] = useState(false);
+  const [pendingTokens, setPendingTokens] = useState<Token[]>([]);
 
-  // Reset to start a brand-new token
+  // Fetch in-progress tokens (FIRST_WEIGHT or LOADING) so the operator can
+  // pick a truck up where they left it for the 2nd weighing. Refreshed every
+  // 15s and after every transition.
+  const fetchPending = useCallback(async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const { data } = await api.get<TokenListResponse>(
+        `/api/v1/tokens?page=1&page_size=50&date_from=${today}`
+      );
+      setPendingTokens(
+        (data.items ?? []).filter(t => t.status === 'FIRST_WEIGHT' || t.status === 'LOADING')
+      );
+    } catch {
+      /* offline / network — leave list as-is so we don't blank the strip on a hiccup */
+    }
+  }, []);
+
+  useEffect(() => { fetchPending(); }, [fetchPending]);
+  useEffect(() => {
+    const id = setInterval(fetchPending, 15_000);
+    return () => clearInterval(id);
+  }, [fetchPending]);
+
+  // Reset to start a brand-new token (also refreshes pending strip)
   const reset = useCallback(() => {
     setDraft({ vehicle_no: '', token_type: 'sale', party: null, product: null, tyre_count: null });
     setActiveToken(null);
     setStage('arrival');
+    fetchPending();
+  }, [fetchPending]);
+
+  // Resume a pending truck for its 2nd weighing — jump straight to weighing screen
+  const resumeToken = useCallback((tok: Token) => {
+    setActiveToken(tok);
+    setStage('weighing');
   }, []);
 
   return (
@@ -171,14 +203,26 @@ export default function OperatorKioskPage({ user, onLogout }: OperatorKioskPageP
           <ArrivalScreen
             draft={draft}
             setDraft={setDraft}
-            onProceed={tok => { setActiveToken(tok); setStage('weighing'); }}
+            pendingTokens={pendingTokens}
+            onResume={resumeToken}
+            onProceed={tok => {
+              setActiveToken(tok);
+              setStage('weighing');
+              fetchPending();
+            }}
           />
         )}
         {stage === 'weighing' && activeToken && (
           <WeighingScreen
             token={activeToken}
-            onUpdated={t => setActiveToken(t)}
-            onDone={t => { setActiveToken(t); setStage('done'); }}
+            onParked={() => {
+              // After 1st weight: return to arrival so operator can either
+              // start a new truck or come back to this one later.
+              setActiveToken(null);
+              setStage('arrival');
+              fetchPending();
+            }}
+            onDone={t => { setActiveToken(t); setStage('done'); fetchPending(); }}
             onCancel={reset}
           />
         )}
@@ -208,10 +252,12 @@ export default function OperatorKioskPage({ user, onLogout }: OperatorKioskPageP
 interface ArrivalScreenProps {
   draft: ArrivalDraft;
   setDraft: React.Dispatch<React.SetStateAction<ArrivalDraft>>;
+  pendingTokens: Token[];
+  onResume: (token: Token) => void;
   onProceed: (token: Token) => void;
 }
 
-function ArrivalScreen({ draft, setDraft, onProceed }: ArrivalScreenProps) {
+function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: ArrivalScreenProps) {
   const [parties, setParties] = useState<Party[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [partySearch, setPartySearch] = useState('');
@@ -221,17 +267,30 @@ function ArrivalScreen({ draft, setDraft, onProceed }: ArrivalScreenProps) {
   const [error, setError] = useState('');
   const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load master data once
+  // Load master data once. Parties API may return either an array OR a paged
+  // {items, total} object depending on the route version — handle both shapes.
   useEffect(() => {
     Promise.all([
-      api.get<{ items: Party[] }>('/api/v1/parties?page_size=500'),
+      api.get<Party[] | { items: Party[] }>('/api/v1/parties?page_size=500'),
       api.get<Product[] | { items: Product[] }>('/api/v1/products?page_size=200'),
     ]).then(([p, pr]) => {
-      setParties(p.data.items ?? []);
+      const pData = p.data;
+      setParties(Array.isArray(pData) ? pData : (pData as { items: Party[] }).items ?? []);
       const prodData = pr.data;
       setProducts(Array.isArray(prodData) ? prodData : (prodData as { items: Product[] }).items ?? []);
     }).catch(() => { /* keep empty */ });
   }, []);
+
+  // ── Plate match against in-progress tokens ─────────────────────────────
+  // If operator types a plate that already has an OPEN / FIRST_WEIGHT / LOADING
+  // token today, surface a HUGE banner offering to resume — this is how a
+  // truck comes back for its 2nd weighing without the operator having to
+  // hunt through Advanced view. Match is case- and whitespace-insensitive.
+  const plateNorm = draft.vehicle_no.trim().toUpperCase().replace(/\s+/g, '');
+  const matchingPending = useMemo(() => {
+    if (plateNorm.length < 4) return null;
+    return pendingTokens.find(t => t.vehicle_no.replace(/\s+/g, '').toUpperCase() === plateNorm) ?? null;
+  }, [pendingTokens, plateNorm]);
 
   // ── Smart suggest: when vehicle plate ≥ 4 chars, look up last seen ────
   useEffect(() => {
@@ -255,35 +314,47 @@ function ArrivalScreen({ draft, setDraft, onProceed }: ArrivalScreenProps) {
     return () => { if (lookupTimer.current) clearTimeout(lookupTimer.current); };
   }, [draft.vehicle_no]);
 
-  // Filter party list by search
+  // Filter party list by search. NO cap — show everything in a scrollable
+  // grid so the operator can find their customer without typing if literacy
+  // is a barrier. Filtering on city as well as name.
   const partyMatches = useMemo(() => {
     const q = partySearch.trim().toLowerCase();
-    if (!q) return parties.slice(0, 12);  // initial: top 12
-    return parties.filter(p => p.name.toLowerCase().includes(q)).slice(0, 24);
+    if (!q) return parties;
+    return parties.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      (p.billing_city ?? '').toLowerCase().includes(q) ||
+      (p.phone ?? '').includes(q)
+    );
   }, [parties, partySearch]);
 
-  // Apply last-seen suggestion in one click
+  // Apply last-seen suggestion in one click. Look up the REAL party + product
+  // objects from the loaded lists by id (the API smart-suggest endpoint
+  // returns only id+name, but the kiosk needs full objects for invoice flow).
   function applyLastSeen() {
     if (!lastSeen) return;
+    const realParty = lastSeen.party
+      ? parties.find(p => p.id === lastSeen.party!.id) ?? null
+      : null;
+    const realProduct = lastSeen.product
+      ? products.find(p => p.id === lastSeen.product!.id) ?? null
+      : null;
     setDraft(d => ({
       ...d,
       token_type: (lastSeen.token_type === 'purchase' ? 'purchase' : 'sale') as 'sale' | 'purchase',
-      party: lastSeen.party
-        ? ({ id: lastSeen.party.id, name: lastSeen.party.name } as unknown as Party)
-        : null,
-      product: lastSeen.product
-        ? ({
-            id: lastSeen.product.id,
-            name: lastSeen.product.name,
-            unit: lastSeen.product.unit,
-            bulk_density: lastSeen.product.bulk_density,
-          } as unknown as Product)
-        : null,
+      party: realParty,
+      product: realProduct,
     }));
   }
 
   const canProceed =
     draft.vehicle_no.trim().length >= 4 && draft.party && draft.product;
+
+  // What's missing? Shown below the START button so operator knows why
+  // it's disabled. Order: vehicle → product → party.
+  const missingItems: string[] = [];
+  if (draft.vehicle_no.trim().length < 4) missingItems.push('Vehicle number');
+  if (!draft.product) missingItems.push('Material');
+  if (!draft.party) missingItems.push('Customer');
 
   // Create the token (either /tokens or /tokens/volume)
   async function handleStart() {
@@ -324,8 +395,24 @@ function ArrivalScreen({ draft, setDraft, onProceed }: ArrivalScreenProps) {
       speak(`Truck in. ${draft.product.name} for ${draft.party.name}. Drive onto the bridge.`);
       onProceed(data);
     } catch (e: unknown) {
-      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(typeof detail === 'string' ? detail : 'Could not start. Try again.');
+      // Handle every error shape: string, Pydantic validation array, plain
+      // network error. Operators with no developer to call need the actual
+      // backend reason, not a generic "try again".
+      const err = e as {
+        response?: { status?: number; data?: { detail?: string | Array<{ msg: string; loc?: string[] }> } };
+        message?: string;
+      };
+      const detail = err.response?.data?.detail;
+      let msg: string;
+      if (typeof detail === 'string') {
+        msg = detail;
+      } else if (Array.isArray(detail)) {
+        msg = detail.map(d => d.msg).join(' · ');
+      } else {
+        msg = err.message ?? 'Could not start. Check connection or call manager.';
+      }
+      const code = err.response?.status;
+      setError(code ? `[${code}] ${msg}` : msg);
     } finally {
       setSaving(false);
     }
@@ -333,6 +420,37 @@ function ArrivalScreen({ draft, setDraft, onProceed }: ArrivalScreenProps) {
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
+      {/* ── PENDING TRUCKS strip — only shown when there are in-progress tokens ── */}
+      {pendingTokens.length > 0 && (
+        <section>
+          <label className="flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-amber-700 mb-2">
+            <Truck className="h-4 w-4" />
+            Trucks Waiting for 2nd Weight ({pendingTokens.length})
+          </label>
+          <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 snap-x">
+            {pendingTokens.map(t => (
+              <button
+                key={t.id}
+                onClick={() => onResume(t)}
+                className="snap-start shrink-0 w-56 p-4 rounded-2xl border-2 border-amber-300 bg-amber-50 hover:bg-amber-100 transition-colors text-left shadow-sm"
+                title={`Tap to capture 2nd weight for token #${t.token_no ?? '—'}`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Truck className="h-4 w-4 text-amber-700 shrink-0" />
+                  <span className="font-mono font-bold text-lg text-amber-900 tracking-wide truncate">{t.vehicle_no}</span>
+                </div>
+                <div className="text-sm font-semibold text-slate-800 truncate">{t.party?.name ?? '—'}</div>
+                <div className="text-xs text-slate-600 truncate mt-0.5">{t.product?.name ?? '—'}</div>
+                <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-200 text-amber-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
+                  <ArrowRight className="h-3 w-3" /> 2nd weight pending
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="text-center text-xs text-slate-400 mt-1 uppercase tracking-widest">— or start a new truck below —</div>
+        </section>
+      )}
+
       {/* Vehicle number — biggest input on the screen */}
       <section>
         <label className="block text-sm font-semibold uppercase tracking-widest text-slate-500 mb-2">
@@ -359,13 +477,35 @@ function ArrivalScreen({ draft, setDraft, onProceed }: ArrivalScreenProps) {
         </div>
       </section>
 
-      {/* Smart suggest — only when we found a last visit */}
-      {lookupBusy && (
+      {/* ── URGENT: plate matches a pending token → big "tap for 2nd weight" banner ── */}
+      {matchingPending && (
+        <button
+          onClick={() => onResume(matchingPending)}
+          className="w-full rounded-2xl border-2 border-amber-500 bg-amber-100 hover:bg-amber-200 p-5 flex items-center gap-4 text-left transition-colors shadow-md animate-pulse"
+        >
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-600 text-white shrink-0">
+            <Scale className="h-7 w-7" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs uppercase tracking-widest text-amber-800 font-bold">Same truck — back for 2nd weight!</div>
+            <div className="text-lg font-bold text-amber-900 mt-0.5 truncate">
+              Token #{matchingPending.token_no ?? '—'} · {matchingPending.party?.name ?? 'Walk-in'}
+            </div>
+            <div className="text-sm text-amber-800 mt-0.5 truncate">
+              {matchingPending.product?.name ?? '—'} · tap to weigh now
+            </div>
+          </div>
+          <ArrowRight className="h-8 w-8 text-amber-800 shrink-0" />
+        </button>
+      )}
+
+      {/* Smart suggest — only when no pending match AND we found history */}
+      {!matchingPending && lookupBusy && (
         <div className="text-center text-sm text-slate-500 flex items-center justify-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin" /> Checking history…
         </div>
       )}
-      {lastSeen && lastSeen.party && lastSeen.product && (
+      {!matchingPending && lastSeen && lastSeen.party && lastSeen.product && (
         <button
           onClick={applyLastSeen}
           className="w-full rounded-2xl border-2 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 p-5 flex items-center gap-4 text-left transition-colors"
@@ -443,22 +583,27 @@ function ArrivalScreen({ draft, setDraft, onProceed }: ArrivalScreenProps) {
         </div>
       </section>
 
-      {/* Party picker — search + recent tiles */}
+      {/* Party picker — search + scrollable grid showing ALL parties */}
       <section>
-        <label className="block text-sm font-semibold uppercase tracking-widest text-slate-500 mb-2">
-          4.  {draft.token_type === 'sale' ? 'Customer' : 'Supplier'}
-        </label>
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-sm font-semibold uppercase tracking-widest text-slate-500">
+            4.  {draft.token_type === 'sale' ? 'Customer' : 'Supplier'}
+          </label>
+          <span className="text-xs text-slate-400">
+            Showing {partyMatches.length} of {parties.length}
+          </span>
+        </div>
         <div className="relative mb-3">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
           <input
             type="text"
             value={partySearch}
             onChange={e => setPartySearch(e.target.value)}
-            placeholder={`Search ${draft.token_type === 'sale' ? 'customer' : 'supplier'}…`}
+            placeholder={`Search ${draft.token_type === 'sale' ? 'customer' : 'supplier'} by name, city, or phone…`}
             className="w-full h-14 pl-12 pr-4 text-base rounded-xl border-2 border-slate-300 focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-100 bg-white"
           />
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 max-h-80 overflow-y-auto p-1 rounded-lg border border-slate-200 bg-slate-50/40">
           {partyMatches.map(p => {
             const selected = draft.party?.id === p.id;
             return (
@@ -550,6 +695,15 @@ function ArrivalScreen({ draft, setDraft, onProceed }: ArrivalScreenProps) {
           <><Truck className="h-7 w-7" /> START WEIGHING <ArrowRight className="h-7 w-7" /></>
         )}
       </button>
+
+      {/* Validation hint — explains why the button is disabled */}
+      {!canProceed && !saving && missingItems.length > 0 && (
+        <div className="text-center text-sm text-slate-600 -mt-3">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1">
+            ☝️ Still missing: <strong>{missingItems.join(', ')}</strong>
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -593,15 +747,19 @@ function DirectionTile({
 
 interface WeighingScreenProps {
   token: Token;
-  onUpdated: (t: Token) => void;
-  onDone: (t: Token) => void;
-  onCancel: () => void;
+  onParked: () => void;       // 1st weight captured → back to arrival, token now in Pending strip
+  onDone: (t: Token) => void; // 2nd weight captured → Done screen with summary
+  onCancel: () => void;       // explicit cancel — returns to arrival without changing token
 }
 
-function WeighingScreen({ token, onUpdated, onDone, onCancel }: WeighingScreenProps) {
+function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenProps) {
   const { reading } = useWeight();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // Manual entry fallback — critical when the bridge is offline. Operator
+  // types weight in MT (the natural unit); we multiply by 1000 at the API.
+  const [manualMode, setManualMode] = useState(false);
+  const [manualMt, setManualMt] = useState('');
 
   // Volume tokens (skip-the-bridge) come in already COMPLETED — jump straight to Done.
   useEffect(() => {
@@ -620,9 +778,13 @@ function WeighingScreen({ token, onUpdated, onDone, onCancel }: WeighingScreenPr
   const tareNow = (isSale && isFirst) || (!isSale && !isFirst);
   const tareOrGrossLabel = tareNow ? '(EMPTY truck)' : '(LOADED truck)';
 
-  const weightKg = reading.weight_kg;
+  // Effective weight: live scale OR manual MT × 1000
+  const manualKg = (parseFloat(manualMt) || 0) * 1000;
+  const weightKg = manualMode ? manualKg : reading.weight_kg;
   const formattedMT = (weightKg / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-  const canCapture = reading.scale_connected && reading.is_stable && weightKg > 0;
+  const canCapture = manualMode
+    ? weightKg > 0
+    : reading.scale_connected && reading.is_stable && weightKg > 0;
 
   async function handleCapture() {
     if (!canCapture) return;
@@ -632,20 +794,31 @@ function WeighingScreen({ token, onUpdated, onDone, onCancel }: WeighingScreenPr
       const endpoint = isFirst
         ? `/api/v1/tokens/${token.id}/first-weight`
         : `/api/v1/tokens/${token.id}/second-weight`;
-      const { data } = await api.post<Token>(endpoint, { weight_kg: weightKg, is_manual: false });
+      const { data } = await api.post<Token>(endpoint, {
+        weight_kg: weightKg, is_manual: manualMode,
+      });
       const mt = (weightKg / 1000).toFixed(2);
       // Voice confirm — short + memorable
       if (isFirst) {
-        speak(`${mt} tonne captured. Truck can move.`);
-        onUpdated(data);
+        speak(`${mt} tonne captured. Truck can load. Bring back for second weight.`);
+        onParked();
       } else {
         const netMt = data.net_weight ? (data.net_weight / 1000).toFixed(2) : mt;
         speak(`Done. Net weight ${netMt} tonne. Print bill.`);
         onDone(data);
       }
     } catch (e: unknown) {
-      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(typeof detail === 'string' ? detail : 'Could not capture. Try again.');
+      const err = e as {
+        response?: { status?: number; data?: { detail?: string | Array<{ msg: string; loc?: string[] }> } };
+        message?: string;
+      };
+      const detail = err.response?.data?.detail;
+      let msg: string;
+      if (typeof detail === 'string') msg = detail;
+      else if (Array.isArray(detail)) msg = detail.map(d => d.msg).join(' · ');
+      else msg = err.message ?? 'Could not capture. Try again.';
+      const code = err.response?.status;
+      setError(code ? `[${code}] ${msg}` : msg);
     } finally {
       setSaving(false);
     }
@@ -686,16 +859,45 @@ function WeighingScreen({ token, onUpdated, onDone, onCancel }: WeighingScreenPr
         <div className="text-base text-slate-700 mt-1 font-medium">{tareOrGrossLabel}</div>
       </div>
 
-      {/* THE READOUT — the focal point */}
+      {/* THE READOUT — the focal point. Manual mode shows an input; live mode shows scale. */}
       <div className={`rounded-3xl border-4 p-8 text-center shadow-md ${
-        reading.scale_connected
-          ? canCapture ? 'border-emerald-500 bg-emerald-50' : 'border-amber-400 bg-amber-50'
-          : 'border-slate-300 bg-slate-100'
+        manualMode
+          ? canCapture ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-slate-50'
+          : reading.scale_connected
+            ? canCapture ? 'border-emerald-500 bg-emerald-50' : 'border-amber-400 bg-amber-50'
+            : 'border-rose-300 bg-rose-50'
       }`}>
-        {!reading.scale_connected ? (
-          <div className="py-8">
+        {manualMode ? (
+          <>
+            <div className="text-xs uppercase tracking-widest text-blue-700 font-bold mb-2">
+              Type weight by hand
+            </div>
+            <input
+              type="number"
+              autoFocus
+              min="0"
+              step="0.001"
+              value={manualMt}
+              onChange={e => setManualMt(e.target.value)}
+              placeholder="0.000"
+              className="w-full font-mono font-black tabular-nums leading-none text-blue-700 bg-transparent border-none focus:outline-none text-center"
+              style={{ fontSize: 'clamp(60px, 14vw, 140px)' }}
+            />
+            <div className="text-3xl font-bold text-slate-500 mt-2">MT</div>
+            <div className="mt-4 text-base text-slate-600">
+              Enter the truck weight in metric tonnes (e.g. <strong>7.500</strong> for a 7.5 MT truck).
+            </div>
+          </>
+        ) : !reading.scale_connected ? (
+          <div className="py-4">
             <div className="text-3xl font-bold text-rose-600 mb-2">SCALE OFFLINE</div>
-            <div className="text-sm text-slate-500">Check the bridge connection or call the manager.</div>
+            <div className="text-sm text-slate-600 mb-4">Bridge is not responding. You can type the weight by hand instead.</div>
+            <button
+              onClick={() => setManualMode(true)}
+              className="inline-flex items-center gap-2 h-12 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow"
+            >
+              <Pencil className="h-5 w-5" /> Type Weight by Hand
+            </button>
           </div>
         ) : (
           <>
@@ -716,6 +918,19 @@ function WeighingScreen({ token, onUpdated, onDone, onCancel }: WeighingScreenPr
             </div>
           </>
         )}
+      </div>
+
+      {/* Mode toggle — operator can always switch between live scale and manual */}
+      <div className="text-center">
+        <button
+          onClick={() => { setManualMode(m => !m); setManualMt(''); }}
+          className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 underline underline-offset-4 px-3 py-1.5"
+        >
+          {manualMode
+            ? <><Scale className="h-4 w-4" /> Use live scale instead</>
+            : <><Pencil className="h-4 w-4" /> Type weight by hand instead</>
+          }
+        </button>
       </div>
 
       {error && (
@@ -740,6 +955,14 @@ function WeighingScreen({ token, onUpdated, onDone, onCancel }: WeighingScreenPr
           <><CheckCircle2 className="h-9 w-9" /> CAPTURE THIS WEIGHT</>
         )}
       </button>
+
+      {/* Helper note: after 1st weight, the truck goes off to load. The token
+          now sits in the Pending strip on the home screen for when it comes back. */}
+      {isFirst && (
+        <div className="text-center text-xs text-slate-500">
+          After capture, this truck will appear in <strong>Trucks Waiting for 2nd Weight</strong> on the home screen.
+        </div>
+      )}
     </div>
   );
 }
