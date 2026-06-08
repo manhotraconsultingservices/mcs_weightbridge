@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/services/api';
+import AnprStatsCard from '@/components/AnprStatsCard';
 
 // ── Types from /api/v1/dashboard/exceptions ────────────────────────────────
 
@@ -179,6 +180,9 @@ export default function OwnerDashboardPage() {
 
       {/* ── Today's revenue strip ───────────────────────────────────── */}
       <RevenueStrip rev={data.today_revenue} />
+
+      {/* ── ANPR gate-camera widget (hidden when ANPR off or no traffic) ── */}
+      <AnprStatsCard />
 
       {/* ── Action cards ─────────────────────────────────────────────── */}
       <div className="space-y-3">

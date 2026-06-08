@@ -1990,6 +1990,242 @@ function ToggleRow({ label, checked, onCheckedChange }: { label: string; checked
   );
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// ANPR Settings — gate-camera plate detection
+// ──────────────────────────────────────────────────────────────────────────────
+
+interface AnprCfgLocal {
+  enabled: boolean;
+  engine: 'local_fastalpr' | 'hikvision_webhook' | 'dahua_webhook';
+  gate_camera_id: string;
+  cooldown_sec: number;
+  min_confidence: number;
+  fuzzy_match: boolean;
+  auto_create_token: boolean;
+  notify_owner: boolean;
+  notify_unknown_plate: boolean;
+  webhook_secret: string | null;
+}
+
+const ANPR_DEFAULT: AnprCfgLocal = {
+  enabled: false,
+  engine: 'local_fastalpr',
+  gate_camera_id: 'front',
+  cooldown_sec: 8,
+  min_confidence: 0.55,
+  fuzzy_match: true,
+  auto_create_token: true,
+  notify_owner: true,
+  notify_unknown_plate: true,
+  webhook_secret: null,
+};
+
+function AnprSettingsTab() {
+  const [cfg, setCfg] = useState<AnprCfgLocal>(ANPR_DEFAULT);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [testPlate, setTestPlate] = useState('TEST1234');
+
+  useEffect(() => {
+    api.get<AnprCfgLocal>('/api/v1/anpr/config')
+      .then(r => setCfg(r.data))
+      .catch(() => { /* leave defaults */ })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const set = <K extends keyof AnprCfgLocal>(k: K, v: AnprCfgLocal[K]) =>
+    setCfg(c => ({ ...c, [k]: v }));
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const { data } = await api.put<AnprCfgLocal>('/api/v1/anpr/config', cfg);
+      setCfg(data);
+      setMsg({ kind: 'ok', text: 'ANPR settings saved.' });
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setMsg({ kind: 'err', text: typeof detail === 'string' ? detail : 'Failed to save settings' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function runTest() {
+    setTesting(true);
+    setMsg(null);
+    try {
+      const { data } = await api.post<{ event_id: string; direction: string; action_taken: string; gate_pass_no: string | null }>(
+        '/api/v1/anpr/config/test',
+        { plate_raw: testPlate, confidence: 0.95, camera_id: cfg.gate_camera_id, source: 'manual' },
+      );
+      const gp = data.gate_pass_no ? ` · Gate pass ${data.gate_pass_no}` : '';
+      setMsg({ kind: 'ok', text: `Test → direction: ${data.direction} · ${data.action_taken}${gp}` });
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setMsg({ kind: 'err', text: typeof detail === 'string' ? detail : 'Test detection failed' });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="pt-6 flex items-center justify-center text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading ANPR settings…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Camera className="h-4 w-4 text-blue-600" /> ANPR — Gate Camera Plate Detection
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          When ANPR is enabled, the gate camera will automatically detect vehicle plates,
+          issue gate passes, and notify the owner via Telegram. Vehicles can come and go
+          without any operator action. ANPR is <strong>off by default</strong> and never
+          interferes with the manual kiosk flow.
+        </p>
+
+        <ToggleRow label="Enable ANPR" checked={cfg.enabled} onCheckedChange={v => set('enabled', v)} />
+
+        {/* Engine */}
+        <div className="space-y-1">
+          <Label className="text-xs uppercase tracking-widest text-muted-foreground">Detection engine</Label>
+          <select className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  value={cfg.engine} onChange={e => set('engine', e.target.value as AnprCfgLocal['engine'])}>
+            <option value="local_fastalpr">Free local — FastALPR on the camera agent</option>
+            <option value="hikvision_webhook">Hardware — Hikvision ANPR camera (webhook)</option>
+            <option value="dahua_webhook">Hardware — Dahua ANPR camera (webhook)</option>
+          </select>
+          <p className="text-[10px] text-muted-foreground">
+            <strong>Free</strong>: zero cost, works offline, ~90% accuracy on Indian plates.
+            <strong> Hardware</strong>: best accuracy but needs a ₹40k–80k ANPR camera that POSTs to /api/v1/anpr/webhook/&lt;vendor&gt;.
+          </p>
+        </div>
+
+        {/* Camera */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs uppercase tracking-widest text-muted-foreground">Gate camera</Label>
+            <select className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    value={cfg.gate_camera_id} onChange={e => set('gate_camera_id', e.target.value)}>
+              <option value="front">Front</option>
+              <option value="top">Top</option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs uppercase tracking-widest text-muted-foreground">
+              Cooldown between detections (sec)
+            </Label>
+            <Input type="number" min="3" max="60" value={cfg.cooldown_sec}
+                   onChange={e => set('cooldown_sec', parseInt(e.target.value) || 8)} />
+          </div>
+        </div>
+
+        {/* Confidence + fuzzy */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs uppercase tracking-widest text-muted-foreground">
+              Minimum confidence
+            </Label>
+            <Input type="number" step="0.05" min="0" max="1"
+                   value={cfg.min_confidence}
+                   onChange={e => set('min_confidence', parseFloat(e.target.value) || 0.55)} />
+            <p className="text-[10px] text-muted-foreground">
+              Below this → event is logged for review but no token is created.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs uppercase tracking-widest text-muted-foreground">Fuzzy matching</Label>
+            <div className="flex items-center gap-2 h-10">
+              <Switch checked={cfg.fuzzy_match} onCheckedChange={v => set('fuzzy_match', v)} />
+              <span className="text-xs text-muted-foreground">
+                1-char tolerance vs vehicle master ({cfg.fuzzy_match ? 'on' : 'off'})
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Behaviour toggles */}
+        <div className="rounded-md border bg-slate-50/50 px-3 py-2 space-y-1">
+          <ToggleRow label="Auto-create token on entry"
+                     checked={cfg.auto_create_token}
+                     onCheckedChange={v => set('auto_create_token', v)} />
+          <ToggleRow label="Notify owner on entry / exit (Telegram)"
+                     checked={cfg.notify_owner}
+                     onCheckedChange={v => set('notify_owner', v)} />
+          <ToggleRow label="Notify owner on unknown plate"
+                     checked={cfg.notify_unknown_plate}
+                     onCheckedChange={v => set('notify_unknown_plate', v)} />
+        </div>
+
+        {/* Webhook secret (only for hardware engines) */}
+        {(cfg.engine === 'hikvision_webhook' || cfg.engine === 'dahua_webhook') && (
+          <div className="space-y-1">
+            <Label className="text-xs uppercase tracking-widest text-muted-foreground">
+              Webhook secret (X-ANPR-Secret header)
+            </Label>
+            <Input type="text" value={cfg.webhook_secret ?? ''} placeholder="leave blank to disable webhook auth"
+                   onChange={e => set('webhook_secret', e.target.value || null)} className="font-mono" />
+            <p className="text-[10px] text-muted-foreground">
+              Configure the same secret in your Hikvision/Dahua camera's HTTP push settings.
+              GET returns <code>***</code> to mask the existing secret — submit unchanged to preserve it.
+            </p>
+          </div>
+        )}
+
+        {/* Test detection */}
+        <div className="rounded-md border-2 border-dashed border-slate-300 bg-slate-50 px-3 py-3 space-y-2">
+          <Label className="text-xs uppercase tracking-widest text-muted-foreground">
+            Test detection
+          </Label>
+          <div className="flex items-center gap-2">
+            <Input value={testPlate} onChange={e => setTestPlate(e.target.value.toUpperCase())}
+                   placeholder="MH12AB1234" className="font-mono uppercase h-9 max-w-xs" />
+            <Button size="sm" variant="outline" onClick={runTest} disabled={testing || !cfg.enabled}>
+              {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Run Test'}
+            </Button>
+            {!cfg.enabled && <span className="text-[11px] text-amber-700">Enable ANPR first</span>}
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Fires one synthetic detection through the full pipeline to verify dedup, vehicle lookup, and gate-pass numbering.
+          </p>
+        </div>
+
+        {msg && (
+          <div className={`rounded-md border px-3 py-2 text-sm ${
+            msg.kind === 'ok' ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                              : 'border-rose-300 bg-rose-50 text-rose-800'
+          }`}>{msg.text}</div>
+        )}
+
+        <div className="flex items-center gap-2 pt-2 border-t">
+          <Button onClick={save} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save ANPR Settings
+          </Button>
+          <Button variant="outline" asChild>
+            <a href="/anpr/events">View Events →</a>
+          </Button>
+          <Button variant="outline" asChild>
+            <a href="/anpr/live">Live Wallboard →</a>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function PrintSettingsTab() {
   const [ps, setPs] = useState<InvoicePrintSettings>(DEFAULT_PRINT_SETTINGS);
   const [loading, setLoading] = useState(true);
@@ -2273,6 +2509,9 @@ export default function SettingsPage() {
           <TabsTrigger value="einvoice" className="flex items-center gap-1">
             <Shield className="h-3.5 w-3.5" />eInvoice
           </TabsTrigger>
+          <TabsTrigger value="anpr" className="flex items-center gap-1">
+            <Camera className="h-3.5 w-3.5" />ANPR
+          </TabsTrigger>
           <TabsTrigger value="print">Print</TabsTrigger>
         </TabsList>
 
@@ -2411,6 +2650,11 @@ export default function SettingsPage() {
           <EInvoiceSettingsTab />
         </TabsContent>
 
+        {/* ANPR — gate-camera plate detection */}
+        <TabsContent value="anpr" className="mt-4">
+          <AnprSettingsTab />
+        </TabsContent>
+
         {/* Print Settings */}
         <TabsContent value="print" className="mt-4">
           <PrintSettingsTab />
@@ -2418,7 +2662,7 @@ export default function SettingsPage() {
       </Tabs>
 
       {/* Save button (not on FY, USB Guard, Scale, Tally, Weighbridge, Notifications, or Print tabs) */}
-      {tab !== 'fy' && tab !== 'usb' && tab !== 'scale' && tab !== 'tally' && tab !== 'weighbridge' && tab !== 'notifications' && tab !== 'cameras' && tab !== 'einvoice' && tab !== 'print' && (
+      {tab !== 'fy' && tab !== 'usb' && tab !== 'scale' && tab !== 'tally' && tab !== 'weighbridge' && tab !== 'notifications' && tab !== 'cameras' && tab !== 'einvoice' && tab !== 'anpr' && tab !== 'print' && (
         <div className="flex items-center gap-3">
           <Button onClick={saveCompany} disabled={saving}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

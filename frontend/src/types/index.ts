@@ -659,3 +659,80 @@ export interface Party360Response {
   custom_rates: Party360CustomRate[];
 }
 
+// ── ANPR (Automatic Number Plate Recognition) ─────────────────────────────────
+
+export interface AnprOcrAlternate {
+  plate: string;
+  confidence: number;
+}
+
+export interface AnprVehicleBrief {
+  id: string;
+  registration_no: string;
+}
+
+export interface AnprTokenBrief {
+  id: string;
+  token_no: number | null;
+  token_date: string;
+  status: string;
+  vehicle_no: string;
+  gate_pass_no: string | null;
+  party_name: string | null;
+  product_name: string | null;
+}
+
+export interface AnprEvent {
+  id: string;
+  plate_raw: string;
+  plate_normalized: string;
+  direction: 'entry' | 'exit' | 'unmatched' | 'duplicate' | 'heartbeat';
+  confidence: number | null;     // Pydantic serialises Decimal as string — coerce with Number() at point of use
+  source: string;
+  camera_id: string;
+  snapshot_path: string | null;
+  detected_at: string;
+  needs_review: boolean;
+  reviewed_at: string | null;
+  notes: string | null;
+  vehicle: AnprVehicleBrief | null;
+  token: AnprTokenBrief | null;
+  ocr_alternates: AnprOcrAlternate[] | null;
+}
+
+export interface AnprEventListResponse {
+  items: AnprEvent[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AnprDayBucket {
+  date: string;
+  entries: number;
+  exits: number;
+}
+
+export interface AnprStats {
+  entries: number;
+  exits: number;
+  unmatched: number;
+  unique_vehicles: number;
+  currently_inside: number;
+  avg_dwell_minutes: number;
+  by_day: AnprDayBucket[];
+}
+
+export interface AnprConfig {
+  enabled: boolean;
+  engine: 'local_fastalpr' | 'hikvision_webhook' | 'dahua_webhook';
+  gate_camera_id: string;
+  cooldown_sec: number;
+  min_confidence: number;
+  fuzzy_match: boolean;
+  auto_create_token: boolean;
+  notify_owner: boolean;
+  notify_unknown_plate: boolean;
+  webhook_secret: string | null;     // *** sentinel on GET
+}
+
