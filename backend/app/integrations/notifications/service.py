@@ -252,6 +252,24 @@ DEFAULT_TEMPLATES = [
             "Please check the bridge/gate camera.\n— {{ company_name }}"
         ),
     },
+    {
+        "event_type": "anpr_daily_summary",
+        "channel": "telegram",
+        "name": "Daily Gate Camera Report (Telegram)",
+        "subject": None,
+        "body": (
+            "🚛 <b>Gate Camera Report — {{ date }}</b>\n\n"
+            "<b>Today's traffic:</b>\n"
+            "• Entries: <b>{{ entries }}</b>\n"
+            "• Exits: <b>{{ exits }}</b>\n"
+            "• Currently inside: <b>{{ currently_inside }}</b>\n"
+            "• Total tonnage: <b>{{ tonnage_mt }} MT</b>\n"
+            "• Total revenue: <b>₹{{ revenue }}</b>\n"
+            "• Avg dwell: <b>{{ avg_dwell }} min</b>\n\n"
+            "{% if trip_count > 0 %}<b>Trips ({{ trip_count }}):</b>\n{{ trip_list }}\n{% else %}No trips recorded today.\n{% endif %}"
+            "\n— {{ company_name }}"
+        ),
+    },
 ]
 
 

@@ -2004,6 +2004,7 @@ interface AnprCfgLocal {
   auto_create_token: boolean;
   notify_owner: boolean;
   notify_unknown_plate: boolean;
+  daily_summary: boolean;
   webhook_secret: string | null;
 }
 
@@ -2017,6 +2018,7 @@ const ANPR_DEFAULT: AnprCfgLocal = {
   auto_create_token: true,
   notify_owner: true,
   notify_unknown_plate: true,
+  daily_summary: true,
   webhook_secret: null,
 };
 
@@ -2167,6 +2169,9 @@ function AnprSettingsTab() {
           <ToggleRow label="Notify owner on unknown plate"
                      checked={cfg.notify_unknown_plate}
                      onCheckedChange={v => set('notify_unknown_plate', v)} />
+          <ToggleRow label="Send daily Telegram report (lists every trip at 8 PM)"
+                     checked={cfg.daily_summary}
+                     onCheckedChange={v => set('daily_summary', v)} />
         </div>
 
         {/* Webhook secret (only for hardware engines) */}
@@ -2213,6 +2218,9 @@ function AnprSettingsTab() {
           <Button onClick={save} disabled={saving}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Save ANPR Settings
+          </Button>
+          <Button variant="outline" asChild>
+            <a href="/anpr/trips">Daily Report →</a>
           </Button>
           <Button variant="outline" asChild>
             <a href="/anpr/events">View Events →</a>

@@ -162,4 +162,48 @@ class AnprConfig(BaseModel):
     auto_create_token: bool = True
     notify_owner: bool = True               # Telegram on entry/exit
     notify_unknown_plate: bool = True
+    daily_summary: bool = True              # Telegram daily list of trips at owner_digest time
     webhook_secret: str | None = None       # required for Hikvision/Dahua webhook auth
+
+
+# ── Daily trip report — one row per vehicle visit ────────────────────────────
+
+
+class AnprTrip(BaseModel):
+    """One vehicle visit (entry + exit pair where available).
+
+    Sourced from tokens with anpr_entry_at OR anpr_exit_at populated, joined
+    with the linked invoice for billing info.
+    """
+    token_id: uuid.UUID
+    token_no: int | None = None
+    token_date: date
+    vehicle_no: str
+    gate_pass_no: str | None = None
+    entry_time: datetime | None = None
+    exit_time: datetime | None = None
+    dwell_minutes: int | None = None           # null if still inside
+    party_name: str | None = None
+    product_name: str | None = None
+    net_weight_mt: Decimal | None = None       # converted from kg at API boundary
+    invoice_id: uuid.UUID | None = None
+    invoice_no: str | None = None
+    invoice_status: str | None = None          # draft | final | cancelled
+    payment_status: str | None = None          # unpaid | partial | paid
+    grand_total: Decimal | None = None
+    status: str                                # token status
+    source: str                                # token source (anpr / manual / kiosk)
+
+
+class AnprTripListResponse(BaseModel):
+    items: list[AnprTrip]
+    total: int
+    page: int
+    page_size: int
+    # Roll-up totals for the date range
+    entries: int
+    exits: int
+    currently_inside: int
+    total_tonnage_mt: Decimal
+    total_revenue: Decimal
+    avg_dwell_minutes: float

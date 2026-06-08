@@ -49,6 +49,7 @@ import CameraScalePage from '@/pages/CameraScalePage';
 import AnprEventsPage from '@/pages/AnprEventsPage';
 import AnprLivePage from '@/pages/AnprLivePage';
 import AnprReviewPage from '@/pages/AnprReviewPage';
+import AnprTripsPage from '@/pages/AnprTripsPage';
 import SnapshotSearchPage from '@/pages/SnapshotSearchPage';
 import TokenPageV1 from '@/pages/TokenPageV1';
 import PlatformLoginPage from '@/pages/PlatformLoginPage';
@@ -170,6 +171,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/anpr/events" element={<AnprEventsPage />} />
             <Route path="/anpr/live" element={<AnprLivePage />} />
             <Route path="/anpr/review" element={<AnprReviewPage />} />
+            <Route path="/anpr/trips" element={<AnprTripsPage />} />
             {/* Administration — admin only (each page self-guards via role check) */}
             <Route path="/admin/users" element={<UserManagementPage />} />
             <Route path="/admin/permissions" element={<PermissionsPage />} />

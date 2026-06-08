@@ -733,6 +733,42 @@ export interface AnprConfig {
   auto_create_token: boolean;
   notify_owner: boolean;
   notify_unknown_plate: boolean;
+  daily_summary: boolean;            // Telegram daily-list at owner-digest time
   webhook_secret: string | null;     // *** sentinel on GET
+}
+
+// One row per vehicle visit — for the daily trip report page
+export interface AnprTrip {
+  token_id: string;
+  token_no: number | null;
+  token_date: string;
+  vehicle_no: string;
+  gate_pass_no: string | null;
+  entry_time: string | null;
+  exit_time: string | null;
+  dwell_minutes: number | null;
+  party_name: string | null;
+  product_name: string | null;
+  net_weight_mt: number | null;      // Pydantic Decimal → JSON string; coerce with Number()
+  invoice_id: string | null;
+  invoice_no: string | null;
+  invoice_status: 'draft' | 'final' | 'cancelled' | null;
+  payment_status: 'unpaid' | 'partial' | 'paid' | null;
+  grand_total: number | null;
+  status: string;
+  source: 'manual' | 'anpr' | 'kiosk' | string;
+}
+
+export interface AnprTripListResponse {
+  items: AnprTrip[];
+  total: number;
+  page: number;
+  page_size: number;
+  entries: number;
+  exits: number;
+  currently_inside: number;
+  total_tonnage_mt: number;
+  total_revenue: number;
+  avg_dwell_minutes: number;
 }
 

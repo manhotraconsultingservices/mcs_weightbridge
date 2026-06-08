@@ -521,6 +521,30 @@ async def _send_owner_digest_for_session(session_factory, label: str) -> None:
         except Exception as e:
             logger.warning("owner_digest send failed [%s]: %s", label, e)
 
+        # ── ANPR daily summary (fires at the same configured time) ──────────
+        # Sent only when ANPR is enabled AND the daily_summary flag is on
+        # in anpr_config (defaults to True). Skipped silently if config or
+        # tables are missing — keeps existing tenants without ANPR untouched.
+        try:
+            import json as _json
+            anpr_row = (await db.execute(
+                _sql("SELECT value FROM app_settings WHERE key = 'anpr_config'"),
+            )).fetchone()
+            if anpr_row and anpr_row[0]:
+                try:
+                    anpr_cfg = _json.loads(anpr_row[0])
+                except Exception:
+                    anpr_cfg = {}
+                if anpr_cfg.get("enabled") and anpr_cfg.get("daily_summary", True):
+                    from app.routers.anpr import build_daily_summary_context
+                    anpr_ctx = await build_daily_summary_context(db, co.id, co.name, today)
+                    await send_notification(db, co.id, "anpr_daily_summary", anpr_ctx,
+                                            entity_type="company", entity_id=str(co.id))
+                    logger.info("anpr_daily_summary sent [%s] trips=%s",
+                                label, anpr_ctx.get("trip_count", 0))
+        except Exception as e:
+            logger.warning("anpr_daily_summary send failed [%s]: %s", label, e)
+
 
 async def _owner_digest_loop():
     """Multi-tenant aware: minute-resolution check, sends once per day at configured time."""

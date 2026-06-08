@@ -47,6 +47,8 @@ from app.schemas.anpr import (
     AnprEventListResponse,
     AnprEventResponse,
     AnprStatsResponse,
+    AnprTrip,
+    AnprTripListResponse,
     DahuaWebhookPayload,
     DetectPayload,
     DetectResponse,
@@ -1025,3 +1027,285 @@ async def test_detection(
     """
     payload.source = "manual"
     return await _handle_detection(db, payload, background_tasks)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  Daily trip report — one row per vehicle visit (entry + exit pair)
+# ════════════════════════════════════════════════════════════════════════════
+
+async def _fetch_trips(
+    db: AsyncSession, company_id: uuid.UUID,
+    date_from: date, date_to: date,
+    page: int = 1, page_size: int = 200,
+) -> tuple[list[AnprTrip], int, dict]:
+    """Pull ANPR-tracked tokens between `date_from` and `date_to` inclusive,
+    joined with their linked invoice, with summary roll-ups.
+
+    Filter: tokens.anpr_entry_at IS NOT NULL OR tokens.anpr_exit_at IS NOT NULL
+    (i.e. ANPR has been involved in either side of this trip).
+    """
+    start_ts = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
+    end_ts = datetime.combine(date_to + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+
+    # Trip rows joined with party + product + invoice — single SELECT for table.
+    rows_q = text("""
+        SELECT
+          t.id              AS token_id,
+          t.token_no        AS token_no,
+          t.token_date      AS token_date,
+          t.vehicle_no      AS vehicle_no,
+          t.gate_pass_no    AS gate_pass_no,
+          t.anpr_entry_at   AS entry_time,
+          t.anpr_exit_at    AS exit_time,
+          t.net_weight      AS net_weight,
+          t.status          AS status,
+          t.source          AS source,
+          p.name            AS party_name,
+          pr.name           AS product_name,
+          i.id              AS invoice_id,
+          i.invoice_no      AS invoice_no,
+          i.status          AS invoice_status,
+          i.payment_status  AS payment_status,
+          i.grand_total     AS grand_total
+        FROM tokens t
+        LEFT JOIN parties  p  ON p.id  = t.party_id
+        LEFT JOIN products pr ON pr.id = t.product_id
+        LEFT JOIN LATERAL (
+            SELECT id, invoice_no, status, payment_status, grand_total
+            FROM invoices
+            WHERE token_id = t.id
+            ORDER BY created_at DESC LIMIT 1
+        ) i ON TRUE
+        WHERE t.company_id = :cid
+          AND t.is_supplement = FALSE
+          AND (t.anpr_entry_at IS NOT NULL OR t.anpr_exit_at IS NOT NULL)
+          AND (
+              (t.anpr_entry_at >= :s AND t.anpr_entry_at < :e)
+              OR (t.anpr_exit_at  >= :s AND t.anpr_exit_at  < :e)
+              OR (t.token_date BETWEEN :df AND :dt)
+          )
+        ORDER BY COALESCE(t.anpr_entry_at, t.anpr_exit_at, t.created_at) DESC
+        OFFSET :offset LIMIT :limit
+    """)
+    rows = (await db.execute(rows_q, {
+        "cid": str(company_id), "s": start_ts, "e": end_ts,
+        "df": date_from, "dt": date_to,
+        "offset": (page - 1) * page_size, "limit": page_size,
+    })).fetchall()
+
+    # Total count for pagination — same filter, no joins.
+    total_q = text("""
+        SELECT COUNT(*) FROM tokens t
+        WHERE t.company_id = :cid
+          AND t.is_supplement = FALSE
+          AND (t.anpr_entry_at IS NOT NULL OR t.anpr_exit_at IS NOT NULL)
+          AND (
+              (t.anpr_entry_at >= :s AND t.anpr_entry_at < :e)
+              OR (t.anpr_exit_at  >= :s AND t.anpr_exit_at  < :e)
+              OR (t.token_date BETWEEN :df AND :dt)
+          )
+    """)
+    total = int((await db.execute(total_q, {
+        "cid": str(company_id), "s": start_ts, "e": end_ts,
+        "df": date_from, "dt": date_to,
+    })).scalar() or 0)
+
+    # Roll-ups for the same window
+    rollup_q = text("""
+        SELECT
+          COUNT(*) FILTER (WHERE anpr_entry_at >= :s AND anpr_entry_at < :e)::INT AS entries,
+          COUNT(*) FILTER (WHERE anpr_exit_at  >= :s AND anpr_exit_at  < :e)::INT AS exits,
+          COALESCE(SUM(net_weight) FILTER (WHERE status = 'COMPLETED'
+                       AND (anpr_entry_at >= :s AND anpr_entry_at < :e)), 0) AS total_kg
+        FROM tokens
+        WHERE company_id = :cid AND is_supplement = FALSE
+          AND (anpr_entry_at IS NOT NULL OR anpr_exit_at IS NOT NULL)
+    """)
+    ru = (await db.execute(rollup_q, {
+        "cid": str(company_id), "s": start_ts, "e": end_ts,
+    })).fetchone()
+    entries_n = int(ru.entries or 0) if ru else 0
+    exits_n = int(ru.exits or 0) if ru else 0
+    total_kg = float(ru.total_kg or 0) if ru else 0.0
+
+    # Total revenue for invoices linked to those trips
+    rev_q = text("""
+        SELECT COALESCE(SUM(i.grand_total), 0)
+        FROM invoices i
+        JOIN tokens t ON t.id = i.token_id
+        WHERE t.company_id = :cid
+          AND i.status = 'final'
+          AND (t.anpr_entry_at IS NOT NULL OR t.anpr_exit_at IS NOT NULL)
+          AND t.token_date BETWEEN :df AND :dt
+    """)
+    total_revenue = float((await db.execute(rev_q, {
+        "cid": str(company_id), "df": date_from, "dt": date_to,
+    })).scalar() or 0)
+
+    # Currently inside = entries in window with no exit yet
+    inside_q = text("""
+        SELECT COUNT(*) FROM tokens
+        WHERE company_id = :cid AND is_supplement = FALSE
+          AND anpr_entry_at IS NOT NULL AND anpr_exit_at IS NULL
+          AND status NOT IN ('CANCELLED')
+    """)
+    currently_inside = int((await db.execute(inside_q, {"cid": str(company_id)})).scalar() or 0)
+
+    # Avg dwell for closed trips in window
+    dwell_q = text("""
+        SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (anpr_exit_at - anpr_entry_at)) / 60.0), 0)
+        FROM tokens
+        WHERE company_id = :cid AND is_supplement = FALSE
+          AND anpr_entry_at IS NOT NULL AND anpr_exit_at IS NOT NULL
+          AND anpr_entry_at >= :s AND anpr_entry_at < :e
+    """)
+    avg_dwell = float((await db.execute(dwell_q, {
+        "cid": str(company_id), "s": start_ts, "e": end_ts,
+    })).scalar() or 0)
+
+    # Build trip rows
+    trips: list[AnprTrip] = []
+    for r in rows:
+        dwell = None
+        if r.entry_time and r.exit_time:
+            dwell = max(0, int((r.exit_time - r.entry_time).total_seconds() / 60))
+        net_mt = (Decimal(str(r.net_weight)) / Decimal("1000")).quantize(Decimal("0.001")) if r.net_weight else None
+        trips.append(AnprTrip(
+            token_id=r.token_id,
+            token_no=r.token_no,
+            token_date=r.token_date,
+            vehicle_no=r.vehicle_no,
+            gate_pass_no=r.gate_pass_no,
+            entry_time=r.entry_time,
+            exit_time=r.exit_time,
+            dwell_minutes=dwell,
+            party_name=r.party_name,
+            product_name=r.product_name,
+            net_weight_mt=net_mt,
+            invoice_id=r.invoice_id,
+            invoice_no=r.invoice_no,
+            invoice_status=r.invoice_status,
+            payment_status=r.payment_status,
+            grand_total=Decimal(str(r.grand_total)) if r.grand_total is not None else None,
+            status=r.status,
+            source=r.source,
+        ))
+
+    return trips, total, {
+        "entries": entries_n,
+        "exits": exits_n,
+        "currently_inside": currently_inside,
+        "total_tonnage_mt": Decimal(str(round(total_kg / 1000, 3))),
+        "total_revenue": Decimal(str(round(total_revenue, 2))),
+        "avg_dwell_minutes": float(avg_dwell),
+    }
+
+
+@router.get("/trips", response_model=AnprTripListResponse)
+async def list_trips(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(200, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """One row per vehicle visit — the user-friendly daily movement report.
+
+    Each row pairs the ANPR entry detection with its matching exit (when
+    available) and joins the linked sales/purchase invoice for billing info.
+    """
+    company, _ = await _get_company_and_fy(db)
+    if not date_from:
+        date_from = date.today()
+    if not date_to:
+        date_to = date.today()
+    trips, total, rollup = await _fetch_trips(db, company.id, date_from, date_to, page, page_size)
+    return AnprTripListResponse(
+        items=trips, total=total, page=page, page_size=page_size,
+        **rollup,
+    )
+
+
+@router.post("/daily-summary/send", response_model=dict)
+async def send_daily_summary_now(
+    background_tasks: BackgroundTasks,
+    target_date: date | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Fire the daily ANPR Telegram summary on demand (admin button).
+
+    Same context that the scheduled loop builds — covers `target_date`
+    (default today). Returns {ok: True, trip_count, entries, exits}.
+    """
+    company, _ = await _get_company_and_fy(db)
+    cfg = await _load_config(db)
+    if not cfg.enabled:
+        raise HTTPException(400, "ANPR is disabled — enable it in Settings → ANPR first.")
+    target = target_date or date.today()
+    ctx = await _build_daily_summary_context(db, company.id, company.name, target)
+    background_tasks.add_task(
+        _send_notification_bg,
+        company.id, "anpr_daily_summary", ctx,
+        "company", str(company.id), _tenant_slug(),
+    )
+    return {
+        "ok": True,
+        "date": target.isoformat(),
+        "trip_count": ctx.get("trip_count", 0),
+        "entries": ctx.get("entries", 0),
+        "exits": ctx.get("exits", 0),
+    }
+
+
+async def _build_daily_summary_context(
+    db: AsyncSession, company_id: uuid.UUID, company_name: str, target_date: date
+) -> dict[str, Any]:
+    """Build the Jinja2 context the anpr_daily_summary template renders.
+
+    Used by both the on-demand send endpoint and the scheduled owner-digest
+    loop. Trip list is top-20 by entry time descending.
+    """
+    trips, total, rollup = await _fetch_trips(db, company_id, target_date, target_date, page=1, page_size=50)
+    INR = lambda v: f"{float(v or 0):,.0f}"
+
+    # Build a compact per-trip line for Telegram. Markdown is rendered as
+    # HTML by the Telegram channel sender so we keep one line per trip.
+    def fmt_trip(t: AnprTrip, idx: int) -> str:
+        ent = t.entry_time.strftime("%H:%M") if t.entry_time else "—"
+        ext = t.exit_time.strftime("%H:%M") if t.exit_time else "in"
+        dwell = f"{t.dwell_minutes}m" if t.dwell_minutes is not None else "open"
+        bits = [f"{idx}. <b>{t.vehicle_no}</b>", f"↓{ent}", f"↑{ext}", f"({dwell})"]
+        if t.token_no is not None:
+            bits.append(f"#{t.token_no}")
+        if t.gate_pass_no:
+            bits.append(f"<code>{t.gate_pass_no}</code>")
+        if t.invoice_no:
+            bits.append(f"INV {t.invoice_no}")
+        if t.grand_total:
+            bits.append(f"₹{INR(t.grand_total)}")
+        return " · ".join(bits)
+
+    top = trips[:20]
+    trip_list = "\n".join(fmt_trip(t, i + 1) for i, t in enumerate(top))
+    more = max(0, total - len(top))
+    if more > 0:
+        trip_list += f"\n…and {more} more"
+
+    return {
+        "company_name": company_name,
+        "date": target_date.strftime("%d %b %Y"),
+        "entries": rollup["entries"],
+        "exits": rollup["exits"],
+        "currently_inside": rollup["currently_inside"],
+        "trip_count": total,
+        "tonnage_mt": f"{float(rollup['total_tonnage_mt']):,.2f}",
+        "revenue": INR(rollup["total_revenue"]),
+        "avg_dwell": int(rollup["avg_dwell_minutes"]),
+        "trip_list": trip_list,
+    }
+
+
+# Public alias so main.py can import the context builder for the digest loop.
+build_daily_summary_context = _build_daily_summary_context

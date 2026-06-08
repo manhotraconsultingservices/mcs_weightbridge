@@ -34,7 +34,7 @@ const HUB_CHILDREN: Record<string, string[]> = {
   '/customers':   ['/parties', '/customers'],
   '/sales':       ['/invoices', '/quotations'],
   '/materials':   ['/products', '/pricing-matrix', '/product-inventory', '/production', '/production/dashboard', '/production/settings'],
-  '/operations':  ['/vehicles', '/inventory', '/camera-scale', '/snapshot-search', '/anpr/events', '/anpr/live', '/anpr/review'],
+  '/operations':  ['/vehicles', '/inventory', '/camera-scale', '/snapshot-search', '/anpr/events', '/anpr/live', '/anpr/review', '/anpr/trips'],
   '/reports':     ['/payments', '/ledger', '/gst-reports', '/reports', '/reports-classic', '/compliance', '/audit'],
 };
 
