@@ -200,6 +200,58 @@ DEFAULT_TEMPLATES = [
             "\n— {{ company_name }}"
         ),
     },
+    # ── ANPR (gate-camera detections) ────────────────────────────────────────
+    {
+        "event_type": "anpr_entry",
+        "channel": "telegram",
+        "name": "Vehicle Entry (Telegram)",
+        "subject": None,
+        "body": (
+            "🚛 <b>Vehicle Entered</b>\n\n"
+            "Plate: <b>{{ vehicle_no }}</b>\n"
+            "Gate Pass: <code>{{ gate_pass_no }}</code>\n"
+            "Time: {{ entry_time }}\n"
+            "{% if vehicle_known == 'no' %}⚠️ Unknown plate — awaiting review.\n{% endif %}"
+        ),
+    },
+    {
+        "event_type": "anpr_exit",
+        "channel": "telegram",
+        "name": "Vehicle Exit (Telegram)",
+        "subject": None,
+        "body": (
+            "🏁 <b>Vehicle Left</b>\n\n"
+            "Plate: <b>{{ vehicle_no }}</b>\n"
+            "Gate Pass: <code>{{ gate_pass_no }}</code>\n"
+            "Token: #{{ token_no }}\n"
+            "Net: <b>{{ net_weight }} MT</b>\n"
+            "Time: {{ exit_time }}\n"
+            "Dwell: <b>{{ dwell_minutes }} min</b>"
+        ),
+    },
+    {
+        "event_type": "anpr_unknown_plate",
+        "channel": "telegram",
+        "name": "Unknown Plate Detected (Telegram)",
+        "subject": None,
+        "body": (
+            "❓ <b>Unknown plate detected</b>\n\n"
+            "Plate: <b>{{ plate }}</b>\n"
+            "Time: {{ captured_at }}\n"
+            "Awaiting review in /anpr/review."
+        ),
+    },
+    {
+        "event_type": "anpr_camera_down",
+        "channel": "telegram",
+        "name": "ANPR Camera Offline (Telegram)",
+        "subject": None,
+        "body": (
+            "⚠️ <b>ANPR camera offline</b>\n\n"
+            "Camera <b>{{ camera_id }}</b> has not delivered a frame for {{ down_minutes }} minutes.\n"
+            "Please check the bridge/gate camera.\n— {{ company_name }}"
+        ),
+    },
 ]
 
 

@@ -11,7 +11,7 @@ from app.routers import (
     weight, invoices, quotations, payments, dashboard, reports,
     usb_guard, private_invoices, notifications, audit, backup, import_data,
     tally, app_settings, license, compliance, cameras, inventory,
-    product_stock, production,
+    product_stock, production, anpr,
 )
 from app.middleware.license_guard import LicenseGuardMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -839,6 +839,7 @@ app.include_router(cameras.router_tokens)
 app.include_router(inventory.router)
 app.include_router(product_stock.router)
 app.include_router(production.router)
+app.include_router(anpr.router)
 
 
 @app.get("/api/v1/health")

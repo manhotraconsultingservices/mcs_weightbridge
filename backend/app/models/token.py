@@ -49,7 +49,16 @@ class Token(Base):
     second_weight_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     is_manual_weight: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    gate_pass: Mapped[str | None] = mapped_column(String(100))
+    gate_pass: Mapped[str | None] = mapped_column(String(100))      # free-text, manual entry (legacy)
+    # ── ANPR-issued gate pass + entry/exit timestamps ────────────────────────
+    # gate_pass_no is auto-allocated from NumberSequence(sequence_type='gate_pass')
+    # at the moment a vehicle is detected entering the gate. Format: GP/25-26/0001.
+    # anpr_entry_at / anpr_exit_at are stamped by /api/v1/anpr/detect.
+    gate_pass_no: Mapped[str | None] = mapped_column(String(40))
+    anpr_entry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    anpr_exit_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # How the token was created: 'manual' (kiosk/TokenPage) | 'anpr' (gate camera) | 'kiosk'
+    source: Mapped[str] = mapped_column(String(20), default="manual")
     remarks: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

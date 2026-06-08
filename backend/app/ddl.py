@@ -568,6 +568,47 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS write_off_reason VARCHAR(500)",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS write_off_at TIMESTAMPTZ",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS write_off_by UUID REFERENCES users(id)",
+        # ── ANPR (Automatic Number Plate Recognition) — gate cameras ──────────
+        # Token columns added: gate_pass_no (auto-allocated via NumberSequence
+        # with sequence_type='gate_pass'), anpr_entry_at/exit_at (timestamps
+        # stamped by /api/v1/anpr/detect), source ('manual' | 'anpr' | 'kiosk').
+        # The existing tokens.gate_pass (free-text, manual) column is left
+        # untouched for backward compatibility.
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS gate_pass_no VARCHAR(40)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS anpr_entry_at TIMESTAMPTZ",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS anpr_exit_at TIMESTAMPTZ",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS source VARCHAR(20) NOT NULL DEFAULT 'manual'",
+        "CREATE INDEX IF NOT EXISTS ix_tokens_gate_pass ON tokens(gate_pass_no)",
+        # ANPR events: append-only log of every plate detection (entry, exit,
+        # unmatched, duplicate). One row per detection. token_id is linked
+        # when the detection results in token creation (entry) or token closure
+        # (exit). needs_review = TRUE when plate didn't fuzzy-match any
+        # registered Vehicle — surfaces in the /anpr/review queue.
+        """
+        CREATE TABLE IF NOT EXISTS anpr_events (
+            id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id        UUID REFERENCES companies(id),
+            plate_raw         VARCHAR(20) NOT NULL,
+            plate_normalized  VARCHAR(20) NOT NULL,
+            vehicle_id        UUID REFERENCES vehicles(id),
+            token_id          UUID REFERENCES tokens(id) ON DELETE SET NULL,
+            direction         VARCHAR(15) NOT NULL,
+            confidence        NUMERIC(4,3),
+            source            VARCHAR(30) NOT NULL,
+            camera_id         VARCHAR(20) NOT NULL,
+            snapshot_path     TEXT,
+            detected_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            ocr_alternates    JSONB,
+            needs_review      BOOLEAN NOT NULL DEFAULT FALSE,
+            reviewed_by       UUID REFERENCES users(id),
+            reviewed_at       TIMESTAMPTZ,
+            notes             TEXT
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_anpr_events_company_at ON anpr_events(company_id, detected_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_anpr_events_plate ON anpr_events(plate_normalized, detected_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_anpr_events_token ON anpr_events(token_id)",
+        "CREATE INDEX IF NOT EXISTS ix_anpr_events_unmatched ON anpr_events(needs_review) WHERE needs_review = TRUE",
     ]
 
 
