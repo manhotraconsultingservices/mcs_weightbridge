@@ -125,12 +125,12 @@ export default function AnprEventsPage() {
     {
       key: 'party_name', label: 'Party',
       accessor: e => e.token?.party_name ?? '',
-      format: v => v || <span className="text-muted-foreground">—</span>,
+      format: v => v ? String(v) : <span className="text-muted-foreground">—</span>,
     },
     {
       key: 'product_name', label: 'Material',
       accessor: e => e.token?.product_name ?? '',
-      format: v => v || <span className="text-muted-foreground">—</span>,
+      format: v => v ? String(v) : <span className="text-muted-foreground">—</span>,
     },
     {
       key: 'confidence', label: 'Conf.', type: 'number', align: 'right',

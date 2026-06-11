@@ -2219,14 +2219,14 @@ function AnprSettingsTab() {
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Save ANPR Settings
           </Button>
-          <Button variant="outline" asChild>
-            <a href="/anpr/trips">Daily Report →</a>
+          <Button variant="outline" onClick={() => window.location.assign('/anpr/trips')}>
+            Daily Report →
           </Button>
-          <Button variant="outline" asChild>
-            <a href="/anpr/events">View Events →</a>
+          <Button variant="outline" onClick={() => window.location.assign('/anpr/events')}>
+            View Events →
           </Button>
-          <Button variant="outline" asChild>
-            <a href="/anpr/live">Live Wallboard →</a>
+          <Button variant="outline" onClick={() => window.location.assign('/anpr/live')}>
+            Live Wallboard →
           </Button>
         </div>
       </CardContent>

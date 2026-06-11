@@ -124,12 +124,12 @@ export default function AnprTripsPage() {
     {
       key: 'party_name', label: 'Party',
       accessor: t => t.party_name ?? '',
-      format: v => v || <span className="text-muted-foreground">—</span>,
+      format: v => v ? String(v) : <span className="text-muted-foreground">—</span>,
     },
     {
       key: 'product_name', label: 'Material',
       accessor: t => t.product_name ?? '',
-      format: v => v || <span className="text-muted-foreground">—</span>,
+      format: v => v ? String(v) : <span className="text-muted-foreground">—</span>,
     },
     {
       key: 'net_weight_mt', label: 'Net (MT)', type: 'number', align: 'right',
