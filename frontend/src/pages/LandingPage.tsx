@@ -519,9 +519,6 @@ export default function LandingPage() {
                 <a href="tel:+917011189371" className="flex items-center gap-2 hover:text-foreground transition-colors">
                   <Phone className="h-4 w-4" /> +91 70111 89371
                 </a>
-                <a href="tel:+919958276959" className="flex items-center gap-2 hover:text-foreground transition-colors">
-                  <Phone className="h-4 w-4" /> +91 99582 76959
-                </a>
                 <a
                   href="https://wa.me/917011189371"
                   target="_blank"
