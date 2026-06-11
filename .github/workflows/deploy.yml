@@ -1,0 +1,117 @@
+name: Deploy to VPS
+
+# CI/CD pipeline for weighbridgesetu.com
+# ─────────────────────────────────────────────────────────────────────────────
+# Triggers
+#   - push to main: auto-deploy
+#   - manual run: from Actions tab, "Run workflow" button
+#
+# What it does
+#   SSHes into the Hostinger VPS and runs scripts/ci-deploy.sh from the repo.
+#   That script handles git pull, change detection, conditional rebuild,
+#   service restart, and health-check. See scripts/ci-deploy.sh for details.
+#
+# Required GitHub secrets (Settings → Secrets and variables → Actions)
+#   VPS_HOST       — IP or hostname of the VPS (e.g. weighbridgesetu.com)
+#   VPS_USER       — SSH user (root by default per scripts/deploy-vps.sh)
+#   VPS_SSH_KEY    — private SSH key for that user (paste contents of id_ed25519)
+#   VPS_PORT       — SSH port (optional; defaults to 22)
+#
+# Optional secrets (skipped silently when absent)
+#   CF_ZONE_ID     — Cloudflare zone ID for weighbridgesetu.com
+#   CF_API_TOKEN   — Cloudflare API token with "Cache Purge" permission
+#
+# Setup guide: docs/CI_CD_SETUP.md
+
+on:
+  push:
+    branches: [main]
+    # Don't redeploy when only docs / planning files change. The build is
+    # cheap but Cloudflare cache purge costs a real API call.
+    paths-ignore:
+      - 'CLAUDE.md'
+      - 'README.md'
+      - 'docs/**'
+      - 'instructions/**'
+      - 'plans/**'
+      - '**/*.md'
+  workflow_dispatch:        # allow manual trigger from the Actions tab
+    inputs:
+      purge_cache:
+        description: 'Purge Cloudflare cache after deploy'
+        required: false
+        type: boolean
+        default: true
+
+# Only one deploy at a time. Don't cancel an in-flight deploy — let it
+# finish so the VPS isn't left half-updated. Subsequent pushes queue.
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  deployments: write       # so we can show "Production" status on commits
+
+jobs:
+  deploy:
+    name: Deploy to weighbridgesetu.com
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://weighbridgesetu.com
+
+    steps:
+      - name: SSH + run ci-deploy.sh on VPS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: true     # abort on first error (set -e)
+          command_timeout: 12m
+          script: |
+            set -e
+            cd /opt/weighbridge
+            bash scripts/ci-deploy.sh
+
+      - name: Purge Cloudflare cache
+        if: |
+          success()
+          && (github.event_name == 'push' || inputs.purge_cache)
+        env:
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          if [ -z "$CF_ZONE_ID" ] || [ -z "$CF_API_TOKEN" ]; then
+            echo "::warning::Cloudflare secrets not set — skipping cache purge"
+            echo "  Set CF_ZONE_ID + CF_API_TOKEN in repo secrets to enable."
+            exit 0
+          fi
+          echo "Purging Cloudflare cache for zone $CF_ZONE_ID…"
+          RESP=$(curl -sS -X POST \
+            "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/purge_cache" \
+            -H "Authorization: Bearer $CF_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data '{"purge_everything":true}')
+          echo "$RESP" | grep -q '"success":true' || { echo "Purge failed: $RESP"; exit 1; }
+          echo "✅ Cloudflare cache purged"
+
+      - name: Sanity-check live site
+        if: success()
+        run: |
+          # Wait a moment for nginx + Cloudflare to settle, then hit the
+          # live URL. A 200 from the edge confirms the new build is being
+          # served (or at least that the origin is healthy).
+          sleep 5
+          for i in 1 2 3; do
+            STATUS=$(curl -sS -o /dev/null -w "%{http_code}" -L https://weighbridgesetu.com/ || echo "000")
+            echo "Attempt $i: HTTP $STATUS"
+            [ "$STATUS" = "200" ] && exit 0
+            sleep 5
+          done
+          echo "::warning::Live site returned non-200 after 3 attempts (last: $STATUS)"
+          # Don't fail the job — the deploy itself succeeded; this is just a
+          # confidence ping. The user can investigate from the live URL.
