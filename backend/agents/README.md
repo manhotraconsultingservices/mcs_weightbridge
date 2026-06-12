@@ -4,7 +4,41 @@ Two independent agents for client-site deployment. Install one or both based on 
 
 ## Quick Deploy (Recommended)
 
+Two scripts work together:
+
+1. **`deploy-agents.ps1`** — copies files, installs Python deps, generates configs.
+2. **`install-scale-service.ps1`** — registers the agent as a Windows **NSSM service** so it auto-starts at boot, restarts on crash, and survives logoff. Run this AFTER `deploy-agents.ps1` completes. (The legacy Scheduled Task path in `deploy-agents.ps1` still works but NSSM is now preferred.)
+
 Run **PowerShell as Administrator** on the client PC:
+
+```powershell
+# Step 1 — copy files + write config
+.\deploy-agents.ps1 -AgentType scale `
+    -CloudUrl "https://<tenant>.weighbridgesetu.com" `
+    -TenantSlug "<tenant>" `
+    -AgentKey "<agent-api-key>" `
+    -ComPort "COM4"
+
+# Step 2 — register as Windows service (NSSM)
+.\install-scale-service.ps1
+
+# Manage:
+Get-Service WeighbridgeScaleAgent
+Restart-Service WeighbridgeScaleAgent
+Get-Content C:\weighbridge-agent\logs\scale_agent.log -Tail 30 -Wait
+
+# Uninstall:
+.\install-scale-service.ps1 -Uninstall
+```
+
+> **IMPORTANT:** `cloud_url` must be the **tenant subdomain** (e.g.
+> `https://manhotra-consulting.weighbridgesetu.com`), NOT the apex domain
+> `weighbridgesetu.com` — the apex redirects to the Cloudflare Pages
+> marketing site, which doesn't have `/api/*` endpoints.
+
+---
+
+### Legacy deploy-agents.ps1 modes (still supported)
 
 ```powershell
 # One-command interactive setup (prompts for tenant, cameras, COM port)
