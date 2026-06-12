@@ -1376,7 +1376,12 @@ export default function TokenPageV1() {
   }
 
   // # | Vehicle (10-char Indian plates) | Party | Material | Gross | Tare | Net | Action
-  const COLS = '48px 120px 1fr 90px 80px 80px 80px 60px';
+  // Column widths. Party + Material use minmax(MIN, 1fr) so they never collapse
+  // below MIN — without this, when the right pane is squeezed by the resizable
+  // split the 1fr columns shrink to zero and `break-words` falls back to
+  // character-level wrapping (e.g. "T o u r N o i d a" rendered vertically).
+  // Weight columns widened slightly so "10.000 MT / 235 CFT" fits on one line.
+  const COLS = '48px 110px minmax(140px, 1.4fr) minmax(110px, 1fr) 80px 80px 160px 60px';
 
   return (
     <div className="h-[calc(100vh-7rem)] overflow-hidden">
@@ -1617,18 +1622,18 @@ export default function TokenPageV1() {
                       )}
                     </div>
 
-                    {/* Party — word wrap allowed */}
+                    {/* Party — single line with ellipsis; full name on hover. */}
                     <div className="min-w-0">
                       {token.party
-                        ? <p className="text-xs leading-snug break-words">{token.party.name}</p>
+                        ? <p className="text-xs truncate" title={token.party.name}>{token.party.name}</p>
                         : <p className="text-muted-foreground text-xs">—</p>
                       }
                     </div>
 
-                    {/* Material — word wrap allowed */}
+                    {/* Material — single line with ellipsis; full name on hover. */}
                     <div className="min-w-0">
                       {token.product
-                        ? <p className="text-xs leading-snug break-words text-muted-foreground">{token.product.name}</p>
+                        ? <p className="text-xs truncate text-muted-foreground" title={token.product.name}>{token.product.name}</p>
                         : <p className="text-muted-foreground text-xs">—</p>
                       }
                     </div>
