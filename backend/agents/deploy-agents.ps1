@@ -246,25 +246,41 @@ Write-Step 4 "Installing Python dependencies"
 
 $reqFile = Join-Path $InstallDir "requirements.txt"
 if (Test-Path $reqFile) {
-    # Install to global site-packages (for scheduled task/SYSTEM user)
-    $sitePackages = & $pythonExe -c "import site; print(site.getsitepackages()[0])" 2>&1
+    # Install to global site-packages so the SYSTEM-user Scheduled Task can
+    # import the packages. Use sysconfig.get_paths()['purelib'] — it always
+    # returns the correct site-packages folder. (site.getsitepackages() on
+    # Windows returns [install_root, site-packages], so [0] is wrong.)
+    $sitePackages = (& $pythonExe -c "import sysconfig; print(sysconfig.get_paths()['purelib'])" 2>$null).Trim()
+    if (-not $sitePackages -or -not (Test-Path $sitePackages)) {
+        # Fallback for unusual Python layouts
+        $sitePackages = (& $pythonExe -c "import site; print(site.getsitepackages()[-1])" 2>$null).Trim()
+    }
     Write-Info "Target: $sitePackages"
 
-    & $pythonExe -m pip install -r $reqFile --target $sitePackages --quiet --disable-pip-version-check 2>&1 | Out-Null
+    # Use plain `pip install` (no --target) so packages land in the standard
+    # site-packages where Python's default sys.path picks them up. --target
+    # is for "portable" installs and requires PYTHONPATH adjustments at
+    # runtime — overkill here.
+    $pipArgs = @("-m", "pip", "install", "-r", $reqFile, "--quiet", "--disable-pip-version-check")
+    & $pythonExe @pipArgs 2>&1 | Out-Null
 
-    # Verify key packages
+    # Verify key packages. Use ErrorAction SilentlyContinue + exit code so
+    # PowerShell doesn't surface the Python traceback as a noisy error.
     $missing = @()
     foreach ($pkg in @("requests", "pyserial", "websockets")) {
-        $check = & $pythonExe -c "import $($pkg -replace '-','_')" 2>&1
+        $importName = $pkg -replace '-','_'
+        # pyserial is imported as `serial`
+        if ($pkg -eq "pyserial") { $importName = "serial" }
+        $null = & $pythonExe -c "import $importName" 2>$null
         if ($LASTEXITCODE -ne 0) { $missing += $pkg }
     }
 
     if ($missing.Count -eq 0) {
         Write-OK "All dependencies installed (requests, pyserial, websockets)"
     } else {
-        Write-Warn "Some packages may need manual install: $($missing -join ', ')"
-        # Retry with user install
-        & $pythonExe -m pip install -r $reqFile --quiet --disable-pip-version-check 2>&1 | Out-Null
+        Write-Warn "Some packages still missing: $($missing -join ', ')"
+        Write-Info "Retrying as a fallback…"
+        & $pythonExe -m pip install --user -r $reqFile --quiet --disable-pip-version-check 2>&1 | Out-Null
     }
 } else {
     Write-Warn "requirements.txt not found — skipping"
