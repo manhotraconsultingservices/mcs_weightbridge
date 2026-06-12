@@ -85,12 +85,17 @@ def load_config() -> dict:
         log.error("Config not found: %s", CONFIG_FILE)
         log.info("Run: python camera_agent.py --setup")
         sys.exit(1)
-    with open(CONFIG_FILE, "r") as f:
+    # utf-8-sig transparently strips an optional BOM. PowerShell's
+    # `Out-File -Encoding utf8` on Windows PowerShell 5.1 writes one by
+    # default, which Python's plain utf-8 reader rejects. Accept both.
+    with open(CONFIG_FILE, "r", encoding="utf-8-sig") as f:
         return json.load(f)
 
 
 def save_config(cfg: dict):
-    with open(CONFIG_FILE, "w") as f:
+    # Write plain UTF-8 (no BOM) so the file round-trips cleanly between
+    # PowerShell, editors, and Python's json reader.
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
     log.info("Config saved to %s", CONFIG_FILE)
 

@@ -349,8 +349,12 @@ if ($deployCamera) {
         }
     }
 
+    # Write UTF-8 without BOM. `Set-Content -Encoding UTF8` on Windows PowerShell
+    # 5.1 emits a BOM (0xEF 0xBB 0xBF) that Python's json.load rejects. Use
+    # .NET's File.WriteAllText, which writes plain UTF-8 by default.
     $cameraConfigPath = Join-Path $InstallDir "camera_config.json"
-    $cameraConfig | ConvertTo-Json -Depth 4 | Set-Content $cameraConfigPath -Encoding UTF8
+    $cameraJson = $cameraConfig | ConvertTo-Json -Depth 4
+    [System.IO.File]::WriteAllText($cameraConfigPath, $cameraJson, [System.Text.UTF8Encoding]::new($false))
     Write-OK "camera_config.json saved"
     Write-Info "Front: $FrontCameraUrl"
     Write-Info "Top:   $TopCameraUrl"
@@ -389,8 +393,10 @@ if ($deployScale) {
         status_port      = 9002
     }
 
+    # Same BOM-avoidance as camera_config above.
     $scaleConfigPath = Join-Path $InstallDir "scale_config.json"
-    $scaleConfig | ConvertTo-Json -Depth 4 | Set-Content $scaleConfigPath -Encoding UTF8
+    $scaleJson = $scaleConfig | ConvertTo-Json -Depth 4
+    [System.IO.File]::WriteAllText($scaleConfigPath, $scaleJson, [System.Text.UTF8Encoding]::new($false))
     Write-OK "scale_config.json saved"
     Write-Info "Port: $ComPort @ $BaudRate baud"
 }
