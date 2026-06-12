@@ -11,9 +11,10 @@ Supports:
 """
 import asyncio
 import logging
+import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Optional, Set
+from typing import ClassVar, Optional, Set
 
 from fastapi import WebSocket
 
@@ -98,12 +99,22 @@ class WeightScaleManager:
     stability_readings: int = 5
     stability_tolerance_kg: float = 20.0
 
+    # If no reading arrives for this many seconds, treat the scale as
+    # disconnected. Covers (a) serial cable yanked out, (b) external agent
+    # crashed, (c) indicator powered off. The status endpoint and WS
+    # broadcasts then report scale_connected=False and weight_kg=0 instead
+    # of forever-stale values like "12.345 MT" when nothing is pushing.
+    STALE_THRESHOLD_SEC: ClassVar[float] = 10.0
+
     # Internal state — not in __init__
     _clients: Set[WebSocket] = field(default_factory=set, init=False, repr=False)
     _latest: Optional[WeightReading] = field(default=None, init=False)
+    _last_received_at: Optional[float] = field(default=None, init=False)
     _running: bool = field(default=False, init=False)
     _serial_open: bool = field(default=False, init=False)
     _task: Optional[asyncio.Task] = field(default=None, init=False)
+    _staleness_task: Optional[asyncio.Task] = field(default=None, init=False)
+    _was_stale: bool = field(default=False, init=False)
     _protocol: Optional[WeightProtocol] = field(default=None, init=False)
 
     def __post_init__(self):
@@ -135,19 +146,104 @@ class WeightScaleManager:
     async def connect(self, ws: WebSocket):
         await ws.accept()
         self._clients.add(ws)
-        if self._latest:
-            await self._send_one(ws, self._latest)
+        # Send the latest reading (or a synthetic "disconnected" if it's stale)
+        # so the browser doesn't show last-night's 12 MT when the scale is gone.
+        snapshot = self.latest
+        if snapshot is not None:
+            await self._send_one(ws, snapshot)
+        # Start the staleness watcher on first client; nothing to broadcast to
+        # before that, so we save a task while nobody's listening.
+        self._ensure_staleness_watcher()
 
     async def disconnect(self, ws: WebSocket):
         self._clients.discard(ws)
 
+    def _is_stale(self) -> bool:
+        """Return True if no reading has arrived within STALE_THRESHOLD_SEC.
+
+        A manager that has never received a reading is also considered stale —
+        prevents the "is_connected=True, weight=0, looks fine" UI state when
+        the scale was wired up at startup but never streamed anything.
+        """
+        if self._last_received_at is None:
+            return True
+        return (time.time() - self._last_received_at) > self.STALE_THRESHOLD_SEC
+
+    def _stale_reading(self) -> WeightReading:
+        """Return a synthetic 'disconnected, zero' reading for use when stale."""
+        return WeightReading(
+            weight_kg=0.0,
+            is_stable=False,
+            stable_duration_sec=0.0,
+            scale_connected=False,
+            raw="",
+        )
+
     @property
     def latest(self) -> Optional[WeightReading]:
+        # Public accessor — masks the stored value with a disconnected reading
+        # when stale. The stored _latest is kept intact so we can diagnose
+        # exactly what the last received frame was.
+        if self._latest is None:
+            return None
+        if self._is_stale():
+            return self._stale_reading()
         return self._latest
 
     @property
     def is_connected(self) -> bool:
-        return self._running and self._serial_open
+        # is_connected reflects BOTH the serial port being open AND fresh data
+        # actually flowing. A wedged agent that opened the port but never
+        # pushed should NOT count as connected.
+        if not (self._running and self._serial_open):
+            return False
+        return not self._is_stale()
+
+    def mark_received(self, when: Optional[float] = None) -> None:
+        """Bump the last-received timestamp. Called by the external-reading
+        POST endpoint and by the internal serial loop on each successful frame."""
+        self._last_received_at = when if when is not None else time.time()
+
+    def _ensure_staleness_watcher(self) -> None:
+        """Spawn the staleness watcher loop if it isn't already running.
+
+        Idempotent — called from connect() and from the external-reading POST.
+        Lazy-started so test imports and unused managers don't leak tasks.
+        """
+        if self._staleness_task is not None and not self._staleness_task.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return  # no event loop yet — skip; will retry on next call
+        self._staleness_task = loop.create_task(
+            self._watch_staleness(), name="weight-scale-staleness"
+        )
+
+    async def _watch_staleness(self) -> None:
+        """Broadcast a 'disconnected' reading when the scale goes silent.
+
+        Runs every STALE_THRESHOLD_SEC / 2 seconds. Only broadcasts on
+        TRANSITIONS (connected → stale, or stale → connected) so we don't
+        spam clients with identical messages.
+        """
+        check_interval = max(2.0, self.STALE_THRESHOLD_SEC / 2)
+        try:
+            while True:
+                await asyncio.sleep(check_interval)
+                if not self._clients:
+                    continue  # nothing to notify; cheap idle
+                currently_stale = self._is_stale()
+                if currently_stale != self._was_stale:
+                    self._was_stale = currently_stale
+                    if currently_stale:
+                        # Re-broadcast as disconnected so already-open browsers
+                        # transition from "12.345 MT" to "Disconnected".
+                        await self._broadcast(self._stale_reading())
+                    elif self._latest is not None:
+                        await self._broadcast(self._latest)
+        except asyncio.CancelledError:
+            pass
 
     # ── Internal loop ─────────────────────────────────────────────────────── #
 
@@ -337,6 +433,10 @@ class WeightScaleManager:
             else:
                 self._stable_since = None
 
+        # Bump the staleness clock for every successfully parsed frame.
+        # This covers both the internal serial loop AND the external POST
+        # path (which also calls _make_reading) — neither has to remember.
+        self.mark_received()
         return WeightReading(
             weight_kg=round(weight, 2),
             is_stable=is_stable,

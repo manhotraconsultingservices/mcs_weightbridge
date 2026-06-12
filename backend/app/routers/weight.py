@@ -297,6 +297,13 @@ async def external_weight_reading(payload: dict[str, Any]):
     reading.scale_connected = True
     manager._latest = reading
     manager._serial_open = True
+    # Bump the staleness clock so the latest property + status endpoint stay
+    # "fresh" until the next reading arrives (or STALE_THRESHOLD_SEC elapses
+    # without one). Also start the per-manager watcher loop on first reading
+    # so already-open browsers transition to "disconnected" when pushes stop.
+    manager.mark_received()
+    manager._was_stale = False           # we just got data — exit any stale state
+    manager._ensure_staleness_watcher()
     await manager._broadcast(reading)
 
     return {"ok": True, "weight_kg": reading.weight_kg, "is_stable": reading.is_stable}
