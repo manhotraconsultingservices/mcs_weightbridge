@@ -106,8 +106,8 @@
     <div class="left"><span class="lbl">TNO:</span> <span>{{ token.token_no or '—' }}</span></div>
     <div class="right"><span class="lbl">DATE:</span> <span>{{ format_date(token.token_date) }}</span></div>
   </div>
-  {% if token.gate_pass %}
-  <div class="row"><span class="lbl">Gate Pass:</span><span class="val">{{ token.gate_pass }}</span></div>
+  {% if token.gate_pass_no or token.gate_pass %}
+  <div class="row"><span class="lbl">Gate Pass:</span><span class="val">{{ token.gate_pass_no or token.gate_pass }}{% if token.gate_pass_no and token.gate_pass %} · {{ token.gate_pass }}{% endif %}</span></div>
   {% endif %}
   <div class="row">
     <span class="lbl">VEHICLE:</span>

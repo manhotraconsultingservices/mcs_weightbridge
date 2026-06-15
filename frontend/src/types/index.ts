@@ -203,6 +203,11 @@ export interface Token {
   is_supplement: boolean;
   weight_method: 'weighbridge' | 'volume';   // measurement method
   volume_cft: number | null;                  // cubic feet — populated only when weight_method === 'volume'
+  gate_pass: string | null;                   // legacy free-text gate-pass note
+  gate_pass_no: string | null;                // auto-allocated GP/25-26/0001
+  source: 'manual' | 'anpr' | 'kiosk' | string;
+  anpr_entry_at: string | null;
+  anpr_exit_at: string | null;
   remarks: string | null;
   created_at: string;
   first_weight_at: string | null;

@@ -171,33 +171,14 @@ def _mask_secret(cfg: AnprConfig) -> AnprConfig:
 async def _next_gate_pass_no(
     db: AsyncSession, company_id: uuid.UUID, fy_id: uuid.UUID
 ) -> str:
-    """Allocate next gap-free gate-pass number under the current financial year.
+    """Allocate the next gap-free gate-pass number (GP/25-26/0001).
 
-    Format: ``GP/25-26/0001``. Row-locks the NumberSequence row to guarantee
-    no two concurrent ANPR detections get the same number.
+    Delegates to the shared numbering helper so the ANPR auto-entry path and
+    the manual token-create path use one identical, row-locked allocator and
+    can never hand out a duplicate.
     """
-    result = await db.execute(
-        select(NumberSequence)
-        .where(
-            NumberSequence.company_id == company_id,
-            NumberSequence.fy_id == fy_id,
-            NumberSequence.sequence_type == "gate_pass",
-        )
-        .with_for_update()
-    )
-    seq = result.scalar_one_or_none()
-    if not seq:
-        seq = NumberSequence(
-            company_id=company_id, fy_id=fy_id,
-            sequence_type="gate_pass", prefix="GP",
-            last_number=0, reset_daily=False,
-        )
-        db.add(seq)
-    seq.last_number += 1
-    await db.flush()
-    fy_label = (await db.get(FinancialYear, fy_id)).label  # type: ignore[arg-type]
-    short_fy = fy_label[-5:] if fy_label else "25-26"
-    return f"GP/{short_fy}/{seq.last_number:04d}"
+    from app.services.numbering import next_gate_pass_no
+    return await next_gate_pass_no(db, company_id, fy_id)
 
 
 # ════════════════════════════════════════════════════════════════════════════

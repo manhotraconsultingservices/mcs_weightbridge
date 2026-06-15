@@ -37,6 +37,7 @@ from app.schemas.token import (
     TokenListResponse, TokenVolumeCreate,
 )
 from app.utils.pdf_generator import render_html
+from app.services.numbering import next_gate_pass_no
 
 router = APIRouter(prefix="/api/v1/tokens", tags=["Tokens"])
 
@@ -334,6 +335,9 @@ async def create_token(
     company, fy = await _get_company_and_fy(db)
     # token_no is intentionally NOT assigned here — it is assigned at COMPLETED
     # to guarantee gap-free daily sequencing.
+    # gate_pass_no IS assigned here: the gate pass is an ENTRY artifact, issued
+    # the moment the truck is registered (mirrors the ANPR auto-entry path).
+    gate_pass_no = await next_gate_pass_no(db, company.id, fy.id)
 
     token = Token(
         company_id=company.id,
@@ -350,6 +354,8 @@ async def create_token(
         tyre_count=payload.tyre_count,
         driver_id=payload.driver_id,
         transporter_id=payload.transporter_id,
+        gate_pass=payload.gate_pass,    # optional free-text note from the form
+        gate_pass_no=gate_pass_no,
         remarks=payload.remarks,
         created_by=current_user.id,
         status="OPEN",
@@ -419,6 +425,7 @@ async def create_volume_token(
         driver_id=payload.driver_id,
         transporter_id=payload.transporter_id,
         gate_pass=payload.gate_pass,
+        gate_pass_no=await next_gate_pass_no(db, company.id, fy.id),
         remarks=payload.remarks,
         created_by=current_user.id,
         status="COMPLETED",

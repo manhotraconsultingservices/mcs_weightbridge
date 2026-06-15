@@ -136,7 +136,11 @@ class TokenResponse(BaseModel):
     weight_method: str = "weighbridge"   # 'weighbridge' | 'volume'
     volume_cft: Optional[Decimal] = None     # cubic feet (when weight_method='volume')
     is_supplement: bool = False
-    gate_pass: Optional[str] = None
+    gate_pass: Optional[str] = None          # legacy free-text gate-pass note
+    gate_pass_no: Optional[str] = None       # auto-allocated GP/25-26/0001
+    source: str = "manual"                   # manual | anpr | kiosk
+    anpr_entry_at: Optional[datetime] = None
+    anpr_exit_at: Optional[datetime] = None
     remarks: Optional[str] = None
     created_at: datetime
     first_weight_at: Optional[datetime] = None

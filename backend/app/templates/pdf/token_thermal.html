@@ -215,10 +215,10 @@
   <span class="row-value">{{ token.driver.name }}</span>
 </div>
 {% endif %}
-{% if token.gate_pass %}
+{% if token.gate_pass_no or token.gate_pass %}
 <div class="row">
   <span class="row-label">GATE PASS</span>
-  <span class="row-value">{{ token.gate_pass }}</span>
+  <span class="row-value">{{ token.gate_pass_no or token.gate_pass }}</span>
 </div>
 {% endif %}
 <hr class="sep">

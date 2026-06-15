@@ -248,6 +248,28 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                 </div>
               </div>
 
+              {/* Gate Pass + gate movement (when issued / ANPR-tracked) */}
+              {(token.gate_pass_no || token.anpr_entry_at || token.anpr_exit_at) && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground mb-1">Gate Pass</p>
+                    <p className="font-bold font-mono text-emerald-700">{token.gate_pass_no ?? token.gate_pass ?? '—'}</p>
+                    {token.source && token.source !== 'manual' && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5 uppercase">via {token.source}</p>
+                    )}
+                  </div>
+                  {(token.anpr_entry_at || token.anpr_exit_at) && (
+                    <div className="rounded-lg border p-3">
+                      <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                        <Clock className="h-3 w-3" /> Gate Movement
+                      </p>
+                      <p className="text-xs">In: <b>{token.anpr_entry_at ? new Date(token.anpr_entry_at).toLocaleString('en-IN', { hour12: false }) : '—'}</b></p>
+                      <p className="text-xs">Out: <b>{token.anpr_exit_at ? new Date(token.anpr_exit_at).toLocaleString('en-IN', { hour12: false }) : 'still inside'}</b></p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Party + Product */}
               <div className="grid grid-cols-2 gap-3">
                 {token.party && (

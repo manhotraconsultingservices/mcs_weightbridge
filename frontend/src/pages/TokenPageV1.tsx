@@ -1478,7 +1478,7 @@ export default function TokenPageV1() {
               className="text-muted-foreground h-7 gap-1 text-xs shrink-0"
               disabled={filtered.length === 0}
               onClick={() => {
-                const headers = ['Token No', 'Date', 'Vehicle', 'Method', 'Party', 'Material', 'Gross (MT)', 'Tare (MT)', 'Net (MT)', 'Net (CFT)', 'Volume (CFT)', 'Status'];
+                const headers = ['Token No', 'Gate Pass', 'Date', 'Vehicle', 'Method', 'Party', 'Material', 'Gross (MT)', 'Tare (MT)', 'Net (MT)', 'Net (CFT)', 'Volume (CFT)', 'Status'];
                 const rows = filtered.map(t => {
                   // bulk_density is kg/CFT, so CFT = kg ÷ kg_per_cft
                   const bd = t.product?.bulk_density;
@@ -1487,6 +1487,7 @@ export default function TokenPageV1() {
                     : '';
                   return [
                     t.token_no != null ? String(t.token_no) : '',
+                    t.gate_pass_no ?? '',
                     t.token_date,
                     t.vehicle_no,
                     t.weight_method ?? 'weighbridge',
@@ -1592,12 +1593,17 @@ export default function TokenPageV1() {
                     style={{ gridTemplateColumns: COLS }}
                     onClick={() => setTokenModalId(token.id)}
                   >
-                    {/* Token # */}
+                    {/* Token # + gate pass */}
                     <div className="min-w-0">
                       <p className="font-bold text-primary text-xs whitespace-nowrap">
                         {token.token_no != null ? `#${token.token_no}` : <span className="text-muted-foreground italic">—</span>}
                       </p>
                       <p className="text-[10px] text-muted-foreground capitalize">{token.token_type}</p>
+                      {token.gate_pass_no && (
+                        <p className="text-[9px] font-mono text-emerald-700 whitespace-nowrap leading-tight" title={`Gate pass ${token.gate_pass_no}`}>
+                          {token.gate_pass_no}
+                        </p>
+                      )}
                     </div>
 
                     {/* Vehicle — Indian plates: MH12AB1234 (10 chars), no break */}
