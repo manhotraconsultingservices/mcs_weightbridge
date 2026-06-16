@@ -1,0 +1,27 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /tokens
+Disallow: /invoices
+Disallow: /purchase-invoices
+Disallow: /quotations
+Disallow: /payments
+Disallow: /ledger
+Disallow: /reports
+Disallow: /gst-reports
+Disallow: /settings
+Disallow: /admin/
+Disallow: /private-invoices
+Disallow: /priv-admin
+Disallow: /platform
+Disallow: /notifications
+Disallow: /audit
+Disallow: /backup
+Disallow: /import
+Disallow: /compliance
+Disallow: /inventory
+Disallow: /camera-scale
+Disallow: /snapshot-search
+Disallow: /api/
+
+Sitemap: https://weighbridgesetu.com/sitemap.xml

@@ -71,6 +71,10 @@ secrets.dpapi
 
 # Credentials document (contains plaintext passwords + encryption keys)
 CREDENTIALS_AND_URLS.md
+DEPLOYMENT.md
+credentials.md
+CREDENTIALS.md
+Credentials.md
 
 # Hardware fingerprints
 fingerprint.json
@@ -87,6 +91,12 @@ uploads/
 backend/uploads/
 backend/backups/
 backups/
+
+# ── Marketing Website (deployed via Cloudflare Pages, not in repo) ─────────
+marketing/
+
+# ── Client Deployment Guide (internal document, not in repo) ──────────────
+CLIENT_DEPLOYMENT_GUIDE.md
 
 # ── Release Packages & Pre-built Bundles ───────────────────────────────────
 mc_weighbridge_erp/

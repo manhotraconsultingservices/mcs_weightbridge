@@ -1,0 +1,12 @@
+{
+  "com_port": "COM7",
+  "baud_rate": 9600,
+  "data_bits": 8,
+  "parity": "N",
+  "stop_bits": 1,
+  "backend_url": "http://localhost:9001",
+  "auto_detect": true,
+  "scan_interval_sec": 30,
+  "push_interval_ms": 50,
+  "log_level": "info"
+}
