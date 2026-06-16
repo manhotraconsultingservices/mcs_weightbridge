@@ -77,18 +77,19 @@ function DetectorCard({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const sev = d.severity ?? 'ok';
   const cols = COLUMNS[id] ?? Object.keys(d.items[0] ?? {});
   return (
-    <div className={`rounded-lg border p-4 ${SEV_COLOR[d.severity] ?? ''}`}>
+    <div className={`rounded-lg border p-4 ${SEV_COLOR[sev] ?? ''}`}>
       <div
         className="flex items-center justify-between cursor-pointer gap-3 flex-wrap"
         onClick={onToggle}
       >
         <div className="flex items-center gap-2 min-w-0">
-          {SEV_ICON[d.severity]}
+          {SEV_ICON[sev]}
           <span className="font-semibold text-sm truncate">{d.title}</span>
-          <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${SEV_BADGE[d.severity]}`}>
-            {d.severity === 'ok' ? 'Clean' : d.severity.toUpperCase()}
+          <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${SEV_BADGE[sev]}`}>
+            {sev === 'ok' ? 'Clean' : sev.toUpperCase()}
           </span>
           {d.count > 0 && (
             <span className="text-xs text-muted-foreground whitespace-nowrap">
@@ -163,7 +164,7 @@ export default function AnomalyReportPage() {
       // Auto-expand detectors that have findings
       const auto: Record<string, boolean> = {};
       Object.entries(r.data.detectors as Record<string, DetectorResult>).forEach(([k, v]) => {
-        if (v.severity !== 'ok') auto[k] = true;
+        if ((v.severity ?? 'ok') !== 'ok') auto[k] = true;
       });
       setExpanded(auto);
     } catch {
@@ -266,14 +267,14 @@ export default function AnomalyReportPage() {
       {result && !loading && (
         <>
           {/* Overall banner */}
-          <div className={`rounded-lg border-2 px-4 py-3 flex items-center gap-3 ${overallColor[result.overall]}`}>
-            {SEV_ICON[result.overall]}
+          <div className={`rounded-lg border-2 px-4 py-3 flex items-center gap-3 ${overallColor[result.overall ?? 'ok'] ?? overallColor['ok']}`}>
+            {SEV_ICON[result.overall ?? 'ok']}
             <div>
               <p className="font-bold text-sm">
                 Overall status:{' '}
-                {result.overall === 'ok'
+                {(result.overall ?? 'ok') === 'ok'
                   ? 'Clean — no anomalies detected'
-                  : `${result.overall.toUpperCase()} severity anomalies found`}
+                  : `${(result.overall ?? 'ok').toUpperCase()} severity anomalies found`}
               </p>
               <p className="text-xs opacity-75">{range.from} to {range.to}</p>
             </div>
