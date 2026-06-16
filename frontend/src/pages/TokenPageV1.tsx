@@ -539,7 +539,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             )}
             <Select
               value={form.transit_pass_id || '__none__'}
-              onValueChange={v => setForm(f => ({ ...f, transit_pass_id: v === '__none__' ? '' : v }))}
+              onValueChange={v => setForm(f => ({ ...f, transit_pass_id: v === '__none__' ? '' : (v ?? '') }))}
             >
               <SelectTrigger className="h-8 text-xs">
                 <span className="truncate text-left flex-1">

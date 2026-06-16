@@ -363,7 +363,7 @@ export default function RoyaltyPassesPage() {
               <div className="space-y-1"><Label className="text-xs">Source (mine/quarry)</Label><Input value={form.source_name} onChange={e => setForm(f => ({ ...f, source_name: e.target.value }))} /></div>
               <div className="space-y-1">
                 <Label className="text-xs">Supplier (party)</Label>
-                <Select value={form.party_id || '__none__'} onValueChange={v => setForm(f => ({ ...f, party_id: v === '__none__' ? '' : v }))}>
+                <Select value={form.party_id || '__none__'} onValueChange={v => setForm(f => ({ ...f, party_id: v === '__none__' ? '' : (v ?? '') }))}>
                   <SelectTrigger><span className="truncate text-left flex-1">{form.party_id ? (parties.find(p => p.id === form.party_id)?.name ?? '…') : <span className="text-muted-foreground">Optional…</span>}</span></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__"><span className="text-muted-foreground">None</span></SelectItem>
