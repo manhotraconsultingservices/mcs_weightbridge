@@ -26,21 +26,29 @@ const monthStart = () => { const d = new Date(); d.setDate(1); return d.toISOStr
 const DRAFT_COLOR = '#f59e0b';   // amber
 const FINAL_COLOR = '#10b981';   // emerald
 
+type TaxFilter = 'all' | 'gst' | 'non_gst';
+const TAX_FILTERS: { value: TaxFilter; label: string }[] = [
+  { value: 'all',     label: 'All' },
+  { value: 'gst',     label: 'INV (GST)' },
+  { value: 'non_gst', label: 'CINV (Cash)' },
+];
+
 export default function SalesStatusReportPage() {
   const [range, setRange] = useState({ from: monthStart(), to: today() });
   const [gran, setGran] = useState<'day' | 'week' | 'month'>('day');
+  const [taxFilter, setTaxFilter] = useState<TaxFilter>('all');
   const [res, setRes] = useState<Result | null>(null);
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get<Result>('/api/v1/reports/sales-by-status', {
-        params: { from_date: range.from, to_date: range.to, granularity: gran },
-      });
+      const params: Record<string, string> = { from_date: range.from, to_date: range.to, granularity: gran };
+      if (taxFilter !== 'all') params.tax_type = taxFilter;
+      const r = await api.get<Result>('/api/v1/reports/sales-by-status', { params });
       setRes(r.data);
     } catch { /* inline */ } finally { setLoading(false); }
-  }, [range.from, range.to, gran]);
+  }, [range.from, range.to, gran, taxFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -80,6 +88,11 @@ export default function SalesStatusReportPage() {
           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => preset(monthStart())}>This month</Button>
           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => preset(daysAgo(30))}>30 days</Button>
           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => preset(daysAgo(90))}>90 days</Button>
+        </div>
+        <div className="flex gap-1">
+          {TAX_FILTERS.map(f => (
+            <Button key={f.value} variant={taxFilter === f.value ? 'default' : 'outline'} size="sm" className="h-7 text-xs" onClick={() => setTaxFilter(f.value)}>{f.label}</Button>
+          ))}
         </div>
         <div className="flex gap-1 ml-auto">
           {(['day', 'week', 'month'] as const).map(g => (

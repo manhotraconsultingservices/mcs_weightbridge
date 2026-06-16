@@ -1000,21 +1000,29 @@ async def sales_by_status(
     from_date: date = Query(...),
     to_date: date = Query(...),
     granularity: str = Query("day"),   # day | week | month
+    tax_type: str | None = Query(None),  # gst | non_gst | None (all)
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Sales amount split by invoice status (Draft vs Final/'Complete') over a
-    date range, bucketed by day/week/month for charting. Sale invoices only."""
+    date range, bucketed by day/week/month for charting. Sale invoices only.
+    Optional tax_type filter: 'gst' (INV series) or 'non_gst' (CINV series)."""
     if granularity not in ("day", "week", "month"):
         granularity = "day"
+    if tax_type not in ("gst", "non_gst"):
+        tax_type = None
+
+    conditions = [
+        Invoice.company_id == current_user.company_id,
+        Invoice.invoice_type == "sale",
+        Invoice.invoice_date >= from_date,
+        Invoice.invoice_date <= to_date,
+    ]
+    if tax_type:
+        conditions.append(Invoice.tax_type == tax_type)
 
     rows = (await db.execute(
-        select(Invoice.invoice_date, Invoice.status, Invoice.grand_total).where(
-            Invoice.company_id == current_user.company_id,
-            Invoice.invoice_type == "sale",
-            Invoice.invoice_date >= from_date,
-            Invoice.invoice_date <= to_date,
-        )
+        select(Invoice.invoice_date, Invoice.status, Invoice.grand_total).where(*conditions)
     )).all()
 
     def bucket(d: date):
