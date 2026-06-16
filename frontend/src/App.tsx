@@ -27,6 +27,7 @@ import DeliveryChallansPage from '@/pages/DeliveryChallansPage';
 import CreditDebitNotesPage from '@/pages/CreditDebitNotesPage';
 import RoyaltyPassesPage from '@/pages/RoyaltyPassesPage';
 import CustomerPortalPage from '@/pages/CustomerPortalPage';
+import OfflineIndicator from '@/components/OfflineIndicator';
 import ProductsPage from '@/pages/ProductsPage';
 import PricingMatrixPage from '@/pages/PricingMatrixPage';
 import ProductionSettingsPage from '@/pages/ProductionSettingsPage';
@@ -117,6 +118,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
       <Sidebar user={user} onLogout={logout} usbAuthorized={usbAuthorized} permissions={permissions} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <AmcBanner />
+        <div className="fixed top-2 right-3 z-50"><OfflineIndicator /></div>
         <main
           className="flex-1 overflow-y-auto bg-background p-6"
           style={

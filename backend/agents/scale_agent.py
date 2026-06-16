@@ -137,6 +137,11 @@ class ScaleReader:
         self.connected = False
         self.push_count = 0
         self.error_count = 0
+        # Cloud reachability — live weight is non-transactional, so we don't
+        # buffer readings (replaying stale weights would be wrong); we just
+        # surface whether the last push reached the cloud so the offline state
+        # is observable. Token creation resilience lives in the PWA queue.
+        self.cloud_online = True
         self._thread = None
 
     def start(self):
@@ -204,10 +209,15 @@ class ScaleReader:
                                 "raw": chunk.decode("ascii", errors="replace"),
                             }, timeout=5)
                             self.push_count += 1
+                            if not self.cloud_online:
+                                log.info("Cloud reachable again — weight streaming resumed")
+                            self.cloud_online = True
                         except requests.RequestException as e:
                             self.error_count += 1
+                            self.cloud_online = False
                             if self.error_count % 50 == 1:
-                                log.warning("Failed to push weight (count=%d): %s", self.error_count, e)
+                                log.warning("Cloud unreachable (count=%d) — scale still readable locally on :%s. %s",
+                                            self.error_count, self.cfg.get("local_port", 9002), e)
 
                     if len(buffer) > 4096:
                         buffer = buffer[-1024:]
@@ -259,6 +269,7 @@ class StatusServer:
                     "status": "running",
                     "timestamp": datetime.now().isoformat(),
                     "scale_connected": reader.connected,
+                    "cloud_online": reader.cloud_online,
                     "last_weight_kg": reader.last_weight,
                     "push_count": reader.push_count,
                     "error_count": reader.error_count,

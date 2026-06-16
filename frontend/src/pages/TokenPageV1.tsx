@@ -15,6 +15,8 @@ import { PrintButton } from '@/components/PrintButton';
 import { downloadCsv } from '@/components/DataTable';
 import ResizableSplit from '@/components/ResizableSplit';
 import CreditStatusBanner from '@/components/CreditStatusBanner';
+import { toast } from 'sonner';
+import { enqueueToken } from '@/lib/offlineQueue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -292,22 +294,32 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
     // ── Weighbridge mode (default): two-step weighment workflow ──
     setSaving(true); setError('');
+    const tokenPayload = {
+      token_date: today(),
+      vehicle_no: form.vehicle_no.trim().toUpperCase(),
+      vehicle_type: form.vehicle_type || undefined,
+      token_type: form.token_type,
+      direction: form.direction,
+      party_id: form.party_id || undefined,
+      product_id: form.product_id || undefined,
+      vehicle_id: form.vehicle_id || undefined,
+      remarks: form.remarks || undefined,
+    };
     try {
-      const { data } = await api.post<Token>('/api/v1/tokens', {
-        token_date: today(),
-        vehicle_no: form.vehicle_no.trim().toUpperCase(),
-        vehicle_type: form.vehicle_type || undefined,
-        token_type: form.token_type,
-        direction: form.direction,
-        party_id: form.party_id || undefined,
-        product_id: form.product_id || undefined,
-        vehicle_id: form.vehicle_id || undefined,
-        remarks: form.remarks || undefined,
-      });
+      if (!navigator.onLine) throw new Error('offline');
+      const { data } = await api.post<Token>('/api/v1/tokens', tokenPayload);
       onCreated(data);
       resetForm();
-    } catch {
-      setError('Failed to create token. Please try again.');
+    } catch (e: unknown) {
+      // Offline OR network failure (request never reached the server) → queue it.
+      const reached = (e as { response?: unknown })?.response;
+      if (!navigator.onLine || !reached) {
+        enqueueToken('/tokens', tokenPayload, tokenPayload.vehicle_no);
+        toast.success(`Saved offline — ${tokenPayload.vehicle_no} will sync when the connection returns`);
+        resetForm();
+      } else {
+        setError('Failed to create token. Please try again.');
+      }
     } finally {
       setSaving(false);
     }
