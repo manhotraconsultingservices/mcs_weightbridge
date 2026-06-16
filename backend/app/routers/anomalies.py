@@ -33,14 +33,20 @@ _KEY = "anomaly_config"
 
 
 async def _get_config(db: AsyncSession) -> dict[str, Any]:
-    row = (await db.execute(
-        text(f"SELECT value FROM {_TABLE} WHERE key = :k"),
-        {"k": _KEY},
-    )).fetchone()
-    if row:
+    try:
+        row = (await db.execute(
+            text(f"SELECT value FROM {_TABLE} WHERE key = :k"),
+            {"k": _KEY},
+        )).fetchone()
+        if row:
+            try:
+                cfg = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                return {**DEFAULT_CONFIG, **cfg}
+            except Exception:
+                pass
+    except Exception:
         try:
-            cfg = json.loads(row[0]) if isinstance(row[0], str) else row[0]
-            return {**DEFAULT_CONFIG, **cfg}
+            await db.rollback()
         except Exception:
             pass
     return DEFAULT_CONFIG
@@ -118,6 +124,7 @@ async def get_anomalies(
             ],
         }
     except Exception as e:
+        await db.rollback()
         results["high_frequency"] = {
             "title": "High-Frequency Trips", "error": str(e), "severity": "ok", "count": 0, "items": [],
         }
@@ -174,6 +181,7 @@ async def get_anomalies(
             } for r in rows],
         }
     except Exception as e:
+        await db.rollback()
         results["weight_variance"] = {
             "title": "Weight Variance", "error": str(e), "severity": "ok", "count": 0, "items": [],
         }
@@ -213,6 +221,7 @@ async def get_anomalies(
             } for r in rows],
         }
     except Exception as e:
+        await db.rollback()
         results["tare_deviation"] = {
             "title": "Tare Weight Deviation", "error": str(e), "severity": "ok", "count": 0, "items": [],
         }
@@ -254,6 +263,7 @@ async def get_anomalies(
             } for r in rows],
         }
     except Exception as e:
+        await db.rollback()
         results["invoice_leakage"] = {
             "title": "Invoice Leakage", "error": str(e), "severity": "ok", "count": 0, "items": [],
         }
@@ -296,6 +306,7 @@ async def get_anomalies(
             } for r in rows],
         }
     except Exception as e:
+        await db.rollback()
         results["after_hours"] = {
             "title": "After-Hours Activity", "error": str(e), "severity": "ok", "count": 0, "items": [],
         }
@@ -332,6 +343,7 @@ async def get_anomalies(
             } for r in rows],
         }
     except Exception as e:
+        await db.rollback()
         results["round_weight"] = {
             "title": "Suspiciously Round Weights", "error": str(e), "severity": "ok", "count": 0, "items": [],
         }
@@ -367,6 +379,7 @@ async def get_anomalies(
             } for r in rows],
         }
     except Exception as e:
+        await db.rollback()
         results["unlinked_passes"] = {
             "title": "Unlinked Purchase Loads", "error": str(e), "severity": "ok", "count": 0, "items": [],
         }
