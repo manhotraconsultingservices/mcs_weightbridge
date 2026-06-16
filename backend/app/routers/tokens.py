@@ -337,6 +337,9 @@ async def create_token(
     # to guarantee gap-free daily sequencing.
     # gate_pass_no IS assigned here: the gate pass is an ENTRY artifact, issued
     # the moment the truck is registered (mirrors the ANPR auto-entry path).
+    # Accepted tradeoff: a token later cancelled leaves a gap in the GP sequence
+    # (the number maps to a real gate-arrival event and is not reclaimed) — see
+    # services/numbering.next_gate_pass_no docstring.
     gate_pass_no = await next_gate_pass_no(db, company.id, fy.id)
 
     token = Token(

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: A4 portrait; margin: 10mm 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Times New Roman", Times, serif; font-size: 12px; color: #000; }
+  .title { text-align: center; font-size: 16px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+  .subtitle { text-align: center; font-size: 10px; color: #444; margin-bottom: 6px; }
+  .company { text-align: center; font-size: 18px; font-weight: bold; text-transform: uppercase; }
+  .addr { text-align: center; font-size: 11px; margin-bottom: 6px; }
+  .sep { border-top: 1.5px solid #000; margin: 6px 0; }
+  .meta { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
+  .meta .col { flex: 1; }
+  .row { margin-bottom: 2px; line-height: 1.5; }
+  .row .lbl { font-weight: bold; display: inline-block; min-width: 92px; }
+  table.items { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  table.items th, table.items td { border: 1px solid #000; padding: 4px 6px; font-size: 11px; }
+  table.items th { background: #f0f0f0; text-align: left; }
+  table.items td.num { text-align: right; }
+  table.items td.ctr { text-align: center; }
+  tfoot td { font-weight: bold; }
+  .ewb { margin-top: 6px; padding: 5px 8px; border: 1px dashed #555; font-size: 11px; }
+  .footer { display: flex; justify-content: space-between; margin-top: 40px; }
+  .footer .sig { text-align: center; font-size: 11px; }
+  .note { margin-top: 6px; font-size: 10px; color: #333; }
+  .badge { display: inline-block; padding: 1px 7px; border: 1px solid #b45309; color: #92400e; background: #fef3c7; border-radius: 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; }
+</style>
+</head>
+<body>
+  <div class="title">Delivery Challan</div>
+  <div class="subtitle">(Not a Tax Invoice — issued under GST Rule 55)</div>
+  <div class="company">{{ company.name if company else '' }}</div>
+  <div class="addr">
+    {{ company.address_line1 or '' }}{% if company and company.city %}, {{ company.city }}{% endif %}{% if company and company.state %}, {{ company.state }}{% endif %}{% if company and company.pincode %} - {{ company.pincode }}{% endif %}
+    {% if company and company.gstin %} · GSTIN: {{ company.gstin }}{% endif %}
+  </div>
+  <div class="sep"></div>
+
+  <div class="meta">
+    <div class="col">
+      <div class="row"><span class="lbl">Challan No:</span> <b>{{ challan.challan_no or '—' }}</b></div>
+      <div class="row"><span class="lbl">Date:</span> {{ challan.challan_date.strftime('%d-%b-%Y') if challan.challan_date else '—' }}</div>
+      <div class="row"><span class="lbl">Purpose:</span> {{ (challan.purpose or 'supply') | replace('_', ' ') | title }}</div>
+      <div class="row"><span class="lbl">Status:</span> {{ challan.status | title }}</div>
+    </div>
+    <div class="col">
+      <div class="row"><span class="lbl">Consignee:</span> {{ party.name if party else (challan.customer_name or 'Cash') }}</div>
+      {% if party and party.gstin %}<div class="row"><span class="lbl">GSTIN:</span> {{ party.gstin }}</div>{% endif %}
+      <div class="row"><span class="lbl">Vehicle:</span> {{ challan.vehicle_no or '—' }}</div>
+      {% if challan.transporter_name %}<div class="row"><span class="lbl">Transporter:</span> {{ challan.transporter_name }}</div>{% endif %}
+      {% if challan.driver_name %}<div class="row"><span class="lbl">Driver:</span> {{ challan.driver_name }}</div>{% endif %}
+      {% if challan.destination %}<div class="row"><span class="lbl">Destination:</span> {{ challan.destination }}{% if challan.distance_km %} ({{ challan.distance_km }} km){% endif %}</div>{% endif %}
+    </div>
+  </div>
+
+  <table class="items">
+    <thead>
+      <tr>
+        <th style="width:6%;">#</th>
+        <th>Material</th>
+        <th style="width:12%;">HSN</th>
+        <th style="width:16%;">Qty</th>
+        <th style="width:16%;">Rate</th>
+        <th style="width:18%;">Value (₹)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for it in challan.items %}
+      <tr>
+        <td class="ctr">{{ loop.index }}</td>
+        <td>{{ product_names.get(it.product_id|string, it.description or '—') }}</td>
+        <td class="ctr">{{ it.hsn_code or '—' }}</td>
+        <td class="num">{{ '%.3f'|format(it.quantity|float) }} {{ it.unit }}</td>
+        <td class="num">{{ '%.2f'|format(it.rate|float) }}</td>
+        <td class="num">{{ '%.2f'|format(it.amount|float) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="5" class="num">Total Value</td>
+        <td class="num">₹ {{ '%.2f'|format(challan.total_amount|float) }}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  {% if challan.ewb_no %}
+  <div class="ewb">
+    <span class="badge">E-Way Bill</span>
+    <b>{{ challan.ewb_no }}</b>
+    {% if challan.ewb_valid_till %} · valid till {{ challan.ewb_valid_till.strftime('%d-%b-%Y %H:%M') }}{% endif %}
+  </div>
+  {% endif %}
+
+  {% if challan.notes %}<div class="note"><b>Note:</b> {{ challan.notes }}</div>{% endif %}
+  <div class="note">Tax invoice to follow. This challan accompanies the goods during transit.</div>
+
+  <div class="footer">
+    <div class="sig">Receiver's Signature</div>
+    <div class="sig">For {{ company.name if company else '' }}<br><br>Authorised Signatory</div>
+  </div>
+
+  <script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; };</script>
+</body>
+</html>

@@ -518,3 +518,84 @@ async def party_360(
         recent_payments=recent_payments,
         custom_rates=custom_rates,
     )
+
+
+# --- Credit status (advisory — never blocks) ----------------------------------
+
+@router.get("/{party_id}/credit-status")
+async def party_credit_status(
+    party_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lightweight credit exposure for a party — drives advisory banners.
+
+    Warn-only by design (per product decision): this endpoint NEVER blocks an
+    action. The UI shows a banner; the operator decides. ``outstanding`` is the
+    sum of unpaid balances on FINAL sale invoices; ``overdue`` is the portion
+    past its due date. ``credit_limit == 0`` means "no limit set" (unlimited).
+    """
+    party = (await db.execute(
+        select(Party).where(
+            Party.id == party_id, Party.company_id == current_user.company_id,
+        )
+    )).scalar_one_or_none()
+    if not party:
+        raise HTTPException(404, "Party not found")
+
+    today = date.today()
+    inv_rows = (await db.execute(
+        select(Invoice).where(
+            Invoice.company_id == current_user.company_id,
+            Invoice.party_id == party_id,
+            Invoice.invoice_type == "sale",
+            Invoice.status == "final",
+        )
+    )).scalars().all()
+
+    outstanding = Decimal("0")
+    overdue = Decimal("0")
+    overdue_days = 0
+    for inv in inv_rows:
+        if inv.payment_status == "paid":
+            continue
+        bal = (inv.grand_total or Decimal("0")) - (inv.amount_paid or Decimal("0"))
+        if bal <= 0:
+            continue
+        outstanding += bal
+        if inv.due_date and inv.due_date < today:
+            overdue += bal
+            overdue_days = max(overdue_days, (today - inv.due_date).days)
+
+    credit_limit = party.credit_limit or Decimal("0")
+    unlimited = credit_limit <= 0
+    available = None if unlimited else (credit_limit - outstanding)
+
+    if not unlimited and outstanding > credit_limit:
+        status_ = "over_limit"
+        message = (f"Over credit limit by ₹{float(outstanding - credit_limit):,.0f} "
+                   f"(₹{float(outstanding):,.0f} outstanding vs ₹{float(credit_limit):,.0f} limit).")
+    elif overdue > 0:
+        status_ = "overdue"
+        message = (f"₹{float(overdue):,.0f} overdue ({overdue_days} days past due).")
+    elif not unlimited and outstanding >= credit_limit * Decimal("0.8"):
+        status_ = "near_limit"
+        message = (f"Near credit limit — ₹{float(available or 0):,.0f} of "
+                   f"₹{float(credit_limit):,.0f} remaining.")
+    else:
+        status_ = "ok"
+        message = None
+
+    return {
+        "party_id": str(party.id),
+        "party_name": party.name,
+        "credit_limit": float(credit_limit),
+        "unlimited": unlimited,
+        "outstanding": float(outstanding),
+        "available_credit": None if available is None else float(available),
+        "overdue_amount": float(overdue),
+        "overdue_days": overdue_days,
+        "payment_terms_days": party.payment_terms_days or 0,
+        "status": status_,        # ok | near_limit | overdue | over_limit
+        "message": message,       # null when status == ok
+    }

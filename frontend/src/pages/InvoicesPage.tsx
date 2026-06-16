@@ -5,6 +5,7 @@ import { Plus, Search, FileText, Loader2, Download, CheckCircle, XCircle, Bankno
 import { TokenDetailModal } from '@/components/TokenDetailModal';
 import { PrintButton } from '@/components/PrintButton';
 import { InvoiceRevisionDialog } from '@/components/InvoiceRevisionDialog';
+import CreditStatusBanner from '@/components/CreditStatusBanner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -375,6 +376,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
                   </SelectContent>
                 </Select>
               )}
+              {!walkIn && form.party_id && <CreditStatusBanner partyId={form.party_id} className="mt-1.5" />}
             </div>
             <div className="space-y-1">
               <Label>Vehicle No</Label>
@@ -805,6 +807,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
                   </SelectContent>
                 </Select>
               )}
+              {!walkIn && form.party_id && <CreditStatusBanner partyId={form.party_id} className="mt-1.5" />}
             </div>
             <div className="space-y-1">
               <Label>Vehicle No</Label>

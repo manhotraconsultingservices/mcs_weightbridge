@@ -7,12 +7,13 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { FileText, Receipt } from 'lucide-react';
+import { FileText, Receipt, Truck } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import InvoicesPage from './InvoicesPage';
 import QuotationsPage from './QuotationsPage';
+import DeliveryChallansPage from './DeliveryChallansPage';
 
-type Tab = 'bills' | 'estimates';
+type Tab = 'bills' | 'estimates' | 'challans';
 
 export default function SalesHubPage() {
   const nav = useNavigate();
@@ -35,12 +36,16 @@ export default function SalesHubPage() {
         <TabsList>
           <TabsTrigger value="bills" className="gap-1.5"><FileText className="h-3.5 w-3.5" /> Bills</TabsTrigger>
           <TabsTrigger value="estimates" className="gap-1.5"><Receipt className="h-3.5 w-3.5" /> Estimates</TabsTrigger>
+          <TabsTrigger value="challans" className="gap-1.5"><Truck className="h-3.5 w-3.5" /> Challans</TabsTrigger>
         </TabsList>
         <TabsContent value="bills" className="mt-4">
           <InvoicesPage defaultType="sale" />
         </TabsContent>
         <TabsContent value="estimates" className="mt-4">
           <QuotationsPage />
+        </TabsContent>
+        <TabsContent value="challans" className="mt-4">
+          <DeliveryChallansPage />
         </TabsContent>
       </Tabs>
     </div>

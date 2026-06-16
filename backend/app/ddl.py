@@ -609,6 +609,78 @@ def get_column_migrations() -> list[str]:
         "CREATE INDEX IF NOT EXISTS ix_anpr_events_plate ON anpr_events(plate_normalized, detected_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_anpr_events_token ON anpr_events(token_id)",
         "CREATE INDEX IF NOT EXISTS ix_anpr_events_unmatched ON anpr_events(needs_review) WHERE needs_review = TRUE",
+
+        # ── Horizon-1: Delivery Challan (GST Rule 55 dispatch document) ──────
+        # Own tables so a challan never leaks into GSTR-1 / P&L / receivables.
+        # challan_no allocated gap-free at create (prefix DC). Converts to a
+        # sale invoice (invoice_id links the two). EWB columns are populated by
+        # the standalone NIC EWB flow for challan-based goods movement.
+        """
+        CREATE TABLE IF NOT EXISTS delivery_challans (
+            id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id       UUID REFERENCES companies(id),
+            fy_id            UUID REFERENCES financial_years(id),
+            challan_no       VARCHAR(30),
+            challan_date     DATE NOT NULL,
+            purpose          VARCHAR(30) NOT NULL DEFAULT 'supply',
+            party_id         UUID REFERENCES parties(id),
+            customer_name    VARCHAR(200),
+            token_id         UUID REFERENCES tokens(id),
+            vehicle_no       VARCHAR(20),
+            transporter_name VARCHAR(200),
+            driver_name      VARCHAR(100),
+            distance_km      INTEGER,
+            destination      VARCHAR(200),
+            tax_type         VARCHAR(20) NOT NULL DEFAULT 'gst',
+            sub_total        NUMERIC(14,2) NOT NULL DEFAULT 0,
+            total_amount     NUMERIC(14,2) NOT NULL DEFAULT 0,
+            status           VARCHAR(15) NOT NULL DEFAULT 'open',
+            invoice_id       UUID REFERENCES invoices(id),
+            notes            TEXT,
+            ewb_no           VARCHAR(20),
+            ewb_date         TIMESTAMPTZ,
+            ewb_valid_till   TIMESTAMPTZ,
+            ewb_status       VARCHAR(20) NOT NULL DEFAULT 'none',
+            ewb_error        TEXT,
+            created_by       UUID REFERENCES users(id),
+            created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS delivery_challan_items (
+            id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            challan_id    UUID NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
+            product_id    UUID NOT NULL REFERENCES products(id),
+            description   VARCHAR(300),
+            hsn_code      VARCHAR(8),
+            quantity      NUMERIC(12,3) NOT NULL,
+            unit          VARCHAR(10) NOT NULL DEFAULT 'MT',
+            rate          NUMERIC(12,2) NOT NULL DEFAULT 0,
+            amount        NUMERIC(14,2) NOT NULL DEFAULT 0,
+            gst_rate      NUMERIC(5,2) NOT NULL DEFAULT 0,
+            sort_order    INTEGER NOT NULL DEFAULT 0
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_dc_company_date ON delivery_challans(company_id, challan_date DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_dc_status ON delivery_challans(company_id, status)",
+        "CREATE INDEX IF NOT EXISTS ix_dc_items_challan ON delivery_challan_items(challan_id)",
+
+        # ── Horizon-1: E-Way Bill columns on invoices (eway_bill_no already
+        # exists). ewb_status drives the generate/cancel UI; validity is shown
+        # on the PDF. Populated by IRN-integrated capture + standalone NIC EWB.
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS ewb_date TIMESTAMPTZ",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS ewb_valid_till TIMESTAMPTZ",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS ewb_status VARCHAR(20) NOT NULL DEFAULT 'none'",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS ewb_error TEXT",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS ewb_distance_km INTEGER",
+
+        # ── Horizon-1: GST Credit / Debit Notes reuse the invoices table with
+        # invoice_type IN ('credit_note','debit_note'). reference_invoice_id
+        # points at the original invoice the note adjusts; note_reason is the
+        # statutory reason code shown on GSTR-1 CDNR.
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS reference_invoice_id UUID REFERENCES invoices(id)",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS note_reason VARCHAR(200)",
     ]
 
 

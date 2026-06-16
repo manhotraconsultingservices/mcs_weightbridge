@@ -14,6 +14,7 @@ import {
 import { PrintButton } from '@/components/PrintButton';
 import { downloadCsv } from '@/components/DataTable';
 import ResizableSplit from '@/components/ResizableSplit';
+import CreditStatusBanner from '@/components/CreditStatusBanner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -488,6 +489,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
               <Plus className="h-3.5 w-3.5" />
             </Button>
           </div>
+          {form.party_id && <CreditStatusBanner partyId={form.party_id} className="mt-1.5" />}
         </div>
 
         {/* Material */}
