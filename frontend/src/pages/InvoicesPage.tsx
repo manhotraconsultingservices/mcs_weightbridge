@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
-import { Plus, Search, FileText, Loader2, Download, CheckCircle, XCircle, Banknote, Send, CheckCircle2, Ticket, Lock, Pencil, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, RotateCcw, GitFork, History } from 'lucide-react';
+import { Plus, Search, FileText, Loader2, Download, CheckCircle, XCircle, Banknote, Send, CheckCircle2, Ticket, Lock, Pencil, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, RotateCcw, GitFork, History, ArrowUpCircle } from 'lucide-react';
 import { TokenDetailModal } from '@/components/TokenDetailModal';
 import { PrintButton } from '@/components/PrintButton';
 import { InvoiceRevisionDialog } from '@/components/InvoiceRevisionDialog';
@@ -21,7 +21,7 @@ import type { Invoice, InvoiceListResponse, Party, Product, Token } from '@/type
 
 const INR = (v: number) => '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2 });
 
-// ── Invoice Pipeline visual (Draft → Final → Paid) ────────────────────────────
+// ── Invoice Pipeline visual (Draft → Approved → Paid) ────────────────────────
 function InvoicePipeline({ status, paymentStatus }: { status: string; paymentStatus: string }) {
   if (status === 'cancelled') {
     return (
@@ -36,9 +36,9 @@ function InvoicePipeline({ status, paymentStatus }: { status: string; paymentSta
 
   type Step = { label: string; done: boolean; active: boolean; partial?: boolean };
   const steps: Step[] = [
-    { label: 'Draft',  done: isFinal || isPaid,     active: !isFinal && !isPaid },
-    { label: 'Final',  done: isFinal && (isPaid || isPartial), active: isFinal && !isPaid && !isPartial },
-    { label: 'Paid',   done: isPaid,                active: isFinal && (isPaid || isPartial), partial: isPartial && !isPaid },
+    { label: 'Draft',    done: isFinal || isPaid,     active: !isFinal && !isPaid },
+    { label: 'Approved', done: isFinal && (isPaid || isPartial), active: isFinal && !isPaid && !isPartial },
+    { label: 'Paid',     done: isPaid,                active: isFinal && (isPaid || isPartial), partial: isPartial && !isPaid },
   ];
 
   return (
@@ -1236,6 +1236,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
   const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set());
   const [irnLoadingIds, setIrnLoadingIds] = useState<Set<string>>(new Set());
   const [revisionLoadingIds, setRevisionLoadingIds] = useState<Set<string>>(new Set());
+  const [convertingIds, setConvertingIds] = useState<Set<string>>(new Set());
   const [revisionInvoice, setRevisionInvoice] = useState<Invoice | null>(null);
 
   // Sort state
@@ -1362,6 +1363,21 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       toast.error(typeof detail === 'string' ? detail : 'Failed to finalise invoice');
+    }
+  }
+
+  async function convertToGst(id: string) {
+    if (!confirm('Convert this CINV cash invoice to a GST invoice (INV)? GST amounts will be recalculated. This cannot be undone.')) return;
+    setConvertingIds(prev => new Set(prev).add(id));
+    try {
+      const { data } = await api.post<Invoice>(`/api/v1/invoices/${id}/convert-to-gst`);
+      setInvoices(prev => prev.map(i => i.id === id ? data : i));
+      toast.success('Converted to GST invoice — finalise it to assign an INV number');
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Conversion failed');
+    } finally {
+      setConvertingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
     }
   }
 
@@ -1699,7 +1715,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                         <SelectContent>
                           <SelectItem value="all">All</SelectItem>
                           <SelectItem value="draft">Draft</SelectItem>
-                          <SelectItem value="final">Final</SelectItem>
+                          <SelectItem value="final">Approved</SelectItem>
                           <SelectItem value="cancelled">Cancelled</SelectItem>
                         </SelectContent>
                       </Select>
@@ -1741,6 +1757,11 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                             <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-200" title={`Revision ${inv.revision_no} — click History to see previous versions`}>
                               v{inv.revision_no}
                             </span>
+                          )}
+                          {inv.tax_type === 'non_gst' ? (
+                            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-300" title="Cash / Bill of Supply — not sent to Tally">CINV</span>
+                          ) : (
+                            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200" title="GST Invoice — syncs to Tally">INV</span>
                           )}
                         </div>
                       </td>
@@ -1925,6 +1946,19 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                               {canFinalize && (!isSalesExec && !isPurchaseExec || (isSalesExec && inv.invoice_type !== 'purchase') || (isPurchaseExec && inv.invoice_type === 'purchase')) && (
                                 <Button size="icon" variant="ghost" className="h-7 w-7" title="Send Bill (lock + assign number)" onClick={() => finalise(inv.id)}>
                                   <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                                </Button>
+                              )}
+                              {/* Convert CINV → INV (one-way upgrade) */}
+                              {inv.tax_type === 'non_gst' && inv.invoice_type === 'sale' && canEditDraft && (
+                                <Button
+                                  size="icon" variant="ghost" className="h-7 w-7"
+                                  title="Upgrade to GST Invoice (CINV → INV)"
+                                  disabled={convertingIds.has(inv.id)}
+                                  onClick={() => convertToGst(inv.id)}
+                                >
+                                  {convertingIds.has(inv.id)
+                                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    : <ArrowUpCircle className="h-3.5 w-3.5 text-blue-500" />}
                                 </Button>
                               )}
                               {canMoveToSupplement && usbAuthorized && (

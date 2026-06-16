@@ -56,9 +56,13 @@ async def _get_company_fy(db: AsyncSession):
     return co, fy
 
 
-def _invoice_prefix(invoice_type: str) -> str:
-    """Number-series prefix per document type (sale=INV, purchase=PUR,
-    credit_note=CN, debit_note=DN)."""
+def _invoice_prefix(invoice_type: str, tax_type: str | None = None) -> str:
+    """Number-series prefix per document type.
+    Cash/non-GST sale invoices use 'CINV' (separate sequence, not sent to Tally).
+    GST sale invoices use 'INV'.
+    """
+    if invoice_type == "sale" and tax_type == "non_gst":
+        return "CINV"
     return {
         "sale": "INV", "purchase": "PUR",
         "credit_note": "CN", "debit_note": "DN",
@@ -75,7 +79,9 @@ async def _next_invoice_no(
     Per-branch: branch_id == None → IS NULL (default branch keeps its existing
     series untouched); each branch gets its own gap-free series.
     """
-    seq_type = f"{invoice_type}_invoice"
+    # Cash (non-GST) sale invoices get their own gap-free sequence so that
+    # CINV numbers don't create gaps in the INV series and vice versa.
+    seq_type = "cash_sale_invoice" if prefix == "CINV" else f"{invoice_type}_invoice"
     result = await db.execute(
         select(NumberSequence)
         .where(
@@ -666,7 +672,7 @@ async def finalise_invoice(
                 base_no = orig.invoice_no.split("/Rv")[0]
                 inv.invoice_no = base_no
             else:
-                inv.invoice_no = await _next_invoice_no(db, co.id, fy.id, inv.invoice_type, _invoice_prefix(inv.invoice_type), branch_id=inv.branch_id)
+                inv.invoice_no = await _next_invoice_no(db, co.id, fy.id, inv.invoice_type, _invoice_prefix(inv.invoice_type, inv.tax_type), branch_id=inv.branch_id)
         else:
             inv.invoice_no = await _next_invoice_no(db, co.id, fy.id, inv.invoice_type, _invoice_prefix(inv.invoice_type), branch_id=inv.branch_id)
 
@@ -740,6 +746,77 @@ async def finalise_invoice(
             co.id, "invoice_finalized", _notify_ctx, "invoice", str(invoice_id), _bg_tenant,
         )
 
+    return await _load_invoice(db, invoice_id)
+
+
+@router.post("/{invoice_id}/convert-to-gst", response_model=InvoiceResponse)
+async def convert_invoice_to_gst(
+    invoice_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Upgrade a draft CINV (non-GST/cash) invoice to a GST INV invoice.
+    One-way only: INV cannot be downgraded to CINV.
+    Recalculates all amounts with the stored per-item GST rates.
+    """
+    inv = await _load_invoice(db, invoice_id)
+    if inv.status != "draft":
+        raise HTTPException(400, "Only draft invoices can be converted — finalise and cancel/revise a finalised one")
+    if inv.tax_type != "non_gst":
+        raise HTTPException(400, "Invoice is already a GST invoice")
+    if inv.invoice_type != "sale":
+        raise HTTPException(400, "Only sale invoices can be converted to GST")
+
+    co, _ = await _get_company_fy(db)
+
+    # Determine intra-state for CGST+SGST vs IGST split
+    intra = is_intra_state(
+        co.state_code,
+        inv.party.billing_state_code if inv.party else None,
+    )
+
+    # Recalculate totals with GST enabled
+    items_data = [
+        {
+            "quantity": item.quantity,
+            "rate": item.rate,
+            "gst_rate": item.gst_rate or Decimal("0"),
+        }
+        for item in inv.items
+    ]
+    totals = calculate_invoice_totals(
+        items=items_data,
+        discount_type=inv.discount_type,
+        discount_value=inv.discount_value or Decimal("0"),
+        freight=inv.freight or Decimal("0"),
+        tcs_rate=inv.tcs_rate or Decimal("0"),
+        intra_state=intra,
+        tax_type="gst",
+    )
+
+    inv.tax_type = "gst"
+    inv.taxable_amount = totals["taxable_amount"]
+    inv.cgst_amount = totals["cgst_amount"]
+    inv.sgst_amount = totals["sgst_amount"]
+    inv.igst_amount = totals["igst_amount"]
+    inv.total_amount = totals["total_amount"]
+    inv.round_off = totals["round_off"]
+    inv.grand_total = totals["grand_total"]
+    inv.amount_due = totals["grand_total"] - inv.amount_paid
+    inv.tally_synced = False  # mark for re-sync now that it's a GST invoice
+
+    # Update per-item GST amounts
+    for item, ci in zip(inv.items, totals["computed_items"]):
+        item.cgst_amount = ci["cgst_amount"]
+        item.sgst_amount = ci["sgst_amount"]
+        item.igst_amount = ci["igst_amount"]
+        item.total_amount = ci["total_amount"]
+
+    from app.routers.audit import log_action
+    await log_action(db, co.id, current_user.id, "convert_to_gst", "invoice",
+                     entity_id=str(invoice_id),
+                     details={"grand_total": str(inv.grand_total)})
+    await db.commit()
     return await _load_invoice(db, invoice_id)
 
 
