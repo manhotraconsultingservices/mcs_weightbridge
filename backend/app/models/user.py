@@ -16,6 +16,7 @@ class User(Base):
     email: Mapped[str | None] = mapped_column(String(100))
     phone: Mapped[str | None] = mapped_column(String(15))
     role: Mapped[str] = mapped_column(String(20))  # admin, operator, accountant, viewer
+    branch_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("branches.id"), nullable=True)  # operator's home branch; NULL = all/default
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

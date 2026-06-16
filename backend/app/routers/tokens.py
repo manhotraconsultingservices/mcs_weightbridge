@@ -24,7 +24,7 @@ from sqlalchemy import select, func, and_, or_, text
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.dependencies import get_current_user, require_role
+from app.dependencies import get_current_user, require_role, get_current_branch_id
 from app.models.token import Token
 from app.models.settings import NumberSequence
 from app.models.company import Company, FinancialYear
@@ -331,6 +331,7 @@ async def create_token(
     payload: TokenCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    branch_id=Depends(get_current_branch_id),
 ):
     company, fy = await _get_company_and_fy(db)
     # token_no is intentionally NOT assigned here — it is assigned at COMPLETED
@@ -340,10 +341,11 @@ async def create_token(
     # Accepted tradeoff: a token later cancelled leaves a gap in the GP sequence
     # (the number maps to a real gate-arrival event and is not reclaimed) — see
     # services/numbering.next_gate_pass_no docstring.
-    gate_pass_no = await next_gate_pass_no(db, company.id, fy.id)
+    gate_pass_no = await next_gate_pass_no(db, company.id, fy.id, branch_id=branch_id)
 
     token = Token(
         company_id=company.id,
+        branch_id=branch_id,
         fy_id=fy.id,
         token_no=None,            # placeholder; assigned on completion
         token_date=payload.token_date,
@@ -383,6 +385,7 @@ async def create_volume_token(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    branch_id=Depends(get_current_branch_id),
 ):
     """
     Volume-based token: load measured by volume (CFT) rather than the weighbridge.
@@ -414,6 +417,7 @@ async def create_volume_token(
 
     token = Token(
         company_id=company.id,
+        branch_id=branch_id,
         fy_id=fy.id,
         token_no=await _next_token_no(db, company.id, fy.id, payload.token_date),
         token_date=payload.token_date,
@@ -428,7 +432,7 @@ async def create_volume_token(
         driver_id=payload.driver_id,
         transporter_id=payload.transporter_id,
         gate_pass=payload.gate_pass,
-        gate_pass_no=await next_gate_pass_no(db, company.id, fy.id),
+        gate_pass_no=await next_gate_pass_no(db, company.id, fy.id, branch_id=branch_id),
         remarks=payload.remarks,
         created_by=current_user.id,
         status="COMPLETED",
@@ -499,10 +503,13 @@ async def list_tokens(
     search: str | None = None,   # vehicle_no, token_no, or party/customer name
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    branch_id=Depends(get_current_branch_id),
 ):
     company, fy = await _get_company_and_fy(db)
 
     filters = [Token.company_id == company.id, Token.is_supplement == False]
+    if branch_id is not None:
+        filters.append(Token.branch_id == branch_id)   # None = all/default branch
     if date_from:
         filters.append(Token.token_date >= date_from)
     if date_to:

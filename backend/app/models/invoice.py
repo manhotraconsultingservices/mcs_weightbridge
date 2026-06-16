@@ -12,6 +12,7 @@ class Invoice(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id"))
     fy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("financial_years.id"))
+    branch_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("branches.id"), nullable=True)  # NULL = default branch
 
     invoice_type: Mapped[str] = mapped_column(String(20))  # sale, purchase, credit_note, debit_note
     tax_type: Mapped[str] = mapped_column(String(20), default="gst")  # gst, non_gst

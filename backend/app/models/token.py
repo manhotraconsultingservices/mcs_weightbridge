@@ -11,6 +11,7 @@ class Token(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id"))
+    branch_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("branches.id"), nullable=True)  # NULL = default branch
     fy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("financial_years.id"))
     token_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_supplement: Mapped[bool] = mapped_column(Boolean, default=False)

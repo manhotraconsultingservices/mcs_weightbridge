@@ -1,5 +1,5 @@
 import uuid
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Header, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,6 +43,28 @@ async def get_current_user(
     if user is None or not user.is_active:
         raise credentials_exception
     return user
+
+
+def get_current_branch_id(
+    x_branch_id: str | None = Header(default=None),
+    current_user: User = Depends(get_current_user),
+) -> uuid.UUID | None:
+    """Resolve the active branch for a request (Horizon 3 multi-branch).
+
+    - Admins/owners may switch branch via the ``X-Branch-Id`` header (the UI's
+      branch picker sends it). Empty/"all" header → None = consolidated/default.
+    - Everyone else is pinned to their assigned ``user.branch_id``.
+    - None means the default branch (NULL branch_id) — backward-compatible with
+      single-plant tenants that have no branches.
+    """
+    if current_user.role == "admin" and x_branch_id:
+        if x_branch_id.lower() in ("all", ""):
+            return None
+        try:
+            return uuid.UUID(x_branch_id)
+        except ValueError:
+            return None
+    return current_user.branch_id
 
 
 def require_role(*roles: str):

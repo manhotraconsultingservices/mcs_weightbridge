@@ -28,6 +28,8 @@ import CreditDebitNotesPage from '@/pages/CreditDebitNotesPage';
 import RoyaltyPassesPage from '@/pages/RoyaltyPassesPage';
 import CustomerPortalPage from '@/pages/CustomerPortalPage';
 import OfflineIndicator from '@/components/OfflineIndicator';
+import BranchAdminPage from '@/pages/BranchAdminPage';
+import BranchPicker from '@/components/BranchPicker';
 import ProductsPage from '@/pages/ProductsPage';
 import PricingMatrixPage from '@/pages/PricingMatrixPage';
 import ProductionSettingsPage from '@/pages/ProductionSettingsPage';
@@ -118,7 +120,10 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
       <Sidebar user={user} onLogout={logout} usbAuthorized={usbAuthorized} permissions={permissions} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <AmcBanner />
-        <div className="fixed top-2 right-3 z-50"><OfflineIndicator /></div>
+        <div className="fixed top-2 right-3 z-50 flex items-center gap-2">
+          <BranchPicker role={user.role} />
+          <OfflineIndicator />
+        </div>
         <main
           className="flex-1 overflow-y-auto bg-background p-6"
           style={
@@ -146,6 +151,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/delivery-challans" element={<DeliveryChallansPage />} />
             <Route path="/credit-debit-notes" element={<CreditDebitNotesPage />} />
             <Route path="/royalty" element={<RoyaltyPassesPage />} />
+            <Route path="/admin/branches" element={<BranchAdminPage />} />
             {/* Sprint 3 hubs — consolidate sub-pages into tabbed views */}
             <Route path="/sales" element={<SalesHubPage />} />
             <Route path="/materials" element={<MaterialsHubPage />} />

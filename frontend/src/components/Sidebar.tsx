@@ -17,7 +17,7 @@ import {
   LayoutDashboard, Truck, FileText, ShoppingCart, Users,
   Box, Wrench, BarChart3,
   LogOut, Usb, Settings,
-  Bell, HardDrive, Upload, UserCog, Lock, ImageIcon,
+  Bell, HardDrive, Upload, UserCog, Lock, ImageIcon, Building2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getTenantModules } from '@/hooks/useAuth';
@@ -74,6 +74,7 @@ const NAV_ITEMS: NavItem[] = [
 // ── Admin items (gear dropdown) ────────────────────────────────────────────
 const ADMIN_ITEMS: NavItem[] = [
   { to: '/settings',          icon: Settings,   label: 'Company Settings' },
+  { to: '/admin/branches',    icon: Building2,  label: 'Branches / Plants' },
   { to: '/admin/users',       icon: UserCog,    label: 'Users' },
   { to: '/admin/permissions', icon: Lock,       label: 'Role Permissions' },
   { to: '/admin/wallpaper',   icon: ImageIcon,  label: 'Branding' },

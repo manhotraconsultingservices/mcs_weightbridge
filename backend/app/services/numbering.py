@@ -15,7 +15,8 @@ from app.models.settings import NumberSequence
 
 
 async def next_gate_pass_no(
-    db: AsyncSession, company_id: uuid.UUID, fy_id: uuid.UUID
+    db: AsyncSession, company_id: uuid.UUID, fy_id: uuid.UUID,
+    branch_id: uuid.UUID | None = None,
 ) -> str:
     """Allocate the next gap-free gate-pass number under the current FY.
 
@@ -33,11 +34,15 @@ async def next_gate_pass_no(
     sequence is gap-FREE at the point of allocation (no two trucks share a
     number); it is not gap-LESS over time. This is intentional.
     """
+    # branch_id == None compiles to "branch_id IS NULL" (SQLAlchemy), so the
+    # default branch reuses existing pre-multi-branch sequences untouched; each
+    # real branch gets its own series.
     result = await db.execute(
         select(NumberSequence)
         .where(
             NumberSequence.company_id == company_id,
             NumberSequence.fy_id == fy_id,
+            NumberSequence.branch_id == branch_id,
             NumberSequence.sequence_type == "gate_pass",
         )
         .with_for_update()
@@ -45,7 +50,7 @@ async def next_gate_pass_no(
     seq = result.scalar_one_or_none()
     if not seq:
         seq = NumberSequence(
-            company_id=company_id, fy_id=fy_id,
+            company_id=company_id, fy_id=fy_id, branch_id=branch_id,
             sequence_type="gate_pass", prefix="GP",
             last_number=0, reset_daily=False,
         )
@@ -66,6 +71,7 @@ async def next_doc_no(
     *,
     width: int = 4,
     reset_daily: bool = False,
+    branch_id: uuid.UUID | None = None,
 ) -> str:
     """Generic gap-free, row-locked document-number allocator.
 
@@ -80,6 +86,7 @@ async def next_doc_no(
         .where(
             NumberSequence.company_id == company_id,
             NumberSequence.fy_id == fy_id,
+            NumberSequence.branch_id == branch_id,   # None → IS NULL (default branch)
             NumberSequence.sequence_type == sequence_type,
         )
         .with_for_update()
@@ -87,7 +94,7 @@ async def next_doc_no(
     seq = result.scalar_one_or_none()
     if not seq:
         seq = NumberSequence(
-            company_id=company_id, fy_id=fy_id,
+            company_id=company_id, fy_id=fy_id, branch_id=branch_id,
             sequence_type=sequence_type, prefix=prefix,
             last_number=0, reset_daily=reset_daily,
         )

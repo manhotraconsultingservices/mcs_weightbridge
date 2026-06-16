@@ -10,6 +10,13 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // Multi-branch: forward the admin's selected branch (Horizon 3). The backend
+  // get_current_branch_id honours this only for admins; others are pinned to
+  // their assigned branch. Empty = all/default.
+  const branch = sessionStorage.getItem('active_branch');
+  if (branch) {
+    config.headers['X-Branch-Id'] = branch;
+  }
   return config;
 });
 

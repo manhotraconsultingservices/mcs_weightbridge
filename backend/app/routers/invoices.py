@@ -21,7 +21,7 @@ from sqlalchemy import select, func, and_, text
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.dependencies import get_current_user, require_role
+from app.dependencies import get_current_user, require_role, get_current_branch_id
 from app.models.invoice import Invoice, InvoiceItem
 from app.models.party import Party
 from app.models.product import Product
@@ -67,11 +67,13 @@ def _invoice_prefix(invoice_type: str) -> str:
 
 async def _next_invoice_no(
     db: AsyncSession, company_id: uuid.UUID, fy_id: uuid.UUID,
-    invoice_type: str, prefix: str
+    invoice_type: str, prefix: str, branch_id: uuid.UUID | None = None,
 ) -> str:
     """
     Assign the next sequential invoice number with row-level locking.
     Called at FINALISE — not at draft creation — to prevent numbering gaps.
+    Per-branch: branch_id == None → IS NULL (default branch keeps its existing
+    series untouched); each branch gets its own gap-free series.
     """
     seq_type = f"{invoice_type}_invoice"
     result = await db.execute(
@@ -79,6 +81,7 @@ async def _next_invoice_no(
         .where(
             NumberSequence.company_id == company_id,
             NumberSequence.fy_id == fy_id,
+            NumberSequence.branch_id == branch_id,
             NumberSequence.sequence_type == seq_type,
         )
         .with_for_update()
@@ -86,7 +89,7 @@ async def _next_invoice_no(
     seq = result.scalar_one_or_none()
     if not seq:
         seq = NumberSequence(
-            company_id=company_id, fy_id=fy_id,
+            company_id=company_id, fy_id=fy_id, branch_id=branch_id,
             sequence_type=seq_type, prefix=prefix,
             last_number=0, reset_daily=False,
         )
@@ -140,6 +143,7 @@ async def create_invoice(
     payload: InvoiceCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    branch_id=Depends(get_current_branch_id),
 ):
     co, fy = await _get_company_fy(db)
 
@@ -228,6 +232,7 @@ async def create_invoice(
 
     invoice = Invoice(
         company_id=co.id,
+        branch_id=branch_id,
         fy_id=fy.id,
         invoice_type=payload.invoice_type,
         tax_type=effective_tax_type,
@@ -463,10 +468,13 @@ async def list_invoices(
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    branch_id=Depends(get_current_branch_id),
 ):
     co, fy = await _get_company_fy(db)
 
     filters = [Invoice.company_id == co.id]
+    if branch_id is not None:
+        filters.append(Invoice.branch_id == branch_id)   # None = all/default branch
     if invoice_type:
         filters.append(Invoice.invoice_type == invoice_type)
     if status:
@@ -655,9 +663,9 @@ async def finalise_invoice(
                 base_no = orig.invoice_no.split("/Rv")[0]
                 inv.invoice_no = base_no
             else:
-                inv.invoice_no = await _next_invoice_no(db, co.id, fy.id, inv.invoice_type, _invoice_prefix(inv.invoice_type))
+                inv.invoice_no = await _next_invoice_no(db, co.id, fy.id, inv.invoice_type, _invoice_prefix(inv.invoice_type), branch_id=inv.branch_id)
         else:
-            inv.invoice_no = await _next_invoice_no(db, co.id, fy.id, inv.invoice_type, _invoice_prefix(inv.invoice_type))
+            inv.invoice_no = await _next_invoice_no(db, co.id, fy.id, inv.invoice_type, _invoice_prefix(inv.invoice_type), branch_id=inv.branch_id)
 
     inv.status = "final"
 

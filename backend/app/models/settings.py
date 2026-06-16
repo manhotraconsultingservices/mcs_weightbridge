@@ -11,6 +11,7 @@ class NumberSequence(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id"))
     fy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("financial_years.id"))
+    branch_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("branches.id"), nullable=True)  # NULL = default branch
     sequence_type: Mapped[str] = mapped_column(String(30))  # token, sale_invoice, purchase_invoice, quotation, receipt, voucher
     prefix: Mapped[str] = mapped_column(String(10), default="")
     last_number: Mapped[int] = mapped_column(Integer, default=0)

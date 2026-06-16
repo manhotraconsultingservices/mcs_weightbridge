@@ -741,6 +741,40 @@ def get_column_migrations() -> list[str]:
         """,
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_customer_users_email ON customer_users(company_id, lower(email))",
         "CREATE INDEX IF NOT EXISTS ix_customer_users_party ON customer_users(party_id)",
+
+        # ── Horizon-3: Full multi-branch ────────────────────────────────────
+        # Backward-compatible: branch_id is NULLABLE everywhere → existing rows
+        # (NULL) are the implicit single "default branch", so current numbering
+        # and queries are untouched. Only explicitly-created branches get an id.
+        """
+        CREATE TABLE IF NOT EXISTS branches (
+            id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id    UUID REFERENCES companies(id),
+            name          VARCHAR(150) NOT NULL,
+            code          VARCHAR(12) NOT NULL,
+            gstin         VARCHAR(15),
+            address_line1 VARCHAR(255),
+            city          VARCHAR(100),
+            state         VARCHAR(100),
+            state_code    VARCHAR(2),
+            pincode       VARCHAR(10),
+            phone         VARCHAR(20),
+            is_default    BOOLEAN NOT NULL DEFAULT FALSE,
+            is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_branches_company ON branches(company_id, is_active)",
+        "ALTER TABLE tokens             ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id)",
+        "ALTER TABLE invoices           ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id)",
+        "ALTER TABLE payment_receipts   ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id)",
+        "ALTER TABLE payment_vouchers   ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id)",
+        "ALTER TABLE product_stock      ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id)",
+        "ALTER TABLE production_cycles   ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id)",
+        "ALTER TABLE users              ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id)",
+        "ALTER TABLE number_sequences   ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id)",
+        "CREATE INDEX IF NOT EXISTS ix_tokens_branch ON tokens(branch_id)",
+        "CREATE INDEX IF NOT EXISTS ix_invoices_branch ON invoices(branch_id)",
     ]
 
 
