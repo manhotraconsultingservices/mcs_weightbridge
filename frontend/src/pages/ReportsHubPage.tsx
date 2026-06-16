@@ -5,7 +5,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield, XCircle, PieChart } from 'lucide-react';
+import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield, XCircle, PieChart, TrendingUp } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import PaymentsPage from './PaymentsPage';
 import LedgerPage from './LedgerPage';
@@ -16,8 +16,9 @@ import AuditPage from './AuditPage';
 import WriteOffsReportPage from './WriteOffsReportPage';
 import GstSplitReportPage from './GstSplitReportPage';
 import Gstr2bReconcilePage from './Gstr2bReconcilePage';
+import SalesStatusReportPage from './SalesStatusReportPage';
 
-type Tab = 'payments' | 'statement' | 'gst' | 'gstr2b' | 'gst-split' | 'reports' | 'write-offs' | 'compliance' | 'activity';
+type Tab = 'payments' | 'statement' | 'gst' | 'gstr2b' | 'gst-split' | 'sales-status' | 'reports' | 'write-offs' | 'compliance' | 'activity';
 
 const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
   { value: 'payments', label: 'Payments', icon: CreditCard },
@@ -25,6 +26,7 @@ const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
   { value: 'gst', label: 'GST Returns', icon: FileBarChart },
   { value: 'gstr2b', label: 'GSTR-2B (ITC)', icon: FileBarChart },
   { value: 'gst-split', label: 'GST vs Cash Split', icon: PieChart },
+  { value: 'sales-status', label: 'Sales by Status', icon: TrendingUp },
   { value: 'reports', label: 'P&L + Sales', icon: BarChart3 },
   { value: 'write-offs', label: 'Write-offs', icon: XCircle },
   { value: 'compliance', label: 'Documents', icon: ShieldCheck },
@@ -65,6 +67,7 @@ export default function ReportsHubPage() {
         <TabsContent value="gst" className="mt-4"><GstReportsPage /></TabsContent>
         <TabsContent value="gstr2b" className="mt-4"><Gstr2bReconcilePage /></TabsContent>
         <TabsContent value="gst-split" className="mt-4"><GstSplitReportPage /></TabsContent>
+        <TabsContent value="sales-status" className="mt-4"><SalesStatusReportPage /></TabsContent>
         <TabsContent value="reports" className="mt-4"><ReportsPage /></TabsContent>
         <TabsContent value="write-offs" className="mt-4"><WriteOffsReportPage /></TabsContent>
         <TabsContent value="compliance" className="mt-4"><CompliancePage /></TabsContent>

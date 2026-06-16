@@ -5,7 +5,7 @@ GSTR-3B, Profit & Loss, Stock Summary.
 import io
 import json
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
 
@@ -992,4 +992,71 @@ async def gst_split_report(
         },
         "monthly": monthly,
         "top_cash_customers": top_cash_customers,
+    }
+
+
+@router.get("/sales-by-status")
+async def sales_by_status(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    granularity: str = Query("day"),   # day | week | month
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Sales amount split by invoice status (Draft vs Final/'Complete') over a
+    date range, bucketed by day/week/month for charting. Sale invoices only."""
+    if granularity not in ("day", "week", "month"):
+        granularity = "day"
+
+    rows = (await db.execute(
+        select(Invoice.invoice_date, Invoice.status, Invoice.grand_total).where(
+            Invoice.company_id == current_user.company_id,
+            Invoice.invoice_type == "sale",
+            Invoice.invoice_date >= from_date,
+            Invoice.invoice_date <= to_date,
+        )
+    )).all()
+
+    def bucket(d: date):
+        if granularity == "month":
+            return d.replace(day=1).isoformat(), d.strftime("%b %Y")
+        if granularity == "week":
+            monday = d - timedelta(days=d.weekday())
+            return monday.isoformat(), monday.strftime("%d %b")
+        return d.isoformat(), d.strftime("%d %b")
+
+    buckets: dict = {}
+    totals = {"draft": Decimal("0"), "final": Decimal("0"), "cancelled": Decimal("0")}
+    counts = {"draft": 0, "final": 0, "cancelled": 0}
+    for inv_date, status, gt in rows:
+        gt = gt or Decimal("0")
+        bucket_status = status if status in ("draft", "final", "cancelled") else "draft"
+        totals[bucket_status] += gt
+        counts[bucket_status] += 1
+        # cancelled excluded from the time-series (focus on draft vs final)
+        if bucket_status == "cancelled":
+            continue
+        key, label = bucket(inv_date)
+        b = buckets.setdefault(key, {"period": key, "label": label,
+                                     "draft": Decimal("0"), "final": Decimal("0")})
+        b[bucket_status] += gt
+
+    series = [
+        {"period": v["period"], "label": v["label"],
+         "draft": _f(v["draft"]), "final": _f(v["final"]),
+         "total": _f(v["draft"] + v["final"])}
+        for _, v in sorted(buckets.items())
+    ]
+
+    return {
+        "from_date": from_date.isoformat(), "to_date": to_date.isoformat(),
+        "granularity": granularity,
+        "summary": {
+            "draft": {"count": counts["draft"], "amount": _f(totals["draft"])},
+            "final": {"count": counts["final"], "amount": _f(totals["final"])},
+            "cancelled": {"count": counts["cancelled"], "amount": _f(totals["cancelled"])},
+            "total_count": counts["draft"] + counts["final"],
+            "total_amount": _f(totals["draft"] + totals["final"]),
+        },
+        "series": series,
     }
