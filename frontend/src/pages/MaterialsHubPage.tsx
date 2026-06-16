@@ -6,7 +6,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Package, IndianRupee, Boxes, Factory, Activity, Settings } from 'lucide-react';
+import { Package, IndianRupee, Boxes, Factory, Activity, Settings, Mountain } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import ProductsPage from './ProductsPage';
 import PricingMatrixPage from './PricingMatrixPage';
@@ -14,13 +14,15 @@ import ProductInventoryPage from './ProductInventoryPage';
 import ProductionPage from './ProductionPage';
 import ProductionDashboardPage from './ProductionDashboardPage';
 import ProductionSettingsPage from './ProductionSettingsPage';
+import RoyaltyPassesPage from './RoyaltyPassesPage';
 
-type Tab = 'catalog' | 'rates' | 'stock' | 'production' | 'production-dashboard' | 'production-settings';
+type Tab = 'catalog' | 'rates' | 'stock' | 'royalty' | 'production' | 'production-dashboard' | 'production-settings';
 
 const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
   { value: 'catalog', label: 'Catalog', icon: Package },
   { value: 'rates', label: 'Customer Rates', icon: IndianRupee },
   { value: 'stock', label: 'Stock on Hand', icon: Boxes },
+  { value: 'royalty', label: 'Royalty Passes', icon: Mountain },
   { value: 'production', label: 'Production', icon: Factory },
   { value: 'production-dashboard', label: 'Production Dashboard', icon: Activity },
   { value: 'production-settings', label: 'Production Settings', icon: Settings },
@@ -56,6 +58,7 @@ export default function MaterialsHubPage() {
         <TabsContent value="catalog" className="mt-4"><ProductsPage /></TabsContent>
         <TabsContent value="rates" className="mt-4"><PricingMatrixPage /></TabsContent>
         <TabsContent value="stock" className="mt-4"><ProductInventoryPage /></TabsContent>
+        <TabsContent value="royalty" className="mt-4"><RoyaltyPassesPage /></TabsContent>
         <TabsContent value="production" className="mt-4"><ProductionPage /></TabsContent>
         <TabsContent value="production-dashboard" className="mt-4"><ProductionDashboardPage /></TabsContent>
         <TabsContent value="production-settings" className="mt-4"><ProductionSettingsPage /></TabsContent>

@@ -681,6 +681,49 @@ def get_column_migrations() -> list[str]:
         # statutory reason code shown on GSTR-1 CDNR.
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS reference_invoice_id UUID REFERENCES invoices(id)",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS note_reason VARCHAR(200)",
+
+        # ── Horizon-2: Royalty / Mining Transit-Pass ────────────────────────
+        """
+        CREATE TABLE IF NOT EXISTS royalty_passes (
+            id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id    UUID REFERENCES companies(id),
+            fy_id         UUID REFERENCES financial_years(id),
+            pass_no       VARCHAR(60) NOT NULL,
+            pass_type     VARCHAR(20) NOT NULL DEFAULT 'royalty',
+            source_name   VARCHAR(200),
+            party_id      UUID REFERENCES parties(id),
+            mineral       VARCHAR(120),
+            product_id    UUID REFERENCES products(id),
+            issue_date    DATE,
+            valid_till    DATE,
+            quantity_mt   NUMERIC(14,3) NOT NULL DEFAULT 0,
+            rate          NUMERIC(12,2) NOT NULL DEFAULT 0,
+            amount        NUMERIC(14,2) NOT NULL DEFAULT 0,
+            vehicle_no    VARCHAR(20),
+            status        VARCHAR(15) NOT NULL DEFAULT 'active',
+            notes         TEXT,
+            created_by    UUID REFERENCES users(id),
+            created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS royalty_pass_consumptions (
+            id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            pass_id       UUID NOT NULL REFERENCES royalty_passes(id) ON DELETE CASCADE,
+            company_id    UUID REFERENCES companies(id),
+            token_id      UUID REFERENCES tokens(id),
+            invoice_id    UUID REFERENCES invoices(id),
+            quantity_mt   NUMERIC(14,3) NOT NULL,
+            consumed_date DATE NOT NULL,
+            notes         TEXT,
+            created_by    UUID REFERENCES users(id),
+            created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_royalty_company_status ON royalty_passes(company_id, status)",
+        "CREATE INDEX IF NOT EXISTS ix_royalty_valid_till ON royalty_passes(company_id, valid_till)",
+        "CREATE INDEX IF NOT EXISTS ix_royalty_cons_pass ON royalty_pass_consumptions(pass_id)",
     ]
 
 

@@ -25,6 +25,7 @@ import InvoicesPage from '@/pages/InvoicesPage';
 import QuotationsPage from '@/pages/QuotationsPage';
 import DeliveryChallansPage from '@/pages/DeliveryChallansPage';
 import CreditDebitNotesPage from '@/pages/CreditDebitNotesPage';
+import RoyaltyPassesPage from '@/pages/RoyaltyPassesPage';
 import ProductsPage from '@/pages/ProductsPage';
 import PricingMatrixPage from '@/pages/PricingMatrixPage';
 import ProductionSettingsPage from '@/pages/ProductionSettingsPage';
@@ -141,6 +142,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/quotations" element={<QuotationsPage />} />
             <Route path="/delivery-challans" element={<DeliveryChallansPage />} />
             <Route path="/credit-debit-notes" element={<CreditDebitNotesPage />} />
+            <Route path="/royalty" element={<RoyaltyPassesPage />} />
             {/* Sprint 3 hubs — consolidate sub-pages into tabbed views */}
             <Route path="/sales" element={<SalesHubPage />} />
             <Route path="/materials" element={<MaterialsHubPage />} />
