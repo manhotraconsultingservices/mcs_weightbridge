@@ -241,6 +241,11 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
     party = (await db.execute(select(PartyModel).where(PartyModel.id == token.party_id))).scalar_one_or_none()
     intra = is_intra_state(company.state_code, party.billing_state_code if party else company.state_code)
 
+    # Payment-mode drives the tax type (mirrors the manual invoice-create path):
+    #   party.default_payment_mode == 'cash'  → non-GST Bill of Supply (no GST)
+    #   party.default_payment_mode == 'online' (or unset) → GST invoice
+    effective_tax_type = "non_gst" if (party and party.default_payment_mode == "cash") else "gst"
+
     items_data = [{
         "product_id": str(token.product_id),
         "description": product.name,
@@ -258,7 +263,7 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
         freight=Decimal("0"),
         tcs_rate=Decimal("0"),
         intra_state=intra,
-        tax_type="gst",
+        tax_type=effective_tax_type,
     )
 
     from app.models.invoice import Invoice, InvoiceItem
@@ -281,7 +286,7 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
         company_id=company.id,
         fy_id=fy.id,
         invoice_type=invoice_type,
-        tax_type="gst",
+        tax_type=effective_tax_type,
         invoice_no=None,          # assigned at finalise (gap-free)
         invoice_date=token.token_date,
         due_date=auto_due_date,

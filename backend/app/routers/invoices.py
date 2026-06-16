@@ -158,13 +158,16 @@ async def create_invoice(
 
     intra = is_intra_state(co.state_code, party.billing_state_code if party else co.state_code)
 
-    # Server-side rule: party with default_payment_mode='cash' → non-GST
-    # invoice (Bill of Supply). Cash-mode parties can NEVER produce a GST
-    # invoice; we override the payload silently to keep the books clean.
-    # 'online' parties keep payload.tax_type (defaults to 'gst').
-    effective_tax_type = payload.tax_type
-    if party and party.default_payment_mode == "cash":
-        effective_tax_type = "non_gst"
+    # Payment mode deterministically drives the tax type for a party:
+    #   default_payment_mode == 'cash'   → non-GST (Bill of Supply), no GST
+    #   default_payment_mode == 'online' → GST invoice
+    # The party's mode wins over the form, so a cash party can never produce a
+    # GST bill and an online party always charges GST. Walk-in invoices (no
+    # party) honour the form's tax_type, since there's no party mode to read.
+    if party:
+        effective_tax_type = "non_gst" if party.default_payment_mode == "cash" else "gst"
+    else:
+        effective_tax_type = payload.tax_type
 
     items_data = [i.model_dump() for i in payload.items]
 
