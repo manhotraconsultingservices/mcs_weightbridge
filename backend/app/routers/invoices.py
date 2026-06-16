@@ -380,6 +380,77 @@ async def issue_note(
     return await _load_invoice(db, note.id)
 
 
+class GenerateEwbRequest(BaseModel):
+    distance_km: int | None = None
+    vehicle_no: str | None = None
+
+
+class CancelEwbRequest(BaseModel):
+    reason: str = "2"          # 1=Duplicate 2=Order Cancelled 3=Data entry 4=Others
+    remark: str = ""
+
+
+@router.post("/{invoice_id}/generate-ewb", response_model=InvoiceResponse)
+async def generate_invoice_ewb(
+    invoice_id: uuid.UUID,
+    payload: GenerateEwbRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate (or retry) the E-Way Bill for a finalised invoice via the NIC EWB API."""
+    from app.services.eway_service import load_eway_config, generate_for_invoice
+    inv = await _load_invoice(db, invoice_id)
+    if inv.status != "final":
+        raise HTTPException(400, "E-Way Bill can only be generated for a finalised invoice")
+    if inv.ewb_status == "generated" and inv.eway_bill_no:
+        raise HTTPException(400, f"E-Way Bill {inv.eway_bill_no} already exists for this invoice")
+    cfg = await load_eway_config(db)
+    if not cfg or not cfg.is_enabled:
+        raise HTTPException(400, "E-Way Bill is not configured/enabled (Settings → E-Way Bill)")
+    co, _ = await _get_company_fy(db)
+    result = await generate_for_invoice(
+        db, inv, co, cfg,
+        distance_km=(payload.distance_km if payload and payload.distance_km else 0),
+        vehicle_no=(payload.vehicle_no if payload else None),
+    )
+    from app.routers.audit import log_action
+    await log_action(db, co.id, current_user.id, "generate_ewb", "invoice", entity_id=str(invoice_id),
+                     details={"ewb_no": inv.eway_bill_no, "success": result.success})
+    await db.commit()
+    if not result.success:
+        raise HTTPException(502, result.error_message or "EWB generation failed")
+    return await _load_invoice(db, invoice_id)
+
+
+@router.post("/{invoice_id}/cancel-ewb", response_model=InvoiceResponse)
+async def cancel_invoice_ewb(
+    invoice_id: uuid.UUID,
+    payload: CancelEwbRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "accountant")),
+):
+    """Cancel the invoice's E-Way Bill within 24h of generation."""
+    from app.services.eway_service import load_eway_config, cancel_ewb as _cancel
+    inv = await _load_invoice(db, invoice_id)
+    if not inv.eway_bill_no or inv.ewb_status != "generated":
+        raise HTTPException(400, "No active E-Way Bill to cancel")
+    cfg = await load_eway_config(db)
+    if not cfg or not cfg.is_enabled:
+        raise HTTPException(400, "E-Way Bill is not configured/enabled")
+    result = await _cancel(cfg, inv.eway_bill_no,
+                           reason=(payload.reason if payload else "2"),
+                           remark=(payload.remark if payload else ""))
+    if result.success:
+        inv.ewb_status = "cancelled"
+        inv.ewb_error = None
+    else:
+        inv.ewb_error = result.error_message
+    await db.commit()
+    if not result.success:
+        raise HTTPException(502, result.error_message or "EWB cancellation failed")
+    return await _load_invoice(db, invoice_id)
+
+
 @router.get("", response_model=InvoiceListResponse)
 async def list_invoices(
     invoice_type: str | None = None,
@@ -755,6 +826,15 @@ async def _try_generate_irn(db: AsyncSession, inv, co):
             inv.irn_signed_invoice = result.signed_invoice
             inv.einvoice_status = "success"
             inv.einvoice_error = None
+            # IRN-integrated E-Way Bill: NIC returns the EWB no. when EwbDtls
+            # (distance) was included in the IRN payload — capture it so the
+            # invoice carries both IRN and EWB from a single call.
+            if getattr(result, "ewb_no", None):
+                inv.eway_bill_no = result.ewb_no
+                inv.ewb_date = result.ewb_date
+                inv.ewb_valid_till = result.ewb_valid_till
+                inv.ewb_status = "generated"
+                inv.ewb_error = None
             _log.getLogger(__name__).info("IRN generated: %s for invoice %s", result.irn, inv.invoice_no)
         else:
             inv.einvoice_status = "failed"

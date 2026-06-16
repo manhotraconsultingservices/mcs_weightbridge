@@ -186,12 +186,18 @@ def build_einvoice_payload(
         "Em": (getattr(party, "email", "") or "")[:100],
     }
 
-    # ── E-Way Bill details (optional) ────────────────────────────────────────
+    # ── E-Way Bill details ───────────────────────────────────────────────────
+    # When a vehicle + transport distance are present, include EwbDtls so NIC
+    # generates the E-Way Bill in the SAME call as the IRN (the EwbNo comes back
+    # in the response and is captured in _try_generate_irn). Distance>0 is what
+    # tells NIC to mint the EWB; without it, only the IRN is created and the EWB
+    # is generated later via the standalone /generate-ewb endpoint.
     ewb_dtls = {}
-    if invoice.eway_bill_no:
+    _dist = int(getattr(invoice, "ewb_distance_km", 0) or 0)
+    if invoice.vehicle_no and _dist > 0:
         ewb_dtls["TransId"] = ""
         ewb_dtls["TransName"] = invoice.transporter_name or ""
-        ewb_dtls["Distance"] = 0
+        ewb_dtls["Distance"] = _dist
         ewb_dtls["TransDocNo"] = ""
         ewb_dtls["TransDocDt"] = ""
         ewb_dtls["VehNo"] = (invoice.vehicle_no or "").replace(" ", "")

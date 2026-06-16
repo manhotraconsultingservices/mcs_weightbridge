@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import api from '@/services/api';
 import { toast } from 'sonner';
-import { Plus, Trash2, FileText, X, Loader2, ArrowRightLeft } from 'lucide-react';
+import { Plus, Trash2, FileText, X, Loader2, ArrowRightLeft, FileBadge } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -126,6 +126,18 @@ export default function DeliveryChallansPage() {
     }
   }
 
+  async function genEwb(c: Challan) {
+    const km = prompt('Transport distance in km (0 = let NIC auto-compute):', '0');
+    if (km === null) return;
+    try {
+      await api.post(`/delivery-challans/${c.id}/generate-ewb`, { distance_km: Number(km) || 0 });
+      toast.success('E-Way Bill generated');
+      load();
+    } catch (e: unknown) {
+      toast.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'EWB generation failed');
+    }
+  }
+
   async function cancel(c: Challan) {
     if (!confirm(`Cancel challan ${c.challan_no}? This cannot be undone.`)) return;
     try {
@@ -173,6 +185,12 @@ export default function DeliveryChallansPage() {
                 <td>
                   <div className="flex items-center gap-1 justify-end">
                     <PrintButton a4Url={`/api/v1/delivery-challans/${c.id}/pdf`} url={`/api/v1/delivery-challans/${c.id}/pdf`} iconOnly />
+                    {c.status === 'open' && !c.ewb_no && (
+                      <button onClick={() => genEwb(c)} title="Generate E-Way Bill"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-blue-700">
+                        <FileBadge className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                     {c.status === 'open' && (
                       <>
                         <button onClick={() => convert(c)} title="Convert to tax invoice"

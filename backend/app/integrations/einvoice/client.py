@@ -79,6 +79,10 @@ class EInvoiceResult:
     signed_invoice: str | None = None
     error_code: str | None = None
     error_message: str | None = None
+    # E-Way Bill captured from the IRN response when EwbDtls (distance) was sent
+    ewb_no: str | None = None
+    ewb_date: datetime | None = None
+    ewb_valid_till: datetime | None = None
 
 
 # ── Auth token cache ─────────────────────────────────────────────────────────
@@ -209,6 +213,16 @@ class EInvoiceClient:
                             except (ValueError, TypeError):
                                 pass
 
+                    def _ewb_dt(v):
+                        if not v:
+                            return None
+                        for fmt in ("%d/%m/%Y %I:%M:%S %p", "%d/%m/%Y %H:%M:%S"):
+                            try:
+                                return datetime.strptime(v, fmt)
+                            except (ValueError, TypeError):
+                                continue
+                        return None
+
                     return EInvoiceResult(
                         success=True,
                         irn=result_data.get("Irn"),
@@ -216,6 +230,9 @@ class EInvoiceClient:
                         ack_date=ack_date,
                         signed_qr_code=result_data.get("SignedQRCode"),
                         signed_invoice=result_data.get("SignedInvoice"),
+                        ewb_no=str(result_data["EwbNo"]) if result_data.get("EwbNo") else None,
+                        ewb_date=_ewb_dt(result_data.get("EwbDt")),
+                        ewb_valid_till=_ewb_dt(result_data.get("EwbValidTill")),
                     )
 
                 # Duplicate IRN — treat as success (IRN already exists for this invoice)

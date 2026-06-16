@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -264,6 +265,75 @@ async def convert_to_invoice(
     ch.status = "invoiced"
     ch.invoice_id = inv_resp.id
     await db.commit()
+    ch = await _load(db, challan_id)
+    return await _to_response(db, ch)
+
+
+class _GenerateEwbBody(BaseModel):
+    distance_km: int | None = None
+    vehicle_no: str | None = None
+
+
+class _CancelEwbBody(BaseModel):
+    reason: str = "2"
+    remark: str = ""
+
+
+@router.post("/{challan_id}/generate-ewb", response_model=DeliveryChallanResponse)
+async def generate_challan_ewb(
+    challan_id: uuid.UUID,
+    payload: _GenerateEwbBody | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate an E-Way Bill for a delivery challan (goods moving without an invoice)."""
+    from app.services.eway_service import load_eway_config, generate_for_challan
+    ch = await _load(db, challan_id)
+    if ch.status == "cancelled":
+        raise HTTPException(400, "Cannot generate an E-Way Bill for a cancelled challan")
+    if ch.ewb_status == "generated" and ch.ewb_no:
+        raise HTTPException(400, f"E-Way Bill {ch.ewb_no} already exists for this challan")
+    cfg = await load_eway_config(db)
+    if not cfg or not cfg.is_enabled:
+        raise HTTPException(400, "E-Way Bill is not configured/enabled (Settings → E-Way Bill)")
+    co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
+    result = await generate_for_challan(
+        db, ch, co, cfg,
+        distance_km=(payload.distance_km if payload and payload.distance_km else 0),
+        vehicle_no=(payload.vehicle_no if payload else None),
+    )
+    await db.commit()
+    if not result.success:
+        raise HTTPException(502, result.error_message or "EWB generation failed")
+    ch = await _load(db, challan_id)
+    return await _to_response(db, ch)
+
+
+@router.post("/{challan_id}/cancel-ewb", response_model=DeliveryChallanResponse)
+async def cancel_challan_ewb(
+    challan_id: uuid.UUID,
+    payload: _CancelEwbBody | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.services.eway_service import load_eway_config, cancel_ewb as _cancel
+    ch = await _load(db, challan_id)
+    if not ch.ewb_no or ch.ewb_status != "generated":
+        raise HTTPException(400, "No active E-Way Bill to cancel")
+    cfg = await load_eway_config(db)
+    if not cfg or not cfg.is_enabled:
+        raise HTTPException(400, "E-Way Bill is not configured/enabled")
+    result = await _cancel(cfg, ch.ewb_no,
+                           reason=(payload.reason if payload else "2"),
+                           remark=(payload.remark if payload else ""))
+    if result.success:
+        ch.ewb_status = "cancelled"
+        ch.ewb_error = None
+    else:
+        ch.ewb_error = result.error_message
+    await db.commit()
+    if not result.success:
+        raise HTTPException(502, result.error_message or "EWB cancellation failed")
     ch = await _load(db, challan_id)
     return await _to_response(db, ch)
 

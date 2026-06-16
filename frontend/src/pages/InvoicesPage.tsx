@@ -1474,6 +1474,21 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
     }
   }
 
+  async function generateEwb(inv: Invoice) {
+    const km = prompt('Transport distance in km (0 = let NIC auto-compute):', '0');
+    if (km === null) return;
+    setIrnLoadingIds(prev => new Set([...prev, inv.id]));
+    try {
+      const { data } = await api.post<Invoice>(`/api/v1/invoices/${inv.id}/generate-ewb`, { distance_km: Number(km) || 0 });
+      setInvoices(prev => prev.map(i => i.id === inv.id ? data : i));
+      toast.success(`E-Way Bill generated for ${inv.invoice_no}`);
+    } catch (e: unknown) {
+      toast.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to generate E-Way Bill');
+    } finally {
+      setIrnLoadingIds(prev => { const n = new Set(prev); n.delete(inv.id); return n; });
+    }
+  }
+
   async function cancelIrn(inv: Invoice) {
     if (!confirm(`Cancel IRN for ${inv.invoice_no}? This can only be done within 24 hours of generation.`)) return;
     setIrnLoadingIds(prev => new Set([...prev, inv.id]));
@@ -1840,6 +1855,19 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                               {irnLoadingIds.has(inv.id)
                                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                 : <ShieldX className="h-3.5 w-3.5 text-red-400" />}
+                            </Button>
+                          )}
+                          {inv.status === 'final' && canEInvoice && inv.tax_type === 'gst'
+                            && (inv as { ewb_status?: string }).ewb_status !== 'generated' && (
+                            <Button
+                              size="icon" variant="ghost" className="h-7 w-7"
+                              title={(inv as { eway_bill_no?: string }).eway_bill_no ? 'Regenerate E-Way Bill' : 'Generate E-Way Bill'}
+                              disabled={irnLoadingIds.has(inv.id)}
+                              onClick={() => generateEwb(inv)}
+                            >
+                              {irnLoadingIds.has(inv.id)
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                : <Send className="h-3.5 w-3.5 text-blue-600" />}
                             </Button>
                           )}
                           {inv.status === 'final' && canRecordPayment && inv.payment_status !== 'paid' && inv.party && (

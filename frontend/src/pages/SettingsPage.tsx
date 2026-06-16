@@ -1614,6 +1614,134 @@ function EInvoiceSettingsTab() {
   );
 }
 
+// ------------------------------------------------------------------ //
+// E-Way Bill Settings Tab
+// ------------------------------------------------------------------ //
+interface EWayConfig {
+  base_url: string; client_id: string; client_secret: string; gstin: string;
+  username: string; password: string; is_sandbox: boolean; is_enabled: boolean;
+  auto_generate_on_finalize: boolean; default_distance_km: number; demo_mode: boolean;
+}
+const DEFAULT_EWAY: EWayConfig = {
+  base_url: 'https://ewb-apisandbox.nic.in', client_id: '', client_secret: '', gstin: '',
+  username: '', password: '', is_sandbox: true, is_enabled: false,
+  auto_generate_on_finalize: false, default_distance_km: 0, demo_mode: false,
+};
+
+function EWaySettingsTab() {
+  const [cfg, setCfg] = useState<EWayConfig>({ ...DEFAULT_EWAY });
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  useEffect(() => {
+    api.get<EWayConfig>('/api/v1/app-settings/eway-config')
+      .then(r => setCfg({ ...DEFAULT_EWAY, ...r.data })).catch(() => {});
+  }, []);
+
+  const set = (k: keyof EWayConfig, v: string | boolean | number) => setCfg(prev => ({ ...prev, [k]: v }));
+
+  async function save() {
+    setSaving(true); setSaveMsg('');
+    try {
+      const { data } = await api.put<EWayConfig>('/api/v1/app-settings/eway-config', cfg);
+      setCfg({ ...DEFAULT_EWAY, ...data });
+      setSaveMsg('Saved!'); setTimeout(() => setSaveMsg(''), 3000);
+    } catch { setSaveMsg('Failed to save'); } finally { setSaving(false); }
+  }
+  async function testConnection() {
+    setTesting(true); setTestResult(null);
+    try {
+      const { data } = await api.post<{ success: boolean; message: string }>('/api/v1/app-settings/eway-config/test');
+      setTestResult(data);
+    } catch (e: unknown) {
+      setTestResult({ success: false, message: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Test failed' });
+    } finally { setTesting(false); }
+  }
+
+  return (
+    <Card>
+      <div className="p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold">GST E-Way Bill Configuration</h3>
+            <p className="text-xs text-muted-foreground">NIC EWB portal credentials for generating e-way bills on invoices & delivery challans</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Label className="text-xs">Enabled</Label>
+            <input type="checkbox" checked={cfg.is_enabled} onChange={e => set('is_enabled', e.target.checked)} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label className="text-xs">Environment</Label>
+            <Select value={cfg.is_sandbox ? 'sandbox' : 'production'} onValueChange={v => set('is_sandbox', v === 'sandbox')}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sandbox">Sandbox (Testing)</SelectItem>
+                <SelectItem value="production">Production</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">GSTIN</Label>
+            <Input value={cfg.gstin} onChange={e => set('gstin', e.target.value.toUpperCase())} maxLength={15} placeholder="29AABCT1332L1ZN" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1"><Label className="text-xs">Client ID</Label><Input value={cfg.client_id} onChange={e => set('client_id', e.target.value)} placeholder="From NIC portal" /></div>
+          <div className="space-y-1"><Label className="text-xs">Client Secret</Label><Input type="password" value={cfg.client_secret} onChange={e => set('client_secret', e.target.value)} placeholder="From NIC portal" /></div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1"><Label className="text-xs">NIC Username</Label><Input value={cfg.username} onChange={e => set('username', e.target.value)} placeholder="API username" /></div>
+          <div className="space-y-1"><Label className="text-xs">NIC Password</Label><Input type="password" value={cfg.password} onChange={e => set('password', e.target.value)} placeholder="API password" /></div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label className="text-xs">Default distance (km, 0 = auto)</Label>
+            <Input type="number" value={cfg.default_distance_km} onChange={e => set('default_distance_km', Number(e.target.value) || 0)} />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <input type="checkbox" checked={cfg.auto_generate_on_finalize} onChange={e => set('auto_generate_on_finalize', e.target.checked)} id="auto-ewb" />
+          <Label htmlFor="auto-ewb" className="text-xs cursor-pointer">Auto-generate EWB with IRN on finalize (when a vehicle + distance are present)</Label>
+        </div>
+        <div className="flex items-center gap-3 p-2 rounded bg-amber-50 border border-amber-200">
+          <input type="checkbox" checked={cfg.demo_mode} onChange={e => set('demo_mode', e.target.checked)} id="demo-ewb" />
+          <Label htmlFor="demo-ewb" className="text-xs cursor-pointer">
+            <span className="font-semibold text-amber-700">Demo Mode</span>
+            <span className="text-amber-600"> — fabricate a sample EWB number without calling NIC (UI/PDF preview). No credentials needed.</span>
+          </Label>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button onClick={save} disabled={saving} size="sm">
+            {saving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}<Save className="mr-2 h-3.5 w-3.5" /> Save E-Way Bill Config
+          </Button>
+          <Button variant="outline" onClick={testConnection} disabled={testing} size="sm">
+            {testing ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-2 h-3.5 w-3.5" />} Test Connection
+          </Button>
+          {saveMsg && <span className="text-xs text-muted-foreground">{saveMsg}</span>}
+        </div>
+        {testResult && (
+          <div className={`p-3 rounded text-sm ${testResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+            {testResult.success ? <CheckCircle className="inline h-4 w-4 mr-1" /> : <XCircle className="inline h-4 w-4 mr-1" />}{testResult.message}
+          </div>
+        )}
+        <div className="border-t pt-3 mt-3">
+          <p className="text-[10px] text-muted-foreground leading-relaxed">
+            <b>How it works:</b> For B2B invoices with an IRN, the EWB can be minted in the same NIC call (auto-toggle above, requires a vehicle + distance). For delivery challans, B2C, or invoices without IRN, use the <b>Generate E-Way Bill</b> action on the row. EWBs can be cancelled within 24 hours.
+            <br/><b>Demo Mode:</b> produces a fake EWB number so you can exercise the workflow before NIC EWB credentials are issued.
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function CameraSettingsTab() {
   const [front, setFront] = useState<CameraCfg>({ ...DEFAULT_CAM, label: 'Front View' });
   const [top, setTop] = useState<CameraCfg>({ ...DEFAULT_CAM, label: 'Top View' });
@@ -2517,6 +2645,9 @@ export default function SettingsPage() {
           <TabsTrigger value="einvoice" className="flex items-center gap-1">
             <Shield className="h-3.5 w-3.5" />eInvoice
           </TabsTrigger>
+          <TabsTrigger value="eway" className="flex items-center gap-1">
+            <Shield className="h-3.5 w-3.5" />E-Way Bill
+          </TabsTrigger>
           <TabsTrigger value="anpr" className="flex items-center gap-1">
             <Camera className="h-3.5 w-3.5" />ANPR
           </TabsTrigger>
@@ -2656,6 +2787,10 @@ export default function SettingsPage() {
         {/* eInvoice */}
         <TabsContent value="einvoice" className="mt-4">
           <EInvoiceSettingsTab />
+        </TabsContent>
+
+        <TabsContent value="eway" className="mt-4">
+          <EWaySettingsTab />
         </TabsContent>
 
         {/* ANPR — gate-camera plate detection */}

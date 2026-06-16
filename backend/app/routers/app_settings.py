@@ -454,6 +454,88 @@ async def test_einvoice_connection(
     return result
 
 
+# ── E-Way Bill config ─────────────────────────────────────────────────────────
+
+EWAY_CONFIG_KEY = "eway_config"
+
+_EWAY_DEFAULTS = {
+    "provider": "nic",
+    "base_url": "https://ewb-apisandbox.nic.in",
+    "client_id": "",
+    "client_secret": "",
+    "gstin": "",
+    "username": "",
+    "password": "",
+    "is_sandbox": True,
+    "is_enabled": False,
+    "auto_generate_on_finalize": False,
+    "default_distance_km": 0,
+    "demo_mode": False,
+}
+
+
+@router.get("/eway-config")
+async def get_eway_config(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Return E-Way Bill config (passwords masked). Admin only."""
+    raw = await _get_raw(db, EWAY_CONFIG_KEY)
+    if raw:
+        try:
+            return _mask_secrets({**_EWAY_DEFAULTS, **json.loads(raw)})
+        except Exception:
+            pass
+    return _mask_secrets(_EWAY_DEFAULTS)
+
+
+@router.put("/eway-config")
+async def update_eway_config(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Save E-Way Bill config. Admin only. Masked secrets preserve existing values."""
+    existing = {}
+    raw = await _get_raw(db, EWAY_CONFIG_KEY)
+    if raw:
+        try:
+            existing = json.loads(raw)
+        except Exception:
+            pass
+
+    merged = {**_EWAY_DEFAULTS, **existing}
+    for key, val in payload.items():
+        if key in ("client_secret", "password") and val == _MASK:
+            continue
+        if key in _EWAY_DEFAULTS:
+            merged[key] = val
+
+    merged["base_url"] = ("https://ewb-apisandbox.nic.in" if merged.get("is_sandbox")
+                          else "https://ewaybillapi.nic.in")
+    await _upsert(db, EWAY_CONFIG_KEY, json.dumps(merged))
+    return _mask_secrets(merged)
+
+
+@router.post("/eway-config/test")
+async def test_eway_connection(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Test NIC E-Way Bill authentication. Admin only."""
+    from app.integrations.eway import EWayClient, EWayConfig
+    raw = await _get_raw(db, EWAY_CONFIG_KEY)
+    if not raw:
+        raise HTTPException(400, "E-Way Bill not configured yet")
+    try:
+        config = EWayConfig.from_dict(json.loads(raw))
+    except Exception as e:
+        raise HTTPException(400, f"Invalid config: {e}")
+    if not config.demo_mode and (not config.client_id or not config.username):
+        raise HTTPException(400, "Client ID and Username are required (or enable Demo mode)")
+    return await EWayClient(config).test_connection()
+
+
 # ── Invoice Print Settings ────────────────────────────────────────────────────
 
 INVOICE_PRINT_SETTINGS_KEY = "invoice_print_settings"
