@@ -43,12 +43,21 @@ class ConsumeRequest(BaseModel):
     invoice_id: Optional[UUID] = None
     consumed_date: Optional[date] = None
     notes: Optional[str] = None
+    # P1: variance tracking — populated by auto-draw; manual consume uses quantity_mt for both
+    authorized_mt: Optional[Decimal] = None
+    actual_mt: Optional[Decimal] = None
+    vehicle_no: Optional[str] = None
 
 
 class ConsumptionResponse(BaseModel):
     id: UUID
     quantity_mt: Decimal
+    authorized_mt: Optional[Decimal] = None
+    actual_mt: Optional[Decimal] = None
+    variance_mt: Optional[Decimal] = None
+    vehicle_no: Optional[str] = None
     token_id: Optional[UUID]
+    token_no: Optional[int] = None          # joined from tokens table in detail endpoint
     invoice_id: Optional[UUID]
     consumed_date: date
     notes: Optional[str]
@@ -91,11 +100,12 @@ class RoyaltyPassListResponse(BaseModel):
 class RoyaltyReconciliation(BaseModel):
     date_from: date
     date_to: date
-    authorised_mt: float      # sum of pass quantities (issued in range)
-    consumed_mt: float        # sum of consumptions in range
-    purchase_inbound_mt: float  # sum of completed purchase-token net weight in range
-    balance_mt: float         # authorised - consumed
-    unaccounted_mt: float     # purchase_inbound - consumed (loads received without a pass)
+    authorised_mt: float
+    consumed_mt: float
+    purchase_inbound_mt: float
+    balance_mt: float
+    unaccounted_mt: float
+    total_royalty_amount: float      # P3: sum of pass.amount (royalty ₹ paid)
     pass_count: int
     active_count: int
     expiring_count: int

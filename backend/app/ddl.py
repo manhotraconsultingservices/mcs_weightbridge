@@ -725,6 +725,13 @@ def get_column_migrations() -> list[str]:
         "CREATE INDEX IF NOT EXISTS ix_royalty_valid_till ON royalty_passes(company_id, valid_till)",
         "CREATE INDEX IF NOT EXISTS ix_royalty_cons_pass ON royalty_pass_consumptions(pass_id)",
 
+        # Royalty P1: link token to its transit pass + variance tracking on consumptions
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS transit_pass_id UUID REFERENCES royalty_passes(id)",
+        "ALTER TABLE royalty_pass_consumptions ADD COLUMN IF NOT EXISTS authorized_mt NUMERIC(14,3)",
+        "ALTER TABLE royalty_pass_consumptions ADD COLUMN IF NOT EXISTS actual_mt NUMERIC(14,3)",
+        "ALTER TABLE royalty_pass_consumptions ADD COLUMN IF NOT EXISTS variance_mt NUMERIC(14,3)",
+        "ALTER TABLE royalty_pass_consumptions ADD COLUMN IF NOT EXISTS vehicle_no VARCHAR(30)",
+
         # ── Horizon-2: Customer portal login (separate identity from staff) ──
         """
         CREATE TABLE IF NOT EXISTS customer_users (

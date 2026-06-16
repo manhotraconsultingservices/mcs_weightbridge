@@ -20,6 +20,7 @@ class TokenCreate(BaseModel):
     transporter_id: Optional[UUID] = None
     gate_pass: Optional[str] = None
     remarks: Optional[str] = None
+    transit_pass_id: Optional[UUID] = None   # links purchase token to its transit/royalty pass
 
 
 class TokenFirstWeight(BaseModel):
@@ -52,6 +53,7 @@ class TokenVolumeCreate(BaseModel):
     volume_cft: Decimal                  # cubic feet — canonical unit in this system
     gate_pass: Optional[str] = None
     remarks: Optional[str] = None
+    transit_pass_id: Optional[UUID] = None
 
 
 class TokenUpdate(BaseModel):
@@ -141,6 +143,7 @@ class TokenResponse(BaseModel):
     source: str = "manual"                   # manual | anpr | kiosk
     anpr_entry_at: Optional[datetime] = None
     anpr_exit_at: Optional[datetime] = None
+    transit_pass_id: Optional[UUID] = None
     remarks: Optional[str] = None
     created_at: datetime
     first_weight_at: Optional[datetime] = None

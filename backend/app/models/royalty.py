@@ -56,6 +56,10 @@ class RoyaltyPassConsumption(Base):
     token_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tokens.id"), nullable=True)
     invoice_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("invoices.id"), nullable=True)
     quantity_mt: Mapped[Decimal] = mapped_column(Numeric(14, 3))
+    authorized_mt: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)  # what pass allowed
+    actual_mt: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)       # what scale recorded
+    variance_mt: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)     # actual - authorized (>0 = overrun)
+    vehicle_no: Mapped[str | None] = mapped_column(String(30), nullable=True)
     consumed_date: Mapped[date] = mapped_column(Date)
     notes: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))

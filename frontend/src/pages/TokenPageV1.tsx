@@ -132,6 +132,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     vehicle_id: '',
     gate_pass: '',
     remarks: '',
+    transit_pass_id: '',   // P1: link purchase token to its royalty/transit pass
   });
   // Volume-based weighment (skips the bridge) — volume entered in CFT only
   const [weightMethod, setWeightMethod] = useState<'weighbridge' | 'volume'>('weighbridge');
@@ -144,6 +145,11 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     setTyreCount(n);
     setVolumeValue(String(TYRE_VOLUME_CFT[n] ?? ''));
   }
+
+  // P1: active transit/royalty passes for purchase tokens
+  const [activePasses, setActivePasses] = useState<{ id: string; pass_no: string; balance_mt: number | string }[]>([]);
+  const [passWarning, setPassWarning] = useState('');
+
   const [parties, setParties] = useState<Party[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -199,11 +205,13 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   }, []);
 
   function resetForm() {
-    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass: '', remarks: '' });
+    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass: '', remarks: '', transit_pass_id: '' });
     setVehicleSearch('');
     setSelectedVehicle(null);
     setVolumeValue('');
     setTyreCount(null);
+    setActivePasses([]);
+    setPassWarning('');
     setError('');
   }
 
@@ -215,7 +223,21 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     : 0;
 
   const handleTypeChange = (type: string) => {
-    setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '' }));
+    setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '' }));
+    if (type === 'purchase') {
+      api.get('/api/v1/royalty/passes', { params: { status: 'active', page_size: 100 } })
+        .then(r => {
+          const passes = (r.data.items ?? []).map((p: { id: string; pass_no: string; balance_mt: number | string }) => ({
+            id: p.id, pass_no: p.pass_no, balance_mt: p.balance_mt,
+          }));
+          setActivePasses(passes);
+          setPassWarning(passes.length === 0 ? 'No active transit passes found. Purchase loads may be unaccounted.' : '');
+        })
+        .catch(() => { setActivePasses([]); });
+    } else {
+      setActivePasses([]);
+      setPassWarning('');
+    }
   };
 
   const handleVehicleSelect = (vehicle: Vehicle) => {
@@ -260,6 +282,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           product_id: form.product_id,
           vehicle_id: form.vehicle_id || undefined,
           volume_cft: Number(volumeCft.toFixed(3)),
+          transit_pass_id: form.transit_pass_id || undefined,
           gate_pass: form.gate_pass || undefined,
           remarks: form.remarks
             ? `${form.remarks}${tyreCount ? ` | ${tyreCount}-tyre truck` : ''}`
@@ -303,6 +326,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       party_id: form.party_id || undefined,
       product_id: form.product_id || undefined,
       vehicle_id: form.vehicle_id || undefined,
+      transit_pass_id: form.transit_pass_id || undefined,
       remarks: form.remarks || undefined,
     };
     try {
@@ -503,6 +527,42 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           </div>
           {form.party_id && <CreditStatusBanner partyId={form.party_id} className="mt-1.5" />}
         </div>
+
+        {/* P1: Transit / Royalty Pass — only shown for purchase tokens */}
+        {form.token_type === 'purchase' && (
+          <div className="space-y-1">
+            <Label className="text-xs">Transit / Royalty Pass</Label>
+            {passWarning && (
+              <p className="text-[11px] text-amber-600 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3 shrink-0" />{passWarning}
+              </p>
+            )}
+            <Select
+              value={form.transit_pass_id || '__none__'}
+              onValueChange={v => setForm(f => ({ ...f, transit_pass_id: v === '__none__' ? '' : v }))}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <span className="truncate text-left flex-1">
+                  {form.transit_pass_id
+                    ? (() => {
+                        const p = activePasses.find(x => x.id === form.transit_pass_id);
+                        return p ? `${p.pass_no} (bal ${Number(p.balance_mt).toFixed(2)} MT)` : '…';
+                      })()
+                    : <span className="text-muted-foreground">None (no auto-draw)</span>}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__"><span className="text-muted-foreground">None</span></SelectItem>
+                {activePasses.map(p => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.pass_no}
+                    <span className="text-muted-foreground text-xs ml-2">bal {Number(p.balance_mt).toFixed(2)} MT</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Material */}
         <div className="space-y-1">

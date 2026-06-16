@@ -143,6 +143,50 @@ async def _load_token(db: AsyncSession, token_id: uuid.UUID) -> Token:
     return token
 
 
+async def _auto_consume_royalty_pass(db: AsyncSession, token: Token) -> None:
+    """Non-blocking: if token has a transit_pass_id, draw net_weight against it.
+
+    Called after second-weight completion / volume token creation.
+    All errors are swallowed so token completion never fails due to a pass issue.
+    net_weight is in kg; quantity_mt = net_weight / 1000.
+    """
+    try:
+        if not token.transit_pass_id or not token.net_weight:
+            return
+        from app.models.royalty import RoyaltyPass, RoyaltyPassConsumption
+        from sqlalchemy.orm import selectinload as _sl
+        p = (await db.execute(
+            select(RoyaltyPass).options(_sl(RoyaltyPass.consumptions))
+            .where(RoyaltyPass.id == token.transit_pass_id)
+        )).scalar_one_or_none()
+        if not p or p.status == "cancelled":
+            return
+        net_mt = Decimal(str(token.net_weight)) / Decimal("1000")
+        consumed_so_far = sum((c.quantity_mt or Decimal("0")) for c in p.consumptions)
+        balance = (p.quantity_mt or Decimal("0")) - consumed_so_far
+        # authorized = what the pass can still cover; actual = what the truck brought
+        auth_mt = min(net_mt, balance) if balance > 0 else Decimal("0")
+        variance_mt = net_mt - auth_mt  # >0 means overrun
+
+        db.add(RoyaltyPassConsumption(
+            pass_id=p.id,
+            company_id=p.company_id,
+            token_id=token.id,
+            quantity_mt=net_mt,
+            authorized_mt=auth_mt,
+            actual_mt=net_mt,
+            variance_mt=variance_mt,
+            vehicle_no=token.vehicle_no,
+            consumed_date=token.token_date,
+            notes=f"Auto-draw at {'second weight' if token.weight_method == 'weighbridge' else 'volume token'}",
+        ))
+        new_consumed = consumed_so_far + net_mt
+        if p.quantity_mt and new_consumed >= p.quantity_mt and p.status == "active":
+            p.status = "exhausted"
+    except Exception:
+        pass  # never block token completion
+
+
 def _compute_weights(token: Token):
     """
     Set gross / tare / net weights based on token_type.
@@ -366,6 +410,7 @@ async def create_token(
         transporter_id=payload.transporter_id,
         gate_pass=payload.gate_pass,    # optional free-text note from the form
         gate_pass_no=gate_pass_no,
+        transit_pass_id=payload.transit_pass_id,
         remarks=payload.remarks,
         created_by=current_user.id,
         status="OPEN",
@@ -438,6 +483,7 @@ async def create_volume_token(
         transporter_id=payload.transporter_id,
         gate_pass=payload.gate_pass,
         gate_pass_no=await next_gate_pass_no(db, company.id, fy.id, branch_id=branch_id),
+        transit_pass_id=payload.transit_pass_id,
         remarks=payload.remarks,
         created_by=current_user.id,
         status="COMPLETED",
@@ -457,6 +503,9 @@ async def create_volume_token(
     if token.token_type in ("sale", "purchase"):
         await _auto_create_invoice(db, token, company, fy, current_user.id,
                                    invoice_type=token.token_type)
+
+    # P1: Auto-draw against the linked transit/royalty pass (non-blocking)
+    await _auto_consume_royalty_pass(db, token)
 
     await db.commit()
 
@@ -753,6 +802,9 @@ async def record_second_weight(
     if token.token_type in ("sale", "purchase"):
         await _auto_create_invoice(db, token, company, fy, current_user.id,
                                    invoice_type=token.token_type)
+
+    # P1: Auto-draw against the linked transit/royalty pass (non-blocking)
+    await _auto_consume_royalty_pass(db, token)
 
     await db.commit()
 

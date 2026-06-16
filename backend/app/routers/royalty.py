@@ -21,7 +21,7 @@ from app.models.token import Token
 from app.models.user import User
 from app.schemas.royalty import (
     RoyaltyPassCreate, RoyaltyPassUpdate, RoyaltyPassResponse, RoyaltyPassListResponse,
-    ConsumeRequest, RoyaltyReconciliation,
+    ConsumeRequest, ConsumptionResponse, RoyaltyReconciliation,
 )
 
 router = APIRouter(prefix="/api/v1/royalty", tags=["Royalty / Transit Pass"])
@@ -168,20 +168,64 @@ async def consume(
     qty = Decimal(str(payload.quantity_mt or 0))
     if qty <= 0:
         raise HTTPException(400, "quantity_mt must be greater than zero")
+
+    # Compute current balance for variance tracking
+    consumed_so_far = sum((c.quantity_mt or Decimal("0")) for c in p.consumptions)
+    balance = (p.quantity_mt or Decimal("0")) - consumed_so_far
+
+    # authorized_mt = what the pass could cover; actual_mt = what the truck actually brought
+    auth_mt = payload.authorized_mt if payload.authorized_mt is not None else (min(qty, balance) if balance > 0 else qty)
+    actual_mt = payload.actual_mt if payload.actual_mt is not None else qty
+    variance_mt = actual_mt - auth_mt  # >0 = overrun (truck brought more than pass allowed)
+
     db.add(RoyaltyPassConsumption(
         pass_id=p.id, company_id=p.company_id,
         token_id=payload.token_id, invoice_id=payload.invoice_id,
         quantity_mt=qty,
+        authorized_mt=auth_mt,
+        actual_mt=actual_mt,
+        variance_mt=variance_mt,
+        vehicle_no=payload.vehicle_no,
         consumed_date=payload.consumed_date or date.today(),
         notes=payload.notes, created_by=current_user.id,
     ))
     await db.flush()
     # Auto-exhaust when balance hits zero (overrun still allowed but flagged)
-    consumed = sum((c.quantity_mt or Decimal("0")) for c in p.consumptions) + qty
-    if p.quantity_mt and consumed >= p.quantity_mt and p.status == "active":
+    new_consumed = consumed_so_far + qty
+    if p.quantity_mt and new_consumed >= p.quantity_mt and p.status == "active":
         p.status = "exhausted"
     await db.commit()
     return await _to_response(db, await _load(db, pass_id))
+
+
+@router.get("/passes/{pass_id}/consumptions", response_model=list[ConsumptionResponse])
+async def get_consumptions(
+    pass_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Full consumption history for a pass, with token_no joined from tokens."""
+    rows = (await db.execute(
+        select(RoyaltyPassConsumption)
+        .where(RoyaltyPassConsumption.pass_id == pass_id)
+        .order_by(RoyaltyPassConsumption.consumed_date.desc(), RoyaltyPassConsumption.created_at.desc())
+    )).scalars().all()
+
+    # Batch-fetch token_no for any token_id references
+    token_ids = [c.token_id for c in rows if c.token_id]
+    token_no_map: dict[uuid.UUID, int | None] = {}
+    if token_ids:
+        t_rows = (await db.execute(
+            select(Token.id, Token.token_no).where(Token.id.in_(token_ids))
+        )).all()
+        token_no_map = {r.id: r.token_no for r in t_rows}
+
+    result = []
+    for c in rows:
+        r = ConsumptionResponse.model_validate(c)
+        r.token_no = token_no_map.get(c.token_id) if c.token_id else None
+        result.append(r)
+    return result
 
 
 @router.get("/reconciliation", response_model=RoyaltyReconciliation)
@@ -192,13 +236,19 @@ async def reconciliation(
     current_user: User = Depends(get_current_user),
 ):
     cid = current_user.company_id
-    authorised = (await db.execute(
-        select(func.coalesce(func.sum(RoyaltyPass.quantity_mt), 0)).where(
+    agg = (await db.execute(
+        select(
+            func.coalesce(func.sum(RoyaltyPass.quantity_mt), 0),
+            func.coalesce(func.sum(RoyaltyPass.amount), 0),
+        ).where(
             RoyaltyPass.company_id == cid,
             RoyaltyPass.status != "cancelled",
             RoyaltyPass.issue_date >= date_from, RoyaltyPass.issue_date <= date_to,
         )
-    )).scalar() or 0
+    )).first()
+    authorised = agg[0] if agg else 0
+    total_royalty_amount = float(agg[1]) if agg else 0.0
+
     consumed = (await db.execute(
         select(func.coalesce(func.sum(RoyaltyPassConsumption.quantity_mt), 0)).where(
             RoyaltyPassConsumption.company_id == cid,
@@ -237,6 +287,7 @@ async def reconciliation(
         purchase_inbound_mt=round(inbound_mt, 3),
         balance_mt=float(authorised) - float(consumed),
         unaccounted_mt=round(inbound_mt - float(consumed), 3),
+        total_royalty_amount=round(total_royalty_amount, 2),
         pass_count=int(counts[0] or 0),
         active_count=int(counts[1] or 0),
         expiring_count=int(counts[2] or 0),

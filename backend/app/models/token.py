@@ -60,6 +60,7 @@ class Token(Base):
     anpr_exit_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # How the token was created: 'manual' (kiosk/TokenPage) | 'anpr' (gate camera) | 'kiosk'
     source: Mapped[str] = mapped_column(String(20), default="manual")
+    transit_pass_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("royalty_passes.id"), nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

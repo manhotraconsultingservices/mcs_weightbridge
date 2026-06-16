@@ -1,7 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import api from '@/services/api';
 import { toast } from 'sonner';
-import { Plus, Loader2, X, MinusCircle, AlertTriangle, FileText } from 'lucide-react';
+import {
+  Plus, Loader2, X, MinusCircle, AlertTriangle, FileText,
+  ChevronRight, ChevronDown, Download,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,12 +21,21 @@ interface Pass {
   status: string; consumed_mt: number | string; balance_mt: number | string;
   utilization_pct: number; days_to_expiry: number | null;
 }
+interface Consumption {
+  id: string; quantity_mt: number | string;
+  authorized_mt: number | string | null; actual_mt: number | string | null;
+  variance_mt: number | string | null; vehicle_no: string | null;
+  token_id: string | null; token_no: number | null; invoice_id: string | null;
+  consumed_date: string; notes: string | null; created_at: string;
+}
 interface Recon {
   authorised_mt: number; consumed_mt: number; purchase_inbound_mt: number;
-  balance_mt: number; unaccounted_mt: number; pass_count: number; active_count: number; expiring_count: number;
+  balance_mt: number; unaccounted_mt: number; total_royalty_amount: number;
+  pass_count: number; active_count: number; expiring_count: number;
 }
 
-const MT = (v: number | string) => Number(v ?? 0).toFixed(3) + ' MT';
+const MT = (v: number | string | null | undefined) => Number(v ?? 0).toFixed(3) + ' MT';
+const INR = (v: number | string | null | undefined) => '₹' + Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
 const today = () => new Date().toISOString().slice(0, 10);
 const monthStart = () => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); };
 const PASS_TYPES = ['royalty', 'e_transit', 'mineral_permit'];
@@ -45,6 +57,11 @@ export default function RoyaltyPassesPage() {
   const [consumeFor, setConsumeFor] = useState<Pass | null>(null);
   const [consumeForm, setConsumeForm] = useState({ quantity_mt: '', notes: '' });
 
+  // P3: expanded consumption sub-table state
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [consumptions, setConsumptions] = useState<Record<string, Consumption[]>>({});
+  const [loadingCons, setLoadingCons] = useState<string | null>(null);
+
   const [form, setForm] = useState({
     pass_no: '', pass_type: 'royalty', source_name: '', party_id: '', product_id: '', mineral: '',
     issue_date: today(), valid_till: '', quantity_mt: '', rate: '', amount: '', vehicle_no: '', notes: '',
@@ -52,7 +69,6 @@ export default function RoyaltyPassesPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    // Passes load on their own — a reconciliation failure must NEVER blank the table.
     try {
       const p = await api.get('/api/v1/royalty/passes', { params: { page_size: 300 } });
       setRows(p.data.items ?? []);
@@ -61,11 +77,10 @@ export default function RoyaltyPassesPage() {
     } finally {
       setLoading(false);
     }
-    // Reconciliation is best-effort (powers the KPI strip only).
     try {
       const r = await api.get('/api/v1/royalty/reconciliation', { params: { date_from: range.from, date_to: range.to } });
       setRecon(r.data);
-    } catch { /* recon optional — KPIs just stay blank */ }
+    } catch { /* recon optional */ }
   }, [range.from, range.to]);
 
   useEffect(() => {
@@ -74,9 +89,45 @@ export default function RoyaltyPassesPage() {
     api.get('/api/v1/products', { params: { page_size: 500 } }).then(r => setProducts(Array.isArray(r.data) ? r.data : r.data.items ?? [])).catch(() => {});
   }, [load]);
 
+  // P3: toggle consumption history for a pass row
+  async function toggleConsumptions(passId: string) {
+    if (expandedId === passId) { setExpandedId(null); return; }
+    setExpandedId(passId);
+    if (consumptions[passId]) return; // already cached
+    setLoadingCons(passId);
+    try {
+      const r = await api.get(`/api/v1/royalty/passes/${passId}/consumptions`);
+      setConsumptions(prev => ({ ...prev, [passId]: r.data }));
+    } catch {
+      toast.error('Could not load consumption history');
+    } finally {
+      setLoadingCons(null);
+    }
+  }
+
+  // P3: CSV export for a pass's consumption history
+  function exportCsv(passNo: string, passId: string) {
+    const rows = consumptions[passId];
+    if (!rows || rows.length === 0) { toast.error('Load history first'); return; }
+    const hdr = ['Date', 'Token No', 'Vehicle No', 'Authorised MT', 'Actual MT', 'Variance MT', 'Quantity MT', 'Notes'];
+    const lines = rows.map(c => [
+      c.consumed_date, c.token_no ?? '', c.vehicle_no ?? '',
+      Number(c.authorized_mt ?? 0).toFixed(3), Number(c.actual_mt ?? 0).toFixed(3),
+      Number(c.variance_mt ?? 0).toFixed(3), Number(c.quantity_mt).toFixed(3),
+      c.notes ?? '',
+    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+    const csv = [hdr.join(','), ...lines].join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = `royalty_${passNo}_consumptions.csv`;
+    a.click();
+  }
+
   function resetForm() {
-    setForm({ pass_no: '', pass_type: 'royalty', source_name: '', party_id: '', product_id: '', mineral: '',
-      issue_date: today(), valid_till: '', quantity_mt: '', rate: '', amount: '', vehicle_no: '', notes: '' });
+    setForm({
+      pass_no: '', pass_type: 'royalty', source_name: '', party_id: '', product_id: '', mineral: '',
+      issue_date: today(), valid_till: '', quantity_mt: '', rate: '', amount: '', vehicle_no: '', notes: '',
+    });
     setErr('');
   }
 
@@ -109,6 +160,8 @@ export default function RoyaltyPassesPage() {
         quantity_mt: Number(consumeForm.quantity_mt), notes: consumeForm.notes || undefined,
       });
       toast.success('Consumption recorded');
+      // Invalidate cached consumptions so next expand re-fetches
+      setConsumptions(prev => { const n = { ...prev }; delete n[consumeFor.id]; return n; });
       setConsumeFor(null); setConsumeForm({ quantity_mt: '', notes: '' }); load();
     } catch (e: unknown) {
       toast.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed');
@@ -138,19 +191,20 @@ export default function RoyaltyPassesPage() {
         </div>
       </div>
 
-      {/* Reconciliation cards */}
+      {/* Reconciliation cards — 6 cards (P3: + Royalty Paid) */}
       {recon && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
           {[
-            { label: 'Authorised', val: recon.authorised_mt, hint: 'on passes issued in range' },
-            { label: 'Consumed', val: recon.consumed_mt, hint: 'drawn against passes' },
-            { label: 'Purchase inbound', val: recon.purchase_inbound_mt, hint: 'completed purchase tokens' },
-            { label: 'Pass balance', val: recon.balance_mt, hint: 'authorised − consumed' },
-            { label: 'Unaccounted', val: recon.unaccounted_mt, hint: 'inbound − consumed', warn: recon.unaccounted_mt > 0.5 },
+            { label: 'Authorised', val: MT(recon.authorised_mt), hint: 'on passes issued in range' },
+            { label: 'Consumed', val: MT(recon.consumed_mt), hint: 'drawn against passes' },
+            { label: 'Purchase inbound', val: MT(recon.purchase_inbound_mt), hint: 'completed purchase tokens' },
+            { label: 'Pass balance', val: MT(recon.balance_mt), hint: 'authorised − consumed' },
+            { label: 'Unaccounted', val: MT(recon.unaccounted_mt), hint: 'inbound − consumed', warn: recon.unaccounted_mt > 0.5 },
+            { label: 'Royalty paid', val: INR(recon.total_royalty_amount), hint: 'sum of pass amounts (₹)', accent: true },
           ].map(c => (
-            <div key={c.label} className={`rounded-lg border p-3 ${c.warn ? 'border-amber-300 bg-amber-50' : ''}`}>
+            <div key={c.label} className={`rounded-lg border p-3 ${c.warn ? 'border-amber-300 bg-amber-50' : c.accent ? 'border-blue-200 bg-blue-50' : ''}`}>
               <p className="text-[11px] text-muted-foreground">{c.label}</p>
-              <p className={`text-lg font-bold ${c.warn ? 'text-amber-700' : ''}`}>{MT(c.val)}</p>
+              <p className={`text-base font-bold ${c.warn ? 'text-amber-700' : c.accent ? 'text-blue-700' : ''}`}>{c.val}</p>
               <p className="text-[10px] text-muted-foreground">{c.hint}</p>
             </div>
           ))}
@@ -164,48 +218,125 @@ export default function RoyaltyPassesPage() {
         </div>
       )}
 
-      {/* Passes table */}
+      {/* Passes table with expandable consumption rows */}
       <div className="rounded-lg border overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-muted/40 text-xs">
             <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:text-left">
+              <th className="w-6"></th>
               <th>Pass No</th><th>Type</th><th>Source / Supplier</th><th>Mineral</th>
               <th>Valid Till</th><th className="w-48">Utilisation</th><th>Status</th><th></th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} className="px-3 py-6 text-center text-muted-foreground"><Loader2 className="inline h-4 w-4 animate-spin" /> Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">No royalty passes yet.</td></tr>}
+            {loading && <tr><td colSpan={9} className="px-3 py-6 text-center text-muted-foreground"><Loader2 className="inline h-4 w-4 animate-spin" /> Loading…</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={9} className="px-3 py-6 text-center text-muted-foreground">No royalty passes yet.</td></tr>}
             {rows.map(p => {
               const pct = Math.min(100, Number(p.utilization_pct) || 0);
               const over = Number(p.balance_mt) < 0;
+              const isExpanded = expandedId === p.id;
               return (
-                <tr key={p.id} className="border-t [&>td]:px-3 [&>td]:py-2 align-middle">
-                  <td className="font-mono font-semibold">{p.pass_no}</td>
-                  <td className="text-xs capitalize">{p.pass_type.replace('_', ' ')}</td>
-                  <td className="max-w-[170px] truncate">{p.source_name ?? p.party_name ?? '—'}</td>
-                  <td className="text-xs">{p.mineral ?? '—'}</td>
-                  <td className="text-xs">{p.valid_till ? new Date(p.valid_till).toLocaleDateString('en-IN') : '—'}{p.days_to_expiry != null && p.days_to_expiry <= 15 && p.status === 'active' && <span className="text-amber-600"> ({p.days_to_expiry}d)</span>}</td>
-                  <td>
-                    <div className="h-2 rounded-full bg-muted overflow-hidden">
-                      <div className={`h-full ${over ? 'bg-red-500' : pct > 85 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
-                    </div>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">{MT(p.consumed_mt)} / {MT(p.quantity_mt)} · bal {MT(p.balance_mt)}</p>
-                  </td>
-                  <td><span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_PILL[p.status] ?? ''}`}>{p.status}</span></td>
-                  <td>
-                    <div className="flex items-center gap-1 justify-end">
-                      {p.status !== 'cancelled' && (
-                        <button onClick={() => { setConsumeFor(p); setConsumeForm({ quantity_mt: '', notes: '' }); }} title="Record consumption"
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-blue-700"><MinusCircle className="h-3.5 w-3.5" /></button>
+                <>
+                  <tr key={p.id} className="border-t [&>td]:px-3 [&>td]:py-2 align-middle">
+                    {/* Expand toggle */}
+                    <td>
+                      <button onClick={() => toggleConsumptions(p.id)}
+                        className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-accent text-muted-foreground"
+                        title="Show consumption history">
+                        {loadingCons === p.id
+                          ? <Loader2 className="h-3 w-3 animate-spin" />
+                          : isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                      </button>
+                    </td>
+                    <td className="font-mono font-semibold">{p.pass_no}</td>
+                    <td className="text-xs capitalize">{p.pass_type.replace('_', ' ')}</td>
+                    <td className="max-w-[160px] truncate">{p.source_name ?? p.party_name ?? '—'}</td>
+                    <td className="text-xs">{p.mineral ?? '—'}</td>
+                    <td className="text-xs">
+                      {p.valid_till ? new Date(p.valid_till).toLocaleDateString('en-IN') : '—'}
+                      {p.days_to_expiry != null && p.days_to_expiry <= 15 && p.status === 'active' && (
+                        <span className="text-amber-600"> ({p.days_to_expiry}d)</span>
                       )}
-                      {p.status !== 'cancelled' && (
-                        <button onClick={() => cancel(p)} title="Cancel pass"
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-red-600"><X className="h-3.5 w-3.5" /></button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
+                    </td>
+                    <td>
+                      <div className="h-2 rounded-full bg-muted overflow-hidden">
+                        <div className={`h-full ${over ? 'bg-red-500' : pct > 85 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{MT(p.consumed_mt)} / {MT(p.quantity_mt)} · bal {MT(p.balance_mt)}</p>
+                    </td>
+                    <td><span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_PILL[p.status] ?? ''}`}>{p.status}</span></td>
+                    <td>
+                      <div className="flex items-center gap-1 justify-end">
+                        {p.status !== 'cancelled' && (
+                          <button onClick={() => { setConsumeFor(p); setConsumeForm({ quantity_mt: '', notes: '' }); }} title="Record consumption"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-blue-700">
+                            <MinusCircle className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {p.status !== 'cancelled' && (
+                          <button onClick={() => cancel(p)} title="Cancel pass"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-red-600">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+
+                  {/* P3: Expandable consumption sub-table */}
+                  {isExpanded && (
+                    <tr key={`${p.id}-cons`} className="bg-muted/20">
+                      <td colSpan={9} className="px-4 py-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Consumption History — {p.pass_no}</span>
+                          {consumptions[p.id]?.length > 0 && (
+                            <button onClick={() => exportCsv(p.pass_no, p.id)}
+                              className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline">
+                              <Download className="h-3 w-3" /> Export CSV
+                            </button>
+                          )}
+                        </div>
+                        {!consumptions[p.id] ? (
+                          <p className="text-xs text-muted-foreground">Loading…</p>
+                        ) : consumptions[p.id].length === 0 ? (
+                          <p className="text-xs text-muted-foreground italic">No consumptions recorded yet.</p>
+                        ) : (
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="[&>th]:px-2 [&>th]:py-1 [&>th]:text-left text-muted-foreground font-medium border-b">
+                                <th>Date</th><th>Token #</th><th>Vehicle</th>
+                                <th className="text-right">Authorised MT</th>
+                                <th className="text-right">Actual MT</th>
+                                <th className="text-right">Variance MT</th>
+                                <th className="text-right">Qty MT</th>
+                                <th>Notes</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {consumptions[p.id].map(c => {
+                                const variance = Number(c.variance_mt ?? 0);
+                                return (
+                                  <tr key={c.id} className="border-t [&>td]:px-2 [&>td]:py-1.5 align-middle">
+                                    <td>{c.consumed_date}</td>
+                                    <td className="font-mono">{c.token_no ?? '—'}</td>
+                                    <td>{c.vehicle_no ?? '—'}</td>
+                                    <td className="text-right">{Number(c.authorized_mt ?? 0).toFixed(3)}</td>
+                                    <td className="text-right">{Number(c.actual_mt ?? 0).toFixed(3)}</td>
+                                    <td className={`text-right font-medium ${variance > 0.01 ? 'text-red-600' : variance < -0.01 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                                      {variance > 0 ? '+' : ''}{variance.toFixed(3)}
+                                    </td>
+                                    <td className="text-right font-semibold">{Number(c.quantity_mt).toFixed(3)}</td>
+                                    <td className="text-muted-foreground max-w-[180px] truncate">{c.notes ?? '—'}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </>
               );
             })}
           </tbody>
@@ -232,18 +363,24 @@ export default function RoyaltyPassesPage() {
               <div className="space-y-1"><Label className="text-xs">Source (mine/quarry)</Label><Input value={form.source_name} onChange={e => setForm(f => ({ ...f, source_name: e.target.value }))} /></div>
               <div className="space-y-1">
                 <Label className="text-xs">Supplier (party)</Label>
-                <Select value={form.party_id || undefined} onValueChange={v => setForm(f => ({ ...f, party_id: v ?? '' }))}>
+                <Select value={form.party_id || '__none__'} onValueChange={v => setForm(f => ({ ...f, party_id: v === '__none__' ? '' : v }))}>
                   <SelectTrigger><span className="truncate text-left flex-1">{form.party_id ? (parties.find(p => p.id === form.party_id)?.name ?? '…') : <span className="text-muted-foreground">Optional…</span>}</span></SelectTrigger>
-                  <SelectContent>{parties.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                  <SelectContent>
+                    <SelectItem value="__none__"><span className="text-muted-foreground">None</span></SelectItem>
+                    {parties.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Mineral / Material</Label>
-                <Select value={form.product_id || undefined} onValueChange={v => { const pr = products.find(x => x.id === v); setForm(f => ({ ...f, product_id: v ?? '', mineral: pr?.name ?? f.mineral })); }}>
+                <Select value={form.product_id || '__none__'} onValueChange={v => { const pr = products.find(x => x.id === v); setForm(f => ({ ...f, product_id: v === '__none__' ? '' : (v ?? ''), mineral: pr?.name ?? f.mineral })); }}>
                   <SelectTrigger><span className="truncate text-left flex-1">{form.product_id ? (products.find(p => p.id === form.product_id)?.name ?? '…') : (form.mineral || <span className="text-muted-foreground">Select / type below…</span>)}</span></SelectTrigger>
-                  <SelectContent>{products.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                  <SelectContent>
+                    <SelectItem value="__none__"><span className="text-muted-foreground">None</span></SelectItem>
+                    {products.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1"><Label className="text-xs">…or free-text mineral</Label><Input value={form.mineral} onChange={e => setForm(f => ({ ...f, mineral: e.target.value }))} placeholder="e.g. Boulder / Gitti" /></div>
