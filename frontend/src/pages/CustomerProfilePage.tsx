@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/tabs';
 import api from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
+import PortalAccessDialog from '@/components/PortalAccessDialog';
 import type { Party360Response } from '@/types';
 
 const INR = (v: number | string | null | undefined) => {
@@ -691,6 +692,7 @@ export default function CustomerProfilePage() {
             <Tag className="mr-1.5 h-3.5 w-3.5" /> Edit pricing
           </Button>
         </Link>
+        {user?.role === 'admin' && <PortalAccessDialog partyId={party.id} partyName={party.name} />}
       </div>
     </div>
   );

@@ -1742,6 +1742,45 @@ function EWaySettingsTab() {
   );
 }
 
+// ------------------------------------------------------------------ //
+// UPI Collection Settings Tab (static — shown to customers on the portal)
+// ------------------------------------------------------------------ //
+function UpiSettingsTab() {
+  const [cfg, setCfg] = useState({ vpa: '', payee_name: '', enabled: false });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  useEffect(() => {
+    api.get('/api/v1/app-settings/upi-config').then(r => setCfg({ vpa: '', payee_name: '', enabled: false, ...r.data })).catch(() => {});
+  }, []);
+  async function save() {
+    setSaving(true); setMsg('');
+    try { await api.put('/api/v1/app-settings/upi-config', cfg); setMsg('Saved!'); setTimeout(() => setMsg(''), 3000); }
+    catch { setMsg('Failed to save'); } finally { setSaving(false); }
+  }
+  return (
+    <Card>
+      <div className="p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold">UPI Collection (Customer Portal)</h3>
+            <p className="text-xs text-muted-foreground">Shown to customers on the self-service portal so they can pay you by UPI. Payments are reconciled manually.</p>
+          </div>
+          <div className="flex items-center gap-2"><Label className="text-xs">Enabled</Label><input type="checkbox" checked={cfg.enabled} onChange={e => setCfg(c => ({ ...c, enabled: e.target.checked }))} /></div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1"><Label className="text-xs">UPI ID / VPA</Label><Input value={cfg.vpa} onChange={e => setCfg(c => ({ ...c, vpa: e.target.value }))} placeholder="business@okaxis" /></div>
+          <div className="space-y-1"><Label className="text-xs">Payee Name</Label><Input value={cfg.payee_name} onChange={e => setCfg(c => ({ ...c, payee_name: e.target.value }))} placeholder="As registered on UPI" /></div>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button onClick={save} disabled={saving} size="sm">{saving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}<Save className="mr-2 h-3.5 w-3.5" /> Save UPI Config</Button>
+          {msg && <span className="text-xs text-muted-foreground">{msg}</span>}
+        </div>
+        <div className="border-t pt-3"><p className="text-[10px] text-muted-foreground">The customer portal lives at <b>/portal</b>. Create per-customer logins from a customer's profile page ("Portal Access"). This is a static UPI display (no live gateway) — swap in Razorpay/Cashfree later for auto-reconciliation.</p></div>
+      </div>
+    </Card>
+  );
+}
+
 function CameraSettingsTab() {
   const [front, setFront] = useState<CameraCfg>({ ...DEFAULT_CAM, label: 'Front View' });
   const [top, setTop] = useState<CameraCfg>({ ...DEFAULT_CAM, label: 'Top View' });
@@ -2648,6 +2687,9 @@ export default function SettingsPage() {
           <TabsTrigger value="eway" className="flex items-center gap-1">
             <Shield className="h-3.5 w-3.5" />E-Way Bill
           </TabsTrigger>
+          <TabsTrigger value="upi" className="flex items-center gap-1">
+            <Shield className="h-3.5 w-3.5" />UPI / Portal
+          </TabsTrigger>
           <TabsTrigger value="anpr" className="flex items-center gap-1">
             <Camera className="h-3.5 w-3.5" />ANPR
           </TabsTrigger>
@@ -2791,6 +2833,10 @@ export default function SettingsPage() {
 
         <TabsContent value="eway" className="mt-4">
           <EWaySettingsTab />
+        </TabsContent>
+
+        <TabsContent value="upi" className="mt-4">
+          <UpiSettingsTab />
         </TabsContent>
 
         {/* ANPR — gate-camera plate detection */}

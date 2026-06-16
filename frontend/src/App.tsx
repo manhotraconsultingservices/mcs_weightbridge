@@ -26,6 +26,7 @@ import QuotationsPage from '@/pages/QuotationsPage';
 import DeliveryChallansPage from '@/pages/DeliveryChallansPage';
 import CreditDebitNotesPage from '@/pages/CreditDebitNotesPage';
 import RoyaltyPassesPage from '@/pages/RoyaltyPassesPage';
+import CustomerPortalPage from '@/pages/CustomerPortalPage';
 import ProductsPage from '@/pages/ProductsPage';
 import PricingMatrixPage from '@/pages/PricingMatrixPage';
 import ProductionSettingsPage from '@/pages/ProductionSettingsPage';
@@ -285,6 +286,8 @@ function RootRoutes() {
     <Routes>
       {/* Platform admin portal — separate auth, separate layout */}
       <Route path="/platform/*" element={<PlatformRoutes />} />
+      {/* Customer self-service portal — separate (customer) auth + layout */}
+      <Route path="/portal/*" element={<CustomerPortalPage />} />
       {/* Public landing page — only on main domain, never on tenant subdomains */}
       {(!isAuthenticated || !user) && !onTenantHost && (
         <Route path="/" element={<LandingPage />} />

@@ -724,6 +724,23 @@ def get_column_migrations() -> list[str]:
         "CREATE INDEX IF NOT EXISTS ix_royalty_company_status ON royalty_passes(company_id, status)",
         "CREATE INDEX IF NOT EXISTS ix_royalty_valid_till ON royalty_passes(company_id, valid_till)",
         "CREATE INDEX IF NOT EXISTS ix_royalty_cons_pass ON royalty_pass_consumptions(pass_id)",
+
+        # ── Horizon-2: Customer portal login (separate identity from staff) ──
+        """
+        CREATE TABLE IF NOT EXISTS customer_users (
+            id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id    UUID REFERENCES companies(id),
+            party_id      UUID NOT NULL REFERENCES parties(id),
+            email         VARCHAR(200) NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+            last_login_at TIMESTAMPTZ,
+            created_by    UUID REFERENCES users(id),
+            created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_customer_users_email ON customer_users(company_id, lower(email))",
+        "CREATE INDEX IF NOT EXISTS ix_customer_users_party ON customer_users(party_id)",
     ]
 
 

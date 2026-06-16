@@ -536,6 +536,43 @@ async def test_eway_connection(
     return await EWayClient(config).test_connection()
 
 
+# ── UPI collection config (static — no live gateway) ──────────────────────────
+
+UPI_CONFIG_KEY = "upi_config"
+_UPI_DEFAULTS = {"vpa": "", "payee_name": "", "enabled": False}
+
+
+@router.get("/upi-config")
+async def get_upi_config(db: AsyncSession = Depends(get_db),
+                         current_user=Depends(get_current_user)):
+    """UPI VPA + payee name shown to customers on invoices and the portal."""
+    raw = await _get_raw(db, UPI_CONFIG_KEY)
+    if raw:
+        try:
+            return {**_UPI_DEFAULTS, **json.loads(raw)}
+        except Exception:
+            pass
+    return dict(_UPI_DEFAULTS)
+
+
+@router.put("/upi-config")
+async def update_upi_config(payload: dict, db: AsyncSession = Depends(get_db),
+                            current_user=Depends(require_role("admin"))):
+    existing = {}
+    raw = await _get_raw(db, UPI_CONFIG_KEY)
+    if raw:
+        try:
+            existing = json.loads(raw)
+        except Exception:
+            pass
+    merged = {**_UPI_DEFAULTS, **existing}
+    for k in _UPI_DEFAULTS:
+        if k in payload:
+            merged[k] = payload[k]
+    await _upsert(db, UPI_CONFIG_KEY, json.dumps(merged))
+    return merged
+
+
 # ── Invoice Print Settings ────────────────────────────────────────────────────
 
 INVOICE_PRINT_SETTINGS_KEY = "invoice_print_settings"

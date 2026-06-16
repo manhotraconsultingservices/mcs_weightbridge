@@ -2,12 +2,15 @@ import uuid
 from datetime import date
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
 from app.models.user import User
+from app.models.customer_user import CustomerUser
+from app.utils.auth import hash_password
 from app.models.party import Party, PartyRate
 from app.models.product import Product
 from app.models.invoice import Invoice
@@ -617,3 +620,98 @@ async def party_credit_status(
         "status": status_,        # ok | near_limit | overdue | over_limit
         "message": message,       # null when status == ok
     }
+
+
+# --- Customer portal account management (admin) --------------------------------
+
+class PortalAccountRequest(BaseModel):
+    email: str
+    password: str
+
+
+class PortalPasswordReset(BaseModel):
+    password: str
+
+
+async def _get_portal_account(db: AsyncSession, company_id, party_id) -> CustomerUser | None:
+    return (await db.execute(
+        select(CustomerUser).where(
+            CustomerUser.company_id == company_id, CustomerUser.party_id == party_id,
+        )
+    )).scalar_one_or_none()
+
+
+@router.get("/{party_id}/portal-account")
+async def get_portal_account(
+    party_id: uuid.UUID,
+    current_user: User = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    cu = await _get_portal_account(db, current_user.company_id, party_id)
+    if not cu:
+        return {"exists": False}
+    return {"exists": True, "email": cu.email, "is_active": cu.is_active,
+            "last_login_at": cu.last_login_at.isoformat() if cu.last_login_at else None}
+
+
+@router.post("/{party_id}/portal-account", status_code=201)
+async def create_portal_account(
+    party_id: uuid.UUID,
+    payload: PortalAccountRequest,
+    current_user: User = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    party = (await db.execute(
+        select(Party).where(Party.id == party_id, Party.company_id == current_user.company_id)
+    )).scalar_one_or_none()
+    if not party:
+        raise HTTPException(404, "Party not found")
+    if len(payload.password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    existing = await _get_portal_account(db, current_user.company_id, party_id)
+    if existing:
+        # Re-enable + update credentials
+        existing.email = payload.email.strip().lower()
+        existing.password_hash = hash_password(payload.password)
+        existing.is_active = True
+    else:
+        db.add(CustomerUser(
+            company_id=current_user.company_id, party_id=party_id,
+            email=payload.email.strip().lower(),
+            password_hash=hash_password(payload.password),
+            is_active=True, created_by=current_user.id,
+        ))
+    await db.commit()
+    return {"ok": True, "email": payload.email.strip().lower()}
+
+
+@router.post("/{party_id}/portal-account/reset-password")
+async def reset_portal_password(
+    party_id: uuid.UUID,
+    payload: PortalPasswordReset,
+    current_user: User = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    cu = await _get_portal_account(db, current_user.company_id, party_id)
+    if not cu:
+        raise HTTPException(404, "No portal account for this party")
+    if len(payload.password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    cu.password_hash = hash_password(payload.password)
+    cu.is_active = True
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/{party_id}/portal-account")
+async def disable_portal_account(
+    party_id: uuid.UUID,
+    current_user: User = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    cu = await _get_portal_account(db, current_user.company_id, party_id)
+    if not cu:
+        raise HTTPException(404, "No portal account for this party")
+    cu.is_active = False
+    await db.commit()
+    return {"ok": True}
