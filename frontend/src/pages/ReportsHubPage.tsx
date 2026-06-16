@@ -15,13 +15,15 @@ import CompliancePage from './CompliancePage';
 import AuditPage from './AuditPage';
 import WriteOffsReportPage from './WriteOffsReportPage';
 import GstSplitReportPage from './GstSplitReportPage';
+import Gstr2bReconcilePage from './Gstr2bReconcilePage';
 
-type Tab = 'payments' | 'statement' | 'gst' | 'gst-split' | 'reports' | 'write-offs' | 'compliance' | 'activity';
+type Tab = 'payments' | 'statement' | 'gst' | 'gstr2b' | 'gst-split' | 'reports' | 'write-offs' | 'compliance' | 'activity';
 
 const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
   { value: 'payments', label: 'Payments', icon: CreditCard },
   { value: 'statement', label: 'Account Statement', icon: BookOpen },
   { value: 'gst', label: 'GST Returns', icon: FileBarChart },
+  { value: 'gstr2b', label: 'GSTR-2B (ITC)', icon: FileBarChart },
   { value: 'gst-split', label: 'GST vs Cash Split', icon: PieChart },
   { value: 'reports', label: 'P&L + Sales', icon: BarChart3 },
   { value: 'write-offs', label: 'Write-offs', icon: XCircle },
@@ -61,6 +63,7 @@ export default function ReportsHubPage() {
         <TabsContent value="payments" className="mt-4"><PaymentsPage /></TabsContent>
         <TabsContent value="statement" className="mt-4"><LedgerPage /></TabsContent>
         <TabsContent value="gst" className="mt-4"><GstReportsPage /></TabsContent>
+        <TabsContent value="gstr2b" className="mt-4"><Gstr2bReconcilePage /></TabsContent>
         <TabsContent value="gst-split" className="mt-4"><GstSplitReportPage /></TabsContent>
         <TabsContent value="reports" className="mt-4"><ReportsPage /></TabsContent>
         <TabsContent value="write-offs" className="mt-4"><WriteOffsReportPage /></TabsContent>
