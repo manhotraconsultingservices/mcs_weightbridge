@@ -360,6 +360,8 @@ async def party_360(
     for inv in inv_rows:
         if inv.status != "final" or inv.payment_status == "paid":
             continue
+        if inv.invoice_type not in ("sale", "purchase"):
+            continue   # credit/debit notes are not receivable rows (handled separately)
         balance = (inv.grand_total or Decimal("0")) - (inv.amount_paid or Decimal("0"))
         if balance <= 0:
             continue
@@ -566,6 +568,22 @@ async def party_credit_status(
         if inv.due_date and inv.due_date < today:
             overdue += bal
             overdue_days = max(overdue_days, (today - inv.due_date).days)
+
+    # Net effect of finalised credit/debit notes on the receivable:
+    # a sales credit note reduces what the customer owes; a debit note increases it.
+    note_rows = (await db.execute(
+        select(Invoice.invoice_type, Invoice.grand_total).where(
+            Invoice.company_id == current_user.company_id,
+            Invoice.party_id == party_id,
+            Invoice.invoice_type.in_(("credit_note", "debit_note")),
+            Invoice.status == "final",
+        )
+    )).all()
+    for ntype, gt in note_rows:
+        amt = gt or Decimal("0")
+        outstanding += (-amt if ntype == "credit_note" else amt)
+    if outstanding < 0:
+        outstanding = Decimal("0")
 
     credit_limit = party.credit_limit or Decimal("0")
     unlimited = credit_limit <= 0

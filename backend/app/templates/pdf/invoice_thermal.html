@@ -35,7 +35,7 @@
 <hr class="sep">
 
 <div class="center bold">
-  {% if invoice.invoice_type == 'purchase' %}PURCHASE INVOICE{% elif invoice.tax_type == 'non_gst' %}BILL OF SUPPLY{% else %}TAX INVOICE{% endif %}
+  {% if invoice.invoice_type == 'credit_note' %}CREDIT NOTE{% elif invoice.invoice_type == 'debit_note' %}DEBIT NOTE{% elif invoice.invoice_type == 'purchase' %}PURCHASE INVOICE{% elif invoice.tax_type == 'non_gst' %}BILL OF SUPPLY{% else %}TAX INVOICE{% endif %}
 </div>
 <hr class="sep">
 

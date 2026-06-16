@@ -7,13 +7,14 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { FileText, Receipt, Truck } from 'lucide-react';
+import { FileText, Receipt, Truck, FileMinus } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import InvoicesPage from './InvoicesPage';
 import QuotationsPage from './QuotationsPage';
 import DeliveryChallansPage from './DeliveryChallansPage';
+import CreditDebitNotesPage from './CreditDebitNotesPage';
 
-type Tab = 'bills' | 'estimates' | 'challans';
+type Tab = 'bills' | 'estimates' | 'challans' | 'notes';
 
 export default function SalesHubPage() {
   const nav = useNavigate();
@@ -37,6 +38,7 @@ export default function SalesHubPage() {
           <TabsTrigger value="bills" className="gap-1.5"><FileText className="h-3.5 w-3.5" /> Bills</TabsTrigger>
           <TabsTrigger value="estimates" className="gap-1.5"><Receipt className="h-3.5 w-3.5" /> Estimates</TabsTrigger>
           <TabsTrigger value="challans" className="gap-1.5"><Truck className="h-3.5 w-3.5" /> Challans</TabsTrigger>
+          <TabsTrigger value="notes" className="gap-1.5"><FileMinus className="h-3.5 w-3.5" /> Notes</TabsTrigger>
         </TabsList>
         <TabsContent value="bills" className="mt-4">
           <InvoicesPage defaultType="sale" />
@@ -46,6 +48,9 @@ export default function SalesHubPage() {
         </TabsContent>
         <TabsContent value="challans" className="mt-4">
           <DeliveryChallansPage />
+        </TabsContent>
+        <TabsContent value="notes" className="mt-4">
+          <CreditDebitNotesPage />
         </TabsContent>
       </Tabs>
     </div>

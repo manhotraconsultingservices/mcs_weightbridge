@@ -56,6 +56,15 @@ async def _get_company_fy(db: AsyncSession):
     return co, fy
 
 
+def _invoice_prefix(invoice_type: str) -> str:
+    """Number-series prefix per document type (sale=INV, purchase=PUR,
+    credit_note=CN, debit_note=DN)."""
+    return {
+        "sale": "INV", "purchase": "PUR",
+        "credit_note": "CN", "debit_note": "DN",
+    }.get(invoice_type, "INV")
+
+
 async def _next_invoice_no(
     db: AsyncSession, company_id: uuid.UUID, fy_id: uuid.UUID,
     invoice_type: str, prefix: str
@@ -287,6 +296,90 @@ async def create_invoice(
     return await _load_invoice(db, invoice.id)
 
 
+class IssueNoteRequest(BaseModel):
+    note_type: str                 # 'credit' | 'debit'
+    reason: str
+    invoice_date: date | None = None
+
+
+@router.post("/{invoice_id}/issue-note", response_model=InvoiceResponse, status_code=201)
+async def issue_note(
+    invoice_id: uuid.UUID,
+    payload: IssueNoteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "accountant")),
+):
+    """Issue a GST Credit or Debit Note against a finalised invoice.
+
+    Creates a DRAFT note (invoice_type credit_note|debit_note) cloning the source
+    invoice's party, items and tax settings. The draft is editable before
+    finalise; finalise assigns the CN/DN number. Notes live in the invoices
+    table but every financial query filters invoice_type IN ('sale','purchase'),
+    so notes never pollute sales/GSTR-1-B2B/P&L/receivables — they're surfaced
+    explicitly (GSTR-1 CDNR + the party-level receivable adjustment).
+    """
+    note_type = (payload.note_type or "").lower()
+    if note_type not in ("credit", "debit"):
+        raise HTTPException(400, "note_type must be 'credit' or 'debit'")
+    if not (payload.reason or "").strip():
+        raise HTTPException(400, "A reason is required for a credit/debit note")
+
+    src = await _load_invoice(db, invoice_id)
+    if src.status != "final":
+        raise HTTPException(400, "Notes can only be issued against a finalised invoice")
+    if src.invoice_type not in ("sale", "purchase"):
+        raise HTTPException(400, "Notes can only be issued against a sale or purchase invoice")
+
+    co, fy = await _get_company_fy(db)
+    inv_type = "credit_note" if note_type == "credit" else "debit_note"
+
+    intra = is_intra_state(co.state_code, src.party.billing_state_code if src.party else co.state_code)
+    items_data = [{
+        "product_id": it.product_id, "description": it.description, "hsn_code": it.hsn_code,
+        "quantity": float(it.quantity), "unit": it.unit, "rate": float(it.rate),
+        "gst_rate": float(it.gst_rate or 0), "sort_order": it.sort_order,
+    } for it in src.items]
+    totals = calculate_invoice_totals(
+        items=items_data, discount_type=None, discount_value=Decimal("0"),
+        freight=Decimal("0"), tcs_rate=Decimal("0"), intra_state=intra,
+        tax_type=src.tax_type,
+    )
+
+    note = Invoice(
+        company_id=co.id, fy_id=fy.id,
+        invoice_type=inv_type, tax_type=src.tax_type,
+        invoice_no=None,
+        invoice_date=(payload.invoice_date or date.today()),
+        party_id=src.party_id, customer_name=src.customer_name,
+        vehicle_no=src.vehicle_no, transporter_name=src.transporter_name,
+        reference_invoice_id=src.id, note_reason=payload.reason.strip(),
+        created_by=current_user.id, status="draft",
+        payment_status="unpaid", amount_paid=Decimal("0"),
+        notes=f"{note_type.title()} note against {src.invoice_no or 'invoice'}",
+        **{k: v for k, v in totals.items() if k != "computed_items"},
+    )
+    db.add(note)
+    await db.flush()
+    for i, item_data in enumerate(totals["computed_items"]):
+        db.add(InvoiceItem(
+            invoice_id=note.id, product_id=item_data["product_id"],
+            description=item_data.get("description"), hsn_code=item_data.get("hsn_code"),
+            quantity=Decimal(str(item_data["quantity"])), unit=item_data["unit"],
+            rate=Decimal(str(item_data["rate"])), amount=item_data["amount"],
+            gst_rate=Decimal(str(item_data.get("gst_rate", 0))),
+            cgst_amount=item_data["cgst_amount"], sgst_amount=item_data["sgst_amount"],
+            igst_amount=item_data["igst_amount"], total_amount=item_data["total_amount"],
+            sort_order=item_data.get("sort_order", i),
+        ))
+
+    from app.routers.audit import log_action
+    await log_action(db, co.id, current_user.id, "create", "invoice",
+                     entity_id=str(note.id),
+                     details={"type": inv_type, "reason": payload.reason, "against": src.invoice_no})
+    await db.commit()
+    return await _load_invoice(db, note.id)
+
+
 @router.get("", response_model=InvoiceListResponse)
 async def list_invoices(
     invoice_type: str | None = None,
@@ -491,18 +584,17 @@ async def finalise_invoice(
                 base_no = orig.invoice_no.split("/Rv")[0]
                 inv.invoice_no = base_no
             else:
-                prefix = "INV" if inv.invoice_type == "sale" else "PUR"
-                inv.invoice_no = await _next_invoice_no(db, co.id, fy.id, inv.invoice_type, prefix)
+                inv.invoice_no = await _next_invoice_no(db, co.id, fy.id, inv.invoice_type, _invoice_prefix(inv.invoice_type))
         else:
-            prefix = "INV" if inv.invoice_type == "sale" else "PUR"
-            inv.invoice_no = await _next_invoice_no(db, co.id, fy.id, inv.invoice_type, prefix)
+            inv.invoice_no = await _next_invoice_no(db, co.id, fy.id, inv.invoice_type, _invoice_prefix(inv.invoice_type))
 
     inv.status = "final"
 
     # ── Auto-post product stock movements (finished goods inventory) ──────────
     # Sale finalise → stock down; purchase finalise → stock up. Skip for revisions
-    # since they share invoice_no with the original and would double-count.
-    if not (inv.revision_no and inv.revision_no > 1):
+    # (share invoice_no with the original → double-count) and for credit/debit
+    # notes (a note is a value adjustment, not a goods movement).
+    if not (inv.revision_no and inv.revision_no > 1) and inv.invoice_type in ("sale", "purchase"):
         try:
             from app.routers.product_stock import post_invoice_movement
             await post_invoice_movement(
@@ -516,7 +608,9 @@ async def finalise_invoice(
             logging.getLogger(__name__).warning("Stock auto-posting failed for invoice %s: %s", inv.id, e)
 
     # ── eInvoice IRN generation (if enabled + B2B party with GSTIN) ──────────
-    await _try_generate_irn(db, inv, co)
+    # Skip for credit/debit notes in v1 (note-IRN is a future enhancement).
+    if inv.invoice_type in ("sale", "purchase"):
+        await _try_generate_irn(db, inv, co)
 
     # ── If this is a revision, compute diff + update revision record ──────────
     is_revision = inv.revision_no and inv.revision_no > 1 and inv.original_invoice_id

@@ -173,6 +173,15 @@ class InvoiceResponse(BaseModel):
     einvoice_status: str = "none"    # none, success, failed, cancelled
     einvoice_error: Optional[str] = None
     irn_cancelled_at: Optional[datetime] = None
+    # Credit/Debit note linkage
+    reference_invoice_id: Optional[UUID] = None
+    note_reason: Optional[str] = None
+    # E-Way Bill
+    ewb_date: Optional[datetime] = None
+    ewb_valid_till: Optional[datetime] = None
+    ewb_status: str = "none"
+    ewb_error: Optional[str] = None
+    ewb_distance_km: Optional[int] = None
     # Revision tracking
     revision_no: int = 1
     original_invoice_id: Optional[UUID] = None

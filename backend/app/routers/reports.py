@@ -200,10 +200,39 @@ async def gstr1_summary(
         for r in hsn_result.all()
     ]
 
+    # ── CDNR: Credit / Debit Notes (registered) ──────────────────────────────
+    from sqlalchemy.orm import aliased
+    RefInv = aliased(Invoice)
+    cdn_result = await db.execute(
+        select(Invoice, Party, RefInv.invoice_no)
+        .join(Party, Invoice.party_id == Party.id)
+        .outerjoin(RefInv, Invoice.reference_invoice_id == RefInv.id)
+        .where(Invoice.invoice_type.in_(("credit_note", "debit_note")),
+               Invoice.status == "final",
+               Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
+        .order_by(Invoice.invoice_date)
+    )
+    cdnr = []
+    cdnr_totals = {k: Decimal(0) for k in ["taxable", "cgst", "sgst", "igst", "total"]}
+    for note, party, ref_no in cdn_result.all():
+        cdnr.append({
+            "note_no": note.invoice_no, "note_date": note.invoice_date.isoformat(),
+            "note_type": "C" if note.invoice_type == "credit_note" else "D",
+            "party_name": party.name, "gstin": party.gstin,
+            "original_invoice_no": ref_no, "reason": note.note_reason,
+            "taxable_amount": _f(note.taxable_amount), "cgst_amount": _f(note.cgst_amount),
+            "sgst_amount": _f(note.sgst_amount), "igst_amount": _f(note.igst_amount),
+            "grand_total": _f(note.grand_total),
+        })
+        cdnr_totals["taxable"] += note.taxable_amount; cdnr_totals["cgst"] += note.cgst_amount
+        cdnr_totals["sgst"] += note.sgst_amount; cdnr_totals["igst"] += note.igst_amount
+        cdnr_totals["total"] += note.grand_total
+
     return {
         "b2b": b2b, "b2b_totals": {k: _f(v) for k, v in b2b_totals.items()},
         "b2c": b2c, "b2c_totals": {k: _f(v) for k, v in b2c_totals.items()},
         "hsn_summary": hsn_summary,
+        "cdnr": cdnr, "cdnr_totals": {k: _f(v) for k, v in cdnr_totals.items()},
     }
 
 

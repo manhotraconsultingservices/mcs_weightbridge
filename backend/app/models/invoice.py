@@ -13,8 +13,12 @@ class Invoice(Base):
     company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id"))
     fy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("financial_years.id"))
 
-    invoice_type: Mapped[str] = mapped_column(String(20))  # sale, purchase
+    invoice_type: Mapped[str] = mapped_column(String(20))  # sale, purchase, credit_note, debit_note
     tax_type: Mapped[str] = mapped_column(String(20), default="gst")  # gst, non_gst
+    # Credit/Debit note linkage (GST CDNR). reference_invoice_id points at the
+    # original invoice the note adjusts; note_reason is the statutory reason.
+    reference_invoice_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("invoices.id"), nullable=True)
+    note_reason: Mapped[str | None] = mapped_column(String(200))
     invoice_no: Mapped[str | None] = mapped_column(String(30), nullable=True)
     invoice_date: Mapped[date] = mapped_column(Date)
     due_date: Mapped[date | None] = mapped_column(Date)
@@ -28,6 +32,12 @@ class Invoice(Base):
     vehicle_no: Mapped[str | None] = mapped_column(String(20))
     transporter_name: Mapped[str | None] = mapped_column(String(200))
     eway_bill_no: Mapped[str | None] = mapped_column(String(20))
+    # E-Way Bill lifecycle (IRN-integrated capture + standalone NIC EWB API)
+    ewb_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ewb_valid_till: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ewb_status: Mapped[str] = mapped_column(String(20), default="none")  # none|generated|cancelled|failed
+    ewb_error: Mapped[str | None] = mapped_column(Text)
+    ewb_distance_km: Mapped[int | None] = mapped_column(Integer)
 
     # Transport & dispatch metadata (Tally-compatible fields)
     royalty_no: Mapped[str | None] = mapped_column(String(50), nullable=True)

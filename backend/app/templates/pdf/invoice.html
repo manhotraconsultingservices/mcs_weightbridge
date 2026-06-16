@@ -399,7 +399,9 @@
   <table class="banner-tbl">
     <tr>
       <td class="banner-type">
-        {% if invoice.invoice_type == 'purchase' %}Purchase Invoice
+        {% if invoice.invoice_type == 'credit_note' %}Credit Note
+        {% elif invoice.invoice_type == 'debit_note' %}Debit Note
+        {% elif invoice.invoice_type == 'purchase' %}Purchase Invoice
         {% elif invoice.tax_type == 'non_gst' %}Bill of Supply
         {% else %}Tax Invoice{% endif %}
       </td>
