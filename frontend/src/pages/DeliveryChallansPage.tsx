@@ -51,15 +51,15 @@ export default function DeliveryChallansPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/delivery-challans', { params: { page_size: 200 } });
+      const res = await api.get('/api/v1/delivery-challans', { params: { page_size: 200 } });
       setRows(res.data.items ?? []);
     } catch { /* surfaced inline */ } finally { setLoading(false); }
   }, []);
 
   useEffect(() => {
     load();
-    api.get('/parties').then(r => setParties((Array.isArray(r.data) ? r.data : r.data.items ?? []))).catch(() => {});
-    api.get('/products').then(r => setProducts((Array.isArray(r.data) ? r.data : r.data.items ?? []))).catch(() => {});
+    api.get('/api/v1/parties', { params: { page_size: 500 } }).then(r => setParties((Array.isArray(r.data) ? r.data : r.data.items ?? []))).catch(() => {});
+    api.get('/api/v1/products', { params: { page_size: 500 } }).then(r => setProducts((Array.isArray(r.data) ? r.data : r.data.items ?? []))).catch(() => {});
   }, [load]);
 
   function resetForm() {
@@ -84,7 +84,7 @@ export default function DeliveryChallansPage() {
     if (validItems.length === 0) { setErr('Add at least one line item with a quantity.'); return; }
     setBusy(true);
     try {
-      await api.post('/delivery-challans', {
+      await api.post('/api/v1/delivery-challans', {
         challan_date: form.challan_date,
         purpose: form.purpose,
         party_id: form.party_id || undefined,
@@ -118,7 +118,7 @@ export default function DeliveryChallansPage() {
   async function convert(c: Challan) {
     if (!confirm(`Convert challan ${c.challan_no} to a draft tax invoice?`)) return;
     try {
-      await api.post(`/delivery-challans/${c.id}/convert-to-invoice`, {});
+      await api.post(`/api/v1/delivery-challans/${c.id}/convert-to-invoice`, {});
       toast.success('Draft invoice created from challan');
       load();
     } catch (e: unknown) {
@@ -130,7 +130,7 @@ export default function DeliveryChallansPage() {
     const km = prompt('Transport distance in km (0 = let NIC auto-compute):', '0');
     if (km === null) return;
     try {
-      await api.post(`/delivery-challans/${c.id}/generate-ewb`, { distance_km: Number(km) || 0 });
+      await api.post(`/api/v1/delivery-challans/${c.id}/generate-ewb`, { distance_km: Number(km) || 0 });
       toast.success('E-Way Bill generated');
       load();
     } catch (e: unknown) {
@@ -141,7 +141,7 @@ export default function DeliveryChallansPage() {
   async function cancel(c: Challan) {
     if (!confirm(`Cancel challan ${c.challan_no}? This cannot be undone.`)) return;
     try {
-      await api.post(`/delivery-challans/${c.id}/cancel`, {});
+      await api.post(`/api/v1/delivery-challans/${c.id}/cancel`, {});
       toast.success('Challan cancelled');
       load();
     } catch (e: unknown) {

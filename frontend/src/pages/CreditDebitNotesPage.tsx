@@ -31,8 +31,8 @@ export default function CreditDebitNotesPage() {
     setLoading(true);
     try {
       const [cn, dn] = await Promise.all([
-        api.get('/invoices', { params: { invoice_type: 'credit_note', page_size: 200 } }),
-        api.get('/invoices', { params: { invoice_type: 'debit_note', page_size: 200 } }),
+        api.get('/api/v1/invoices', { params: { invoice_type: 'credit_note', page_size: 100 } }),
+        api.get('/api/v1/invoices', { params: { invoice_type: 'debit_note', page_size: 100 } }),
       ]);
       const all = [...(cn.data.items ?? []), ...(dn.data.items ?? [])]
         .sort((a, b) => (b.invoice_date || '').localeCompare(a.invoice_date || ''));
@@ -42,12 +42,13 @@ export default function CreditDebitNotesPage() {
 
   useEffect(() => {
     load();
-    // Source invoices a note can be raised against: finalised sale + purchase
+    // Source invoices a note can be raised against: finalised sale + purchase.
+    // status=final filters server-side; page_size capped at 100 by the API.
     Promise.all([
-      api.get('/invoices', { params: { invoice_type: 'sale', page_size: 200 } }),
-      api.get('/invoices', { params: { invoice_type: 'purchase', page_size: 200 } }),
+      api.get('/api/v1/invoices', { params: { invoice_type: 'sale', status: 'final', page_size: 100 } }),
+      api.get('/api/v1/invoices', { params: { invoice_type: 'purchase', status: 'final', page_size: 100 } }),
     ]).then(([s, p]) => {
-      const fin = [...(s.data.items ?? []), ...(p.data.items ?? [])].filter((i: SrcInvoice) => i.status === 'final' && i.invoice_no);
+      const fin = [...(s.data.items ?? []), ...(p.data.items ?? [])].filter((i: SrcInvoice) => i.invoice_no);
       setSources(fin);
     }).catch(() => {});
   }, [load]);
@@ -58,7 +59,7 @@ export default function CreditDebitNotesPage() {
     if (!form.reason.trim()) { setErr('A reason is required.'); return; }
     setBusy(true);
     try {
-      await api.post(`/invoices/${form.invoice_id}/issue-note`, {
+      await api.post(`/api/v1/invoices/${form.invoice_id}/issue-note`, {
         note_type: form.note_type, reason: form.reason.trim(),
       });
       toast.success(`${form.note_type === 'credit' ? 'Credit' : 'Debit'} note draft created — finalise it to assign a number`);
@@ -71,7 +72,7 @@ export default function CreditDebitNotesPage() {
   async function finalise(n: Note) {
     if (!confirm('Finalise this note? It will be assigned a permanent CN/DN number.')) return;
     try {
-      await api.post(`/invoices/${n.id}/finalise`);
+      await api.post(`/api/v1/invoices/${n.id}/finalise`);
       toast.success('Note finalised');
       load();
     } catch (e: unknown) {

@@ -30,7 +30,7 @@ export default function PortalAccessDialog({ partyId, partyName }: { partyId: st
     if (!email.trim() || password.length < 6) { toast.error('Email + a 6+ char password are required'); return; }
     setBusy(true);
     try {
-      await api.post(`/parties/${partyId}/portal-account`, { email: email.trim(), password });
+      await api.post(`/api/v1/parties/${partyId}/portal-account`, { email: email.trim(), password });
       toast.success('Portal access enabled — share /portal + these credentials with the customer');
       setPassword(''); refresh();
     } catch (e: unknown) { toast.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed'); }
@@ -39,12 +39,12 @@ export default function PortalAccessDialog({ partyId, partyName }: { partyId: st
   async function resetPw() {
     if (password.length < 6) { toast.error('Enter a 6+ char new password'); return; }
     setBusy(true);
-    try { await api.post(`/parties/${partyId}/portal-account/reset-password`, { password }); toast.success('Password reset'); setPassword(''); refresh(); }
+    try { await api.post(`/api/v1/parties/${partyId}/portal-account/reset-password`, { password }); toast.success('Password reset'); setPassword(''); refresh(); }
     catch { toast.error('Failed'); } finally { setBusy(false); }
   }
   async function disable() {
     if (!confirm('Disable this customer’s portal login?')) return;
-    try { await api.delete(`/parties/${partyId}/portal-account`); toast.success('Portal access disabled'); refresh(); }
+    try { await api.delete(`/api/v1/parties/${partyId}/portal-account`); toast.success('Portal access disabled'); refresh(); }
     catch { toast.error('Failed'); }
   }
 

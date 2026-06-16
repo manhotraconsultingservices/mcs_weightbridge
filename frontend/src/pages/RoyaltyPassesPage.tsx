@@ -54,7 +54,7 @@ export default function RoyaltyPassesPage() {
     setLoading(true);
     // Passes load on their own — a reconciliation failure must NEVER blank the table.
     try {
-      const p = await api.get('/royalty/passes', { params: { page_size: 300 } });
+      const p = await api.get('/api/v1/royalty/passes', { params: { page_size: 300 } });
       setRows(p.data.items ?? []);
     } catch {
       toast.error('Could not load royalty passes');
@@ -63,15 +63,15 @@ export default function RoyaltyPassesPage() {
     }
     // Reconciliation is best-effort (powers the KPI strip only).
     try {
-      const r = await api.get('/royalty/reconciliation', { params: { date_from: range.from, date_to: range.to } });
+      const r = await api.get('/api/v1/royalty/reconciliation', { params: { date_from: range.from, date_to: range.to } });
       setRecon(r.data);
     } catch { /* recon optional — KPIs just stay blank */ }
   }, [range.from, range.to]);
 
   useEffect(() => {
     load();
-    api.get('/parties').then(r => setParties(Array.isArray(r.data) ? r.data : r.data.items ?? [])).catch(() => {});
-    api.get('/products').then(r => setProducts(Array.isArray(r.data) ? r.data : r.data.items ?? [])).catch(() => {});
+    api.get('/api/v1/parties', { params: { page_size: 500 } }).then(r => setParties(Array.isArray(r.data) ? r.data : r.data.items ?? [])).catch(() => {});
+    api.get('/api/v1/products', { params: { page_size: 500 } }).then(r => setProducts(Array.isArray(r.data) ? r.data : r.data.items ?? [])).catch(() => {});
   }, [load]);
 
   function resetForm() {
@@ -86,7 +86,7 @@ export default function RoyaltyPassesPage() {
     if (!(Number(form.quantity_mt) > 0)) { setErr('Authorised quantity (MT) must be greater than zero.'); return; }
     setBusy(true);
     try {
-      await api.post('/royalty/passes', {
+      await api.post('/api/v1/royalty/passes', {
         pass_no: form.pass_no, pass_type: form.pass_type,
         source_name: form.source_name || undefined,
         party_id: form.party_id || undefined, product_id: form.product_id || undefined,
@@ -105,7 +105,7 @@ export default function RoyaltyPassesPage() {
     if (!consumeFor) return;
     if (!(Number(consumeForm.quantity_mt) > 0)) { toast.error('Enter a quantity'); return; }
     try {
-      await api.post(`/royalty/passes/${consumeFor.id}/consume`, {
+      await api.post(`/api/v1/royalty/passes/${consumeFor.id}/consume`, {
         quantity_mt: Number(consumeForm.quantity_mt), notes: consumeForm.notes || undefined,
       });
       toast.success('Consumption recorded');
@@ -117,7 +117,7 @@ export default function RoyaltyPassesPage() {
 
   async function cancel(p: Pass) {
     if (!confirm(`Cancel pass ${p.pass_no}?`)) return;
-    try { await api.post(`/royalty/passes/${p.id}/cancel`); toast.success('Pass cancelled'); load(); }
+    try { await api.post(`/api/v1/royalty/passes/${p.id}/cancel`); toast.success('Pass cancelled'); load(); }
     catch { toast.error('Cancel failed'); }
   }
 

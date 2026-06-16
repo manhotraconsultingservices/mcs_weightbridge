@@ -38,7 +38,7 @@ export function CreditStatusBanner({ partyId, className = '' }: { partyId?: stri
   useEffect(() => {
     let cancelled = false;
     if (!partyId) { setCs(null); return; }
-    api.get(`/parties/${partyId}/credit-status`)
+    api.get(`/api/v1/parties/${partyId}/credit-status`)
       .then(r => { if (!cancelled) setCs(r.data); })
       .catch(() => { if (!cancelled) setCs(null); });
     return () => { cancelled = true; };
