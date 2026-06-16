@@ -231,7 +231,7 @@ export default function ProductionPage() {
   };
 
   const handleDelete = async (c: ProductionCycle) => {
-    if (!confirm(`Delete draft cycle ${c.cycle_date}?`)) return;
+    if (!confirm(`Delete cycle ${c.cycle_date}? Its finished-goods stock will be reversed out of Stock on Hand.`)) return;
     try {
       await api.delete(`/api/v1/production/cycles/${c.id}`);
       toast.success('Cycle deleted');
@@ -256,7 +256,7 @@ export default function ProductionPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Production Cycles</h1>
           <p className="text-muted-foreground">
-            One cycle per day. Track input, stage-wise weights, and per-product Stage 4 outputs.
+            One cycle per day. Track input, stage-wise weights, and per-product Stage 4 outputs. Finished goods post to Stock on Hand automatically on save.
           </p>
         </div>
         <Button onClick={openCreate}>
@@ -298,19 +298,20 @@ export default function ProductionPage() {
         columns={CYCLE_COLUMNS}
         rowActions={c => (
           <div className="flex gap-1 justify-end">
-            <Button variant="ghost" size="icon" title="Edit" onClick={() => openEdit(c)} disabled={c.is_finalised}>
+            {/* Cycles auto-post to Stock on Hand on save. Editing reverses the old
+                stock and re-posts the new values; deleting reverses it. So edit +
+                delete are always available now. */}
+            <Button variant="ghost" size="icon" title="Edit (re-syncs stock)" onClick={() => openEdit(c)}>
               <FileEdit className="h-4 w-4" />
             </Button>
             {!c.is_finalised && (
-              <Button variant="ghost" size="icon" title="Finalise" onClick={() => handleFinalise(c)}>
+              <Button variant="ghost" size="icon" title="Post to stock" onClick={() => handleFinalise(c)}>
                 <CheckCircle className="h-4 w-4 text-green-600" />
               </Button>
             )}
-            {!c.is_finalised && (
-              <Button variant="ghost" size="icon" title="Delete" onClick={() => handleDelete(c)}>
-                <Trash2 className="h-4 w-4 text-red-600" />
-              </Button>
-            )}
+            <Button variant="ghost" size="icon" title="Delete (reverses stock)" onClick={() => handleDelete(c)}>
+              <Trash2 className="h-4 w-4 text-red-600" />
+            </Button>
           </div>
         )}
       />
@@ -450,10 +451,10 @@ function CycleDialog({
       };
       if (editing) {
         await api.put(`/api/v1/production/cycles/${editing.id}`, payload);
-        toast.success('Cycle updated');
+        toast.success('Cycle updated — Stock on Hand re-synced');
       } else {
         await api.post('/api/v1/production/cycles', payload);
-        toast.success('Cycle created');
+        toast.success('Cycle saved — finished goods added to Stock on Hand');
       }
       onSaved();
     } catch (e: unknown) {

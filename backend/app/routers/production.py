@@ -125,6 +125,23 @@ async def _next_cycle_no(db: AsyncSession, company_id: uuid.UUID) -> int:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+async def _post_cycle_stock(db: AsyncSession, cycle, user) -> None:
+    """Credit/debit finished-goods stock for a cycle (input − , outputs +).
+
+    Re-queries the cycle's outputs from the session so it can be called after a
+    flush in create/update. Failures bubble up (caller's transaction rolls back)
+    so stock and cycle data never diverge.
+    """
+    from app.routers.product_stock import post_cycle_outputs, post_cycle_input
+    outs = (await db.execute(
+        select(ProductionCycleOutput).where(ProductionCycleOutput.cycle_id == cycle.id)
+    )).scalars().all()
+    uname = user.full_name or user.username
+    if cycle.raw_material_id and cycle.input_kg and cycle.input_kg > 0:
+        await post_cycle_input(db, cycle, user_id=user.id, user_name=uname)
+    await post_cycle_outputs(db, cycle, outs, user_id=user.id, user_name=uname)
+
+
 @router.post("/cycles", response_model=ProductionCycleResponse, status_code=status.HTTP_201_CREATED)
 async def create_cycle(
     payload: ProductionCycleCreate,
@@ -167,7 +184,7 @@ async def create_cycle(
         stage2_output_kg=payload.stage2_output_kg,
         stage3_output_kg=payload.stage3_output_kg,
         notes=payload.notes,
-        is_finalised=False,
+        is_finalised=True,        # auto-posted to finished-goods stock on save
         created_by=current_user.id,
     )
     db.add(cycle)
@@ -177,6 +194,11 @@ async def create_cycle(
         db.add(ProductionCycleOutput(
             cycle_id=cycle.id, product_id=o.product_id, output_kg=o.output_kg,
         ))
+    await db.flush()
+
+    # ── Auto-post to finished-goods inventory immediately (no separate
+    #    finalise step) — raw material consumed (−) + each finished output (+).
+    await _post_cycle_stock(db, cycle, current_user)
 
     await db.commit()
     return await _load_cycle_response(db, cycle.id)
@@ -263,12 +285,23 @@ async def update_cycle(
     current_user: User = Depends(require_role("admin", "operator", "store_manager")),
 ):
     cycle = (await db.execute(
-        select(ProductionCycle).where(ProductionCycle.id == cycle_id)
+        select(ProductionCycle)
+        .options(selectinload(ProductionCycle.outputs))
+        .where(ProductionCycle.id == cycle_id)
     )).scalar_one_or_none()
     if not cycle:
         raise HTTPException(404, "Cycle not found")
+
+    # Stock stays correct across edits: reverse the OLD postings first (using the
+    # cycle's current values, before mutation), apply the change, then re-post the
+    # NEW values. Net stock delta = new − old.
+    from app.routers.product_stock import reverse_cycle_stock
     if cycle.is_finalised:
-        raise HTTPException(400, "Cannot edit a finalised cycle")
+        await reverse_cycle_stock(
+            db, cycle, list(cycle.outputs),
+            user_id=current_user.id,
+            user_name=current_user.full_name or current_user.username,
+        )
 
     for field in ("raw_material_id", "input_kg", "stage1_output_kg", "stage2_output_kg", "stage3_output_kg", "notes"):
         v = getattr(payload, field, None)
@@ -287,6 +320,11 @@ async def update_cycle(
             db.add(ProductionCycleOutput(
                 cycle_id=cycle_id, product_id=o.product_id, output_kg=o.output_kg,
             ))
+        await db.flush()
+
+    # Re-post the new values to finished-goods stock (and ensure posted state).
+    cycle.is_finalised = True
+    await _post_cycle_stock(db, cycle, current_user)
 
     await db.commit()
     return await _load_cycle_response(db, cycle_id)
@@ -345,12 +383,22 @@ async def delete_cycle(
     current_user: User = Depends(require_role("admin")),
 ):
     cycle = (await db.execute(
-        select(ProductionCycle).where(ProductionCycle.id == cycle_id)
+        select(ProductionCycle)
+        .options(selectinload(ProductionCycle.outputs))
+        .where(ProductionCycle.id == cycle_id)
     )).scalar_one_or_none()
     if not cycle:
         raise HTTPException(404, "Cycle not found")
+
+    # Reverse the cycle's finished-goods stock postings before deleting, so the
+    # on-hand stock returns to its pre-cycle value (no orphaned stock).
     if cycle.is_finalised:
-        raise HTTPException(400, "Cannot delete a finalised cycle. Create an adjustment instead.")
+        from app.routers.product_stock import reverse_cycle_stock
+        await reverse_cycle_stock(
+            db, cycle, list(cycle.outputs),
+            user_id=current_user.id,
+            user_name=current_user.full_name or current_user.username,
+        )
     await db.delete(cycle)
     await db.commit()
 

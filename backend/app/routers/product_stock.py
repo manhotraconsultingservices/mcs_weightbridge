@@ -197,6 +197,55 @@ async def post_cycle_input(
     )
 
 
+async def reverse_cycle_stock(
+    db: AsyncSession, cycle, outputs: list,
+    user_id: Optional[uuid.UUID] = None, user_name: Optional[str] = None,
+) -> None:
+    """Undo a cycle's stock postings — used BEFORE editing or deleting a cycle.
+
+    Mirrors post_cycle_outputs / post_cycle_input with opposite signs:
+      finished outputs were stock-IN  → post stock-OUT  (cycle_output_cancelled)
+      raw input was stock-OUT         → post stock-IN    (cycle_input_cancelled)
+    Pass the cycle's CURRENT (old) outputs + input, BEFORE applying any edit.
+    """
+    ref_no = f"CYC/{cycle.cycle_date}/{cycle.cycle_no}"
+    for out in outputs:
+        if not out.output_kg or out.output_kg <= 0:
+            continue
+        product = (await db.execute(
+            select(Product).where(Product.id == out.product_id)
+        )).scalar_one_or_none()
+        if not product:
+            continue
+        qty = Decimal(str(out.output_kg))
+        if product.unit == "MT":
+            qty = qty / Decimal("1000")
+        await _record_movement(
+            db, cycle.company_id, out.product_id,
+            movement_type="cycle_output_cancelled", quantity=-qty,
+            reference_type="production_cycle", reference_id=cycle.id,
+            reference_no=ref_no,
+            notes=f"Production cycle {cycle.cycle_date} — output reversed (edit/delete)",
+            user_id=user_id, user_name=user_name,
+        )
+    if cycle.raw_material_id and cycle.input_kg and cycle.input_kg > 0:
+        product = (await db.execute(
+            select(Product).where(Product.id == cycle.raw_material_id)
+        )).scalar_one_or_none()
+        if product:
+            qty = Decimal(str(cycle.input_kg))
+            if product.unit == "MT":
+                qty = qty / Decimal("1000")
+            await _record_movement(
+                db, cycle.company_id, cycle.raw_material_id,
+                movement_type="cycle_input_cancelled", quantity=qty,
+                reference_type="production_cycle", reference_id=cycle.id,
+                reference_no=ref_no,
+                notes=f"Production cycle {cycle.cycle_date} — raw consumption reversed (edit/delete)",
+                user_id=user_id, user_name=user_name,
+            )
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 async def _company(db: AsyncSession) -> Company:
