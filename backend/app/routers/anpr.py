@@ -388,6 +388,15 @@ async def _handle_detection(
                 "anpr_event", str(event.id), ts,
             )
 
+    # ── H3-D: barrier relay trigger (non-blocking) ────────────────────────
+    # Only fire for registered vehicles (needs_review=False) to prevent
+    # unknown plates from opening the gate.
+    if direction in ("entry", "exit") and not needs_review:
+        from app.services.barrier import trigger_barrier as _barrier_trigger
+        background_tasks.add_task(
+            _barrier_trigger, db, direction, plate_norm, gate_pass_no
+        )
+
     return DetectResponse(
         event_id=event.id,
         direction=direction,

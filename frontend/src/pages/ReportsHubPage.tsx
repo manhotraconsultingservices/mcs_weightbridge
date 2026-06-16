@@ -5,7 +5,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield, XCircle, PieChart, TrendingUp } from 'lucide-react';
+import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield, XCircle, PieChart, TrendingUp, ShieldAlert } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import PaymentsPage from './PaymentsPage';
 import LedgerPage from './LedgerPage';
@@ -17,8 +17,9 @@ import WriteOffsReportPage from './WriteOffsReportPage';
 import GstSplitReportPage from './GstSplitReportPage';
 import Gstr2bReconcilePage from './Gstr2bReconcilePage';
 import SalesStatusReportPage from './SalesStatusReportPage';
+import AnomalyReportPage from './AnomalyReportPage';
 
-type Tab = 'payments' | 'statement' | 'gst' | 'gstr2b' | 'gst-split' | 'sales-status' | 'reports' | 'write-offs' | 'compliance' | 'activity';
+type Tab = 'payments' | 'statement' | 'gst' | 'gstr2b' | 'gst-split' | 'sales-status' | 'reports' | 'write-offs' | 'compliance' | 'activity' | 'anomaly';
 
 const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
   { value: 'payments', label: 'Payments', icon: CreditCard },
@@ -31,6 +32,7 @@ const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
   { value: 'write-offs', label: 'Write-offs', icon: XCircle },
   { value: 'compliance', label: 'Documents', icon: ShieldCheck },
   { value: 'activity', label: 'Activity Log', icon: Shield },
+  { value: 'anomaly', label: 'Anomaly', icon: ShieldAlert },
 ];
 
 export default function ReportsHubPage() {
@@ -72,6 +74,7 @@ export default function ReportsHubPage() {
         <TabsContent value="write-offs" className="mt-4"><WriteOffsReportPage /></TabsContent>
         <TabsContent value="compliance" className="mt-4"><CompliancePage /></TabsContent>
         <TabsContent value="activity" className="mt-4"><AuditPage /></TabsContent>
+        <TabsContent value="anomaly" className="mt-4"><AnomalyReportPage /></TabsContent>
       </Tabs>
     </div>
   );

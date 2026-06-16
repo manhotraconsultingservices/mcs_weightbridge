@@ -2599,6 +2599,266 @@ function PrintSettingsTab() {
   );
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Barrier Relay Settings (H3-D) — unmanned gate-barrier trigger
+// ──────────────────────────────────────────────────────────────────────────────
+
+interface BarrierCfg {
+  enabled: boolean;
+  trigger_entry: boolean;
+  trigger_exit: boolean;
+  trigger_unknown: boolean;
+  relay_type: 'http';
+  http_url: string;
+  http_method: 'GET' | 'POST';
+  http_open_param: string;
+  http_auth_user: string;
+  http_auth_pass: string;
+  open_duration_sec: number;
+  timeout_sec: number;
+}
+
+const BARRIER_DEFAULT: BarrierCfg = {
+  enabled: false,
+  trigger_entry: true,
+  trigger_exit: true,
+  trigger_unknown: false,
+  relay_type: 'http',
+  http_url: '',
+  http_method: 'GET',
+  http_open_param: '?state=on&duration=5',
+  http_auth_user: '',
+  http_auth_pass: '',
+  open_duration_sec: 5,
+  timeout_sec: 3,
+};
+
+function BarrierSettingsTab() {
+  const [cfg, setCfg] = useState<BarrierCfg>(BARRIER_DEFAULT);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    api.get<BarrierCfg>('/api/v1/app-settings/barrier-config')
+      .then(r => setCfg(r.data))
+      .catch(() => { /* leave defaults */ })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const set = <K extends keyof BarrierCfg>(k: K, v: BarrierCfg[K]) =>
+    setCfg(c => ({ ...c, [k]: v }));
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const { data } = await api.put<BarrierCfg>('/api/v1/app-settings/barrier-config', cfg);
+      setCfg(data);
+      setMsg({ kind: 'ok', text: 'Barrier settings saved.' });
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setMsg({ kind: 'err', text: typeof detail === 'string' ? detail : 'Failed to save settings' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function runTest() {
+    setTesting(true);
+    setMsg(null);
+    try {
+      const { data } = await api.post<{ ok: boolean; message?: string; error?: string }>(
+        '/api/v1/app-settings/barrier-config/test',
+      );
+      if (data.ok) {
+        setMsg({ kind: 'ok', text: data.message ?? 'Test trigger sent' });
+      } else {
+        setMsg({ kind: 'err', text: data.error ?? 'Test failed' });
+      }
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setMsg({ kind: 'err', text: typeof detail === 'string' ? detail : 'Test trigger failed' });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="pt-6 flex items-center justify-center text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading barrier settings…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Truck className="h-4 w-4 text-orange-600" /> Barrier Relay — Unmanned Gate Control
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <p className="text-sm text-muted-foreground">
+          When enabled, the system automatically sends an HTTP request to your relay device
+          (ESP8266 / ESP32 board or smart plug, ₹500–1,500) every time ANPR recognises a
+          registered vehicle. <strong>Unknown plates never trigger the barrier.</strong>{' '}
+          Barrier is <strong>off by default</strong> and independent of ANPR — ANPR must also
+          be enabled for detections to arrive.
+        </p>
+
+        {/* Master toggle */}
+        <ToggleRow label="Enable barrier relay" checked={cfg.enabled} onCheckedChange={v => set('enabled', v)} />
+
+        {/* Which directions trigger */}
+        <div className="space-y-1">
+          <Label className="text-xs uppercase tracking-widest text-muted-foreground">Trigger on</Label>
+          <div className="space-y-2 pl-1">
+            <ToggleRow label="Vehicle ENTRY (plate not seen today)" checked={cfg.trigger_entry} onCheckedChange={v => set('trigger_entry', v)} />
+            <ToggleRow label="Vehicle EXIT (plate seen + open token found)" checked={cfg.trigger_exit} onCheckedChange={v => set('trigger_exit', v)} />
+            <ToggleRow
+              label="Unknown / unregistered plates (not recommended)"
+              checked={cfg.trigger_unknown}
+              onCheckedChange={v => set('trigger_unknown', v)}
+            />
+          </div>
+        </div>
+
+        {/* Relay type — v1 HTTP only */}
+        <div className="space-y-1">
+          <Label className="text-xs uppercase tracking-widest text-muted-foreground">Relay type</Label>
+          <div className="h-10 flex items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground">
+            HTTP (v1) — GET or POST to a URL
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Serial (USB relay) and MQTT planned for v2. For now, any relay board that exposes
+            an HTTP endpoint works — Sonoff Basic, Shelly 1, or a ₹500 ESP8266 running Tasmota.
+          </p>
+        </div>
+
+        {/* Relay URL */}
+        <div className="space-y-1">
+          <Label>Relay URL</Label>
+          <Input
+            value={cfg.http_url}
+            onChange={e => set('http_url', e.target.value)}
+            placeholder="http://192.168.1.100/relay/1"
+          />
+          <p className="text-[10px] text-muted-foreground">
+            LAN IP of the relay board. Must be reachable from the server (same network).
+          </p>
+        </div>
+
+        {/* HTTP method + open param */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label>HTTP Method</Label>
+            <select
+              className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+              value={cfg.http_method}
+              onChange={e => set('http_method', e.target.value as 'GET' | 'POST')}
+            >
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <Label>Open param (appended to URL)</Label>
+            <Input
+              value={cfg.http_open_param}
+              onChange={e => set('http_open_param', e.target.value)}
+              placeholder="?state=on&duration=5"
+            />
+          </div>
+        </div>
+        <p className="text-[10px] text-muted-foreground -mt-3">
+          Example full URL sent: <code className="bg-muted px-1 rounded">{(cfg.http_url || 'http://192.168.1.100/relay/1') + (cfg.http_open_param || '')}</code>
+        </p>
+
+        {/* Durations */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label>Open duration (seconds)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={60}
+              value={cfg.open_duration_sec}
+              onChange={e => set('open_duration_sec', Number(e.target.value))}
+            />
+            <p className="text-[10px] text-muted-foreground">
+              Informational — the relay board enforces this (pass via http_open_param).
+            </p>
+          </div>
+          <div className="space-y-1">
+            <Label>HTTP timeout (seconds)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={10}
+              value={cfg.timeout_sec}
+              onChange={e => set('timeout_sec', Number(e.target.value))}
+            />
+            <p className="text-[10px] text-muted-foreground">
+              If relay doesn't respond in time, error is logged and ignored — gate does not block.
+            </p>
+          </div>
+        </div>
+
+        {/* Optional basic auth */}
+        <div className="space-y-1">
+          <Label className="text-xs uppercase tracking-widest text-muted-foreground">Basic auth (optional)</Label>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Username</Label>
+              <Input
+                value={cfg.http_auth_user}
+                onChange={e => set('http_auth_user', e.target.value)}
+                placeholder="leave blank if none"
+                autoComplete="off"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Password</Label>
+              <Input
+                type="password"
+                value={cfg.http_auth_pass}
+                onChange={e => set('http_auth_pass', e.target.value)}
+                placeholder="leave blank if none"
+                autoComplete="new-password"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-3 pt-1">
+          <Button onClick={save} disabled={saving}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            Save
+          </Button>
+          <Button variant="outline" onClick={runTest} disabled={testing || !cfg.http_url}>
+            {testing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+            Test Trigger
+          </Button>
+          {msg && (
+            <p className={`text-sm flex items-center gap-1 ${msg.kind === 'ok' ? 'text-green-600' : 'text-destructive'}`}>
+              {msg.kind === 'ok'
+                ? <CheckCircle className="h-4 w-4" />
+                : <XCircle className="h-4 w-4" />}
+              {msg.text}
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SettingsPage() {
   const isSaas = sessionStorage.getItem('multi_tenant') === '1';
   const [tab, setTab] = useState('company');
@@ -2693,6 +2953,11 @@ export default function SettingsPage() {
           <TabsTrigger value="anpr" className="flex items-center gap-1">
             <Camera className="h-3.5 w-3.5" />ANPR
           </TabsTrigger>
+          {!isSaas && (
+            <TabsTrigger value="barrier" className="flex items-center gap-1">
+              <Truck className="h-3.5 w-3.5" />Barrier
+            </TabsTrigger>
+          )}
           <TabsTrigger value="print">Print</TabsTrigger>
         </TabsList>
 
@@ -2844,6 +3109,11 @@ export default function SettingsPage() {
           <AnprSettingsTab />
         </TabsContent>
 
+        {/* Barrier relay — unmanned gate control (H3-D) */}
+        <TabsContent value="barrier" className="mt-4">
+          <BarrierSettingsTab />
+        </TabsContent>
+
         {/* Print Settings */}
         <TabsContent value="print" className="mt-4">
           <PrintSettingsTab />
@@ -2851,7 +3121,7 @@ export default function SettingsPage() {
       </Tabs>
 
       {/* Save button (not on FY, USB Guard, Scale, Tally, Weighbridge, Notifications, or Print tabs) */}
-      {tab !== 'fy' && tab !== 'usb' && tab !== 'scale' && tab !== 'tally' && tab !== 'weighbridge' && tab !== 'notifications' && tab !== 'cameras' && tab !== 'einvoice' && tab !== 'anpr' && tab !== 'print' && (
+      {tab !== 'fy' && tab !== 'usb' && tab !== 'scale' && tab !== 'tally' && tab !== 'weighbridge' && tab !== 'notifications' && tab !== 'cameras' && tab !== 'einvoice' && tab !== 'eway' && tab !== 'upi' && tab !== 'anpr' && tab !== 'barrier' && tab !== 'print' && (
         <div className="flex items-center gap-3">
           <Button onClick={saveCompany} disabled={saving}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

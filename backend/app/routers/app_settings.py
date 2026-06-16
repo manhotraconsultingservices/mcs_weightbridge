@@ -610,3 +610,69 @@ async def save_invoice_print_settings(
     """Save invoice PDF print settings. Admin only."""
     await _upsert(db, INVOICE_PRINT_SETTINGS_KEY, json.dumps(payload))
     return payload
+
+
+# ── Barrier / Gate-relay Config (H3-D) ───────────────────────────────────────
+
+BARRIER_CONFIG_KEY = "barrier_config"
+_BARRIER_MASK = "***"
+
+
+@router.get("/barrier-config")
+async def get_barrier_config(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return barrier relay config (password masked). Any authenticated user."""
+    from app.services.barrier import DEFAULT_CONFIG as BARRIER_DEFAULTS
+    raw = await _get_raw(db, BARRIER_CONFIG_KEY)
+    stored: dict = {}
+    if raw:
+        try:
+            stored = json.loads(raw)
+        except Exception:
+            pass
+    cfg = {**BARRIER_DEFAULTS, **stored}
+    if cfg.get("http_auth_pass"):
+        cfg["http_auth_pass"] = _BARRIER_MASK
+    return cfg
+
+
+@router.put("/barrier-config")
+async def update_barrier_config(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Save barrier relay config. Admin only. Password sentinel preserves existing."""
+    from app.services.barrier import DEFAULT_CONFIG as BARRIER_DEFAULTS
+    existing: dict = {}
+    raw = await _get_raw(db, BARRIER_CONFIG_KEY)
+    if raw:
+        try:
+            existing = json.loads(raw)
+        except Exception:
+            pass
+    merged = {**BARRIER_DEFAULTS, **existing, **payload}
+    # preserve password if sentinel was sent
+    if payload.get("http_auth_pass") == _BARRIER_MASK:
+        merged["http_auth_pass"] = existing.get("http_auth_pass", "")
+    await _upsert(db, BARRIER_CONFIG_KEY, json.dumps(merged))
+    # mask before returning
+    if merged.get("http_auth_pass"):
+        merged["http_auth_pass"] = _BARRIER_MASK
+    return merged
+
+
+@router.post("/barrier-config/test")
+async def test_barrier_config(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Fire one test trigger and return success/error. Admin only."""
+    from app.services.barrier import trigger_barrier
+    try:
+        await trigger_barrier(db, "entry", "TEST-PLATE", "TEST-GP")
+        return {"ok": True, "message": "Test trigger sent — check your relay device"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
