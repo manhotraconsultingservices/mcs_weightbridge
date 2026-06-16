@@ -1190,6 +1190,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
   const { authorized: usbAuthorized } = useUsbGuard();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const isOperator = user?.role === 'operator';
   const isSalesExec = user?.role === 'sales_executive';
   const isPurchaseExec = user?.role === 'purchase_executive';
 
@@ -1222,9 +1223,9 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
   const canEInvoice = actionPerms.includes('einvoice');
   const canRecordPayment = actionPerms.includes('record_payment');
   const canRevise = actionPerms.includes('create_revision');
-  const canFinalize = actionPerms.includes('finalize');
+  const canFinalize = actionPerms.includes('finalize') && !isOperator;
   const canEditDraft = actionPerms.includes('edit_draft');
-  const canCancelDraft = actionPerms.includes('cancel_draft');
+  const canCancelDraft = actionPerms.includes('cancel_draft') && !isOperator;
   const canMoveToSupplement = actionPerms.includes('move_to_supplement');
   // Write-off is admin + accountant only. Use isAdmin || role check.
   const canWriteOff = isAdmin || user?.role === 'accountant';
