@@ -52,14 +52,20 @@ export default function RoyaltyPassesPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    // Passes load on their own — a reconciliation failure must NEVER blank the table.
     try {
-      const [p, r] = await Promise.all([
-        api.get('/royalty/passes', { params: { page_size: 300 } }),
-        api.get('/royalty/reconciliation', { params: { date_from: range.from, date_to: range.to } }),
-      ]);
+      const p = await api.get('/royalty/passes', { params: { page_size: 300 } });
       setRows(p.data.items ?? []);
+    } catch {
+      toast.error('Could not load royalty passes');
+    } finally {
+      setLoading(false);
+    }
+    // Reconciliation is best-effort (powers the KPI strip only).
+    try {
+      const r = await api.get('/royalty/reconciliation', { params: { date_from: range.from, date_to: range.to } });
       setRecon(r.data);
-    } catch { /* inline */ } finally { setLoading(false); }
+    } catch { /* recon optional — KPIs just stay blank */ }
   }, [range.from, range.to]);
 
   useEffect(() => {
