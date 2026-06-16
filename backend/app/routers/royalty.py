@@ -2,18 +2,26 @@
 
 Tracks government royalty / e-transit passes and reconciles authorised quantity
 against inbound purchase loads consumed against each pass.
+
+P2: CSV import from eRavanna / Form-H government portal exports.
+    Tolerant column-name mapping handles every variant we've seen in the wild.
+    Endpoint: POST /passes/import-csv
+    Background: check_royalty_unaccounted() fires after each purchase-token completion.
 """
+import csv
+import io
+import json
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from sqlalchemy import select, func, text as _sql
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_role
 from app.models.company import Company, FinancialYear
 from app.models.party import Party
 from app.models.royalty import RoyaltyPass, RoyaltyPassConsumption
@@ -23,6 +31,113 @@ from app.schemas.royalty import (
     RoyaltyPassCreate, RoyaltyPassUpdate, RoyaltyPassResponse, RoyaltyPassListResponse,
     ConsumeRequest, ConsumptionResponse, RoyaltyReconciliation,
 )
+
+# ── P2 CSV column aliases ────────────────────────────────────────────────────
+# Keys = our field names; values = all column header variants we know from
+# eRavanna (Karnataka), Form-H (MMDR), HMMS (Telangana), ARIS (AP), etc.
+_CSV_ALIASES: dict[str, list[str]] = {
+    "pass_no": [
+        "eravanna number", "eravanna no", "e-ravanna no", "e ravanna number",
+        "pass no", "pass number", "permit number", "permit no",
+        "transit pass no", "transit pass number", "form h no", "form-h no",
+        "ravanna number", "pass id", "permit id", "pass_no",
+    ],
+    "issue_date": [
+        "issue date", "date of issue", "issued date", "issue_date",
+        "date issued", "permit date", "issued on", "issue on",
+        "generated date", "date of generation",
+    ],
+    "valid_till": [
+        "valid till", "validity date", "valid upto", "valid up to",
+        "expiry date", "expiry", "validity", "valid_till",
+        "validity upto", "expiry till", "permit valid upto",
+    ],
+    "source_name": [
+        "quarry name", "source name", "quarry/source", "mine name",
+        "lessor name", "quarry", "lease holder", "source",
+        "quarry/mine", "lessee name", "site name", "regd. quarry name",
+    ],
+    "mineral": [
+        "minor mineral", "mineral", "material", "mineral name",
+        "minor mineral name", "commodity", "material name",
+    ],
+    "vehicle_no": [
+        "vehicle no", "vehicle number", "veh no", "vehicle_no",
+        "veh. no", "vehicle", "vehicle reg no", "veh. reg. no",
+    ],
+    "quantity_mt": [
+        "quantity (mt)", "qty (mt)", "permitted qty", "permitted qty (mt)",
+        "quantity mt", "qty mt", "quantity", "qty",
+        "weight (mt)", "quantity in mt", "qty. (mt)",
+        "volume (mt)", "permitted quantity (mt)", "permitted quantity",
+        "dispatched quantity (mt)", "quantity (in mt)",
+    ],
+    "rate": [
+        "rate", "rate (₹/mt)", "royalty rate", "rate per mt",
+        "rate/mt", "r/mt", "royalty rate (₹/mt)", "rate (rs./mt)",
+    ],
+    "amount": [
+        "amount", "total amount", "royalty amount", "royalty (₹)",
+        "royalty amt", "royalty paid", "amount (₹)", "total",
+        "total royalty", "royalty fee", "mineral value",
+    ],
+    "pass_type": ["pass type", "type", "permit type", "pass_type"],
+    "notes": ["notes", "remarks", "remark", "note", "comments", "narration"],
+}
+
+_PASS_TYPE_MAP: dict[str, str] = {
+    "royalty": "royalty", "e_transit": "e_transit",
+    "e-transit": "e_transit", "transit": "e_transit",
+    "mineral_permit": "mineral_permit", "permit": "mineral_permit",
+    "mineral permit": "mineral_permit", "eravanna": "e_transit",
+    "e ravanna": "e_transit", "form h": "royalty",
+    "form-h": "royalty",
+}
+
+# Alert config defaults (stored in app_settings under key 'royalty_alert_config')
+_ROYALTY_ALERT_DEFAULT: dict = {
+    "enabled": True,
+    "unaccounted_threshold_mt": 50.0,
+    "check_on_purchase_complete": True,
+}
+
+# In-memory de-dup: prevents repeated alerts within the same calendar day
+_last_royalty_alert: dict[str, date] = {}
+
+
+def _resolve_csv_cols(fieldnames: list[str]) -> dict[str, str | None]:
+    """Map our field names → actual CSV header strings using the alias table."""
+    lowered = {h.strip().lower(): h for h in fieldnames}
+    result: dict[str, str | None] = {k: None for k in _CSV_ALIASES}
+    for field, aliases in _CSV_ALIASES.items():
+        for alias in aliases:
+            if alias in lowered:
+                result[field] = lowered[alias]
+                break
+    return result
+
+
+def _parse_indian_date(s: str) -> date | None:
+    """Parse Indian date strings: DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD, etc."""
+    s = (s or "").strip()
+    if not s:
+        return None
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d.%m.%Y",
+                "%d/%m/%y", "%d-%m-%y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            pass
+    return None
+
+
+def _parse_csv_decimal(s: str) -> Decimal:
+    """Tolerant decimal parser: handles commas, ₹ prefix, spaces."""
+    s = (s or "").strip().replace(",", "").replace("₹", "").replace(" ", "")
+    try:
+        return Decimal(s) if s else Decimal("0")
+    except Exception:
+        return Decimal("0")
 
 router = APIRouter(prefix="/api/v1/royalty", tags=["Royalty / Transit Pass"])
 
@@ -315,3 +430,251 @@ async def alerts(
     )).scalars().all()
     items = [await _to_response(db, p) for p in rows]
     return RoyaltyPassListResponse(items=items, total=len(items))
+
+
+# ── P2: eRavanna / Form-H CSV import ─────────────────────────────────────────
+
+@router.post("/passes/import-csv")
+async def import_passes_csv(
+    file: UploadFile = File(...),
+    skip_duplicates: bool = Query(True, description="Skip rows whose pass_no already exists"),
+    dry_run: bool = Query(False, description="Parse + validate only; do not write to DB"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Import royalty/transit passes from an eRavanna or Form-H portal CSV export.
+
+    Tolerant column-name mapping covers Karnataka DMG (eRavanna), HMMS
+    (Telangana), ARIS (Andhra Pradesh), and generic Form-H formats.
+    Returns {imported, skipped, errors, columns_detected, sample}.
+    """
+    try:
+        raw = await file.read()
+        text_content = raw.decode("utf-8-sig")  # strips Excel BOM
+    except Exception:
+        raise HTTPException(400, "Could not read the uploaded file. Please upload a UTF-8 or Excel CSV.")
+
+    try:
+        reader = csv.DictReader(io.StringIO(text_content))
+        if not reader.fieldnames:
+            raise HTTPException(400, "CSV file appears to be empty or has no header row.")
+        cols = _resolve_csv_cols(list(reader.fieldnames))
+        all_rows = list(reader)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(400, f"Could not parse CSV: {e}")
+
+    if not cols["pass_no"]:
+        found = ", ".join(list(reader.fieldnames or [])[:10])
+        raise HTTPException(
+            400,
+            f"Could not detect the pass-number column. Columns found: {found}. "
+            "Expected: 'eRavanna Number', 'Pass No', 'Permit Number', or similar."
+        )
+
+    co, fy = await _company_fy(db)
+    if not co:
+        raise HTTPException(500, "Company not configured")
+
+    # Pre-load existing pass numbers for O(1) duplicate check
+    existing_nos: set[str] = set(
+        r[0] for r in (await db.execute(
+            select(RoyaltyPass.pass_no).where(RoyaltyPass.company_id == co.id)
+        )).all()
+    )
+
+    imported, skipped = 0, 0
+    errors: list[dict] = []
+    new_passes: list[RoyaltyPass] = []
+
+    for row_num, row in enumerate(all_rows, start=2):  # row 1 = header
+        def _cell(field: str) -> str:
+            col = cols.get(field)
+            return (row.get(col, "") or "").strip() if col else ""
+
+        pass_no = _cell("pass_no")
+        if not pass_no:
+            errors.append({"row": row_num, "error": "Empty pass number — row skipped."})
+            continue
+
+        if skip_duplicates and pass_no in existing_nos:
+            skipped += 1
+            continue
+
+        pt_raw = _cell("pass_type").lower().strip()
+        pass_type = _PASS_TYPE_MAP.get(pt_raw, "royalty")
+
+        qty = _parse_csv_decimal(_cell("quantity_mt"))
+
+        p = RoyaltyPass(
+            company_id=co.id,
+            fy_id=fy.id if fy else None,
+            pass_no=pass_no,
+            pass_type=pass_type,
+            source_name=_cell("source_name") or None,
+            mineral=_cell("mineral") or None,
+            vehicle_no=(_cell("vehicle_no").upper().replace(" ", "") or None),
+            issue_date=_parse_indian_date(_cell("issue_date")),
+            valid_till=_parse_indian_date(_cell("valid_till")),
+            quantity_mt=qty,
+            rate=_parse_csv_decimal(_cell("rate")),
+            amount=_parse_csv_decimal(_cell("amount")),
+            notes=_cell("notes") or None,
+            status="active",
+            created_by=current_user.id,
+        )
+        new_passes.append(p)
+        existing_nos.add(pass_no)   # prevent intra-batch duplicates
+        imported += 1
+
+    if not dry_run and new_passes:
+        for p in new_passes:
+            db.add(p)
+        await db.commit()
+
+    return {
+        "imported": imported if not dry_run else 0,
+        "previewed": imported if dry_run else 0,
+        "skipped": skipped,
+        "error_count": len(errors),
+        "errors": errors[:20],  # cap to keep response small
+        "total_rows": len(all_rows),
+        "columns_detected": {k: v for k, v in cols.items() if v},
+        "dry_run": dry_run,
+        "sample": [
+            {
+                "pass_no": p.pass_no,
+                "pass_type": p.pass_type,
+                "source_name": p.source_name,
+                "mineral": p.mineral,
+                "vehicle_no": p.vehicle_no,
+                "quantity_mt": str(p.quantity_mt),
+                "issue_date": p.issue_date.isoformat() if p.issue_date else None,
+                "valid_till": p.valid_till.isoformat() if p.valid_till else None,
+            }
+            for p in new_passes[:10]
+        ],
+    }
+
+
+# ── P2: Reconciliation alert config ──────────────────────────────────────────
+
+_ALERT_KEY = "royalty_alert_config"
+
+
+@router.get("/alert-config")
+async def get_alert_config(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return current unaccounted-MT alert config (merged with defaults)."""
+    row = (await db.execute(_sql(
+        "SELECT value FROM app_settings WHERE key = :k"
+    ), {"k": _ALERT_KEY})).fetchone()
+    cfg = dict(_ROYALTY_ALERT_DEFAULT)
+    if row:
+        try:
+            cfg.update(json.loads(row[0]))
+        except Exception:
+            pass
+    return cfg
+
+
+@router.put("/alert-config")
+async def update_alert_config(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Save unaccounted-MT alert threshold. Admin only."""
+    await db.execute(_sql("""
+        INSERT INTO app_settings (key, value, updated_at)
+        VALUES (:k, :v, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    """), {"k": _ALERT_KEY, "v": json.dumps(payload)})
+    await db.commit()
+    return {**_ROYALTY_ALERT_DEFAULT, **payload}
+
+
+# ── P2: Background unaccounted-MT check ──────────────────────────────────────
+
+async def check_royalty_unaccounted(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    token_date: date,
+) -> None:
+    """Compute today's unaccounted MT and send Telegram if threshold is crossed.
+
+    Called as a BackgroundTask after every purchase token completion.
+    In-memory de-dup fires at most once per company per calendar day.
+    """
+    cid_str = str(company_id)
+    today = date.today()
+
+    # Daily de-dup
+    if _last_royalty_alert.get(cid_str) == today:
+        return
+
+    # Load config
+    row = (await db.execute(_sql(
+        "SELECT value FROM app_settings WHERE key = :k"
+    ), {"k": _ALERT_KEY})).fetchone()
+    cfg = dict(_ROYALTY_ALERT_DEFAULT)
+    if row:
+        try:
+            cfg.update(json.loads(row[0]))
+        except Exception:
+            pass
+
+    if not cfg.get("enabled", True):
+        return
+
+    threshold = float(cfg.get("unaccounted_threshold_mt", 50.0))
+
+    # Consumed MT today across all passes
+    consumed = (await db.execute(
+        select(func.coalesce(func.sum(RoyaltyPassConsumption.quantity_mt), 0)).where(
+            RoyaltyPassConsumption.company_id == company_id,
+            RoyaltyPassConsumption.consumed_date == today,
+        )
+    )).scalar() or 0
+
+    # Inbound purchase MT today (kg → MT)
+    inbound_kg = (await db.execute(
+        select(func.coalesce(func.sum(Token.net_weight), 0)).where(
+            Token.company_id == company_id,
+            Token.token_type == "purchase",
+            Token.status == "COMPLETED",
+            Token.token_date == today,
+        )
+    )).scalar() or 0
+
+    inbound_mt = float(inbound_kg) / 1000.0
+    unaccounted_mt = round(inbound_mt - float(consumed), 3)
+
+    if unaccounted_mt < threshold:
+        return
+
+    co = (await db.execute(
+        select(Company).where(Company.id == company_id).limit(1)
+    )).scalar_one_or_none()
+
+    # Mark de-dup BEFORE sending so a send error doesn't re-trigger immediately
+    _last_royalty_alert[cid_str] = today
+
+    try:
+        from app.integrations.notifications.service import send_notification
+        ctx = {
+            "date": today.strftime("%d-%m-%Y"),
+            "inbound_mt": f"{inbound_mt:.3f}",
+            "consumed_mt": f"{float(consumed):.3f}",
+            "unaccounted_mt": f"{unaccounted_mt:.3f}",
+            "threshold_mt": f"{threshold:.1f}",
+            "company_name": co.name if co else "—",
+        }
+        await send_notification(db, company_id, "royalty_unaccounted_alert", ctx,
+                                entity_type="company", entity_id=str(company_id))
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Royalty unaccounted alert send failed: %s", exc)

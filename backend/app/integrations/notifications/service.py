@@ -270,6 +270,24 @@ DEFAULT_TEMPLATES = [
             "\n— {{ company_name }}"
         ),
     },
+    # ── Royalty / Transit-pass reconciliation alert ───────────────────────────
+    {
+        "event_type": "royalty_unaccounted_alert",
+        "channel": "telegram",
+        "name": "Royalty Unaccounted MT Alert (Telegram)",
+        "subject": None,
+        "body": (
+            "⚠️ <b>Royalty Reconciliation Alert</b>\n\n"
+            "Unaccounted material has exceeded the configured threshold.\n\n"
+            "📅 Date: <b>{{ date }}</b>\n"
+            "🚛 Inbound today (MT): <b>{{ inbound_mt }}</b>\n"
+            "✅ Covered by passes (MT): <b>{{ consumed_mt }}</b>\n"
+            "❌ Unaccounted (MT): <b>{{ unaccounted_mt }}</b>\n"
+            "🎯 Alert threshold: <b>{{ threshold_mt }} MT</b>\n\n"
+            "Please link transit passes to the inbound tokens or obtain additional passes from the portal.\n\n"
+            "— {{ company_name }}"
+        ),
+    },
 ]
 
 

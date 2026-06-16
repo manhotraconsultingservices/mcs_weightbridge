@@ -125,6 +125,22 @@ async def _send_notification_bg(
         _logging.getLogger(__name__).warning("Background notification failed [%s]: %s", event_type, exc)
 
 
+async def _check_royalty_unaccounted_bg(
+    company_id: uuid.UUID,
+    token_date,
+    tenant_slug: str | None,
+) -> None:
+    """Background task: check unaccounted royalty MT after a purchase token completes."""
+    import logging as _logging
+    try:
+        from app.database import get_tenant_session
+        async with await get_tenant_session(tenant_slug) as db:
+            from app.routers.royalty import check_royalty_unaccounted
+            await check_royalty_unaccounted(db, company_id, token_date)
+    except Exception as exc:
+        _logging.getLogger(__name__).warning("Royalty unaccounted check failed: %s", exc)
+
+
 async def _load_token(db: AsyncSession, token_id: uuid.UUID) -> Token:
     result = await db.execute(
         select(Token)
@@ -543,6 +559,13 @@ async def create_volume_token(
         company.id, "token_completed", _notify_ctx, "token", str(token.id), _bg_tenant,
     )
 
+    # Royalty unaccounted-MT alert (purchase volume tokens; non-blocking)
+    if payload.token_type == "purchase":
+        background_tasks.add_task(
+            _check_royalty_unaccounted_bg,
+            company.id, token.token_date, _bg_tenant,
+        )
+
     return await _load_token(db, token.id)
 
 
@@ -839,6 +862,13 @@ async def record_second_weight(
         _send_notification_bg,
         company.id, "token_completed", _notify_ctx, "token", str(token.id), _bg_tenant,
     )
+
+    # Royalty unaccounted-MT alert (purchase tokens only; non-blocking)
+    if token.token_type == "purchase":
+        background_tasks.add_task(
+            _check_royalty_unaccounted_bg,
+            company.id, token.token_date, _bg_tenant,
+        )
 
     # Capture snapshot at 2nd weight for ALL token types
     from app.routers.cameras import trigger_snapshot_capture

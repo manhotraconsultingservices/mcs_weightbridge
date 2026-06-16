@@ -1,9 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import api from '@/services/api';
 import { toast } from 'sonner';
 import {
   Plus, Loader2, X, MinusCircle, AlertTriangle, FileText,
-  ChevronRight, ChevronDown, Download,
+  ChevronRight, ChevronDown, Download, Upload, Bell, BellOff, CheckCircle2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +32,14 @@ interface Recon {
   authorised_mt: number; consumed_mt: number; purchase_inbound_mt: number;
   balance_mt: number; unaccounted_mt: number; total_royalty_amount: number;
   pass_count: number; active_count: number; expiring_count: number;
+}
+interface AlertCfg { enabled: boolean; unaccounted_threshold_mt: number }
+interface ImportResult {
+  imported: number; previewed: number; skipped: number; error_count: number;
+  errors: { row: number; error: string }[];
+  total_rows: number; dry_run: boolean;
+  columns_detected: Record<string, string>;
+  sample: { pass_no: string; pass_type: string; source_name: string | null; mineral: string | null; quantity_mt: string; issue_date: string | null; valid_till: string | null }[];
 }
 
 const MT = (v: number | string | null | undefined) => Number(v ?? 0).toFixed(3) + ' MT';
@@ -62,6 +70,18 @@ export default function RoyaltyPassesPage() {
   const [consumptions, setConsumptions] = useState<Record<string, Consumption[]>>({});
   const [loadingCons, setLoadingCons] = useState<string | null>(null);
 
+  // P2: CSV import state
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [skipDuplicates, setSkipDuplicates] = useState(true);
+
+  // P2: Alert config state
+  const [alertCfg, setAlertCfg] = useState<AlertCfg>({ enabled: true, unaccounted_threshold_mt: 50 });
+  const [alertBusy, setAlertBusy] = useState(false);
+
   const [form, setForm] = useState({
     pass_no: '', pass_type: 'royalty', source_name: '', party_id: '', product_id: '', mineral: '',
     issue_date: today(), valid_till: '', quantity_mt: '', rate: '', amount: '', vehicle_no: '', notes: '',
@@ -87,7 +107,55 @@ export default function RoyaltyPassesPage() {
     load();
     api.get('/api/v1/parties', { params: { page_size: 500 } }).then(r => setParties(Array.isArray(r.data) ? r.data : r.data.items ?? [])).catch(() => {});
     api.get('/api/v1/products', { params: { page_size: 500 } }).then(r => setProducts(Array.isArray(r.data) ? r.data : r.data.items ?? [])).catch(() => {});
+    api.get('/api/v1/royalty/alert-config').then(r => setAlertCfg(r.data)).catch(() => {});
   }, [load]);
+
+  // P2: preview CSV (dry_run=true)
+  async function previewImport() {
+    if (!importFile) return;
+    setImportBusy(true);
+    setImportResult(null);
+    const fd = new FormData();
+    fd.append('file', importFile);
+    try {
+      const r = await api.post<ImportResult>(
+        `/api/v1/royalty/passes/import-csv?skip_duplicates=${skipDuplicates}&dry_run=true`, fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      );
+      setImportResult(r.data);
+    } catch (e: unknown) {
+      toast.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Preview failed');
+    } finally { setImportBusy(false); }
+  }
+
+  // P2: actual import (dry_run=false)
+  async function doImport() {
+    if (!importFile) return;
+    setImportBusy(true);
+    const fd = new FormData();
+    fd.append('file', importFile);
+    try {
+      const r = await api.post<ImportResult>(
+        `/api/v1/royalty/passes/import-csv?skip_duplicates=${skipDuplicates}&dry_run=false`, fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      );
+      toast.success(`Imported ${r.data.imported} pass(es), skipped ${r.data.skipped} duplicate(s)`);
+      setImportOpen(false); setImportFile(null); setImportResult(null);
+      load();
+    } catch (e: unknown) {
+      toast.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Import failed');
+    } finally { setImportBusy(false); }
+  }
+
+  // P2: save alert config
+  async function saveAlertCfg() {
+    setAlertBusy(true);
+    try {
+      await api.put('/api/v1/royalty/alert-config', alertCfg);
+      toast.success('Alert settings saved');
+    } catch { toast.error('Could not save alert settings'); }
+    finally { setAlertBusy(false); }
+  }
 
   // P3: toggle consumption history for a pass row
   async function toggleConsumptions(passId: string) {
@@ -187,6 +255,9 @@ export default function RoyaltyPassesPage() {
           <Input type="date" className="h-8 w-36 text-xs" value={range.from} onChange={e => setRange(r => ({ ...r, from: e.target.value }))} />
           <span className="text-xs text-muted-foreground">→</span>
           <Input type="date" className="h-8 w-36 text-xs" value={range.to} onChange={e => setRange(r => ({ ...r, to: e.target.value }))} />
+          <Button variant="outline" onClick={() => { setImportFile(null); setImportResult(null); setImportOpen(true); }} className="gap-1.5">
+            <Upload className="h-4 w-4" /> Import CSV
+          </Button>
           <Button onClick={() => { resetForm(); setOpen(true); }} className="gap-1.5"><Plus className="h-4 w-4" /> New Pass</Button>
         </div>
       </div>
@@ -210,6 +281,39 @@ export default function RoyaltyPassesPage() {
           ))}
         </div>
       )}
+
+      {/* P2: Unaccounted MT alert config — compact inline row */}
+      <div className="rounded-lg border px-4 py-2.5 flex flex-wrap items-center gap-3 bg-muted/20 text-sm">
+        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          {alertCfg.enabled ? <Bell className="h-3.5 w-3.5 text-amber-500" /> : <BellOff className="h-3.5 w-3.5" />}
+          Unaccounted MT alert
+        </span>
+        <button
+          onClick={() => setAlertCfg(c => ({ ...c, enabled: !c.enabled }))}
+          className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors
+            ${alertCfg.enabled ? 'bg-amber-500' : 'bg-gray-200'}`}
+        >
+          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
+            ${alertCfg.enabled ? 'translate-x-4' : 'translate-x-0'}`} />
+        </button>
+        {alertCfg.enabled && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Fire when &gt;</span>
+            <Input
+              type="number" step="1" min="1"
+              className="h-7 w-24 text-xs"
+              value={alertCfg.unaccounted_threshold_mt}
+              onChange={e => setAlertCfg(c => ({ ...c, unaccounted_threshold_mt: Number(e.target.value) }))}
+            />
+            <span className="text-xs text-muted-foreground">MT unaccounted</span>
+          </div>
+        )}
+        <Button size="sm" variant="outline" className="h-7 text-xs gap-1 ml-auto" onClick={saveAlertCfg} disabled={alertBusy}>
+          {alertBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+          Save
+        </Button>
+        <span className="text-[10px] text-muted-foreground hidden sm:block">Telegram fires once/day when inbound purchase MT minus linked passes exceeds threshold.</span>
+      </div>
 
       {expiring.length > 0 && (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex items-center gap-2">
@@ -416,6 +520,135 @@ export default function RoyaltyPassesPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setConsumeFor(null)}>Cancel</Button>
             <Button onClick={doConsume}>Record</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* P2: Import CSV dialog */}
+      <Dialog open={importOpen} onOpenChange={o => { if (!o) { setImportOpen(false); setImportFile(null); setImportResult(null); } }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="h-4 w-4" /> Import Passes from eRavanna / Form-H CSV
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* File picker */}
+            <div
+              className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:bg-muted/30 transition-colors"
+              onClick={() => fileRef.current?.click()}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) { setImportFile(f); setImportResult(null); } }}
+            >
+              <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden"
+                onChange={e => { const f = e.target.files?.[0] ?? null; setImportFile(f); setImportResult(null); if (fileRef.current) fileRef.current.value = ''; }} />
+              {importFile ? (
+                <div className="flex items-center justify-center gap-2 text-sm font-medium">
+                  <FileText className="h-5 w-5 text-emerald-600" />
+                  {importFile.name}
+                  <span className="text-muted-foreground text-xs">({(importFile.size / 1024).toFixed(1)} KB)</span>
+                </div>
+              ) : (
+                <div className="text-muted-foreground text-sm">
+                  <Upload className="h-6 w-6 mx-auto mb-1 opacity-40" />
+                  Click or drag a CSV file here<br />
+                  <span className="text-xs">Supports eRavanna (Karnataka), Form-H (MMDR), HMMS (Telangana)</span>
+                </div>
+              )}
+            </div>
+
+            {/* Options */}
+            <div className="flex items-center gap-3 text-sm">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={skipDuplicates} onChange={e => setSkipDuplicates(e.target.checked)} className="rounded" />
+                <span>Skip passes already in the system</span>
+              </label>
+            </div>
+
+            {/* Preview results */}
+            {importResult && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: 'Will import', val: importResult.previewed, color: 'text-emerald-700' },
+                    { label: 'Duplicates skipped', val: importResult.skipped, color: 'text-muted-foreground' },
+                    { label: 'Rows with errors', val: importResult.error_count, color: importResult.error_count > 0 ? 'text-red-600' : 'text-muted-foreground' },
+                  ].map(c => (
+                    <div key={c.label} className="rounded border p-2 text-center">
+                      <p className={`text-lg font-bold ${c.color}`}>{c.val}</p>
+                      <p className="text-[10px] text-muted-foreground">{c.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Detected columns */}
+                <div>
+                  <p className="text-xs font-medium mb-1">Columns detected:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {Object.entries(importResult.columns_detected).map(([field, col]) => (
+                      <span key={field} className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 text-[11px]">
+                        {field} ← <span className="font-mono">{col}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sample rows */}
+                {importResult.sample.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium mb-1">Preview (first {importResult.sample.length} rows):</p>
+                    <div className="rounded border overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-muted/40">
+                          <tr className="[&>th]:px-2 [&>th]:py-1.5 [&>th]:text-left">
+                            <th>Pass No</th><th>Type</th><th>Source</th><th>Mineral</th><th>Qty MT</th><th>Issue Date</th><th>Valid Till</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {importResult.sample.map((s, i) => (
+                            <tr key={i} className="border-t [&>td]:px-2 [&>td]:py-1">
+                              <td className="font-mono font-semibold">{s.pass_no}</td>
+                              <td className="capitalize">{s.pass_type.replace('_', ' ')}</td>
+                              <td className="max-w-[100px] truncate">{s.source_name ?? '—'}</td>
+                              <td>{s.mineral ?? '—'}</td>
+                              <td className="text-right">{Number(s.quantity_mt).toFixed(3)}</td>
+                              <td>{s.issue_date ?? '—'}</td>
+                              <td>{s.valid_till ?? '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Errors */}
+                {importResult.errors.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-red-600 mb-1">Errors ({importResult.error_count}):</p>
+                    <div className="max-h-32 overflow-y-auto space-y-0.5">
+                      {importResult.errors.map((e, i) => (
+                        <p key={i} className="text-xs text-red-600">Row {e.row}: {e.error}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setImportOpen(false); setImportFile(null); setImportResult(null); }}>Cancel</Button>
+            {!importResult ? (
+              <Button onClick={previewImport} disabled={!importFile || importBusy} className="gap-1.5">
+                {importBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Preview
+              </Button>
+            ) : (
+              <Button onClick={doImport} disabled={importBusy || importResult.previewed === 0} className="gap-1.5 bg-emerald-600 hover:bg-emerald-700">
+                {importBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Import {importResult.previewed} pass(es)
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
