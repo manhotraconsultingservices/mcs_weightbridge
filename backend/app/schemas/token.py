@@ -19,6 +19,7 @@ class TokenCreate(BaseModel):
     driver_id: Optional[UUID] = None
     transporter_id: Optional[UUID] = None
     gate_pass: Optional[str] = None
+    gate_pass_id: Optional[UUID] = None  # link to gate_passes record (uses its GP number)
     remarks: Optional[str] = None
     transit_pass_id: Optional[UUID] = None   # links purchase token to its transit/royalty pass
     vehicle_rent: Optional[Decimal] = None   # payment to truck owner per trip
@@ -52,6 +53,7 @@ class TokenVolumeCreate(BaseModel):
     transporter_id: Optional[UUID] = None
     volume_cft: Decimal                  # cubic feet — canonical unit stored in DB
     gate_pass: Optional[str] = None
+    gate_pass_id: Optional[UUID] = None  # link to gate_passes record
     remarks: Optional[str] = None
     transit_pass_id: Optional[UUID] = None
     vehicle_rent: Optional[Decimal] = None

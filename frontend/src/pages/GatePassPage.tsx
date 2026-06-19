@@ -1,12 +1,16 @@
 /**
- * GatePassPage — Guard's gate register, designed for uneducated operators.
+ * GatePassPage — Guard's gate register.
  *
- * Entry: Big green "TRUCK IN" button → just type plate number → tap IN.
+ * Entry: Big green "TRUCK IN" button → type plate + driver → tap IN.
+ * Edit:  Pencil icon on any pass → update vehicle, driver, material, purpose, notes.
  * Exit:  Find truck in "INSIDE NOW" list → tap big red "TRUCK OUT" button.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Link2, Loader2, LogIn, LogOut, RefreshCw, Search } from 'lucide-react';
+import {
+  ChevronDown, ChevronUp, Link2, Loader2, LogIn, LogOut,
+  Pencil, RefreshCw, Search,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -59,6 +63,7 @@ function TruckInDialog({ open, onClose, onCreated }: {
 }) {
   const [vehicleNo, setVehicleNo] = useState('');
   const [driverName, setDriverName] = useState('');
+  const [driverPhone, setDriverPhone] = useState('');
   const [showMore, setShowMore] = useState(false);
   const [material, setMaterial] = useState('');
   const [purpose, setPurpose] = useState('weighbridge');
@@ -72,7 +77,7 @@ function TruckInDialog({ open, onClose, onCreated }: {
   }, [open]);
 
   function reset() {
-    setVehicleNo(''); setDriverName(''); setMaterial('');
+    setVehicleNo(''); setDriverName(''); setDriverPhone(''); setMaterial('');
     setPurpose('weighbridge'); setNotes(''); setErr(''); setShowMore(false);
   }
 
@@ -81,8 +86,9 @@ function TruckInDialog({ open, onClose, onCreated }: {
     setSaving(true); setErr('');
     try {
       await api.post('/api/v1/gate/passes', {
-        vehicle_no: vehicleNo.trim(),
+        vehicle_no: vehicleNo.trim().toUpperCase(),
         driver_name: driverName.trim() || undefined,
+        driver_phone: driverPhone.trim() || undefined,
         material: material.trim() || undefined,
         purpose,
         notes: notes.trim() || undefined,
@@ -109,7 +115,6 @@ function TruckInDialog({ open, onClose, onCreated }: {
         <div className="space-y-4">
           {err && <p className="text-sm font-medium text-destructive bg-destructive/10 rounded-md p-3">{err}</p>}
 
-          {/* Vehicle number — primary field */}
           <div className="space-y-1">
             <label className="text-sm font-semibold">VEHICLE NUMBER *</label>
             <Input
@@ -122,18 +127,27 @@ function TruckInDialog({ open, onClose, onCreated }: {
             />
           </div>
 
-          {/* Driver name */}
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Driver Name (optional)</label>
-            <Input
-              value={driverName}
-              onChange={e => setDriverName(e.target.value)}
-              placeholder="Ramesh Kumar"
-              className="h-10"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Driver Name</label>
+              <Input
+                value={driverName}
+                onChange={e => setDriverName(e.target.value)}
+                placeholder="Ramesh Kumar"
+                className="h-10"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Driver Phone</label>
+              <Input
+                value={driverPhone}
+                onChange={e => setDriverPhone(e.target.value)}
+                placeholder="9876543210"
+                className="h-10"
+              />
+            </div>
           </div>
 
-          {/* Advanced options toggle */}
           <button
             type="button"
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -186,6 +200,135 @@ function TruckInDialog({ open, onClose, onCreated }: {
   );
 }
 
+// ── Edit dialog ───────────────────────────────────────────────────────────────
+function EditDialog({ gp, open, onClose, onSaved }: {
+  gp: GatePass; open: boolean; onClose: () => void; onSaved: () => void;
+}) {
+  const [form, setForm] = useState({
+    vehicle_no: gp.vehicle_no ?? '',
+    vehicle_name: gp.vehicle_name ?? '',
+    driver_name: gp.driver_name ?? '',
+    driver_phone: gp.driver_phone ?? '',
+    material: gp.material ?? '',
+    purpose: gp.purpose ?? 'weighbridge',
+    notes: gp.notes ?? '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  // Re-sync form when gp changes (dialog reused for different rows)
+  useEffect(() => {
+    if (open) {
+      setForm({
+        vehicle_no: gp.vehicle_no ?? '',
+        vehicle_name: gp.vehicle_name ?? '',
+        driver_name: gp.driver_name ?? '',
+        driver_phone: gp.driver_phone ?? '',
+        material: gp.material ?? '',
+        purpose: gp.purpose ?? 'weighbridge',
+        notes: gp.notes ?? '',
+      });
+      setErr('');
+    }
+  }, [open, gp]);
+
+  async function save() {
+    if (!form.vehicle_no.trim()) { setErr('Vehicle number is required'); return; }
+    setSaving(true); setErr('');
+    try {
+      await api.put(`/api/v1/gate/passes/${gp.id}`, form);
+      onSaved();
+    } catch (e) {
+      setErr(errMsg(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Pencil className="h-4 w-4" />
+            Edit Gate Pass — <span className="font-mono text-primary">{gp.gate_pass_no}</span>
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          {err && <p className="text-sm font-medium text-destructive bg-destructive/10 rounded-md p-2">{err}</p>}
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold">Vehicle Number *</label>
+            <Input
+              value={form.vehicle_no}
+              onChange={e => setForm(f => ({ ...f, vehicle_no: e.target.value.toUpperCase() }))}
+              className="font-bold tracking-widest"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Driver Name</label>
+              <Input
+                value={form.driver_name}
+                onChange={e => setForm(f => ({ ...f, driver_name: e.target.value }))}
+                placeholder="Ramesh Kumar"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Driver Phone</label>
+              <Input
+                value={form.driver_phone}
+                onChange={e => setForm(f => ({ ...f, driver_phone: e.target.value }))}
+                placeholder="9876543210"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Material</label>
+            <Input
+              value={form.material}
+              onChange={e => setForm(f => ({ ...f, material: e.target.value }))}
+              placeholder="Aggregates 20mm"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Visit Type</label>
+            <Select value={form.purpose} onValueChange={v => setForm(f => ({ ...f, purpose: v ?? 'weighbridge' }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(PURPOSE_LABEL).map(([k, v]) => (
+                  <SelectItem key={k} value={k}>{v}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Notes</label>
+            <Input
+              value={form.notes}
+              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+              placeholder="Optional remarks"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
+          <Button className="flex-1" onClick={save} disabled={saving}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+            Save Changes
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── TRUCK OUT dialog ──────────────────────────────────────────────────────────
 function TruckOutDialog({ gp, open, onClose, onExited }: {
   gp: GatePass; open: boolean; onClose: () => void; onExited: () => void;
@@ -228,7 +371,6 @@ function TruckOutDialog({ gp, open, onClose, onExited }: {
         <div className="space-y-4">
           {err && <p className="text-sm font-medium text-destructive bg-destructive/10 rounded-md p-3">{err}</p>}
 
-          {/* Vehicle info */}
           <div className="rounded-lg bg-muted/50 p-4 space-y-1">
             <p className="text-2xl font-extrabold tracking-widest">{gp.vehicle_no}</p>
             {gp.vehicle_name && <p className="text-sm text-muted-foreground">{gp.vehicle_name}</p>}
@@ -236,7 +378,6 @@ function TruckOutDialog({ gp, open, onClose, onExited }: {
             <p className="text-xs text-muted-foreground">Entered at {new Date(gp.entry_time).toLocaleString('en-IN')}</p>
           </div>
 
-          {/* Token link — only for weighbridge */}
           {gp.purpose === 'weighbridge' && (
             <div className="space-y-1">
               <label className="text-xs font-medium flex items-center gap-1">
@@ -277,6 +418,7 @@ function TruckOutDialog({ gp, open, onClose, onExited }: {
 // ── Inside card — big, visual ─────────────────────────────────────────────────
 function InsideCard({ gp, onRefresh }: { gp: GatePass; onRefresh: () => void }) {
   const [exitOpen, setExitOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   return (
     <Card className="border-2 border-amber-300 bg-amber-50/50">
@@ -286,12 +428,19 @@ function InsideCard({ gp, onRefresh }: { gp: GatePass; onRefresh: () => void }) 
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <span className="text-2xl font-extrabold tracking-widest">{gp.vehicle_no ?? '—'}</span>
               <Badge variant="outline" className="text-xs">{PURPOSE_LABEL[gp.purpose] ?? gp.purpose}</Badge>
+              {gp.token_no && (
+                <Badge className="text-xs bg-green-100 text-green-800 border-green-300">Token #{gp.token_no}</Badge>
+              )}
             </div>
-            {gp.driver_name && <p className="text-sm text-muted-foreground">Driver: {gp.driver_name}</p>}
+            {gp.driver_name && (
+              <p className="text-sm text-muted-foreground">
+                Driver: {gp.driver_name}{gp.driver_phone ? ` · ${gp.driver_phone}` : ''}
+              </p>
+            )}
             {gp.material && <p className="text-xs text-muted-foreground">{gp.material}</p>}
             <p className="text-xs text-muted-foreground mt-1">
               IN at <span className="font-semibold text-foreground">{fmt(gp.entry_time)}</span>
-              {gp.gate_pass_no && <span className="ml-2 text-[10px] opacity-60">{gp.gate_pass_no}</span>}
+              {gp.gate_pass_no && <span className="ml-2 text-[10px] font-mono opacity-60">{gp.gate_pass_no}</span>}
             </p>
             {gp.entry_photo_path && (
               <div className="mt-2">
@@ -300,14 +449,25 @@ function InsideCard({ gp, onRefresh }: { gp: GatePass; onRefresh: () => void }) 
             )}
           </div>
 
-          <Button
-            size="lg"
-            className="bg-red-600 hover:bg-red-700 text-white font-bold h-16 px-5 shrink-0 text-base flex-col leading-tight"
-            onClick={() => setExitOpen(true)}
-          >
-            <LogOut className="h-5 w-5 mb-0.5" />
-            TRUCK<br />OUT
-          </Button>
+          <div className="flex flex-col gap-2 shrink-0">
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-9 w-9"
+              title="Edit gate pass"
+              onClick={() => setEditOpen(true)}
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button
+              size="lg"
+              className="bg-red-600 hover:bg-red-700 text-white font-bold h-16 px-5 text-base flex-col leading-tight"
+              onClick={() => setExitOpen(true)}
+            >
+              <LogOut className="h-5 w-5 mb-0.5" />
+              TRUCK<br />OUT
+            </Button>
+          </div>
         </div>
       </CardContent>
 
@@ -319,6 +479,14 @@ function InsideCard({ gp, onRefresh }: { gp: GatePass; onRefresh: () => void }) 
           onExited={() => { setExitOpen(false); onRefresh(); }}
         />
       )}
+      {editOpen && (
+        <EditDialog
+          gp={gp}
+          open={editOpen}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => { setEditOpen(false); onRefresh(); }}
+        />
+      )}
     </Card>
   );
 }
@@ -326,6 +494,7 @@ function InsideCard({ gp, onRefresh }: { gp: GatePass; onRefresh: () => void }) 
 // ── History row (all-today compact) ──────────────────────────────────────────
 function HistoryRow({ gp, onRefresh }: { gp: GatePass; onRefresh: () => void }) {
   const [exitOpen, setExitOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const statusStyle: Record<string, string> = {
     inside: 'bg-amber-100 text-amber-800 border-amber-300',
@@ -344,16 +513,29 @@ function HistoryRow({ gp, onRefresh }: { gp: GatePass; onRefresh: () => void }) 
               {statusLabel[gp.status] ?? gp.status}
             </span>
             {gp.driver_name && <span className="text-xs text-muted-foreground">{gp.driver_name}</span>}
+            {gp.gate_pass_no && (
+              <span className="text-[10px] font-mono text-muted-foreground">{gp.gate_pass_no}</span>
+            )}
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
             In: {fmt(gp.entry_time)}
             {gp.exit_time && <> · Out: {fmt(gp.exit_time)}</>}
             {gp.token_no && <> · Token #{gp.token_no}</>}
+            {gp.material && <> · {gp.material}</>}
           </p>
         </div>
         <div className="flex gap-2 items-center shrink-0">
           <PhotoThumb path={gp.entry_photo_path} label="entry" />
           {gp.exit_photo_path && <PhotoThumb path={gp.exit_photo_path} label="exit" />}
+          <Button
+            size="icon"
+            variant="outline"
+            className="h-8 w-8"
+            title="Edit"
+            onClick={() => setEditOpen(true)}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
           {gp.status === 'inside' && (
             <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={() => setExitOpen(true)}>
               <LogOut className="h-3.5 w-3.5 mr-1" /> OUT
@@ -367,6 +549,14 @@ function HistoryRow({ gp, onRefresh }: { gp: GatePass; onRefresh: () => void }) 
           open={exitOpen}
           onClose={() => setExitOpen(false)}
           onExited={() => { setExitOpen(false); onRefresh(); }}
+        />
+      )}
+      {editOpen && (
+        <EditDialog
+          gp={gp}
+          open={editOpen}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => { setEditOpen(false); onRefresh(); }}
         />
       )}
     </>
@@ -413,7 +603,8 @@ export default function GatePassPage() {
     return (
       gp.vehicle_no?.toLowerCase().includes(q) ||
       gp.gate_pass_no?.toLowerCase().includes(q) ||
-      gp.driver_name?.toLowerCase().includes(q)
+      gp.driver_name?.toLowerCase().includes(q) ||
+      gp.material?.toLowerCase().includes(q)
     );
   });
 
@@ -467,7 +658,7 @@ export default function GatePassPage() {
         <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
         <input
           className="w-full pl-9 pr-4 py-2.5 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
-          placeholder="Search by vehicle number or driver name…"
+          placeholder="Search by vehicle, gate pass, driver, material…"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />

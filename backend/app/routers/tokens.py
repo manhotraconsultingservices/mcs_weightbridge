@@ -399,16 +399,24 @@ async def create_token(
     branch_id=Depends(get_current_branch_id),
 ):
     company, fy = await _get_company_and_fy(db)
-    # token_no is intentionally NOT assigned here — it is assigned at COMPLETED
-    # to guarantee gap-free daily sequencing.
-    # gate_pass_no IS assigned here: the gate pass is an ENTRY artifact, issued
-    # the moment the truck is registered (mirrors the ANPR auto-entry path).
-    # Accepted tradeoff: a token later cancelled leaves a gap in the GP sequence
-    # (the number maps to a real gate-arrival event and is not reclaimed) — see
-    # services/numbering.next_gate_pass_no docstring.
-    gate_pass_no = await next_gate_pass_no(db, company.id, fy.id, branch_id=branch_id)
-    if not gate_pass_no:
-        raise HTTPException(status_code=500, detail="Failed to generate gate pass number. Token not created.")
+    # Determine gate_pass_no:
+    # If a gate_pass_id is supplied (guard created a gate pass first), use that
+    # record's GP number and link back.  Otherwise auto-generate from number_sequences
+    # (ANPR, kiosk, backward-compat).
+    resolved_gate_pass_no: str | None = None
+    if payload.gate_pass_id:
+        gp_row = await db.execute(
+            text("SELECT gate_pass_no FROM gate_passes WHERE id = :id AND company_id = :cid"),
+            {"id": str(payload.gate_pass_id), "cid": str(company.id)},
+        )
+        gp = gp_row.fetchone()
+        if not gp:
+            raise HTTPException(status_code=404, detail="Gate pass not found. Create a gate pass first from the Gate Register.")
+        resolved_gate_pass_no = gp.gate_pass_no
+    else:
+        resolved_gate_pass_no = await next_gate_pass_no(db, company.id, fy.id, branch_id=branch_id)
+        if not resolved_gate_pass_no:
+            raise HTTPException(status_code=500, detail="Failed to generate gate pass number. Token not created.")
 
     token = Token(
         company_id=company.id,
@@ -426,8 +434,8 @@ async def create_token(
         tyre_count=payload.tyre_count,
         driver_id=payload.driver_id,
         transporter_id=payload.transporter_id,
-        gate_pass=payload.gate_pass,    # optional free-text note from the form
-        gate_pass_no=gate_pass_no,
+        gate_pass=payload.gate_pass,
+        gate_pass_no=resolved_gate_pass_no,
         transit_pass_id=payload.transit_pass_id,
         vehicle_rent=payload.vehicle_rent,
         remarks=payload.remarks,
@@ -435,6 +443,15 @@ async def create_token(
         status="OPEN",
     )
     db.add(token)
+    await db.flush()  # get token.id before commit
+
+    # If linked to a gate pass record, stamp token_id on it in the same transaction
+    if payload.gate_pass_id:
+        await db.execute(
+            text("UPDATE gate_passes SET token_id = :tid, updated_at = NOW() WHERE id = :id AND company_id = :cid"),
+            {"tid": str(token.id), "id": str(payload.gate_pass_id), "cid": str(company.id)},
+        )
+
     await db.commit()
 
     # Audit log
@@ -501,7 +518,14 @@ async def create_volume_token(
         driver_id=payload.driver_id,
         transporter_id=payload.transporter_id,
         gate_pass=payload.gate_pass,
-        gate_pass_no=await next_gate_pass_no(db, company.id, fy.id, branch_id=branch_id),
+        gate_pass_no=(
+            (await db.execute(
+                text("SELECT gate_pass_no FROM gate_passes WHERE id = :id AND company_id = :cid"),
+                {"id": str(payload.gate_pass_id), "cid": str(company.id)},
+            )).scalar()
+            if payload.gate_pass_id
+            else await next_gate_pass_no(db, company.id, fy.id, branch_id=branch_id)
+        ),
         transit_pass_id=payload.transit_pass_id,
         vehicle_rent=payload.vehicle_rent,
         remarks=payload.remarks,
@@ -518,6 +542,13 @@ async def create_volume_token(
     )
     db.add(token)
     await db.flush()
+
+    # Link gate pass record if supplied (same-transaction)
+    if payload.gate_pass_id:
+        await db.execute(
+            text("UPDATE gate_passes SET token_id = :tid, updated_at = NOW() WHERE id = :id AND company_id = :cid"),
+            {"tid": str(token.id), "id": str(payload.gate_pass_id), "cid": str(company.id)},
+        )
 
     # Auto-create draft invoice — identical flow to second-weight completion
     if token.token_type in ("sale", "purchase"):

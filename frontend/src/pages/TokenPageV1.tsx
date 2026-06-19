@@ -30,7 +30,7 @@ import {
 import { useWeight } from '@/hooks/useWeight';
 import { useAuth } from '@/hooks/useAuth';
 import api from '@/services/api';
-import type { Token, TokenListResponse, Party, Product, Vehicle, SnapshotResult, TokenSnapshotsResponse } from '@/types';
+import type { Token, TokenListResponse, Party, Product, Vehicle, GatePass, SnapshotResult, TokenSnapshotsResponse } from '@/types';
 import { cn } from '@/lib/utils';
 import { TokenDetailModal } from '@/components/TokenDetailModal';
 import { useTranslation } from 'react-i18next';
@@ -130,7 +130,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     party_id: '',
     product_id: '',
     vehicle_id: '',
-    gate_pass: '',
+    gate_pass_id: '',
     remarks: '',
     transit_pass_id: '',   // P1: link purchase token to its royalty/transit pass
     vehicle_rent: '',      // optional payment to truck owner per trip
@@ -146,6 +146,9 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     setTyreCount(n);
     setVolumeValue(String(TYRE_VOLUME_CFT[n] ?? 0));
   }
+
+  // Today's open gate passes — required before token creation
+  const [openGatePasses, setOpenGatePasses] = useState<GatePass[]>([]);
 
   // P1: active transit/royalty passes for purchase tokens
   const [activePasses, setActivePasses] = useState<{ id: string; pass_no: string; balance_mt: number | string }[]>([]);
@@ -190,6 +193,15 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     }
   }
 
+  const loadGatePasses = useCallback(async () => {
+    try {
+      const { data } = await api.get<{ items: GatePass[] }>('/api/v1/gate/passes', {
+        params: { status: 'inside', page_size: 200 },
+      });
+      setOpenGatePasses(data.items ?? []);
+    } catch { /* silent — gate management may not be active on all deployments */ }
+  }, []);
+
   useEffect(() => {
     Promise.all([
       api.get<{ items: Party[] }>('/api/v1/parties?page_size=200'),
@@ -203,10 +215,11 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       setVehicles(Array.isArray(vData) ? vData : (vData as { items: Vehicle[] }).items ?? []);
       setVehicleTypes(Array.isArray(vt.data) ? vt.data : []);
     }).catch(() => {});
-  }, []);
+    loadGatePasses();
+  }, [loadGatePasses]);
 
   function resetForm() {
-    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass: '', remarks: '', transit_pass_id: '', vehicle_rent: '' });
+    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '' });
     setVehicleSearch('');
     setSelectedVehicle(null);
     setVolumeValue('');
@@ -261,6 +274,10 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
   async function handleSubmit() {
     if (!form.vehicle_no.trim()) { setError('Vehicle number is required'); return; }
+    if (!form.gate_pass_id && openGatePasses.length > 0) {
+      setError('Select a gate pass — the truck must be registered at the gate first. Go to Gate Register → TRUCK IN if the truck has just arrived.');
+      return;
+    }
 
     // ── Volume mode: skip weighbridge, single POST creates + completes token ──
     if (weightMethod === 'volume') {
@@ -286,7 +303,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           vehicle_id: form.vehicle_id || undefined,
           volume_cft: Number(volumeCft.toFixed(3)),
           transit_pass_id: form.transit_pass_id || undefined,
-          gate_pass: form.gate_pass || undefined,
+          gate_pass_id: form.gate_pass_id || undefined,
           vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
           remarks: form.remarks
             ? `${form.remarks}${tyreCount ? ` | ${tyreCount}-tyre truck` : ''}`
@@ -331,6 +348,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       product_id: form.product_id || undefined,
       vehicle_id: form.vehicle_id || undefined,
       transit_pass_id: form.transit_pass_id || undefined,
+      gate_pass_id: form.gate_pass_id || undefined,
       vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
       remarks: form.remarks || undefined,
     };
@@ -700,15 +718,60 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           </div>
         )}
 
-        {/* Gate Pass */}
+        {/* Gate Pass — required when any open passes exist */}
         <div className="space-y-1">
-          <Label className="text-xs">{t('token.gatePass')} <span className="text-muted-foreground">(optional)</span></Label>
-          <Input
-            className="h-8 text-xs"
-            value={form.gate_pass}
-            onChange={e => setForm(f => ({ ...f, gate_pass: e.target.value }))}
-            placeholder="GP-001…"
-          />
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-semibold">
+              {t('token.gatePass')}
+              {openGatePasses.length > 0 && <span className="text-destructive ml-0.5">*</span>}
+            </Label>
+            <button
+              type="button"
+              className="text-[10px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-0.5"
+              onClick={loadGatePasses}
+              title="Refresh gate passes"
+            >
+              <RefreshCw className="h-2.5 w-2.5" /> Refresh
+            </button>
+          </div>
+          {openGatePasses.length === 0 ? (
+            <div className="rounded border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+              No trucks registered at gate today. Go to <strong>Gate Register → TRUCK IN</strong> first.
+            </div>
+          ) : (
+            <Select
+              value={form.gate_pass_id || ''}
+              onValueChange={v => {
+                const gp = openGatePasses.find(g => g.id === v);
+                setForm(f => ({
+                  ...f,
+                  gate_pass_id: v ?? '',
+                  vehicle_no: f.vehicle_no || (gp?.vehicle_no ?? ''),
+                }));
+              }}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <span className="truncate">
+                  {form.gate_pass_id
+                    ? (() => {
+                        const gp = openGatePasses.find(g => g.id === form.gate_pass_id);
+                        return gp ? `${gp.gate_pass_no} — ${gp.vehicle_no}` : 'Select gate pass';
+                      })()
+                    : 'Select gate pass…'
+                  }
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                {openGatePasses.map(gp => (
+                  <SelectItem key={gp.id} value={gp.id} className="text-xs">
+                    <span className="font-mono font-semibold">{gp.gate_pass_no}</span>
+                    <span className="ml-2">{gp.vehicle_no}</span>
+                    {gp.driver_name && <span className="ml-1 text-muted-foreground">· {gp.driver_name}</span>}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {/* Vehicle Rent */}
