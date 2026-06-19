@@ -399,11 +399,11 @@
   <table class="banner-tbl">
     <tr>
       <td class="banner-type">
-        {% if invoice.invoice_type == 'credit_note' %}Credit Note
-        {% elif invoice.invoice_type == 'debit_note' %}Debit Note
-        {% elif invoice.invoice_type == 'purchase' %}Purchase Invoice
-        {% elif invoice.tax_type == 'non_gst' %}Bill of Supply
-        {% else %}Tax Invoice{% endif %}
+        {% if invoice.invoice_type == 'credit_note' %}{{ bl('credit_note') }}
+        {% elif invoice.invoice_type == 'debit_note' %}{{ bl('debit_note') }}
+        {% elif invoice.invoice_type == 'purchase' %}{{ bl('purchase_invoice') }}
+        {% elif invoice.tax_type == 'non_gst' %}{{ bl('bill_of_supply') }}
+        {% else %}{{ bl('tax_invoice') }}{% endif %}
       </td>
       <td class="banner-copy">( {{ copy_label }} )</td>
       <td class="banner-einv">
@@ -477,11 +477,11 @@
     {# Row 1: Invoice No | Date | Delivery Note | Mode/Terms of Payment #}
     <tr>
       <td>
-        <span class="m-label">Invoice No.</span>
+        <span class="m-label">{{ bl('invoice_no') }}</span>
         <span class="m-val">{{ invoice.invoice_no or 'DRAFT' }}</span>
       </td>
       <td>
-        <span class="m-label">Date</span>
+        <span class="m-label">{{ bl('date') }}</span>
         <span class="m-val">{{ invoice.invoice_date.strftime('%d-%b-%Y') }}</span>
       </td>
       <td>
@@ -542,7 +542,7 @@
       </td>
       <td>
         {% if psm.show_vehicle_no %}
-        <span class="m-label">Motor Vehicle No.</span>
+        <span class="m-label">{{ bl('vehicle_no') }}</span>
         <span class="m-val">{{ dash(invoice.vehicle_no) }}</span>
         {% endif %}
       </td>
@@ -581,22 +581,22 @@
   <table class="weight-bar">
     <tr>
       <td style="width:15%; text-align:left; font-weight:bold; color:var(--navy);">
-        <span class="w-label">WEIGHT DETAILS</span>
+        <span class="w-label">{{ bl('weighment_slip') }}</span>
       </td>
       <td style="width:17%;">
-        <span class="w-label">Gross Weight</span>
+        <span class="w-label">{{ bl('gross_weight') }}</span>
         <span class="w-val">{% if invoice.gross_weight %}{{ fmt(invoice.gross_weight) }} Kg{% else %}—{% endif %}</span>
       </td>
       <td style="width:17%;">
-        <span class="w-label">Tare Weight</span>
+        <span class="w-label">{{ bl('tare_weight') }}</span>
         <span class="w-val">{% if invoice.tare_weight %}{{ fmt(invoice.tare_weight) }} Kg{% else %}—{% endif %}</span>
       </td>
       <td style="width:17%;">
-        <span class="w-label">Net Weight</span>
+        <span class="w-label">{{ bl('net_weight') }}</span>
         <span class="w-val">{% if invoice.net_weight %}{{ fmt(invoice.net_weight) }} Kg{% else %}—{% endif %}</span>
       </td>
       <td style="width:17%;">
-        <span class="w-label">Net Weight (MT)</span>
+        <span class="w-label">{{ bl('net_weight') }} (MT)</span>
         <span class="w-val">{% if invoice.net_weight %}{{ '{:,.3f}'.format(invoice.net_weight / 1000) }} MT{% else %}—{% endif %}</span>
       </td>
       <td style="width:17%;">
@@ -625,13 +625,13 @@
     </colgroup>
     <thead>
       <tr>
-        <th class="tc">Sl<br>No</th>
-        <th class="tl">Description of Goods</th>
-        <th class="tc">Quantity</th>
-        {% if show_rate %}<th class="tc">Rate</th>{% endif %}
-        {% if show_per %}<th class="tc">per</th>{% endif %}
-        {% if show_disc %}<th class="tc">Disc.<br>%</th>{% endif %}
-        <th class="tr" style="padding-right:6px;">Amount<br><span style="font-size:{% if is_a4 %}6.5px{% else %}5px{% endif %}; font-weight:normal; color:#666;">₹</span></th>
+        <th class="tc">{{ bl('sr_no') }}</th>
+        <th class="tl">{{ bl('description') }}</th>
+        <th class="tc">{{ bl('quantity') }}</th>
+        {% if show_rate %}<th class="tc">{{ bl('rate') }}</th>{% endif %}
+        {% if show_per %}<th class="tc">{{ bl('per') }}</th>{% endif %}
+        {% if show_disc %}<th class="tc">{{ bl('discount') }}<br>%</th>{% endif %}
+        <th class="tr" style="padding-right:6px;">{{ bl('amount') }}<br><span style="font-size:{% if is_a4 %}6.5px{% else %}5px{% endif %}; font-weight:normal; color:#666;">₹</span></th>
       </tr>
     </thead>
     <tbody>
@@ -743,7 +743,7 @@
   {% if pss['show_amount_words'] %}
   <div class="amt-words">
     <span class="eoe">E. &amp; O.E</span>
-    <div class="amt-lbl">Amount Chargeable (in words)</div>
+    <div class="amt-lbl">{{ bl('total_in_words') }}</div>
     <div class="amt-text">{{ amount_in_words(invoice.grand_total) }}</div>
   </div>
   {% endif %}
@@ -769,12 +769,12 @@
       </colgroup>
       <thead>
         <tr>
-          <th style="text-align:left; padding-left:6px;">HSN/SAC</th>
-          <th>Taxable<br>Value (₹)</th>
-          <th>GST<br>Rate</th>
-          {% if use_cgst %}<th>CGST<br>(₹)</th><th>SGST<br>(₹)</th>{% endif %}
-          {% if use_igst %}<th>IGST<br>(₹)</th>{% endif %}
-          <th>Total<br>Tax (₹)</th>
+          <th style="text-align:left; padding-left:6px;">{{ bl('hsn_sac') }}</th>
+          <th>{{ bl('taxable_value') }} (₹)</th>
+          <th>{{ bl('tax_rate') }}</th>
+          {% if use_cgst %}<th>{{ bl('cgst') }}<br>(₹)</th><th>{{ bl('sgst') }}<br>(₹)</th>{% endif %}
+          {% if use_igst %}<th>{{ bl('igst') }}<br>(₹)</th>{% endif %}
+          <th>{{ bl('total_tax') }} (₹)</th>
         </tr>
       </thead>
       <tbody>
@@ -831,30 +831,30 @@
     <tr>
       <td class="footer-bank">
         {% if pss['show_bank_details'] and company.bank_name %}
-        <div class="f-label">Company's Bank Details</div>
+        <div class="f-label">{{ bl('bank_details') }}</div>
         <div class="f-text">
-          Bank Name: <b>{{ company.bank_name }}</b>{% if company.bank_branch %}, {{ company.bank_branch }}{% endif %}<br>
-          A/c No.: <b>{{ company.bank_account_no }}</b><br>
-          IFSC Code: <b>{{ company.bank_ifsc }}</b>
+          {{ bl('bank_name') }}: <b>{{ company.bank_name }}</b>{% if company.bank_branch %}, {{ company.bank_branch }}{% endif %}<br>
+          {{ bl('account_no') }}: <b>{{ company.bank_account_no }}</b><br>
+          {{ bl('ifsc') }}: <b>{{ company.bank_ifsc }}</b>
         </div>
         {% if pss['show_declaration'] %}<div class="divider" style="margin-top:4px;"></div>{% endif %}
         {% endif %}
         {% if pss['show_declaration'] %}
-        <div class="f-label">Declaration</div>
+        <div class="f-label">{{ bl('declaration') }}</div>
         <div class="f-text">We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.</div>
         {% endif %}
       </td>
       {% if pss['show_signature'] %}
       <td class="footer-sign">
-        <div class="f-label" style="text-align:right;">For {{ company.name }}</div>
-        <div class="sign-line">Authorised Signatory</div>
+        <div class="f-label" style="text-align:right;">{{ bl('for_company') }} {{ company.name }}</div>
+        <div class="sign-line">{{ bl('authorised_signatory') }}</div>
       </td>
       {% endif %}
     </tr>
   </table>
 
   {% if pss['show_computer_generated'] %}
-  <div class="comp-gen">This is a Computer Generated Invoice</div>
+  <div class="comp-gen">{{ bl('computer_generated') }}</div>
   {% endif %}
 
 </div>

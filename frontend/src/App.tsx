@@ -4,6 +4,7 @@ import { Toaster } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
 import { useAppSettings } from '@/hooks/useAppSettings';
+import LanguageToggle from '@/components/LanguageToggle';
 import LoginPage from '@/pages/LoginPage';
 import LandingPage from '@/pages/LandingPage';
 import LicenseExpiredPage from '@/pages/LicenseExpiredPage';
@@ -114,16 +115,35 @@ function AmcBanner() {
 function AppLayout({ user, logout }: { user: User; logout: () => void }) {
   const { authorized: usbAuthorized } = useUsbGuard();
   const { permissions, wallpaperUrl } = useAppSettings(user.role);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar user={user} onLogout={logout} usbAuthorized={usbAuthorized} permissions={permissions} />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <Sidebar
+        user={user}
+        onLogout={logout}
+        usbAuthorized={usbAuthorized}
+        permissions={permissions}
+        mobileOpen={mobileSidebarOpen}
+        onMobileClose={() => setMobileSidebarOpen(false)}
+      />
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <AmcBanner />
         <div className="fixed top-2 right-3 z-50 flex items-center gap-2">
+          <LanguageToggle />
           <BranchPicker role={user.role} />
           <OfflineIndicator />
         </div>
+        {/* Mobile hamburger button — only visible below md breakpoint */}
+        <button
+          onClick={() => setMobileSidebarOpen(true)}
+          className="md:hidden fixed top-3 left-3 z-40 flex h-8 w-8 items-center justify-center rounded-md bg-background border border-border shadow-sm text-foreground"
+          aria-label="Open navigation"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
         <main
           className="flex-1 overflow-y-auto bg-background p-6"
           style={

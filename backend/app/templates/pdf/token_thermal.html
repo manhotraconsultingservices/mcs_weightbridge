@@ -227,13 +227,13 @@
   {# ===== VOLUME MODE ===== #}
   <div class="vol-block">
     <div class="row">
-      <span class="row-label">VOLUME</span>
+      <span class="row-label">{{ bl('volume') | upper }}</span>
       <span class="row-value">
         {% if token.volume_cft %}{{ '%.2f'|format(token.volume_cft|float) }} CFT{% else %}—{% endif %}
       </span>
     </div>
     <div class="row">
-      <span class="row-label">DENSITY</span>
+      <span class="row-label">{{ bl('bulk_density') | upper }}</span>
       <span class="row-value">
         {% if token.product and token.product.bulk_density %}
           {{ '%.2f'|format(token.product.bulk_density|float) }} kg/CFT
@@ -250,11 +250,11 @@
   {# ===== WEIGHBRIDGE MODE ===== #}
   <div class="weight-block">
     <div class="weight-row">
-      <span class="wlabel">GROSS WT  :</span>
+      <span class="wlabel">{{ bl('gross_weight') | upper }}:</span>
       <span class="wval">{% if token.gross_weight %}{{ '%.3f'|format(token.gross_weight|float / 1000) }} MT{% else %}—{% endif %}</span>
     </div>
     <div class="weight-row">
-      <span class="wlabel">TARE  WT  :</span>
+      <span class="wlabel">{{ bl('tare_weight') | upper }}:</span>
       <span class="wval">{% if token.tare_weight %}{{ '%.3f'|format(token.tare_weight|float / 1000) }} MT{% else %}—{% endif %}</span>
     </div>
   </div>
@@ -262,7 +262,7 @@
 
 {# Net weight — same prominent block for both modes #}
 <div class="net-big">
-  <div class="lbl">NET WEIGHT</div>
+  <div class="lbl">{{ bl('net_weight') | upper }}</div>
   <div class="val">
     {% if token.net_weight %}{{ '%.3f'|format(token.net_weight|float / 1000) }} MT{% else %}—{% endif %}
   </div>

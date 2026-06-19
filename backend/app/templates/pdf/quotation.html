@@ -44,7 +44,7 @@
     {% if company.phone %}<div class="company-sub">Ph: {{ company.phone }}</div>{% endif %}
   </div>
   <div>
-    <div class="doc-title">QUOTATION &nbsp;<span class="badge">{{ quotation.status | upper }}</span></div>
+    <div class="doc-title">{{ bl('quotation') | upper }} &nbsp;<span class="badge">{{ quotation.status | upper }}</span></div>
     <div class="doc-meta">
       <strong>Quotation No:</strong> {{ quotation.quotation_no }}<br>
       <strong>Date:</strong> {{ quotation.quotation_date.strftime('%d-%m-%Y') }}<br>
@@ -73,14 +73,14 @@
   <thead>
     <tr>
       <th>#</th>
-      <th>Description / Material</th>
-      <th>HSN</th>
-      <th class="text-right">Qty</th>
-      <th>Unit</th>
-      <th class="text-right">Rate (₹)</th>
-      <th class="text-right">Amount (₹)</th>
+      <th>{{ bl('description') }}</th>
+      <th>{{ bl('hsn_sac') }}</th>
+      <th class="text-right">{{ bl('quantity') }}</th>
+      <th>{{ bl('unit') }}</th>
+      <th class="text-right">{{ bl('rate') }} (₹)</th>
+      <th class="text-right">{{ bl('amount') }} (₹)</th>
       <th class="text-right">GST%</th>
-      <th class="text-right">Total (₹)</th>
+      <th class="text-right">{{ bl('grand_total') }} (₹)</th>
     </tr>
   </thead>
   <tbody>

@@ -29,7 +29,7 @@
 </style>
 </head>
 <body>
-  <div class="title">Delivery Challan</div>
+  <div class="title">{{ bl('delivery_challan') }}</div>
   <div class="subtitle">(Not a Tax Invoice — issued under GST Rule 55)</div>
   <div class="company">{{ company.name if company else '' }}</div>
   <div class="addr">
@@ -59,11 +59,11 @@
     <thead>
       <tr>
         <th style="width:6%;">#</th>
-        <th>Material</th>
-        <th style="width:12%;">HSN</th>
-        <th style="width:16%;">Qty</th>
-        <th style="width:16%;">Rate</th>
-        <th style="width:18%;">Value (₹)</th>
+        <th>{{ bl('material') }}</th>
+        <th style="width:12%;">{{ bl('hsn_sac') }}</th>
+        <th style="width:16%;">{{ bl('quantity') }}</th>
+        <th style="width:16%;">{{ bl('rate') }}</th>
+        <th style="width:18%;">{{ bl('amount') }} (₹)</th>
       </tr>
     </thead>
     <tbody>
@@ -99,7 +99,7 @@
 
   <div class="footer">
     <div class="sig">Receiver's Signature</div>
-    <div class="sig">For {{ company.name if company else '' }}<br><br>Authorised Signatory</div>
+    <div class="sig">{{ bl('for_company') }} {{ company.name if company else '' }}<br><br>{{ bl('authorised_signatory') }}</div>
   </div>
 
   <script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; };</script>

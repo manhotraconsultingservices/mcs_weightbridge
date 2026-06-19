@@ -35,12 +35,12 @@
 <hr class="sep">
 
 <div class="center bold">
-  {% if invoice.invoice_type == 'credit_note' %}CREDIT NOTE{% elif invoice.invoice_type == 'debit_note' %}DEBIT NOTE{% elif invoice.invoice_type == 'purchase' %}PURCHASE INVOICE{% elif invoice.tax_type == 'non_gst' %}BILL OF SUPPLY{% else %}TAX INVOICE{% endif %}
+  {% if invoice.invoice_type == 'credit_note' %}{{ bl('credit_note') }}{% elif invoice.invoice_type == 'debit_note' %}{{ bl('debit_note') }}{% elif invoice.invoice_type == 'purchase' %}{{ bl('purchase_invoice') }}{% elif invoice.tax_type == 'non_gst' %}{{ bl('bill_of_supply') }}{% else %}{{ bl('tax_invoice') }}{% endif %}
 </div>
 <hr class="sep">
 
 <div class="row">
-  <span class="row-label">INVOICE NO</span>
+  <span class="row-label">{{ bl('invoice_no') }}</span>
   <span class="row-value">{{ invoice.invoice_no or 'DRAFT' }}</span>
 </div>
 <div class="row">
@@ -96,7 +96,7 @@
 
 <!-- Totals -->
 <div class="total-row">
-  <span>SUBTOTAL</span>
+  <span>{{ bl('subtotal') }}</span>
   <span>Rs. {{ '%.2f' % invoice.subtotal|float }}</span>
 </div>
 {% if invoice.discount_amount and invoice.discount_amount|float > 0 %}
@@ -147,7 +147,7 @@
 {% endif %}
 
 <div class="grand-row">
-  <span>GRAND TOTAL</span>
+  <span>{{ bl('grand_total') }}</span>
   <span>Rs. {{ '%.2f' % invoice.grand_total|float }}</span>
 </div>
 

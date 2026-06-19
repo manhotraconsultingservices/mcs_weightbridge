@@ -67,6 +67,10 @@ DEFAULT_INVOICE_PRINT_SETTINGS = {
 TEMPLATES_DIR = Path(__file__).parent.parent / "templates" / "pdf"
 jinja_env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)))
 
+# Bilingual label helper — available in all PDF templates as {{ bl('key') }}
+from app.utils.pdf_labels import bl as _bl
+jinja_env.globals['bl'] = _bl
+
 
 # ── Amount in Words (Indian numbering system) ──────────────────────────────── #
 

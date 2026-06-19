@@ -64,7 +64,7 @@
     </div>
     <div>
       <div class="doc-title">
-        {% if voucher_type == 'receipt' %}PAYMENT RECEIPT{% else %}PAYMENT VOUCHER{% endif %}
+        {% if voucher_type == 'receipt' %}{{ bl('payment_receipt') | upper }}{% else %}{{ bl('payment_voucher') | upper }}{% endif %}
       </div>
       <div class="doc-meta">
         <strong>{{ voucher_no }}</strong> | {{ voucher_date }}
@@ -76,21 +76,21 @@
   </div>
 
   <div class="detail-grid">
-    <div><div class="detail-label">{% if voucher_type == 'receipt' %}Received From{% else %}Paid To{% endif %}</div><div class="detail-value">{{ party_name }}</div></div>
-    <div><div class="detail-label">Payment Mode</div><div class="detail-value">{{ payment_mode | title }}</div></div>
+    <div><div class="detail-label">{% if voucher_type == 'receipt' %}{{ bl('received_from') }}{% else %}{{ bl('paid_to') }}{% endif %}</div><div class="detail-value">{{ party_name }}</div></div>
+    <div><div class="detail-label">{{ bl('payment_mode') }}</div><div class="detail-value">{{ payment_mode | title }}</div></div>
     {% if party_gstin %}<div><div class="detail-label">GSTIN</div><div class="detail-value">{{ party_gstin }}</div></div>{% endif %}
     {% if reference_no %}<div><div class="detail-label">Ref / Cheque No</div><div class="detail-value">{{ reference_no }}</div></div>{% endif %}
   </div>
 
   <div class="amount-box">
-    <div class="amount-label">Amount</div>
+    <div class="amount-label">{{ bl('amount') }}</div>
     <div class="amount-value">₹{{ amount }}</div>
     {% if amount_words %}<div class="amount-words">{{ amount_words }}</div>{% endif %}
   </div>
 
   {% if linked_invoices and linked_invoices | length > 0 %}
   <table>
-    <thead><tr><th>Invoice No</th><th>Date</th><th class="text-right">Inv Amt</th><th class="text-right">Applied</th></tr></thead>
+    <thead><tr><th>{{ bl('invoice_no') }}</th><th>{{ bl('date') }}</th><th class="text-right">{{ bl('amount') }}</th><th class="text-right">Applied</th></tr></thead>
     <tbody>
       {% for inv in linked_invoices %}
       <tr><td>{{ inv.invoice_no or '—' }}</td><td>{{ inv.invoice_date or '—' }}</td><td class="text-right">₹{{ inv.invoice_amount }}</td><td class="text-right">₹{{ inv.applied_amount }}</td></tr>
@@ -104,8 +104,8 @@
   {% endif %}
 
   <div class="footer-sigs">
-    <div class="sig-box"><div class="sig-line">Received By</div></div>
-    <div class="sig-box"><div class="sig-line">Authorized Signatory</div></div>
+    <div class="sig-box"><div class="sig-line">{{ bl('received_by') }}</div></div>
+    <div class="sig-box"><div class="sig-line">{{ bl('authorised_signatory') }}</div></div>
   </div>
 </div>
 {% endmacro %}

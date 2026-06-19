@@ -53,6 +53,8 @@ interface SidebarProps {
   onLogout: () => void;
   usbAuthorized?: boolean;
   permissions?: string[];   // allowed paths; ["*"] = admin (show all)
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
 type NavItem = { to: string; icon: React.ElementType; label: string };
@@ -83,11 +85,12 @@ const ADMIN_ITEMS: NavItem[] = [
   { to: '/import',            icon: Upload,     label: 'Data Import' },
 ];
 
-function NavItemLink({ to, icon: Icon, label, end }: NavItem & { end?: boolean }) {
+function NavItemLink({ to, icon: Icon, label, end, onClick }: NavItem & { end?: boolean; onClick?: () => void }) {
   return (
     <NavLink
       to={to}
       end={end}
+      onClick={onClick}
       className={({ isActive }) =>
         `group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all ${
           isActive
@@ -102,7 +105,7 @@ function NavItemLink({ to, icon: Icon, label, end }: NavItem & { end?: boolean }
   );
 }
 
-export default function Sidebar({ user, onLogout, usbAuthorized = false, permissions = ['*'] }: SidebarProps) {
+export default function Sidebar({ user, onLogout, usbAuthorized = false, permissions = ['*'], mobileOpen = false, onMobileClose }: SidebarProps) {
   const isAdmin = permissions.includes('*');
   const modules = getTenantModules();
   const isSaaS = sessionStorage.getItem('multi_tenant') === '1';
@@ -160,8 +163,8 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
     return true;
   });
 
-  return (
-    <aside className="flex h-screen w-60 flex-col bg-sidebar text-sidebar-foreground">
+  const sidebarContent = (
+    <aside className="flex h-full w-60 flex-col bg-sidebar text-sidebar-foreground">
       {/* Logo */}
       <div className="flex h-16 shrink-0 items-center gap-3 border-b border-sidebar-border px-4">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shadow-sm">
@@ -178,7 +181,7 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
         <ul className="space-y-0.5">
           {visibleNav.map(item => (
             <li key={item.to}>
-              <NavItemLink {...item} end={item.to === '/'} />
+              <NavItemLink {...item} end={item.to === '/'} onClick={onMobileClose} />
             </li>
           ))}
 
@@ -251,7 +254,7 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
                 return (
                   <li key={item.to}>
                     <button
-                      onClick={() => { nav(item.to); setAdminOpen(false); }}
+                      onClick={() => { nav(item.to); setAdminOpen(false); onMobileClose?.(); }}
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground text-left"
                     >
                       <Icon className="h-4 w-4 shrink-0" />
@@ -265,5 +268,30 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
         )}
       </div>
     </aside>
+  );
+
+  return (
+    <>
+      {/* Desktop sidebar — always visible on md+ */}
+      <div className="hidden md:flex h-screen w-60 shrink-0">
+        {sidebarContent}
+      </div>
+
+      {/* Mobile overlay — rendered only when mobileOpen */}
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/50"
+            onClick={onMobileClose}
+            aria-hidden="true"
+          />
+          {/* Sidebar panel */}
+          <div className="relative z-10 h-full">
+            {sidebarContent}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
