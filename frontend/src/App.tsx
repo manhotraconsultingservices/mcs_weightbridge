@@ -21,6 +21,12 @@ import SalesHubPage from '@/pages/SalesHubPage';
 import MaterialsHubPage from '@/pages/MaterialsHubPage';
 import OperationsHubPage from '@/pages/OperationsHubPage';
 import ReportsHubPage from '@/pages/ReportsHubPage';
+// BCG navigation — 4-section grouped hubs
+import WeighbridgeHubPage from '@/pages/WeighbridgeHubPage';
+import ProcurementHubPage from '@/pages/ProcurementHubPage';
+import InventoryProductionHubPage from '@/pages/InventoryProductionHubPage';
+import AccountsHubPage from '@/pages/AccountsHubPage';
+import AnalyticsHubPage from '@/pages/AnalyticsHubPage';
 import VehiclesPage from '@/pages/VehiclesPage';
 import InvoicesPage from '@/pages/InvoicesPage';
 import QuotationsPage from '@/pages/QuotationsPage';
@@ -176,6 +182,12 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/sales" element={<SalesHubPage />} />
             <Route path="/materials" element={<MaterialsHubPage />} />
             <Route path="/operations" element={<OperationsHubPage />} />
+            {/* BCG navigation — 4-section grouped hubs */}
+            <Route path="/weighbridge" element={<WeighbridgeHubPage />} />
+            <Route path="/procurement" element={<ProcurementHubPage />} />
+            <Route path="/inventory-hub" element={<InventoryProductionHubPage />} />
+            <Route path="/accounts" element={<AccountsHubPage />} />
+            <Route path="/analytics" element={<AnalyticsHubPage />} />
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/pricing-matrix" element={<PricingMatrixPage />} />
             <Route path="/parties" element={<PartiesPage />} />

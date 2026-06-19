@@ -7,19 +7,20 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { FileText, Receipt, Truck, FileMinus } from 'lucide-react';
+import { Users, FileText, Receipt, Truck, FileMinus } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import CustomerPickerPage from './CustomerPickerPage';
 import InvoicesPage from './InvoicesPage';
 import QuotationsPage from './QuotationsPage';
 import DeliveryChallansPage from './DeliveryChallansPage';
 import CreditDebitNotesPage from './CreditDebitNotesPage';
 
-type Tab = 'bills' | 'estimates' | 'challans' | 'notes';
+type Tab = 'customers' | 'bills' | 'estimates' | 'challans' | 'notes';
 
 export default function SalesHubPage() {
   const nav = useNavigate();
   const loc = useLocation();
-  const initial = (new URLSearchParams(loc.search).get('tab') as Tab) || 'bills';
+  const initial = (new URLSearchParams(loc.search).get('tab') as Tab) || 'customers';
   const [tab, setTab] = useState<Tab>(initial);
 
   // Keep URL in sync so refresh / share preserves the active tab
@@ -35,11 +36,15 @@ export default function SalesHubPage() {
     <div className="space-y-3">
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
         <TabsList>
+          <TabsTrigger value="customers" className="gap-1.5"><Users className="h-3.5 w-3.5" /> Customers</TabsTrigger>
           <TabsTrigger value="bills" className="gap-1.5"><FileText className="h-3.5 w-3.5" /> Bills</TabsTrigger>
           <TabsTrigger value="estimates" className="gap-1.5"><Receipt className="h-3.5 w-3.5" /> Estimates</TabsTrigger>
           <TabsTrigger value="challans" className="gap-1.5"><Truck className="h-3.5 w-3.5" /> Challans</TabsTrigger>
           <TabsTrigger value="notes" className="gap-1.5"><FileMinus className="h-3.5 w-3.5" /> Notes</TabsTrigger>
         </TabsList>
+        <TabsContent value="customers" className="mt-4">
+          <CustomerPickerPage />
+        </TabsContent>
         <TabsContent value="bills" className="mt-4">
           <InvoicesPage defaultType="sale" />
         </TabsContent>

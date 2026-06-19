@@ -1,22 +1,23 @@
 /**
- * Sidebar — Sprint 3 consolidated layout.
+ * Sidebar — BCG-grouped navigation.
  *
- *   8 top-level items + a single Admin gear-icon dropdown.  Hub URLs render
- *   tabbed pages internally so each child page is still reachable by direct
- *   URL (old bookmarks unaffected).  Vocabulary refreshed to operator-friendly
- *   labels (e.g. "Trips" instead of "Token", "Bills" inside the Sales hub).
+ *   7 items across 4 labelled sections + a single Admin gear-icon dropdown.
+ *   All existing routes preserved as direct-URL bookmarks via App.tsx;
+ *   sidebar now points to hub pages that render the old pages as tabs.
  *
- *   Permissions: each sidebar entry maps to a path; if the user's role
- *   permissions include that path OR ["*"], it's shown.  For roles that
- *   stored child URLs (legacy), we expand the permission set to include the
- *   hub URL so the menu still renders.
+ *   Sections:
+ *     (no header)         Dashboard
+ *     OPERATIONS          Weighbridge (gate + trips + cameras + ANPR)
+ *     COMMERCIAL          Sales & CRM · Procurement
+ *     RESOURCES           Inventory & Production
+ *     FINANCE & INTELLIGENCE  Accounts · Analytics
  */
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  LayoutDashboard, Truck, FileText, ShoppingCart, Users,
-  Box, Wrench, BarChart3, DoorOpen,
+  LayoutDashboard, Scale, FileText, ShoppingCart, Factory,
+  BookOpen, TrendingUp,
   LogOut, Usb, Settings,
   Bell, HardDrive, Upload, UserCog, Lock, ImageIcon, Building2,
 } from 'lucide-react';
@@ -25,29 +26,28 @@ import { getTenantModules } from '@/hooks/useAuth';
 import LanguageToggle from '@/components/LanguageToggle';
 import type { User } from '@/types';
 
-// ── Hub → child paths (for permission expansion + module gating) ───────────
+// ── Hub → child paths (for permission expansion + active-link detection) ──────
 //
-// If a role's stored permissions include ANY of the child paths, the hub link
-// is shown. Same for tenant `modules` flags: if any child module is enabled,
-// the hub is enabled.
+// If a role's stored permissions include ANY child path, the hub link is shown.
+// Old permissions (e.g. '/gate', '/purchase-invoices') automatically expand to
+// show the hub that wraps them — no permission-store migration needed.
 const HUB_CHILDREN: Record<string, string[]> = {
-  // Customers sidebar entry points to the 360 picker; permissions that
-  // referenced /parties still unlock the entry.
-  '/customers':   ['/parties', '/customers'],
-  '/sales':       ['/invoices', '/quotations'],
-  '/materials':   ['/products', '/pricing-matrix', '/product-inventory', '/production', '/production/dashboard', '/production/settings'],
-  '/operations':  ['/vehicles', '/inventory', '/camera-scale', '/snapshot-search', '/anpr/events', '/anpr/live', '/anpr/review', '/anpr/trips'],
-  '/reports':     ['/payments', '/ledger', '/gst-reports', '/reports', '/reports-classic', '/compliance', '/audit'],
+  '/weighbridge':    ['/gate', '/tokens-v1', '/tokens', '/anpr/events', '/anpr/live', '/anpr/review', '/anpr/trips', '/camera-scale', '/snapshot-search'],
+  '/sales':          ['/invoices', '/quotations', '/delivery-challans', '/credit-debit-notes', '/customers', '/parties'],
+  '/procurement':    ['/purchase-invoices', '/royalty'],
+  '/inventory-hub':  ['/products', '/pricing-matrix', '/product-inventory', '/production', '/production/dashboard', '/production/settings', '/inventory'],
+  '/accounts':       ['/payments', '/ledger', '/gst-reports', '/compliance', '/audit'],
+  '/analytics':      ['/reports', '/reports-classic'],
 };
 
-// Tenant module gating — module disabled hides the hub entirely.
+// Tenant module gating — if ALL listed modules are disabled, the hub is hidden.
 const HUB_MODULES: Record<string, string[]> = {
-  '/tokens-v1':   ['weighing'],
-  '/sales':       ['invoicing', 'quotations'],
-  '/purchase-invoices': ['invoicing'],
-  '/materials':   ['inventory'],
-  '/operations':  ['weighing', 'inventory'],
-  '/reports':     ['payments', 'gst_reports', 'reports', 'compliance'],
+  '/weighbridge':   ['weighing'],
+  '/sales':         ['invoicing', 'quotations'],
+  '/procurement':   ['invoicing'],
+  '/inventory-hub': ['inventory'],
+  '/accounts':      ['payments', 'gst_reports', 'compliance'],
+  '/analytics':     ['reports'],
 };
 
 interface SidebarProps {
@@ -59,33 +59,55 @@ interface SidebarProps {
   onMobileClose?: () => void;
 }
 
-type NavItem = { to: string; icon: React.ElementType; labelKey: string };
+type NavItem    = { to: string; icon: React.ElementType; labelKey: string };
+type NavSection = { headerKey?: string; items: NavItem[] };
 
-// ── Main nav (8 items + Gate Register) ────────────────────────────────────
-const NAV_ITEMS: NavItem[] = [
-  { to: '/',                 icon: LayoutDashboard, labelKey: 'sidebar.dashboard' },
-  { to: '/tokens-v1',        icon: Truck,           labelKey: 'sidebar.trips' },
-  { to: '/gate',             icon: DoorOpen,        labelKey: 'sidebar.gateRegister' },
-  { to: '/sales',            icon: FileText,        labelKey: 'sidebar.sales' },
-  { to: '/purchase-invoices', icon: ShoppingCart,   labelKey: 'sidebar.purchases' },
-  // Customers points to the Customer 360 picker. Parties master list is
-  // reachable from there via the "Master list" link, or directly at /parties.
-  { to: '/customers',        icon: Users,           labelKey: 'sidebar.customers' },
-  { to: '/materials',        icon: Box,             labelKey: 'sidebar.materials' },
-  { to: '/operations',       icon: Wrench,          labelKey: 'sidebar.operations' },
-  { to: '/reports',          icon: BarChart3,       labelKey: 'sidebar.reports' },
+// ── Navigation — 4 sections, 7 hub entries ───────────────────────────────────
+const NAV_SECTIONS: NavSection[] = [
+  {
+    // No section header — Dashboard stands alone at the top
+    items: [
+      { to: '/', icon: LayoutDashboard, labelKey: 'sidebar.dashboard' },
+    ],
+  },
+  {
+    headerKey: 'sidebar.sectionOperations',
+    items: [
+      { to: '/weighbridge', icon: Scale, labelKey: 'sidebar.weighbridge' },
+    ],
+  },
+  {
+    headerKey: 'sidebar.sectionCommercial',
+    items: [
+      { to: '/sales',       icon: FileText,     labelKey: 'sidebar.salesCrm' },
+      { to: '/procurement', icon: ShoppingCart, labelKey: 'sidebar.procurement' },
+    ],
+  },
+  {
+    headerKey: 'sidebar.sectionResources',
+    items: [
+      { to: '/inventory-hub', icon: Factory, labelKey: 'sidebar.inventoryProduction' },
+    ],
+  },
+  {
+    headerKey: 'sidebar.sectionFinance',
+    items: [
+      { to: '/accounts',  icon: BookOpen,   labelKey: 'sidebar.accounts' },
+      { to: '/analytics', icon: TrendingUp, labelKey: 'sidebar.analytics' },
+    ],
+  },
 ];
 
-// ── Admin items (gear dropdown) ────────────────────────────────────────────
+// ── Admin items (gear dropdown — unchanged) ───────────────────────────────────
 const ADMIN_ITEMS: NavItem[] = [
-  { to: '/settings',          icon: Settings,   labelKey: 'sidebar.companySettings' },
-  { to: '/admin/branches',    icon: Building2,  labelKey: 'sidebar.branches' },
-  { to: '/admin/users',       icon: UserCog,    labelKey: 'sidebar.users' },
-  { to: '/admin/permissions', icon: Lock,       labelKey: 'sidebar.rolePermissions' },
-  { to: '/admin/wallpaper',   icon: ImageIcon,  labelKey: 'sidebar.branding' },
-  { to: '/notifications',     icon: Bell,       labelKey: 'sidebar.notifications' },
-  { to: '/backup',            icon: HardDrive,  labelKey: 'sidebar.backup' },
-  { to: '/import',            icon: Upload,     labelKey: 'sidebar.dataImport' },
+  { to: '/settings',          icon: Settings,  labelKey: 'sidebar.companySettings' },
+  { to: '/admin/branches',    icon: Building2, labelKey: 'sidebar.branches' },
+  { to: '/admin/users',       icon: UserCog,   labelKey: 'sidebar.users' },
+  { to: '/admin/permissions', icon: Lock,      labelKey: 'sidebar.rolePermissions' },
+  { to: '/admin/wallpaper',   icon: ImageIcon, labelKey: 'sidebar.branding' },
+  { to: '/notifications',     icon: Bell,      labelKey: 'sidebar.notifications' },
+  { to: '/backup',            icon: HardDrive, labelKey: 'sidebar.backup' },
+  { to: '/import',            icon: Upload,    labelKey: 'sidebar.dataImport' },
 ];
 
 function NavItemLink({ to, icon: Icon, labelKey, end, onClick }: NavItem & { end?: boolean; onClick?: () => void }) {
@@ -133,9 +155,11 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
 
   // Is this item visible for the current user + tenant?
   function isVisible(item: NavItem): boolean {
-    // Admins see everything
+    // Dashboard is always visible regardless of stored permissions
+    if (item.to === '/') return true;
+
+    // Admins see everything (module-gated items excepted)
     if (isAdmin) {
-      // …except module-gated items when the module flag is disabled
       const mods = HUB_MODULES[item.to];
       if (mods && modules) {
         const anyEnabled = mods.some(m => modules[m] !== false);
@@ -143,7 +167,7 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
       }
       return true;
     }
-    // Direct permission OR hub-child permission
+    // Direct permission OR any hub-child permission
     const ok =
       permissions.includes(item.to) ||
       (HUB_CHILDREN[item.to] || []).some(child => permissions.includes(child));
@@ -157,11 +181,7 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
     return true;
   }
 
-  const visibleNav = NAV_ITEMS.filter(isVisible);
-  // Always include the dashboard regardless of role permissions (it's the home)
-  if (!visibleNav.some(i => i.to === '/')) visibleNav.unshift(NAV_ITEMS[0]);
-
-  // Filter admin items by SaaS restrictions (no Backup in SaaS mode)
+  // Filter admin items by SaaS restrictions
   const visibleAdmin = ADMIN_ITEMS.filter(item => {
     if (isSaaS && item.to === '/backup') return false;
     if (isSaaS && item.to === '/import') return false;
@@ -173,7 +193,7 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
       {/* Logo */}
       <div className="flex h-16 shrink-0 items-center gap-3 border-b border-sidebar-border px-4">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shadow-sm">
-          <Truck className="h-5 w-5" />
+          <Scale className="h-5 w-5" />
         </div>
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-sidebar-foreground">WeighbridgeSetu</p>
@@ -181,16 +201,31 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
         </div>
       </div>
 
-      {/* Navigation — 8 top-level items, no group headers */}
+      {/* Navigation — 4 labelled sections */}
       <nav className="flex-1 overflow-y-auto px-2 py-3">
-        <ul className="space-y-0.5">
-          {visibleNav.map(item => (
-            <li key={item.to}>
-              <NavItemLink {...item} end={item.to === '/'} onClick={onMobileClose} />
-            </li>
-          ))}
+        <ul className="space-y-2">
+          {NAV_SECTIONS.map((section, si) => {
+            const visibleItems = section.items.filter(isVisible);
+            if (visibleItems.length === 0) return null;
+            return (
+              <li key={si}>
+                {section.headerKey && (
+                  <p className="mt-1 mb-0.5 px-3 text-[9px] font-semibold uppercase tracking-widest text-sidebar-foreground/35 select-none">
+                    {t(section.headerKey)}
+                  </p>
+                )}
+                <ul className="space-y-0.5">
+                  {visibleItems.map(item => (
+                    <li key={item.to}>
+                      <NavItemLink {...item} end={item.to === '/'} onClick={onMobileClose} />
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            );
+          })}
 
-          {/* USB-gated Supplement entry — shown only after USB authorization */}
+          {/* USB-gated Supplement entry */}
           {usbAuthorized && (
             <li>
               <NavLink

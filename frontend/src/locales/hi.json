@@ -70,7 +70,17 @@
     "notifications": "सूचनाएं",
     "backup": "बैकअप",
     "dataImport": "डेटा आयात",
-    "logout": "लॉगआउट"
+    "logout": "लॉगआउट",
+    "sectionOperations": "संचालन",
+    "sectionCommercial": "व्यावसायिक",
+    "sectionResources": "संसाधन",
+    "sectionFinance": "वित्त और विश्लेषण",
+    "weighbridge": "वेब्रिज",
+    "salesCrm": "बिक्री और CRM",
+    "procurement": "क्रय प्रबंधन",
+    "inventoryProduction": "सूची और उत्पादन",
+    "accounts": "खाते",
+    "analytics": "विश्लेषण"
   },
   "token": {
     "title": "ट्रिप / गेट रजिस्टर",

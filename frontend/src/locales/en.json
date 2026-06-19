@@ -70,7 +70,17 @@
     "notifications": "Notifications",
     "backup": "Backup",
     "dataImport": "Data Import",
-    "logout": "Logout"
+    "logout": "Logout",
+    "sectionOperations": "Operations",
+    "sectionCommercial": "Commercial",
+    "sectionResources": "Resources",
+    "sectionFinance": "Finance & Intelligence",
+    "weighbridge": "Weighbridge",
+    "salesCrm": "Sales & CRM",
+    "procurement": "Procurement",
+    "inventoryProduction": "Inventory & Production",
+    "accounts": "Accounts",
+    "analytics": "Analytics"
   },
   "token": {
     "title": "Trips / Gate Register",
