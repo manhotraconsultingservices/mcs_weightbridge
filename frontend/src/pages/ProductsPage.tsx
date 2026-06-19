@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Plus, Search, Pencil } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -47,6 +48,7 @@ interface ProductDialogProps {
 }
 
 function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductDialogProps) {
+  const { t } = useTranslation();
   const [form, setForm] = useState<ProductForm>(emptyForm());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -75,10 +77,10 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
   }, [open, editing]);
 
   const set = (k: keyof ProductForm, v: string | boolean | null) =>
-    setForm(f => ({ ...f, [k]: v ?? '' }));
+    setForm(prev => ({ ...prev, [k]: v ?? '' }));
 
   const handleSave = async () => {
-    if (!form.name.trim()) { setError('Product name is required'); return; }
+    if (!form.name.trim()) { setError(t('product.nameRequired')); return; }
     setSaving(true);
     setError('');
     try {
@@ -104,7 +106,7 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
       onSaved(res.data);
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } };
-      setError(err.response?.data?.detail ?? 'Failed to save product');
+      setError(err.response?.data?.detail ?? t('product.failedSave'));
     } finally {
       setSaving(false);
     }
@@ -114,32 +116,32 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
     <Dialog open={open} onOpenChange={o => !o && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{editing ? 'Edit Product' : 'Add Product'}</DialogTitle>
+          <DialogTitle>{editing ? t('product.editProduct') : t('product.addProduct')}</DialogTitle>
         </DialogHeader>
 
         <div className="grid grid-cols-2 gap-4 py-2">
           <div className="col-span-2 space-y-1">
-            <Label>Product Name *</Label>
-            <Input value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Gitti 20mm" />
+            <Label>{t('product.name')} *</Label>
+            <Input value={form.name} onChange={e => set('name', e.target.value)} placeholder={t('product.namePlaceholder')} />
           </div>
 
           <div className="space-y-1">
-            <Label>Product Code</Label>
-            <Input value={form.code} onChange={e => set('code', e.target.value)} placeholder="e.g. GTT20" />
+            <Label>{t('product.productCode')}</Label>
+            <Input value={form.code} onChange={e => set('code', e.target.value)} placeholder={t('product.codePlaceholder')} />
           </div>
 
           <div className="space-y-1">
-            <Label>Category</Label>
+            <Label>{t('product.category')}</Label>
             <Select value={form.category_id || undefined} onValueChange={v => set('category_id', v)}>
               <SelectTrigger>
                 <span className="truncate text-left flex-1">
                   {form.category_id
                     ? (categories.find(c => c.id === form.category_id)?.name ?? '…')
-                    : <span className="text-muted-foreground">Select category</span>}
+                    : <span className="text-muted-foreground">{t('product.selectCategory')}</span>}
                 </span>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">— None —</SelectItem>
+                <SelectItem value="">{t('product.noneCategory')}</SelectItem>
                 {categories.map(c => (
                   <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                 ))}
@@ -148,12 +150,12 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
           </div>
 
           <div className="space-y-1">
-            <Label>HSN Code</Label>
-            <Input value={form.hsn_code} onChange={e => set('hsn_code', e.target.value)} placeholder="e.g. 2517" />
+            <Label>{t('product.hsnCode')}</Label>
+            <Input value={form.hsn_code} onChange={e => set('hsn_code', e.target.value)} placeholder={t('product.hsnPlaceholder')} />
           </div>
 
           <div className="space-y-1">
-            <Label>Unit</Label>
+            <Label>{t('product.unit')}</Label>
             <Select value={form.unit} onValueChange={v => set('unit', v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -163,12 +165,12 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
           </div>
 
           <div className="space-y-1">
-            <Label>Default Rate (₹)</Label>
+            <Label>{t('product.defaultRateLabel')}</Label>
             <Input type="number" value={form.default_rate} onChange={e => set('default_rate', e.target.value)} min="0" step="0.01" />
           </div>
 
           <div className="space-y-1">
-            <Label>GST Rate (%)</Label>
+            <Label>{t('product.gstRateLabel')}</Label>
             <Select value={form.gst_rate} onValueChange={v => set('gst_rate', v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -178,21 +180,20 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
           </div>
 
           <div className="col-span-2 space-y-1">
-            <Label>Bulk Density (kg/CFT)</Label>
+            <Label>{t('product.bulkDensity')}</Label>
             <Input
               type="number"
               value={form.bulk_density}
               onChange={e => set('bulk_density', e.target.value)}
               min="0"
               step="0.01"
-              placeholder="e.g. 42.5 — leave blank if not applicable"
+              placeholder={t('product.bulkDensityPlaceholder')}
             />
             <p className="text-xs text-muted-foreground">
-              Used to convert volume (CFT) to weight when the truck isn't weighed on the bridge.
-              Typical values (kg per CFT): aggregate 42.5, sand 48.1, GSB 53.8, stone dust 43.9.
+              {t('product.bulkDensityHint')}
               <br />
               <span className="text-[10px] text-muted-foreground/80">
-                Tip: kg/CFT = (t/m³) × 28.32 — e.g. 1.5 t/m³ becomes 42.5 kg/CFT.
+                {t('product.bulkDensityTip')}
               </span>
             </p>
           </div>
@@ -206,17 +207,16 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
               className="h-4 w-4"
             />
             <label htmlFor="is_raw_material" className="text-sm font-medium cursor-pointer">
-              Mark as raw material (input to production)
+              {t('product.rawMaterialLabel')}
             </label>
             <span className="text-xs text-amber-700 ml-2">
-              When ticked, this product can be selected as the input on a production cycle —
-              finalising the cycle will decrement stock by the input weight.
+              {t('product.rawMaterialHint')}
             </span>
           </div>
 
           <div className="col-span-2 space-y-1">
-            <Label>Description</Label>
-            <Input value={form.description} onChange={e => set('description', e.target.value)} placeholder="Optional notes" />
+            <Label>{t('product.description')}</Label>
+            <Input value={form.description} onChange={e => set('description', e.target.value)} placeholder={t('product.descriptionPlaceholder')} />
           </div>
 
           {editing && (
@@ -228,7 +228,7 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
                 onChange={e => set('is_active', e.target.checked)}
                 className="h-4 w-4"
               />
-              <Label htmlFor="is_active">Active</Label>
+              <Label htmlFor="is_active">{t('product.active')}</Label>
             </div>
           )}
         </div>
@@ -236,9 +236,9 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : editing ? 'Update' : 'Add Product'}
+            {saving ? t('product.saving') : editing ? t('common.update') : t('product.addProduct')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -255,6 +255,7 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
 const PRODUCT_FETCH_SIZE = 200;
 
 export default function ProductsPage() {
+  const { t } = useTranslation();
   const [products, setProducts] = useState<Product[]>([]);
   const [productTotal, setProductTotal] = useState(0);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
@@ -305,11 +306,11 @@ export default function ProductsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Product Catalog</h1>
-          <p className="text-muted-foreground">Manage materials, HSN codes, rates and GST</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('product.catalog')}</h1>
+          <p className="text-muted-foreground">{t('product.subtitle')}</p>
         </div>
         <Button onClick={openCreate}>
-          <Plus className="mr-2 h-4 w-4" /> Add Product
+          <Plus className="mr-2 h-4 w-4" /> {t('product.addProduct')}
         </Button>
       </div>
 
@@ -318,7 +319,7 @@ export default function ProductsPage() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           className="pl-9"
-          placeholder="Search name, code, HSN…"
+          placeholder={t('product.searchPlaceholder')}
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -328,25 +329,25 @@ export default function ProductsPage() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Total Products</p>
+            <p className="text-xs text-muted-foreground">{t('product.totalProducts')}</p>
             <p className="text-2xl font-bold">{productTotal}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Active</p>
+            <p className="text-xs text-muted-foreground">{t('product.activeProducts')}</p>
             <p className="text-2xl font-bold text-green-600">{products.filter(p => p.is_active).length}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Categories</p>
+            <p className="text-xs text-muted-foreground">{t('product.categoriesCount')}</p>
             <p className="text-2xl font-bold">{categories.length}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Inactive</p>
+            <p className="text-xs text-muted-foreground">{t('product.inactiveProducts')}</p>
             <p className="text-2xl font-bold text-muted-foreground">{products.filter(p => !p.is_active).length}</p>
           </CardContent>
         </Card>
@@ -377,51 +378,53 @@ function ProductsTable({
   loading: boolean;
   onEdit: (p: Product) => void;
 }) {
+  const { t } = useTranslation();
+
   const columns = useMemo<ColumnDef<Product>[]>(() => [
-    { key: 'name', label: 'Product', accessor: p => p.name, className: 'font-medium' },
-    { key: 'code', label: 'Code', accessor: p => p.code ?? '', className: 'text-muted-foreground' },
+    { key: 'name', label: t('product.colProduct'), accessor: p => p.name, className: 'font-medium' },
+    { key: 'code', label: t('product.colCode'), accessor: p => p.code ?? '', className: 'text-muted-foreground' },
     {
-      key: 'category', label: 'Category', type: 'enum',
+      key: 'category', label: t('product.category'), type: 'enum',
       enumOptions: Object.values(catMap),
       accessor: p => (p.category_id ? (catMap[p.category_id] ?? '') : ''),
       className: 'text-muted-foreground',
     },
-    { key: 'hsn_code', label: 'HSN', accessor: p => p.hsn_code, className: 'font-mono text-xs' },
-    { key: 'unit', label: 'Unit', type: 'enum', enumOptions: ['MT','KG','CFT','BRASS','CUM','PCS','NOS'], accessor: p => p.unit },
+    { key: 'hsn_code', label: t('product.colHsn'), accessor: p => p.hsn_code, className: 'font-mono text-xs' },
+    { key: 'unit', label: t('product.unit'), type: 'enum', enumOptions: ['MT','KG','CFT','BRASS','CUM','PCS','NOS'], accessor: p => p.unit },
     {
-      key: 'default_rate', label: 'Rate (₹)', type: 'number', align: 'right',
+      key: 'default_rate', label: t('product.colRate'), type: 'number', align: 'right',
       accessor: p => p.default_rate,
       format: v => Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
     },
     {
-      key: 'gst_rate', label: 'GST%', type: 'number', align: 'right',
+      key: 'gst_rate', label: t('product.colGst'), type: 'number', align: 'right',
       accessor: p => p.gst_rate, format: v => `${v}%`,
     },
     {
-      key: 'bulk_density', label: 'Density (kg/CFT)', type: 'number', align: 'right',
+      key: 'bulk_density', label: t('product.colDensity'), type: 'number', align: 'right',
       accessor: p => p.bulk_density,
       format: v => v == null ? '—' : Number(v).toFixed(2),
       className: 'text-muted-foreground',
     },
     {
-      key: 'is_raw_material', label: 'Raw', type: 'enum', align: 'center',
-      enumOptions: ['Raw', 'Finished'],
-      accessor: p => p.is_raw_material ? 'Raw' : 'Finished',
-      format: v => v === 'Raw'
-        ? <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-300">RAW</span>
-        : <span className="text-xs text-muted-foreground">finished</span>,
+      key: 'is_raw_material', label: t('product.colRaw'), type: 'enum', align: 'center',
+      enumOptions: [t('product.rawBadge'), t('product.finishedLabel')],
+      accessor: p => p.is_raw_material ? t('product.rawBadge') : t('product.finishedLabel'),
+      format: v => v === t('product.rawBadge')
+        ? <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-300">{t('product.rawBadge')}</span>
+        : <span className="text-xs text-muted-foreground">{t('product.finishedLabel')}</span>,
       defaultVisible: false,
     },
     {
-      key: 'status', label: 'Status', type: 'enum', align: 'center',
-      enumOptions: ['Active', 'Inactive'],
-      accessor: p => p.is_active ? 'Active' : 'Inactive',
-      format: v => v === 'Active'
-        ? <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">Active</span>
-        : <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">Inactive</span>,
+      key: 'status', label: t('common.status'), type: 'enum', align: 'center',
+      enumOptions: [t('product.statusActive'), t('product.statusInactive')],
+      accessor: p => p.is_active ? t('product.statusActive') : t('product.statusInactive'),
+      format: v => v === t('product.statusActive')
+        ? <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">{t('product.statusActive')}</span>
+        : <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">{t('product.statusInactive')}</span>,
     },
-    { key: 'description', label: 'Description', defaultVisible: false, accessor: p => p.description ?? '' },
-  ], [catMap]);
+    { key: 'description', label: t('product.description'), defaultVisible: false, accessor: p => p.description ?? '' },
+  ], [catMap, t]);
 
   return (
     <DataTable<Product>
@@ -432,9 +435,9 @@ function ProductsTable({
       rowKey={p => p.id}
       exportFilename="products"
       defaultSort={{ key: 'name', direction: 'asc' }}
-      emptyMessage="No products found. Try adjusting your search or add a new product."
+      emptyMessage={t('product.noProductsFound')}
       rowActions={p => (
-        <Button variant="ghost" size="icon" onClick={() => onEdit(p)} title="Edit product">
+        <Button variant="ghost" size="icon" onClick={() => onEdit(p)} title={t('product.editProductTitle')}>
           <Pencil className="h-4 w-4" />
         </Button>
       )}

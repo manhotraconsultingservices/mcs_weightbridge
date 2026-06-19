@@ -11,6 +11,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Plus, Minus, History, TrendingDown, AlertTriangle, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -53,20 +54,11 @@ const STATUS_BADGE: Record<string, string> = {
   out: 'bg-red-100 text-red-700 hover:bg-red-100',
 };
 
-const MV_LABELS: Record<string, string> = {
-  opening: 'Opening',
-  sale: 'Sale',
-  purchase: 'Purchase',
-  adjustment: 'Adjustment',
-  cycle_output: 'Production',
-  sale_cancelled: 'Sale (cancelled)',
-  purchase_cancelled: 'Purchase (cancelled)',
-};
-
 const fmt = (n: number, unit: string) =>
   `${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${unit}`;
 
 export default function ProductInventoryPage() {
+  const { t } = useTranslation();
   const [rows, setRows] = useState<ProductStockRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'low' | 'out'>('all');
@@ -98,32 +90,32 @@ export default function ProductInventoryPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Finished-Goods Inventory</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{t('productInventory.pageTitle')}</h1>
           <p className="text-muted-foreground">
-            Stock auto-updates from sales (out), purchases (in), and production cycles (in).
+            {t('productInventory.pageSubtitle')}
           </p>
         </div>
         <Button variant="outline" onClick={load}>
-          <RotateCw className="mr-2 h-4 w-4" /> Refresh
+          <RotateCw className="mr-2 h-4 w-4" /> {t('common.refresh')}
         </Button>
       </div>
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card><CardContent className="pt-4">
-          <p className="text-xs text-muted-foreground">Total Products</p>
+          <p className="text-xs text-muted-foreground">{t('productInventory.totalProducts')}</p>
           <p className="text-2xl font-bold">{summary.total}</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <p className="text-xs text-muted-foreground">In Stock</p>
+          <p className="text-xs text-muted-foreground">{t('productInventory.inStock')}</p>
           <p className="text-2xl font-bold text-green-600">{summary.ok}</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <p className="text-xs text-muted-foreground">Low Stock</p>
+          <p className="text-xs text-muted-foreground">{t('productInventory.lowStock')}</p>
           <p className="text-2xl font-bold text-amber-600">{summary.low}</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <p className="text-xs text-muted-foreground">Out of Stock</p>
+          <p className="text-xs text-muted-foreground">{t('productInventory.outOfStock')}</p>
           <p className="text-2xl font-bold text-red-600">{summary.out}</p>
         </CardContent></Card>
       </div>
@@ -137,7 +129,11 @@ export default function ProductInventoryPage() {
             size="sm"
             onClick={() => setFilter(k)}
           >
-            {k === 'all' ? 'All' : k === 'low' ? 'Low only' : 'Out only'}
+            {k === 'all'
+              ? t('common.all')
+              : k === 'low'
+              ? t('productInventory.lowOnly')
+              : t('productInventory.outOnly')}
           </Button>
         ))}
       </div>
@@ -174,26 +170,28 @@ function ProductStockTable({
   onAdjust: (r: ProductStockRow) => void;
   onHistory: (r: ProductStockRow) => void;
 }) {
+  const { t } = useTranslation();
+
   const columns = useMemo<ColumnDef<ProductStockRow>[]>(() => [
-    { key: 'product_name', label: 'Product', accessor: r => r.product_name, className: 'font-medium' },
+    { key: 'product_name', label: t('productInventory.col.product'), accessor: r => r.product_name, className: 'font-medium' },
     {
-      key: 'current_stock', label: 'Current Stock', type: 'number', align: 'right',
+      key: 'current_stock', label: t('productInventory.col.currentStock'), type: 'number', align: 'right',
       accessor: r => r.current_stock,
       format: (v, r) => <span className="font-mono">{fmt(Number(v), r.unit)}</span>,
     },
     {
-      key: 'min_stock_level', label: 'Min Level', type: 'number', align: 'right',
+      key: 'min_stock_level', label: t('productInventory.col.minLevel'), type: 'number', align: 'right',
       accessor: r => r.min_stock_level,
       format: (v, r) => <span className="text-muted-foreground">{fmt(Number(v), r.unit)}</span>,
     },
     {
-      key: 'stock_status', label: 'Status', type: 'enum', align: 'center',
+      key: 'stock_status', label: t('common.status'), type: 'enum', align: 'center',
       enumOptions: ['ok', 'low', 'out'],
       accessor: r => r.stock_status,
       format: v => <Badge className={STATUS_BADGE[String(v) as 'ok' | 'low' | 'out']}>{String(v).toUpperCase()}</Badge>,
     },
     {
-      key: 'updated_at', label: 'Last Updated', type: 'date', align: 'right',
+      key: 'updated_at', label: t('productInventory.col.lastUpdated'), type: 'date', align: 'right',
       accessor: r => r.updated_at,
       format: v => (
         <span className="text-xs text-muted-foreground">
@@ -201,8 +199,9 @@ function ProductStockTable({
         </span>
       ),
     },
-    { key: 'unit', label: 'Unit', defaultVisible: false, accessor: r => r.unit },
-  ], []);
+    { key: 'unit', label: t('productInventory.col.unit'), defaultVisible: false, accessor: r => r.unit },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [t]);
 
   return (
     <DataTable<ProductStockRow>
@@ -213,13 +212,13 @@ function ProductStockTable({
       rowKey={r => r.id}
       exportFilename="product-stock"
       defaultSort={{ key: 'product_name', direction: 'asc' }}
-      emptyMessage="No products match this filter"
+      emptyMessage={t('productInventory.noProductsMatch')}
       rowActions={r => (
         <div className="flex gap-1 justify-end">
-          <Button variant="ghost" size="icon" title="Adjust stock" onClick={() => onAdjust(r)}>
+          <Button variant="ghost" size="icon" title={t('productInventory.adjustStock')} onClick={() => onAdjust(r)}>
             <Plus className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" title="View history" onClick={() => onHistory(r)}>
+          <Button variant="ghost" size="icon" title={t('productInventory.viewHistory')} onClick={() => onHistory(r)}>
             <History className="h-4 w-4" />
           </Button>
         </div>
@@ -240,6 +239,7 @@ function AdjustDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<'adjust' | 'min' | 'opening'>('adjust');
   const [quantity, setQuantity] = useState('');
   const [direction, setDirection] = useState<'in' | 'out'>('in');
@@ -266,30 +266,34 @@ function AdjustDialog({
     try {
       if (mode === 'adjust') {
         const qty = parseFloat(quantity);
-        if (!Number.isFinite(qty) || qty <= 0) { toast.error('Enter a positive quantity'); setSaving(false); return; }
-        if (!reason.trim()) { toast.error('Reason is required'); setSaving(false); return; }
+        if (!Number.isFinite(qty) || qty <= 0) { toast.error(t('productInventory.toastPositiveQty')); setSaving(false); return; }
+        if (!reason.trim()) { toast.error(t('productInventory.toastReasonRequired')); setSaving(false); return; }
         const signed = direction === 'in' ? qty : -qty;
         await api.post('/api/v1/product-stock/adjust', {
           product_id: row.product_id, quantity: signed, reason: reason.trim(),
         });
-        toast.success(`Stock ${direction === 'in' ? 'added' : 'removed'}: ${qty} ${row.unit}`);
+        toast.success(
+          direction === 'in'
+            ? t('productInventory.toastStockAdded', { qty, unit: row.unit })
+            : t('productInventory.toastStockRemoved', { qty, unit: row.unit })
+        );
       } else if (mode === 'min') {
         const lvl = parseFloat(minLevel);
-        if (!Number.isFinite(lvl) || lvl < 0) { toast.error('Min level must be >= 0'); setSaving(false); return; }
+        if (!Number.isFinite(lvl) || lvl < 0) { toast.error(t('productInventory.toastMinLevelPositive')); setSaving(false); return; }
         await api.put(`/api/v1/product-stock/${row.product_id}/min-level`, { min_stock_level: lvl });
-        toast.success('Min stock level updated');
+        toast.success(t('productInventory.toastMinLevelUpdated'));
       } else {
         const qty = parseFloat(openingQty);
-        if (!Number.isFinite(qty) || qty <= 0) { toast.error('Enter a positive opening quantity'); setSaving(false); return; }
+        if (!Number.isFinite(qty) || qty <= 0) { toast.error(t('productInventory.toastPositiveOpeningQty')); setSaving(false); return; }
         await api.post('/api/v1/product-stock/opening', {
           product_id: row.product_id, opening_quantity: qty, notes: 'Opening stock entry',
         });
-        toast.success(`Opening stock set: ${qty} ${row.unit}`);
+        toast.success(t('productInventory.toastOpeningStockSet', { qty, unit: row.unit }));
       }
       onSaved();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } };
-      toast.error(err.response?.data?.detail ?? 'Save failed');
+      toast.error(err.response?.data?.detail ?? t('productInventory.toastSaveFailed'));
     } finally {
       setSaving(false);
     }
@@ -303,21 +307,21 @@ function AdjustDialog({
         </DialogHeader>
 
         <p className="text-xs text-muted-foreground">
-          Current stock: <span className="font-mono font-semibold">{fmt(row.current_stock, row.unit)}</span> ·
-          Min level: <span className="font-mono">{fmt(row.min_stock_level, row.unit)}</span>
+          {t('productInventory.currentStockLabel')}: <span className="font-mono font-semibold">{fmt(row.current_stock, row.unit)}</span> ·
+          {t('productInventory.minLevelLabel')}: <span className="font-mono">{fmt(row.min_stock_level, row.unit)}</span>
         </p>
 
         <div className="flex gap-2 my-2">
           {row.current_stock === 0 && (
             <Button size="sm" variant={mode === 'opening' ? 'default' : 'outline'} onClick={() => setMode('opening')}>
-              Opening Stock
+              {t('productInventory.openingStock')}
             </Button>
           )}
           <Button size="sm" variant={mode === 'adjust' ? 'default' : 'outline'} onClick={() => setMode('adjust')}>
-            Adjust Stock
+            {t('productInventory.adjustStock')}
           </Button>
           <Button size="sm" variant={mode === 'min' ? 'default' : 'outline'} onClick={() => setMode('min')}>
-            Set Min Level
+            {t('productInventory.setMinLevel')}
           </Button>
         </div>
 
@@ -329,44 +333,44 @@ function AdjustDialog({
                 variant={direction === 'in' ? 'default' : 'outline'}
                 onClick={() => setDirection('in')}
                 className="flex-1"
-              ><Plus className="mr-1 h-3 w-3" /> Add</Button>
+              ><Plus className="mr-1 h-3 w-3" /> {t('common.add')}</Button>
               <Button
                 size="sm"
                 variant={direction === 'out' ? 'default' : 'outline'}
                 onClick={() => setDirection('out')}
                 className="flex-1"
-              ><Minus className="mr-1 h-3 w-3" /> Remove</Button>
+              ><Minus className="mr-1 h-3 w-3" /> {t('productInventory.remove')}</Button>
             </div>
             <div className="space-y-1">
-              <Label>Quantity ({row.unit})</Label>
+              <Label>{t('productInventory.quantityUnit', { unit: row.unit })}</Label>
               <Input type="number" min="0" step="0.001" value={quantity} onChange={e => setQuantity(e.target.value)} />
             </div>
             <div className="space-y-1">
-              <Label>Reason</Label>
-              <Input value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Stocktake variance, damage write-off" />
+              <Label>{t('productInventory.reason')}</Label>
+              <Input value={reason} onChange={e => setReason(e.target.value)} placeholder={t('productInventory.reasonPlaceholder')} />
             </div>
           </div>
         )}
 
         {mode === 'min' && (
           <div className="space-y-1">
-            <Label>New Min Stock Level ({row.unit})</Label>
+            <Label>{t('productInventory.newMinStockLevel', { unit: row.unit })}</Label>
             <Input type="number" min="0" step="0.001" value={minLevel} onChange={e => setMinLevel(e.target.value)} />
-            <p className="text-xs text-muted-foreground">Triggers low-stock alerts when current stock reaches this level.</p>
+            <p className="text-xs text-muted-foreground">{t('productInventory.minLevelHint')}</p>
           </div>
         )}
 
         {mode === 'opening' && (
           <div className="space-y-1">
-            <Label>Opening Stock ({row.unit})</Label>
+            <Label>{t('productInventory.openingStockUnit', { unit: row.unit })}</Label>
             <Input type="number" min="0" step="0.001" value={openingQty} onChange={e => setOpeningQty(e.target.value)} />
-            <p className="text-xs text-muted-foreground">One-time bootstrap. Use Adjust Stock for any later changes.</p>
+            <p className="text-xs text-muted-foreground">{t('productInventory.openingStockHint')}</p>
           </div>
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button onClick={handleSave} disabled={saving}>{saving ? t('productInventory.saving') : t('common.save')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -378,8 +382,20 @@ function AdjustDialog({
 // ------------------------------------------------------------------ //
 
 function HistoryDialog({ row, onClose }: { row: ProductStockRow | null; onClose: () => void }) {
+  const { t } = useTranslation();
   const [movements, setMovements] = useState<Movement[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const MV_LABELS: Record<string, string> = {
+    opening: t('productInventory.movementType.opening'),
+    sale: t('productInventory.movementType.sale'),
+    purchase: t('productInventory.movementType.purchase'),
+    adjustment: t('productInventory.movementType.adjustment'),
+    cycle_output: t('productInventory.movementType.cycle_output'),
+    cycle_input: t('productInventory.movementType.cycle_input'),
+    sale_cancelled: t('productInventory.movementType.sale_cancelled'),
+    purchase_cancelled: t('productInventory.movementType.purchase_cancelled'),
+  };
 
   useEffect(() => {
     if (!row) return;
@@ -395,26 +411,26 @@ function HistoryDialog({ row, onClose }: { row: ProductStockRow | null; onClose:
     <Dialog open={!!row} onOpenChange={o => !o && onClose()}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>{row.product_name} — Movement History</DialogTitle>
+          <DialogTitle>{t('productInventory.movementHistoryTitle', { product: row.product_name })}</DialogTitle>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-y-auto">
           {loading ? (
-            <p className="text-center py-6 text-muted-foreground">Loading…</p>
+            <p className="text-center py-6 text-muted-foreground">{t('common.loading')}</p>
           ) : movements.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
               <TrendingDown className="h-8 w-8 mb-2 opacity-40" />
-              <p className="text-sm">No movements yet for this product.</p>
+              <p className="text-sm">{t('productInventory.noMovements')}</p>
             </div>
           ) : (
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-background border-b">
                 <tr>
-                  <th className="text-left p-2">Date</th>
-                  <th className="text-left p-2">Type</th>
-                  <th className="text-right p-2">Qty</th>
-                  <th className="text-right p-2">Before → After</th>
-                  <th className="text-left p-2">Reference</th>
-                  <th className="text-left p-2">Notes</th>
+                  <th className="text-left p-2">{t('common.date')}</th>
+                  <th className="text-left p-2">{t('productInventory.col.type')}</th>
+                  <th className="text-right p-2">{t('productInventory.col.qty')}</th>
+                  <th className="text-right p-2">{t('productInventory.col.beforeAfter')}</th>
+                  <th className="text-left p-2">{t('productInventory.col.reference')}</th>
+                  <th className="text-left p-2">{t('common.notes')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -439,7 +455,7 @@ function HistoryDialog({ row, onClose }: { row: ProductStockRow | null; onClose:
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.close')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
