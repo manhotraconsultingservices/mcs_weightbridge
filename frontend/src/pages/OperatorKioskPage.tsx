@@ -17,6 +17,7 @@
  * mistakes are recoverable in one tap.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import {
   Truck, ArrowRight, ArrowDownToLine, ArrowUpFromLine, Scale,
@@ -124,6 +125,7 @@ interface OperatorKioskPageProps {
 }
 
 export default function OperatorKioskPage({ user, onLogout }: OperatorKioskPageProps) {
+  const { t } = useTranslation();
   const nav = useNavigate();
   const [stage, setStage] = useState<Stage>('arrival');
   const [draft, setDraft] = useState<ArrivalDraft>({
@@ -178,7 +180,7 @@ export default function OperatorKioskPage({ user, onLogout }: OperatorKioskPageP
           <Scale className="h-5 w-5" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-base font-bold text-slate-900">Truck Counter</div>
+          <div className="text-base font-bold text-slate-900">{t('kiosk.truckCounter')}</div>
           <div className="text-xs text-slate-500">Operator: {user.full_name || user.username}</div>
         </div>
         <button
@@ -193,7 +195,7 @@ export default function OperatorKioskPage({ user, onLogout }: OperatorKioskPageP
           title="Logout"
         >
           <LogOut className="h-4 w-4" />
-          <span className="hidden sm:inline">Logout</span>
+          <span className="hidden sm:inline">{t('sidebar.logout')}</span>
         </button>
       </header>
 
@@ -238,7 +240,7 @@ export default function OperatorKioskPage({ user, onLogout }: OperatorKioskPageP
         title="Call manager"
       >
         <AlertTriangle className="h-5 w-5" />
-        Need Help
+        {t('kiosk.needHelp')}
       </button>
       {sosOpen && <SosModal onClose={() => setSosOpen(false)} />}
     </div>
@@ -258,6 +260,7 @@ interface ArrivalScreenProps {
 }
 
 function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: ArrivalScreenProps) {
+  const { t } = useTranslation();
   const [parties, setParties] = useState<Party[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [partySearch, setPartySearch] = useState('');
@@ -425,7 +428,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
         <section>
           <label className="flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-amber-700 mb-2">
             <Truck className="h-4 w-4" />
-            Trucks Waiting for 2nd Weight ({pendingTokens.length})
+            {t('kiosk.pendingCount')} ({pendingTokens.length})
           </label>
           <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 snap-x">
             {pendingTokens.map(t => (
@@ -442,19 +445,19 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
                 <div className="text-sm font-semibold text-slate-800 truncate">{t.party?.name ?? '—'}</div>
                 <div className="text-xs text-slate-600 truncate mt-0.5">{t.product?.name ?? '—'}</div>
                 <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-200 text-amber-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
-                  <ArrowRight className="h-3 w-3" /> 2nd weight pending
+                  <ArrowRight className="h-3 w-3" /> {t('kiosk.waitingForWeight')}
                 </div>
               </button>
             ))}
           </div>
-          <div className="text-center text-xs text-slate-400 mt-1 uppercase tracking-widest">— or start a new truck below —</div>
+          <div className="text-center text-xs text-slate-400 mt-1 uppercase tracking-widest">— {t('kiosk.orStartNew')} —</div>
         </section>
       )}
 
       {/* Vehicle number — biggest input on the screen */}
       <section>
         <label className="block text-sm font-semibold uppercase tracking-widest text-slate-500 mb-2">
-          1.  Vehicle Number
+          1.  {t('kiosk.vehicleNumber')}
         </label>
         <div className="flex gap-3">
           <input
@@ -487,7 +490,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
             <Scale className="h-7 w-7" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-xs uppercase tracking-widest text-amber-800 font-bold">Same truck — back for 2nd weight!</div>
+            <div className="text-xs uppercase tracking-widest text-amber-800 font-bold">{t('kiosk.backFor2ndWeight')}</div>
             <div className="text-lg font-bold text-amber-900 mt-0.5 truncate">
               Token #{matchingPending.token_no ?? '—'} · {matchingPending.party?.name ?? 'Walk-in'}
             </div>
@@ -512,7 +515,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
         >
           <Sparkles className="h-8 w-8 text-emerald-600 shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="text-xs uppercase tracking-widest text-emerald-700 font-semibold">Same as last time?</div>
+            <div className="text-xs uppercase tracking-widest text-emerald-700 font-semibold">{t('kiosk.sameAsLast')}</div>
             <div className="text-lg font-bold text-emerald-900 mt-0.5">
               {lastSeen.product.name} {lastSeen.token_type === 'sale' ? 'OUT to' : 'IN from'} {lastSeen.party.name}
             </div>
@@ -527,21 +530,21 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
       {/* Direction toggle */}
       <section>
         <label className="block text-sm font-semibold uppercase tracking-widest text-slate-500 mb-2">
-          2.  Truck Going
+          2.  {t('kiosk.truckGoing')}
         </label>
         <div className="grid grid-cols-2 gap-3">
           <DirectionTile
             active={draft.token_type === 'sale'}
-            label="OUT"
-            sub="Loaded → leaving"
+            label={t('kiosk.truckOut')}
+            sub={t('kiosk.truckOutSub')}
             icon={ArrowUpFromLine}
             color="blue"
             onClick={() => setDraft(d => ({ ...d, token_type: 'sale' }))}
           />
           <DirectionTile
             active={draft.token_type === 'purchase'}
-            label="IN"
-            sub="Empty → buying"
+            label={t('kiosk.truckIn')}
+            sub={t('kiosk.truckInSub')}
             icon={ArrowDownToLine}
             color="amber"
             onClick={() => setDraft(d => ({ ...d, token_type: 'purchase' }))}
@@ -552,12 +555,12 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
       {/* Product picker — grid of big tiles */}
       <section>
         <label className="block text-sm font-semibold uppercase tracking-widest text-slate-500 mb-2">
-          3.  Material
+          3.  {t('kiosk.material')}
         </label>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {products.length === 0 && (
             <div className="col-span-full text-center text-sm text-slate-400 py-6">
-              No products configured. Ask the manager to add some.
+              {t('kiosk.noProducts')}
             </div>
           )}
           {products.map(p => {
@@ -587,7 +590,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
       <section>
         <div className="flex items-center justify-between mb-2">
           <label className="block text-sm font-semibold uppercase tracking-widest text-slate-500">
-            4.  {draft.token_type === 'sale' ? 'Customer' : 'Supplier'}
+            4.  {draft.token_type === 'sale' ? t('kiosk.customer') : t('kiosk.supplier')}
           </label>
           <span className="text-xs text-slate-400">
             Showing {partyMatches.length} of {parties.length}
@@ -599,7 +602,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
             type="text"
             value={partySearch}
             onChange={e => setPartySearch(e.target.value)}
-            placeholder={`Search ${draft.token_type === 'sale' ? 'customer' : 'supplier'} by name, city, or phone…`}
+            placeholder={`Search ${draft.token_type === 'sale' ? t('kiosk.customer') : t('kiosk.supplier')} by name, city, or phone…`}
             className="w-full h-14 pl-12 pr-4 text-base rounded-xl border-2 border-slate-300 focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-100 bg-white"
           />
         </div>
@@ -628,7 +631,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
           })}
           {partyMatches.length === 0 && (
             <div className="col-span-full text-center text-sm text-slate-400 py-4">
-              No match. Ask the manager to add this customer.
+              {t('kiosk.noMatch')}
             </div>
           )}
         </div>
@@ -637,7 +640,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
       {/* Optional: tyre count → volume mode (skip the bridge) */}
       <section>
         <label className="block text-sm font-semibold uppercase tracking-widest text-slate-500 mb-2">
-          5.  Skip Weighbridge? <span className="text-slate-400 normal-case font-normal">(optional)</span>
+          5.  {t('kiosk.skipWeighbridge')} <span className="text-slate-400 normal-case font-normal">({t('common.optional')})</span>
         </label>
         <div className="grid grid-cols-6 gap-2">
           <button
@@ -648,7 +651,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
                 : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
             }`}
           >
-            <div className="text-sm uppercase">Weigh</div>
+            <div className="text-sm uppercase">{t('kiosk.weigh')}</div>
           </button>
           {TYRE_OPTIONS.map(n => {
             const selected = draft.tyre_count === n;
@@ -688,11 +691,11 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
         }`}
       >
         {saving ? (
-          <><Loader2 className="h-7 w-7 animate-spin" /> Creating…</>
+          <><Loader2 className="h-7 w-7 animate-spin" /> {t('kiosk.creating')}</>
         ) : draft.tyre_count != null ? (
-          <><Truck className="h-7 w-7" /> CREATE TRIP (NO WEIGHING) <ArrowRight className="h-7 w-7" /></>
+          <><Truck className="h-7 w-7" /> {t('kiosk.createTripNoWeigh')} <ArrowRight className="h-7 w-7" /></>
         ) : (
-          <><Truck className="h-7 w-7" /> START WEIGHING <ArrowRight className="h-7 w-7" /></>
+          <><Truck className="h-7 w-7" /> {t('kiosk.startWeighing')} <ArrowRight className="h-7 w-7" /></>
         )}
       </button>
 
@@ -753,6 +756,7 @@ interface WeighingScreenProps {
 }
 
 function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenProps) {
+  const { t } = useTranslation();
   const { reading } = useWeight();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -770,13 +774,13 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
 
   // Which weighment are we on? OPEN/LOADING → first;  FIRST_WEIGHT/SECOND_WEIGHT → second.
   const isFirst = token.status === 'OPEN' || token.status === 'LOADING';
-  const stageLabel = isFirst ? 'FIRST WEIGHT' : 'SECOND WEIGHT';
+  const stageLabel = isFirst ? t('kiosk.firstWeight') : t('kiosk.secondWeight');
 
   // For sale (outbound): 1st = empty (tare), 2nd = loaded (gross)
   // For purchase (inbound): 1st = loaded (gross), 2nd = empty (tare)
   const isSale = token.token_type === 'sale';
   const tareNow = (isSale && isFirst) || (!isSale && !isFirst);
-  const tareOrGrossLabel = tareNow ? '(EMPTY truck)' : '(LOADED truck)';
+  const tareOrGrossLabel = tareNow ? t('kiosk.emptyTruck') : t('kiosk.loadedTruck');
 
   // Effective weight: live scale OR manual MT × 1000
   const manualKg = (parseFloat(manualMt) || 0) * 1000;
@@ -832,7 +836,7 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
           onClick={onCancel}
           className="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded hover:bg-slate-100"
         >
-          <ChevronLeft className="h-4 w-4" /> Cancel
+          <ChevronLeft className="h-4 w-4" /> {t('common.cancel')}
         </button>
         <div className="text-xs uppercase tracking-widest font-semibold text-slate-500">
           Token #{token.token_no ?? '—'}  ·  {token.vehicle_no}
@@ -847,7 +851,7 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
             <div className="text-2xl font-bold text-slate-900 truncate">{token.party?.name ?? 'Walk-in'}</div>
             <div className="text-lg text-slate-600 truncate mt-0.5">{token.product?.name ?? '—'}</div>
             <div className="text-sm text-slate-400 mt-0.5">
-              {isSale ? 'OUT (loaded → leaving)' : 'IN (empty → buying)'}
+              {isSale ? t('kiosk.outDesc') : t('kiosk.inDesc')}
             </div>
           </div>
         </div>
@@ -870,7 +874,7 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
         {manualMode ? (
           <>
             <div className="text-xs uppercase tracking-widest text-blue-700 font-bold mb-2">
-              Type weight by hand
+              {t('kiosk.typeWeightByHand')}
             </div>
             <input
               type="number"
@@ -885,18 +889,18 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
             />
             <div className="text-3xl font-bold text-slate-500 mt-2">MT</div>
             <div className="mt-4 text-base text-slate-600">
-              Enter the truck weight in metric tonnes (e.g. <strong>7.500</strong> for a 7.5 MT truck).
+              {t('kiosk.enterMtHint')}
             </div>
           </>
         ) : !reading.scale_connected ? (
           <div className="py-4">
-            <div className="text-3xl font-bold text-rose-600 mb-2">SCALE OFFLINE</div>
-            <div className="text-sm text-slate-600 mb-4">Bridge is not responding. You can type the weight by hand instead.</div>
+            <div className="text-3xl font-bold text-rose-600 mb-2">{t('kiosk.scaleOffline')}</div>
+            <div className="text-sm text-slate-600 mb-4">{t('kiosk.scaleOfflineDesc')}</div>
             <button
               onClick={() => setManualMode(true)}
               className="inline-flex items-center gap-2 h-12 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow"
             >
-              <Pencil className="h-5 w-5" /> Type Weight by Hand
+              <Pencil className="h-5 w-5" /> {t('kiosk.typeWeightByHandBtn')}
             </button>
           </div>
         ) : (
@@ -911,9 +915,9 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
             <div className="text-3xl font-bold text-slate-500 mt-2">MT</div>
             <div className="mt-4 text-base font-semibold">
               {canCapture ? (
-                <span className="text-emerald-700">✓ STABLE — READY TO CAPTURE</span>
+                <span className="text-emerald-700">{t('kiosk.stable')}</span>
               ) : (
-                <span className="text-amber-700 animate-pulse">⏳ Wait for truck to stop moving…</span>
+                <span className="text-amber-700 animate-pulse">{t('kiosk.waitStable')}</span>
               )}
             </div>
           </>
@@ -927,8 +931,8 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
           className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 underline underline-offset-4 px-3 py-1.5"
         >
           {manualMode
-            ? <><Scale className="h-4 w-4" /> Use live scale instead</>
-            : <><Pencil className="h-4 w-4" /> Type weight by hand instead</>
+            ? <><Scale className="h-4 w-4" /> {t('kiosk.useLiveScale')}</>
+            : <><Pencil className="h-4 w-4" /> {t('kiosk.typeInstead')}</>
           }
         </button>
       </div>
@@ -950,9 +954,9 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
         }`}
       >
         {saving ? (
-          <><Loader2 className="h-9 w-9 animate-spin" /> Saving…</>
+          <><Loader2 className="h-9 w-9 animate-spin" /> {t('kiosk.saving')}</>
         ) : (
-          <><CheckCircle2 className="h-9 w-9" /> CAPTURE THIS WEIGHT</>
+          <><CheckCircle2 className="h-9 w-9" /> {t('kiosk.captureThisWeight')}</>
         )}
       </button>
 
@@ -960,7 +964,7 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
           now sits in the Pending strip on the home screen for when it comes back. */}
       {isFirst && (
         <div className="text-center text-xs text-slate-500">
-          After capture, this truck will appear in <strong>Trucks Waiting for 2nd Weight</strong> on the home screen.
+          {t('kiosk.after1stWeightNote')}
         </div>
       )}
     </div>
@@ -972,6 +976,7 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
 // ──────────────────────────────────────────────────────────────────────────
 
 function DoneScreen({ token, onNew }: { token: Token; onNew: () => void }) {
+  const { t } = useTranslation();
   const grossMt = token.gross_weight ? (token.gross_weight / 1000).toFixed(3) : '—';
   const tareMt = token.tare_weight ? (token.tare_weight / 1000).toFixed(3) : '—';
   const netMt = token.net_weight ? (token.net_weight / 1000).toFixed(3) : '—';
@@ -1002,7 +1007,7 @@ function DoneScreen({ token, onNew }: { token: Token; onNew: () => void }) {
         <div className="inline-flex h-24 w-24 items-center justify-center rounded-full bg-emerald-100 mb-4">
           <CheckCircle2 className="h-14 w-14 text-emerald-600" />
         </div>
-        <div className="text-3xl font-black text-slate-900">DONE</div>
+        <div className="text-3xl font-black text-slate-900">{t('kiosk.done')}</div>
         <div className="text-sm text-slate-500 mt-1">Token #{token.token_no ?? '—'}  ·  {token.vehicle_no}</div>
       </div>
 
@@ -1017,17 +1022,17 @@ function DoneScreen({ token, onNew }: { token: Token; onNew: () => void }) {
         </div>
         <div className="grid grid-cols-3 gap-3 mt-4 text-center">
           <div>
-            <div className="text-xs uppercase tracking-widest text-slate-500">Gross</div>
+            <div className="text-xs uppercase tracking-widest text-slate-500">{t('kiosk.gross')}</div>
             <div className="text-xl font-mono font-bold text-slate-900 mt-1">{grossMt}</div>
             <div className="text-[10px] text-slate-400">MT</div>
           </div>
           <div>
-            <div className="text-xs uppercase tracking-widest text-slate-500">Tare</div>
+            <div className="text-xs uppercase tracking-widest text-slate-500">{t('kiosk.tare')}</div>
             <div className="text-xl font-mono font-bold text-slate-900 mt-1">{tareMt}</div>
             <div className="text-[10px] text-slate-400">MT</div>
           </div>
           <div className="rounded-lg bg-blue-50 -m-1 p-1">
-            <div className="text-xs uppercase tracking-widest text-blue-700 font-semibold">NET</div>
+            <div className="text-xs uppercase tracking-widest text-blue-700 font-semibold">{t('kiosk.net')}</div>
             <div className="text-2xl font-mono font-black text-blue-900 mt-1">{netMt}</div>
             <div className="text-[10px] text-blue-600 font-semibold">MT</div>
           </div>
@@ -1041,7 +1046,7 @@ function DoneScreen({ token, onNew }: { token: Token; onNew: () => void }) {
           className="h-24 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-lg font-bold flex flex-col items-center justify-center gap-1 shadow-md transition-colors"
         >
           <Printer className="h-7 w-7" />
-          Print Bill
+          {t('kiosk.printBill')}
         </button>
         <button
           onClick={doWhatsApp}
@@ -1055,7 +1060,7 @@ function DoneScreen({ token, onNew }: { token: Token; onNew: () => void }) {
           className="h-24 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-lg font-bold flex flex-col items-center justify-center gap-1 shadow-md transition-colors"
         >
           <RefreshCw className="h-7 w-7" />
-          New Truck
+          {t('kiosk.newTruck')}
         </button>
       </div>
     </div>
@@ -1067,6 +1072,7 @@ function DoneScreen({ token, onNew }: { token: Token; onNew: () => void }) {
 // ──────────────────────────────────────────────────────────────────────────
 
 function SosModal({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
   // Pull admin contact numbers from app-settings if present — fall back to a generic prompt
   const [admins, setAdmins] = useState<{ name: string; phone: string }[]>([]);
 
@@ -1086,14 +1092,14 @@ function SosModal({ onClose }: { onClose: () => void }) {
           <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-red-100 mb-3">
             <PhoneCall className="h-8 w-8 text-red-600" />
           </div>
-          <div className="text-2xl font-black text-slate-900">Call Manager</div>
-          <div className="text-sm text-slate-500 mt-1">Tap a name to call.</div>
+          <div className="text-2xl font-black text-slate-900">{t('kiosk.callManager')}</div>
+          <div className="text-sm text-slate-500 mt-1">{t('kiosk.tapCallToTap')}</div>
         </div>
 
         <div className="space-y-2">
           {admins.length === 0 ? (
             <div className="text-center text-sm text-slate-500 py-4">
-              No manager contacts configured. Ask the admin to set them in Settings.
+              {t('kiosk.noManagerContacts')}
             </div>
           ) : (
             admins.map(a => (
@@ -1117,7 +1123,7 @@ function SosModal({ onClose }: { onClose: () => void }) {
           onClick={onClose}
           className="w-full h-14 rounded-xl border-2 border-slate-200 bg-white hover:bg-slate-50 font-bold text-slate-700"
         >
-          Cancel
+          {t('common.cancel')}
         </button>
       </div>
     </div>

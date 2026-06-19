@@ -13,6 +13,7 @@
  */
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard, Truck, FileText, ShoppingCart, Users,
   Box, Wrench, BarChart3,
@@ -57,35 +58,36 @@ interface SidebarProps {
   onMobileClose?: () => void;
 }
 
-type NavItem = { to: string; icon: React.ElementType; label: string };
+type NavItem = { to: string; icon: React.ElementType; labelKey: string };
 
 // ── Main nav (8 items) ─────────────────────────────────────────────────────
 const NAV_ITEMS: NavItem[] = [
-  { to: '/',                 icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/tokens-v1',        icon: Truck,           label: 'Trips' },
-  { to: '/sales',            icon: FileText,        label: 'Sales' },
-  { to: '/purchase-invoices', icon: ShoppingCart,   label: 'Purchases' },
+  { to: '/',                 icon: LayoutDashboard, labelKey: 'sidebar.dashboard' },
+  { to: '/tokens-v1',        icon: Truck,           labelKey: 'sidebar.trips' },
+  { to: '/sales',            icon: FileText,        labelKey: 'sidebar.sales' },
+  { to: '/purchase-invoices', icon: ShoppingCart,   labelKey: 'sidebar.purchases' },
   // Customers points to the Customer 360 picker. Parties master list is
   // reachable from there via the "Master list" link, or directly at /parties.
-  { to: '/customers',        icon: Users,           label: 'Customers' },
-  { to: '/materials',        icon: Box,             label: 'Materials' },
-  { to: '/operations',       icon: Wrench,          label: 'Operations' },
-  { to: '/reports',          icon: BarChart3,       label: 'Reports' },
+  { to: '/customers',        icon: Users,           labelKey: 'sidebar.customers' },
+  { to: '/materials',        icon: Box,             labelKey: 'sidebar.materials' },
+  { to: '/operations',       icon: Wrench,          labelKey: 'sidebar.operations' },
+  { to: '/reports',          icon: BarChart3,       labelKey: 'sidebar.reports' },
 ];
 
 // ── Admin items (gear dropdown) ────────────────────────────────────────────
 const ADMIN_ITEMS: NavItem[] = [
-  { to: '/settings',          icon: Settings,   label: 'Company Settings' },
-  { to: '/admin/branches',    icon: Building2,  label: 'Branches / Plants' },
-  { to: '/admin/users',       icon: UserCog,    label: 'Users' },
-  { to: '/admin/permissions', icon: Lock,       label: 'Role Permissions' },
-  { to: '/admin/wallpaper',   icon: ImageIcon,  label: 'Branding' },
-  { to: '/notifications',     icon: Bell,       label: 'Notifications' },
-  { to: '/backup',            icon: HardDrive,  label: 'Backup' },
-  { to: '/import',            icon: Upload,     label: 'Data Import' },
+  { to: '/settings',          icon: Settings,   labelKey: 'sidebar.companySettings' },
+  { to: '/admin/branches',    icon: Building2,  labelKey: 'sidebar.branches' },
+  { to: '/admin/users',       icon: UserCog,    labelKey: 'sidebar.users' },
+  { to: '/admin/permissions', icon: Lock,       labelKey: 'sidebar.rolePermissions' },
+  { to: '/admin/wallpaper',   icon: ImageIcon,  labelKey: 'sidebar.branding' },
+  { to: '/notifications',     icon: Bell,       labelKey: 'sidebar.notifications' },
+  { to: '/backup',            icon: HardDrive,  labelKey: 'sidebar.backup' },
+  { to: '/import',            icon: Upload,     labelKey: 'sidebar.dataImport' },
 ];
 
-function NavItemLink({ to, icon: Icon, label, end, onClick }: NavItem & { end?: boolean; onClick?: () => void }) {
+function NavItemLink({ to, icon: Icon, labelKey, end, onClick }: NavItem & { end?: boolean; onClick?: () => void }) {
+  const { t } = useTranslation();
   return (
     <NavLink
       to={to}
@@ -100,12 +102,13 @@ function NavItemLink({ to, icon: Icon, label, end, onClick }: NavItem & { end?: 
       }
     >
       <Icon className="h-4 w-4 shrink-0" />
-      <span className="truncate">{label}</span>
+      <span className="truncate">{t(labelKey)}</span>
     </NavLink>
   );
 }
 
 export default function Sidebar({ user, onLogout, usbAuthorized = false, permissions = ['*'], mobileOpen = false, onMobileClose }: SidebarProps) {
+  const { t } = useTranslation();
   const isAdmin = permissions.includes('*');
   const modules = getTenantModules();
   const isSaaS = sessionStorage.getItem('multi_tenant') === '1';
@@ -202,7 +205,7 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
                   <Usb className="h-4 w-4" />
                   <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
                 </span>
-                <span className="truncate">Supplement</span>
+                <span className="truncate">{t('sidebar.supplement')}</span>
               </NavLink>
             </li>
           )}
@@ -232,7 +235,7 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
             variant="ghost"
             size="icon"
             onClick={onLogout}
-            title="Logout"
+            title={t('sidebar.logout')}
             className="h-8 w-8 shrink-0 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >
             <LogOut className="h-4 w-4" />
@@ -246,7 +249,7 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
             className="absolute right-3 bottom-16 z-40 w-52 rounded-lg border border-sidebar-border bg-sidebar shadow-xl overflow-hidden"
           >
             <div className="px-3 py-2 border-b border-sidebar-border">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">Administration</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">{t('sidebar.administration')}</p>
             </div>
             <ul className="py-1 max-h-[60vh] overflow-y-auto">
               {visibleAdmin.map(item => {
@@ -258,7 +261,7 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground text-left"
                     >
                       <Icon className="h-4 w-4 shrink-0" />
-                      <span className="truncate">{item.label}</span>
+                      <span className="truncate">{t(item.labelKey)}</span>
                     </button>
                   </li>
                 );
