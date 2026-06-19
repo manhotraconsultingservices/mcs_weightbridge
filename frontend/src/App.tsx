@@ -14,6 +14,7 @@ import PartiesPage from '@/pages/PartiesPage';
 import CustomerProfilePage from '@/pages/CustomerProfilePage';
 import CustomerPickerPage from '@/pages/CustomerPickerPage';
 import OperatorKioskPage from '@/pages/OperatorKioskPage';
+import GatePassPage from '@/pages/GatePassPage';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import OwnerDashboardPage from '@/pages/OwnerDashboardPage';
 // Sprint 3 — hub pages that consolidate the old 28-item sidebar
@@ -90,6 +91,7 @@ function isTenantSubdomain(): boolean {
 // owner dashboard. Legacy chart-heavy dashboard still reachable at /dashboard-legacy.
 function HomeRedirect({ permissions, role }: { permissions: string[]; role?: string }) {
   if (role === 'operator') return <Navigate to="/operator" replace />;
+  if (role === 'gate_guard') return <Navigate to="/gate" replace />;
   if (permissions.includes('*') || permissions.includes('/')) return <OwnerDashboardPage />;
   const first = permissions[0];
   if (first) return <Navigate to={first} replace />;
@@ -207,6 +209,8 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/anpr/live" element={<AnprLivePage />} />
             <Route path="/anpr/review" element={<AnprReviewPage />} />
             <Route path="/anpr/trips" element={<AnprTripsPage />} />
+            {/* Gate management — guard registers every vehicle entry + exit */}
+            <Route path="/gate" element={<GatePassPage />} />
             {/* Administration — admin only (each page self-guards via role check) */}
             <Route path="/admin/users" element={<UserManagementPage />} />
             <Route path="/admin/permissions" element={<PermissionsPage />} />

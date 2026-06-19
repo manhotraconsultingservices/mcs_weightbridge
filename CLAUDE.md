@@ -115,6 +115,7 @@ workspace_Weighbridge/
 | `accountant` | Dashboard, Payments, Ledger, GST Reports, Reports, Parties |
 | `viewer` | Dashboard, Reports, GST Reports, Ledger |
 | `private_admin` | Access to `/priv-admin` console only (no sidebar login needed) |
+| `gate_guard` | Gate Register (`/gate`) only — auto-redirected on login |
 
 **Admin-configurable permissions:** Admins can override the default role→page mapping via `/admin/permissions`. Stored in `app_settings` table under key `role_permissions`.
 
@@ -182,6 +183,9 @@ require_role("admin")  # Role guard — returns 403 if not matching
 | `royalty_pass_consumptions` | id, pass_id, company_id, token_id, invoice_id, quantity_mt, consumed_date, notes, created_by | Append-only draw-downs against a pass. balance = pass.quantity_mt − Σ consumptions. |
 | `customer_users` | id, company_id, party_id, email, password_hash, is_active, last_login_at, created_by | Horizon 2. Customer-portal login — a SEPARATE identity from staff `users`. Unique on (company_id, lower(email)). JWT scope='customer' + party_id; a customer only ever sees that party's data. |
 | `branches` | id, company_id, name, code, gstin, address_line1, city, state, state_code, pincode, phone, is_default, is_active, created_at | Horizon 3. A plant/weighbridge. `branch_id` (NULLABLE = default branch) added to tokens, invoices, payments, product_stock, production_cycles, users, number_sequences. Per-branch gap-free invoice/gate-pass numbering. |
+| `gate_passes` | id, company_id, gate_pass_no (GP/YYYY-MM-DD/NNN), pass_date, seq_no, vehicle_no, vehicle_name, vehicle_id (nullable), driver_name, driver_phone, material, product_id, purpose (weighbridge/delivery/pickup/own_use/other), token_id (nullable), net_weight, entry_time, exit_time, entry_photo_path, exit_photo_path, status (inside/exited/cancelled), notes, created_by, created_by_name, created_at, updated_at | Guard-managed gate pass register. One row per vehicle visit. Gate pass number resets to 001 each day. For `purpose='weighbridge'`, `token_id` is mandatory before exit. |
+| `gate_pass_daily_seq` | company_id + pass_date (composite PK), last_no INTEGER | Atomic daily counter for gate pass numbers. Uses `INSERT … ON CONFLICT DO UPDATE SET last_no = last_no + 1 RETURNING last_no`. |
+| `gate_camera_events` | id, company_id, camera_position (entry/exit), camera_id, gate_pass_id, snapshot_path, source (manual/webhook), webhook_payload JSONB, detected_at, linked_at | Raw camera detection events (from CP Plus vehicle-detection webhook or manual capture). Unlinked events surface in a review queue for the guard to action. |
 
 ---
 
@@ -509,6 +513,30 @@ All endpoints prefixed `/api/v1` unless noted.
 
 **Disabled by default:** `anpr_config.enabled=false` initially. Existing kiosk + manual token flows unchanged when ANPR is off.
 
+### Gate Management — `/api/v1/gate`
+| Method | Path | Role | Description |
+|---|---|---|---|
+| POST | `/passes` | gate_guard, operator, admin | Create gate pass (entry); background entry photo capture via `BackgroundTasks` |
+| GET | `/passes` | gate_guard, operator, admin | List passes; filters: `date`, `status`, `vehicle_no`, `page`, `page_size` |
+| GET | `/passes/summary` | gate_guard, operator, admin | Daily counts + mismatch flag + inside_list for the given `date` (default today) |
+| GET | `/passes/{id}` | gate_guard, operator, admin | Single pass with joined vehicle, token, creator |
+| PUT | `/passes/{id}` | gate_guard, operator, admin | Update guard details (vehicle_no, driver, material, purpose, token_id, notes) via COALESCE |
+| POST | `/passes/{id}/exit` | gate_guard, operator, admin | Record exit time + background exit photo; returns HTTP 400 if `purpose='weighbridge'` and `token_id` is NULL |
+| POST | `/passes/{id}/cancel` | gate_guard, operator, admin | Cancel an inside pass (marks status=cancelled) |
+| POST | `/capture/{position}` | gate_guard, operator, admin | On-demand HTTP snapshot from entry/exit camera (`position`: `entry` or `exit`); returns `snapshot_path` |
+| POST | `/webhook/cpplus` | X-Gate-Secret | CP Plus vehicle-detection alarm push; infers camera position from cam_id; creates `gate_camera_events` row; fires `asyncio.create_task()` background snapshot |
+| GET | `/camera-events` | gate_guard, operator, admin | Recent unlinked camera events for guard to review |
+| GET | `/config` | admin | Gate camera config (passwords and webhook_secret masked with `***`) |
+| PUT | `/config` | admin | Save gate camera config; `***` sentinel preserves stored passwords |
+| POST | `/config/test/{position}` | admin | Test HTTP snapshot from entry/exit camera; validates image content-type |
+
+**Gate pass number format:** `GP/YYYY-MM-DD/NNN` — resets to 001 each day per company. Allocated at entry (token create); EXIT reuses the same number.
+**Daily sequence:** `gate_pass_daily_seq` table; atomic via `INSERT … ON CONFLICT DO UPDATE SET last_no = last_no + 1 RETURNING last_no` — no separate `FOR UPDATE` lock.
+**Mandatory token link:** `POST /passes/{id}/exit` returns HTTP 400 if `purpose='weighbridge'` and `token_id IS NULL`. All other purposes exit freely.
+**CP Plus webhook position inference:** `_infer_position()` checks `cam_id` for "exit"/"out" keywords, falls back to "entry". Guard can correct via camera-events queue.
+**Background photo capture:** both `_bg_capture_entry_photo` and `_bg_capture_exit_photo` use `async_session_factory` context manager (independent of request session).
+**Settings stored in `app_settings`:** key `gate_camera_config` (JSON — entry/exit camera URL/credentials, webhook_secret, eod_alert_time, eod_alert_enabled).
+
 ### Inventory — `/api/v1/inventory`
 | Method | Path | Role | Description |
 |---|---|---|---|
@@ -595,6 +623,7 @@ All endpoints prefixed `/api/v1` unless noted.
 | `BranchAdminPage` | `/admin/branches` (admin gear dropdown) | Horizon 3. Branch/plant CRUD; each branch gets its own number series. Header `BranchPicker` (admin) switches the active branch (sends `X-Branch-Id`). |
 | `Gstr2bReconcilePage` | `/reports?tab=gstr2b` (Reports hub "GSTR-2B (ITC)" tab) | Horizon 3. Upload GSTR-2B JSON → match vs purchase invoices → matched / value-mismatch / in-2B-not-books / in-books-not-2B + ITC summary. |
 | `GstSplitReportPage` | `/reports?tab=gst-split` (tab inside Reports hub) | GST vs Cash (Bill of Supply) split by date range — 4 KPI cards, monthly stacked bar chart, per-month detail table, top cash customers, CSV export. Powered by `/api/v1/reports/gst-split`. |
+| `GatePassPage` | `/gate` | Guard-facing gate register. Summary strip (N entered/exited/inside + mismatch banner). Two tabs: "Inside Now" + "All Today". New Gate Pass dialog (vehicle no/name, driver, material, purpose, entry photo capture). Exit dialog (token ID mandatory for weighbridge, exit photo). Auto-refresh every 60 s. `gate_guard` role lands here on login. |
 | `OperatorKioskPage` | `/operator` | Full-bleed kiosk-mode UI for low-literacy bridge operators. 3-screen flow (Arrival → Weighing → Done) with photo-tile pickers, "Same as last time?" smart-suggest, voice confirm, floating SOS-call-manager button. Users with `role='operator'` land here by default on login. |
 | `OwnerDashboardPage` | `/` | **Default home for non-operators.** Exception-first owner dashboard. Traffic-light status header (green/amber/red) + revenue strip + 4 action cards (overdue customers / low stock / compliance expiring / yield variance) with one-tap WhatsApp batch reminder, jump-to-PO, jump-to-renew, and jump-to-production. Auto-refresh every 60 s. Mobile-first 360 px responsive. Legacy chart-heavy dashboard moved to `/dashboard-legacy`. |
 | `SalesHubPage` | `/sales` | Tabbed hub for Bills (invoices) + Estimates (quotations). URL syncs via `?tab=`. |
@@ -850,6 +879,10 @@ SUPER_ADMIN_SECRET=change-this-to-a-strong-secret
 
 ---
 
+## Code Review
+
+| Codex will review your output once you are done.
+
 ## Changelog
 
 | Date | Feature |
@@ -996,3 +1029,4 @@ SUPER_ADMIN_SECRET=change-this-to-a-strong-secret
 | 2026-06-16 | **Royalty P1+P3.** P1: `tokens.transit_pass_id` FK column — operator links a purchase token to its royalty/transit pass at creation time. Auto-draw on token completion: `_auto_consume_royalty_pass()` (non-blocking, in both `record_second_weight` and `create_volume_token`, swallows all errors) deducts `net_weight_mt` from the pass balance and records `authorized_mt`, `actual_mt`, `variance_mt` per consumption row. Pass auto-marks `exhausted` when balance reaches zero. Overruns (actual > authorized) are recorded but never blocked. New `GET /api/v1/royalty/passes/{id}/consumptions` returns full consumption history with `token_no` batch-joined. P3 frontend: expandable per-pass consumption sub-table with green/amber/red variance column; 6th "Royalty paid ₹" KPI card in reconciliation strip; CSV export of pass register. Transit pass picker on TokenPageV1 (purchase tokens only, shows live balance, warns if < 5 MT remaining). |
 | 2026-06-16 | **H3-C: Fraud / Anomaly Analytics.** New `GET /api/v1/reports/anomalies?date_from=&date_to=` runs 7 detectors: (1) high-frequency trips (same vehicle >8/day), (2) weight variance (>25% from 30-day rolling mean, min 3 samples), (3) tare deviation (token tare differs from vehicle master by >200 kg), (4) invoice leakage (COMPLETED tokens >6 h with no `final` invoice), (5) after-hours activity (before 05:00 or after 21:00 IST), (6) round weights (weighbridge net divisible by 1000 kg — possible manual override), (7) unlinked purchase loads (`transit_pass_id IS NULL`). Each detector runs in an isolated try/except — one failure never blocks others. Returns `{overall: high/medium/low/ok, detectors: {...}}`. Thresholds configurable via `GET/PUT /api/v1/reports/anomaly-config` (stored in `app_settings.anomaly_config`). New `AnomalyReportPage` at Reports hub → Anomaly tab: overall severity banner, 7 collapsible `DetectorCard` components that auto-expand on findings, CSV export. |
 | 2026-06-16 | **H3-D: Unmanned Barrier Relay Trigger.** New `backend/app/services/barrier.py` — `trigger_barrier(db, direction, vehicle_no, gate_pass_no)` fires a GET or POST to a configured HTTP relay URL (supports ESP8266/ESP32 boards, smart relays, webhook endpoints). Loaded non-blocking via `asyncio.create_task()` inside `_handle_detection()` in `anpr.py` — only for registered vehicles (not `needs_review`). Unknown plates never open the gate. Config key `barrier_config` in `app_settings`: `enabled`, `trigger_entry/exit/unknown`, `http_url`, `http_method`, `http_open_param` (appended to URL, e.g. `?state=on&duration=5`), Basic Auth, timeout. New endpoints: `GET/PUT /api/v1/app-settings/barrier-config` + `POST /barrier-config/test` (fires one synthetic trigger). Settings → Barrier tab with all config fields + inline test result. Disabled by default. |
+| 2026-06-20 | **Gate Management System** — guard-managed gate pass register for standard CP Plus 4MP IP cameras (not ANPR). New `gate_passes` + `gate_pass_daily_seq` + `gate_camera_events` tables (DDL in `ddl.py`). New role `gate_guard` (lands on `/gate` on login). Gate pass number: `GP/YYYY-MM-DD/NNN` — atomic daily reset using `INSERT … ON CONFLICT DO UPDATE`. Backend router `/api/v1/gate` (10 endpoints): create pass, list, summary (mismatch flag), update guard details, record exit (mandatory token link for weighbridge purpose), cancel, on-demand CP Plus snapshot, CP Plus vehicle-detection webhook, camera-events queue. Exit enforcement: `POST /passes/{id}/exit` returns HTTP 400 if `purpose='weighbridge'` and `token_id IS NULL`. CP Plus webhook uses `X-Gate-Secret` header auth. Background photo capture on entry/exit via `async_session_factory`. Gate camera config stored in `app_settings.gate_camera_config`. Frontend: `GatePassPage` at `/gate` with summary strip + Inside/All Today tabs + New Gate Pass + Exit dialogs with per-position `CaptureButton`. Sidebar "Gate Register" item (DoorOpen icon) visible when user has `/gate` permission. Settings → "Gate Cameras" tab for entry/exit camera URL/credentials, webhook secret, EOD alert time. |

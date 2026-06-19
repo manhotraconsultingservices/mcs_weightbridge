@@ -2600,6 +2600,176 @@ function PrintSettingsTab() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Gate Camera Settings — CP Plus entry/exit cameras + webhook secret + EOD alert
+// ──────────────────────────────────────────────────────────────────────────────
+
+interface GateCamSlot {
+  enabled: boolean;
+  label: string;
+  snapshot_url: string;
+  username: string;
+  password: string;
+}
+interface GateCameraCfg {
+  entry: GateCamSlot;
+  exit: GateCamSlot;
+  webhook_secret: string;
+  eod_alert_time: string;
+  eod_alert_enabled: boolean;
+}
+const GATE_CAM_DEFAULT: GateCameraCfg = {
+  entry: { enabled: false, label: 'Entry Gate Camera', snapshot_url: '', username: 'admin', password: '' },
+  exit:  { enabled: false, label: 'Exit Gate Camera',  snapshot_url: '', username: 'admin', password: '' },
+  webhook_secret: '',
+  eod_alert_time: '20:00',
+  eod_alert_enabled: true,
+};
+
+function GateCameraSlotEditor({
+  pos, slot, onChange,
+}: { pos: 'entry' | 'exit'; slot: GateCamSlot; onChange: (s: GateCamSlot) => void }) {
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  async function testSnap() {
+    setTesting(true); setTestResult(null);
+    try {
+      await api.post(`/api/v1/app-settings/gate-camera-config/test/${pos}`);
+      setTestResult({ ok: true, msg: 'Snapshot captured successfully.' });
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Test failed';
+      setTestResult({ ok: false, msg });
+    } finally { setTesting(false); }
+  }
+
+  const label = pos === 'entry' ? 'Entry Camera' : 'Exit Camera';
+  return (
+    <div className="space-y-3 rounded-lg border p-4">
+      <div className="flex items-center justify-between">
+        <h4 className="font-medium text-sm">{label}</h4>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={slot.enabled}
+            onChange={e => onChange({ ...slot, enabled: e.target.checked })} />
+          Enabled
+        </label>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2">
+          <label className="text-xs text-muted-foreground">Snapshot URL</label>
+          <input className="w-full mt-0.5 rounded border px-2 py-1 text-sm font-mono"
+            value={slot.snapshot_url}
+            placeholder="http://192.168.1.64/ISAPI/Streaming/channels/1/picture"
+            onChange={e => onChange({ ...slot, snapshot_url: e.target.value })} />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Username</label>
+          <input className="w-full mt-0.5 rounded border px-2 py-1 text-sm"
+            value={slot.username} onChange={e => onChange({ ...slot, username: e.target.value })} />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Password</label>
+          <input type="password" className="w-full mt-0.5 rounded border px-2 py-1 text-sm"
+            value={slot.password} onChange={e => onChange({ ...slot, password: e.target.value })}
+            placeholder="(unchanged)" />
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="outline" onClick={testSnap} disabled={testing || !slot.snapshot_url}>
+          {testing ? 'Testing…' : 'Test Snapshot'}
+        </Button>
+        {testResult && (
+          <span className={`text-xs ${testResult.ok ? 'text-green-600' : 'text-red-600'}`}>
+            {testResult.msg}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GateCameraSettingsTab() {
+  const [cfg, setCfg] = useState<GateCameraCfg>(GATE_CAM_DEFAULT);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    api.get<GateCameraCfg>('/api/v1/app-settings/gate-camera-config')
+      .then(r => setCfg(r.data))
+      .catch(() => { /* leave defaults */ })
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function save() {
+    setSaving(true); setMsg(null);
+    try {
+      const { data } = await api.put<GateCameraCfg>('/api/v1/app-settings/gate-camera-config', cfg);
+      setCfg(data);
+      setMsg({ kind: 'ok', text: 'Gate camera settings saved.' });
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Save failed';
+      setMsg({ kind: 'err', text: detail });
+    } finally { setSaving(false); }
+  }
+
+  if (loading) return <div className="text-sm text-muted-foreground p-4">Loading…</div>;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <GateCameraSlotEditor pos="entry" slot={cfg.entry}
+          onChange={s => setCfg(c => ({ ...c, entry: s }))} />
+        <GateCameraSlotEditor pos="exit" slot={cfg.exit}
+          onChange={s => setCfg(c => ({ ...c, exit: s }))} />
+      </div>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">CP Plus Webhook (Vehicle Detection)</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Configure the camera to send an HTTP POST to{' '}
+            <code className="bg-muted px-1 rounded">POST /api/v1/gate/webhook/cpplus</code>{' '}
+            when it detects a vehicle. Set the header{' '}
+            <code className="bg-muted px-1 rounded">X-Gate-Secret</code> on the camera to match the secret below.
+          </p>
+          <div>
+            <label className="text-xs text-muted-foreground">Webhook Secret</label>
+            <input className="w-full mt-0.5 rounded border px-2 py-1 text-sm font-mono"
+              value={cfg.webhook_secret}
+              onChange={e => setCfg(c => ({ ...c, webhook_secret: e.target.value }))}
+              placeholder="Leave blank to disable webhook auth" />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">End-of-Day Mismatch Alert</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={cfg.eod_alert_enabled}
+              onChange={e => setCfg(c => ({ ...c, eod_alert_enabled: e.target.checked }))} />
+            Send Telegram alert if trucks entered but not exited
+          </label>
+          <div className="flex items-center gap-3">
+            <label className="text-xs text-muted-foreground w-28">Alert Time</label>
+            <input type="time" className="rounded border px-2 py-1 text-sm"
+              value={cfg.eod_alert_time}
+              onChange={e => setCfg(c => ({ ...c, eod_alert_time: e.target.value }))} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {msg && (
+        <p className={`text-sm ${msg.kind === 'ok' ? 'text-green-600' : 'text-red-600'}`}>{msg.text}</p>
+      )}
+      <Button onClick={save} disabled={saving}>
+        {saving ? 'Saving…' : 'Save Gate Camera Settings'}
+      </Button>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Barrier Relay Settings (H3-D) — unmanned gate-barrier trigger
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -2632,6 +2802,113 @@ const BARRIER_DEFAULT: BarrierCfg = {
   open_duration_sec: 5,
   timeout_sec: 3,
 };
+
+function VolumeUnitSettingsTab() {
+  const [unit, setUnit] = useState<'m3' | 'cft'>('m3');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    api.get<{ volume_unit: string }>('/api/v1/app-settings/volume-unit')
+      .then(r => {
+        const v = r.data?.volume_unit;
+        if (v === 'm3' || v === 'cft') setUnit(v);
+      })
+      .catch(() => { /* leave default m3 */ })
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      await api.put('/api/v1/app-settings/volume-unit', { volume_unit: unit });
+      setMsg({ kind: 'ok', text: 'Volume unit saved. Reload the Token page to see the change.' });
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setMsg({ kind: 'err', text: typeof detail === 'string' ? detail : 'Failed to save' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="pt-6 flex items-center justify-center text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Volume &amp; Measurement Units</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <p className="text-sm text-muted-foreground">
+          Choose the unit your operators see and enter volumes in. Internally the system always stores
+          cubic metres (m³) — this setting only changes the display and entry unit on the Token and
+          Kiosk screens. Weights are always in metric tonnes (MT).
+        </p>
+
+        <div className="space-y-3">
+          <p className="text-sm font-medium">Volume display unit</p>
+
+          <label className="flex items-center gap-3 cursor-pointer p-3 rounded-md border hover:bg-muted/50">
+            <input
+              type="radio"
+              name="volume_unit"
+              value="m3"
+              checked={unit === 'm3'}
+              onChange={() => setUnit('m3')}
+              className="h-4 w-4"
+            />
+            <div>
+              <p className="text-sm font-medium">Cubic Metres (m³) <span className="text-muted-foreground font-normal">— SI unit, default</span></p>
+              <p className="text-xs text-muted-foreground">Volumes entered and shown as m³. Bulk density set as kg/m³.</p>
+            </div>
+          </label>
+
+          <label className="flex items-center gap-3 cursor-pointer p-3 rounded-md border hover:bg-muted/50">
+            <input
+              type="radio"
+              name="volume_unit"
+              value="cft"
+              checked={unit === 'cft'}
+              onChange={() => setUnit('cft')}
+              className="h-4 w-4"
+            />
+            <div>
+              <p className="text-sm font-medium">Cubic Feet (CFT) <span className="text-muted-foreground font-normal">— traditional Indian unit</span></p>
+              <p className="text-xs text-muted-foreground">Operators enter volumes in CFT; the system converts to m³ before saving. Bulk density shown as kg/CFT.</p>
+            </div>
+          </label>
+        </div>
+
+        <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+          <p><strong>Conversion:</strong> 1 m³ = 35.3147 CFT</p>
+          <p><strong>Typical bulk densities:</strong> Aggregate 1,500 kg/m³ (42.5 kg/CFT) · Sand 1,700 kg/m³ (48.2 kg/CFT) · GSB 1,900 kg/m³ (53.8 kg/CFT) · Stone dust 1,550 kg/m³ (43.9 kg/CFT)</p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button onClick={save} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Save className="mr-2 h-4 w-4" /> Save Unit Preference
+          </Button>
+          {msg && (
+            <p className={`text-sm ${msg.kind === 'ok' ? 'text-green-600' : 'text-destructive'}`}>
+              {msg.text}
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function BarrierSettingsTab() {
   const [cfg, setCfg] = useState<BarrierCfg>(BARRIER_DEFAULT);
@@ -2958,6 +3235,8 @@ export default function SettingsPage() {
               <Truck className="h-3.5 w-3.5" />Barrier
             </TabsTrigger>
           )}
+          <TabsTrigger value="units">Units</TabsTrigger>
+          <TabsTrigger value="gate-cameras">Gate Cameras</TabsTrigger>
           <TabsTrigger value="print">Print</TabsTrigger>
         </TabsList>
 
@@ -3114,6 +3393,16 @@ export default function SettingsPage() {
           <BarrierSettingsTab />
         </TabsContent>
 
+        {/* Volume Unit settings */}
+        <TabsContent value="units" className="mt-4">
+          <VolumeUnitSettingsTab />
+        </TabsContent>
+
+        {/* Gate Cameras config */}
+        <TabsContent value="gate-cameras" className="mt-4">
+          <GateCameraSettingsTab />
+        </TabsContent>
+
         {/* Print Settings */}
         <TabsContent value="print" className="mt-4">
           <PrintSettingsTab />
@@ -3121,7 +3410,7 @@ export default function SettingsPage() {
       </Tabs>
 
       {/* Save button (not on FY, USB Guard, Scale, Tally, Weighbridge, Notifications, or Print tabs) */}
-      {tab !== 'fy' && tab !== 'usb' && tab !== 'scale' && tab !== 'tally' && tab !== 'weighbridge' && tab !== 'notifications' && tab !== 'cameras' && tab !== 'einvoice' && tab !== 'eway' && tab !== 'upi' && tab !== 'anpr' && tab !== 'barrier' && tab !== 'print' && (
+      {tab !== 'fy' && tab !== 'usb' && tab !== 'scale' && tab !== 'tally' && tab !== 'weighbridge' && tab !== 'notifications' && tab !== 'cameras' && tab !== 'einvoice' && tab !== 'eway' && tab !== 'upi' && tab !== 'anpr' && tab !== 'barrier' && tab !== 'units' && tab !== 'gate-cameras' && tab !== 'print' && (
         <div className="flex items-center gap-3">
           <Button onClick={saveCompany} disabled={saving}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

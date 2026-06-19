@@ -84,7 +84,7 @@ export interface Product {
   unit: string;
   default_rate: number;
   gst_rate: number;
-  bulk_density: number | null;   // kg/CFT — enables volume → weight conversion in tokens
+  bulk_density: number | null;   // kg/m³ — enables volume → weight conversion in tokens
   is_raw_material: boolean;       // marks raw inputs to production (e.g., raw boulder)
   description: string | null;
   is_active: boolean;
@@ -147,7 +147,7 @@ export interface TokenProduct {
   id: string;
   name: string;
   unit: string;
-  bulk_density: number | null;   // kg/CFT — enables MT ↔ CFT conversion in UI
+  bulk_density: number | null;   // kg/m³ — enables MT ↔ volume conversion in UI
 }
 
 export interface TokenVehicle {
@@ -202,7 +202,7 @@ export interface Token {
   is_manual_weight: boolean;
   is_supplement: boolean;
   weight_method: 'weighbridge' | 'volume';   // measurement method
-  volume_cft: number | null;                  // cubic feet — populated only when weight_method === 'volume'
+  volume_m3: number | null;                   // cubic metres — populated only when weight_method === 'volume'
   gate_pass: string | null;                   // legacy free-text gate-pass note
   gate_pass_no: string | null;                // auto-allocated GP/25-26/0001
   source: 'manual' | 'anpr' | 'kiosk' | string;
@@ -775,5 +775,61 @@ export interface AnprTripListResponse {
   total_tonnage_mt: number;
   total_revenue: number;
   avg_dwell_minutes: number;
+}
+
+// ── Gate Management ───────────────────────────────────────────────────────────
+
+export type GatePassStatus = 'inside' | 'exited' | 'cancelled';
+export type GatePassPurpose = 'weighbridge' | 'delivery' | 'pickup' | 'own_use' | 'other';
+
+export interface GatePass {
+  id: string;
+  gate_pass_no: string;
+  pass_date: string;
+  seq_no: number;
+  vehicle_no: string | null;
+  vehicle_name: string | null;
+  vehicle_id: string | null;
+  driver_name: string | null;
+  driver_phone: string | null;
+  material: string | null;
+  product_id: string | null;
+  purpose: GatePassPurpose;
+  token_id: string | null;
+  token_no: string | null;
+  net_weight: number | null;
+  entry_time: string;
+  exit_time: string | null;
+  entry_photo_path: string | null;
+  exit_photo_path: string | null;
+  status: GatePassStatus;
+  notes: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GatePassSummary {
+  date: string;
+  total_entered: number;
+  total_exited: number;
+  currently_inside: number;
+  cancelled: number;
+  unlinked_weighbridge: number;
+  mismatch: boolean;
+  inside_list: GatePass[];
+}
+
+export interface GateCameraEvent {
+  id: string;
+  company_id: string;
+  camera_position: 'entry' | 'exit';
+  camera_id: string | null;
+  gate_pass_id: string | null;
+  snapshot_path: string | null;
+  source: 'manual' | 'webhook';
+  detected_at: string;
+  linked_at: string | null;
 }
 

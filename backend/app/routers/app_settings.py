@@ -676,3 +676,126 @@ async def test_barrier_config(
         return {"ok": True, "message": "Test trigger sent — check your relay device"}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+# ── Volume Unit Setting ────────────────────────────────────────────────────────
+# Per-tenant preference: "m3" (SI default, stored canonical unit) or "cft"
+# (cubic feet — traditional unit in Indian stone-crusher trade).
+# When "cft" is selected, the frontend converts CFT→m³ before API calls
+# and converts m³→CFT for display. The DB always stores m³.
+
+VOLUME_UNIT_KEY = "volume_unit"
+
+
+@router.get("/volume-unit")
+async def get_volume_unit(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Return current volume display unit preference (m3 | cft)."""
+    val = await _get_raw(db, VOLUME_UNIT_KEY)
+    return {"volume_unit": val or "m3"}
+
+
+@router.put("/volume-unit")
+async def update_volume_unit(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Save volume display unit preference. Only 'm3' or 'cft' are valid."""
+    unit = payload.get("volume_unit", "m3")
+    if unit not in ("m3", "cft"):
+        from fastapi import HTTPException as _HTTPException
+        raise _HTTPException(400, "volume_unit must be 'm3' or 'cft'")
+    await _upsert(db, VOLUME_UNIT_KEY, unit)
+    return {"volume_unit": unit}
+
+
+# ── Gate Camera Config ─────────────────────────────────────────────────────────
+
+GATE_CAM_CFG_KEY = "gate_camera_config"
+
+_GATE_CAM_DEFAULT: dict = {
+    "entry": {"enabled": False, "label": "Entry Gate Camera", "snapshot_url": "", "username": "admin", "password": ""},
+    "exit":  {"enabled": False, "label": "Exit Gate Camera",  "snapshot_url": "", "username": "admin", "password": ""},
+    "webhook_secret": "",
+    "eod_alert_time": "20:00",
+    "eod_alert_enabled": True,
+}
+
+
+def _mask_gate_cam(cfg: dict) -> dict:
+    import copy
+    out = copy.deepcopy(cfg)
+    for pos in ("entry", "exit"):
+        if out.get(pos, {}).get("password"):
+            out[pos]["password"] = "***"
+    if out.get("webhook_secret"):
+        out["webhook_secret"] = "***"
+    return out
+
+
+@router.get("/gate-camera-config")
+async def get_gate_camera_config(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    raw = await _get_raw(db, GATE_CAM_CFG_KEY)
+    cfg = json.loads(raw) if raw else _GATE_CAM_DEFAULT
+    return _mask_gate_cam(cfg)
+
+
+@router.put("/gate-camera-config")
+async def update_gate_camera_config(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    raw = await _get_raw(db, GATE_CAM_CFG_KEY)
+    stored = json.loads(raw) if raw else _GATE_CAM_DEFAULT
+    merged: dict = {**_GATE_CAM_DEFAULT, **stored}
+    for pos in ("entry", "exit"):
+        if pos in payload:
+            incoming = dict(payload[pos])
+            existing = merged.get(pos, {})
+            if incoming.get("password") == "***":
+                incoming["password"] = existing.get("password", "")
+            merged[pos] = {**existing, **incoming}
+    if "webhook_secret" in payload and payload["webhook_secret"] != "***":
+        merged["webhook_secret"] = payload["webhook_secret"]
+    for k in ("eod_alert_time", "eod_alert_enabled"):
+        if k in payload:
+            merged[k] = payload[k]
+    await _upsert(db, GATE_CAM_CFG_KEY, json.dumps(merged))
+    return _mask_gate_cam(merged)
+
+
+@router.post("/gate-camera-config/test/{position}")
+async def test_gate_camera(
+    position: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Capture a test snapshot from the entry or exit gate camera."""
+    if position not in ("entry", "exit"):
+        raise HTTPException(400, "position must be 'entry' or 'exit'")
+    raw = await _get_raw(db, GATE_CAM_CFG_KEY)
+    cfg = json.loads(raw) if raw else {}
+    cam = cfg.get(position, {})
+    if not cam.get("snapshot_url"):
+        raise HTTPException(400, f"{position} camera URL is not configured")
+    import httpx as _httpx
+    url = cam["snapshot_url"]
+    username = cam.get("username", "")
+    password = cam.get("password", "")
+    auth = (username, password) if username else None
+    try:
+        async with _httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(url, auth=auth)
+            resp.raise_for_status()
+            if "image" not in resp.headers.get("content-type", ""):
+                return {"ok": False, "error": "Camera returned non-image content. Check URL."}
+            return {"ok": True, "message": f"{position.title()} camera responded ({len(resp.content)} bytes)", "size": len(resp.content)}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}

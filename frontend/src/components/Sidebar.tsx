@@ -16,7 +16,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard, Truck, FileText, ShoppingCart, Users,
-  Box, Wrench, BarChart3,
+  Box, Wrench, BarChart3, DoorOpen,
   LogOut, Usb, Settings,
   Bell, HardDrive, Upload, UserCog, Lock, ImageIcon, Building2,
 } from 'lucide-react';
@@ -60,10 +60,11 @@ interface SidebarProps {
 
 type NavItem = { to: string; icon: React.ElementType; labelKey: string };
 
-// ── Main nav (8 items) ─────────────────────────────────────────────────────
+// ── Main nav (8 items + Gate Register) ────────────────────────────────────
 const NAV_ITEMS: NavItem[] = [
   { to: '/',                 icon: LayoutDashboard, labelKey: 'sidebar.dashboard' },
   { to: '/tokens-v1',        icon: Truck,           labelKey: 'sidebar.trips' },
+  { to: '/gate',             icon: DoorOpen,        labelKey: 'sidebar.gateRegister' },
   { to: '/sales',            icon: FileText,        labelKey: 'sidebar.sales' },
   { to: '/purchase-invoices', icon: ShoppingCart,   labelKey: 'sidebar.purchases' },
   // Customers points to the Customer 360 picker. Parties master list is

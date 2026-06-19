@@ -485,6 +485,56 @@ def get_column_migrations() -> list[str]:
         # Tyre count — used by the operator kiosk + printed slips. Stored
         # for ALL tokens (volume + weighbridge) so the slip shows truck class.
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS tyre_count SMALLINT",
+        # ── ONE-SHOT unit migration: CFT → m³  +  kg/CFT → kg/m³ ─────────────
+        # Reverses the earlier units_migrated_to_cft_v1 migration:
+        # canonical volume is now m³ (industry-standard SI); a per-tenant
+        # display setting (volume_unit: "m3"|"cft") handles field-level UX.
+        # Conversion factors:
+        #   1 CFT  = 1 / 35.3147 m³  (exact: ÷35.3147)
+        #   kg/CFT × 35.3147 = kg/m³  (e.g. 42.5 kg/CFT → 1500.9 kg/m³)
+        # Sanity: 10 m³ × 1500 kg/m³ = 15,000 kg
+        #         353.147 CFT × 42.475 kg/CFT ≈ 15,000 kg ✓
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM app_settings WHERE key = 'units_migrated_to_m3_v2'
+            ) THEN
+                -- Step 1: add volume_m3 column if not present
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='tokens' AND column_name='volume_m3'
+                ) THEN
+                    ALTER TABLE tokens ADD COLUMN volume_m3 NUMERIC(10,4);
+                END IF;
+
+                -- Step 2: copy volume_cft → volume_m3  (CFT ÷ 35.3147)
+                UPDATE tokens
+                SET volume_m3 = ROUND((volume_cft / 35.3147)::NUMERIC, 4)
+                WHERE volume_cft IS NOT NULL AND volume_m3 IS NULL;
+
+                -- Step 3: drop volume_cft (only if volume_m3 exists now)
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='tokens' AND column_name='volume_cft'
+                ) THEN
+                    ALTER TABLE tokens DROP COLUMN volume_cft;
+                END IF;
+
+                -- Step 4: products.bulk_density  kg/CFT → kg/m³  (× 35.3147)
+                -- Existing densities are in kg/CFT after the v1 migration.
+                -- kg/m³ = kg/CFT × 35.3147
+                UPDATE products
+                SET bulk_density = ROUND((bulk_density * 35.3147)::NUMERIC, 2)
+                WHERE bulk_density IS NOT NULL;
+
+                -- Mark complete.
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES ('units_migrated_to_m3_v2', 'true', NOW())
+                ON CONFLICT (key) DO NOTHING;
+            END IF;
+        END $$
+        """,
         # ── Finished-goods inventory on products ──────────────────────────────
         # One stock row per product. Auto-decremented on sale finalise,
         # auto-incremented on purchase finalise + production cycle output.
@@ -782,6 +832,75 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE number_sequences   ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id)",
         "CREATE INDEX IF NOT EXISTS ix_tokens_branch ON tokens(branch_id)",
         "CREATE INDEX IF NOT EXISTS ix_invoices_branch ON invoices(branch_id)",
+
+        # ── Gate Management (CP Plus camera + guard-managed gate passes) ───────
+        # Completely separate from ANPR.  Guard-managed: guard fills vehicle/driver/
+        # material; cameras capture entry + exit photos on manual trigger or CP Plus
+        # vehicle-detection webhook.  Token link is mandatory for weighbridge purpose.
+        """
+        CREATE TABLE IF NOT EXISTS gate_passes (
+            id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id          UUID REFERENCES companies(id),
+            gate_pass_no        VARCHAR(30)  NOT NULL,  -- GP/2025-06-19/001
+            pass_date           DATE         NOT NULL,
+            seq_no              INTEGER      NOT NULL,
+            vehicle_no          VARCHAR(30),
+            vehicle_name        VARCHAR(100),
+            vehicle_id          UUID REFERENCES vehicles(id),
+            driver_name         VARCHAR(100),
+            driver_phone        VARCHAR(15),
+            driver_id           UUID REFERENCES drivers(id),
+            material            VARCHAR(200),
+            product_id          UUID REFERENCES products(id),
+            purpose             VARCHAR(20)  NOT NULL DEFAULT 'weighbridge',
+            token_id            UUID REFERENCES tokens(id),
+            entry_time          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+            exit_time           TIMESTAMPTZ,
+            entry_photo_path    TEXT,
+            exit_photo_path     TEXT,
+            status              VARCHAR(15)  NOT NULL DEFAULT 'inside',
+            notes               TEXT,
+            created_by          UUID REFERENCES users(id),
+            updated_by          UUID REFERENCES users(id),
+            created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+            updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_gate_passes_company_date ON gate_passes(company_id, pass_date DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_gate_passes_vehicle ON gate_passes(company_id, vehicle_no, pass_date DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_gate_passes_token ON gate_passes(token_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_gate_passes_no ON gate_passes(company_id, gate_pass_no)",
+        "CREATE INDEX IF NOT EXISTS ix_gate_passes_status ON gate_passes(company_id, status, pass_date DESC)",
+
+        # Daily sequence counter — one row per (company, date); INSERT … ON CONFLICT
+        # DO UPDATE is atomic so no separate FOR UPDATE lock needed.
+        """
+        CREATE TABLE IF NOT EXISTS gate_pass_daily_seq (
+            company_id  UUID  NOT NULL REFERENCES companies(id),
+            pass_date   DATE  NOT NULL,
+            last_no     INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (company_id, pass_date)
+        )
+        """,
+
+        # Append-only log of every camera event (webhook or manual trigger).
+        # Guard links an event to a gate_pass after the fact for audit purposes.
+        """
+        CREATE TABLE IF NOT EXISTS gate_camera_events (
+            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id      UUID REFERENCES companies(id),
+            camera_position VARCHAR(10)  NOT NULL,  -- 'entry' | 'exit'
+            camera_id       VARCHAR(50),
+            gate_pass_id    UUID REFERENCES gate_passes(id),
+            snapshot_path   TEXT,
+            source          VARCHAR(20)  NOT NULL DEFAULT 'manual',  -- manual | webhook
+            webhook_payload JSONB,
+            detected_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+            linked_at       TIMESTAMPTZ
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_gate_cam_events_company ON gate_camera_events(company_id, detected_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_gate_cam_events_pass ON gate_camera_events(gate_pass_id)",
     ]
 
 
