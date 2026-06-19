@@ -407,6 +407,8 @@ async def create_token(
     # (the number maps to a real gate-arrival event and is not reclaimed) — see
     # services/numbering.next_gate_pass_no docstring.
     gate_pass_no = await next_gate_pass_no(db, company.id, fy.id, branch_id=branch_id)
+    if not gate_pass_no:
+        raise HTTPException(status_code=500, detail="Failed to generate gate pass number. Token not created.")
 
     token = Token(
         company_id=company.id,
@@ -927,7 +929,17 @@ async def print_token(
     from app.routers.app_settings import VOLUME_UNIT_KEY, _get_raw
     token = await _load_token(db, token_id)
     company, _ = await _get_company_and_fy(db)
-    volume_unit = (await _get_raw(db, VOLUME_UNIT_KEY)) or "m3"
+    volume_unit = (await _get_raw(db, VOLUME_UNIT_KEY)) or "cft"
+    rate = await _fetch_rate(db, token.party_id, token.product_id)
+    amount: float | None = None
+    if token.net_weight and rate:
+        amount = float(rate) * float(token.net_weight) / 1000  # net_weight in kg → MT
     template = "token_thermal.html" if format == "thermal" else "token_a4.html"
-    html = render_html(template, {"token": token, "company": company, "volume_unit": volume_unit})
+    html = render_html(template, {
+        "token": token,
+        "company": company,
+        "volume_unit": volume_unit,
+        "rate": float(rate),
+        "amount": amount,
+    })
     return HTMLResponse(content=html)

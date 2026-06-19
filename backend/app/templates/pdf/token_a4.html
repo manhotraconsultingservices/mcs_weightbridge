@@ -63,8 +63,8 @@
 {% macro format_date(dt) %}{% if dt %}{{ dt.strftime('%d-%b-%Y') }}{% endif %}{% endmacro %}
 {# Weight in MT (3 decimals) — universal display for gross/tare/net #}
 {% macro format_wt_mt(w) %}{% if w %}{{ '%.3f' % (w|float / 1000) }} MT{% else %}—{% endif %}{% endmacro %}
-{# Net weight with MT and CFT side by side.
-   bulk_density is in kg/CFT, so CFT = kg ÷ kg_per_cft. #}
+{# Net weight with MT. For volume tokens, also show volume equivalent.
+   bulk_density is in kg/m³. vol_display unit depends on volume_unit setting. #}
 {% macro format_wt_dual(w, bulk_density) %}
   {% if w %}
     {{ '%.3f' % (w|float / 1000) }} MT
@@ -74,8 +74,10 @@
   {% else %}—{% endif %}
 {% endmacro %}
 
-{# Volume in CFT (cubic feet) — canonical unit. #}
-{% macro vol_fmt(cft) %}{% if cft %}{{ '%.2f' % (cft|float) }} CFT{% else %}—{% endif %}{% endmacro %}
+{# Volume display: volume_cft is stored directly in CFT (canonical unit). #}
+{% macro vol_fmt(cft) %}
+  {% if cft %}{{ '%.2f' % (cft|float) }} CFT{% else %}—{% endif %}
+{% endmacro %}
 
 {# Slip-type label: "Volume Slip" or "Weight Slip" based on token.weight_method #}
 {% macro slip_title(token) %}
@@ -126,7 +128,9 @@
   <div class="row">
     <span class="lbl">ITEM:</span>
     <span class="val">{{ token.product.name if token.product else '—' }}
-      {%- if token.product and token.product.bulk_density %} · {{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT{% endif %}
+      {%- if token.product and token.product.bulk_density %}
+        · {{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT
+      {%- endif %}
     </span>
   </div>
 
@@ -156,12 +160,12 @@
       </div>
       <div class="vol-eq">
         {% if token.volume_cft and token.product and token.product.bulk_density %}
-          {{ '%.2f' % (token.volume_cft|float) }} CFT  ×  {{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT  =  {{ '%.3f' % ((token.volume_cft|float * token.product.bulk_density|float) / 1000) }} MT
+          {{ vol_fmt(token.volume_cft) }}  ×  {{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT  =  {{ '%.3f' % ((token.volume_cft|float * token.product.bulk_density|float) / 1000) }} MT
         {% endif %}
       </div>
       <div class="vol-net">
         <div class="lbl">{{ bl('net_weight') }}</div>
-        <div class="val">{{ format_wt_dual(token.net_weight, token.product.bulk_density if token.product else none) }}</div>
+        <div class="val">{{ format_wt_mt(token.net_weight) }}</div>
         <div class="sub">Recorded on {{ format_dt(token.completed_at) }}</div>
       </div>
     </div>
@@ -195,6 +199,16 @@
         </tr>
       </tbody>
     </table>
+  {% endif %}
+
+  {% if rate is defined and rate and rate > 0 %}
+  <div class="sep"></div>
+  <div class="row-split">
+    <div class="left"><span class="lbl">{{ bl('rate') }}:</span>&nbsp;<span>₹{{ '%.2f' % rate }}/MT</span></div>
+    {% if amount is defined and amount %}
+    <div class="right"><span class="lbl">{{ bl('amount') }}:</span>&nbsp;<span style="font-weight:bold;">₹{{ '%.2f' % amount }}</span></div>
+    {% endif %}
+  </div>
   {% endif %}
 
   {% if token.remarks %}

@@ -242,7 +242,7 @@
     </div>
     {% if token.volume_cft and token.product and token.product.bulk_density %}
     <div class="vol-eq">
-      {{ '%.2f'|format(token.volume_cft|float) }} × {{ '%.2f'|format(token.product.bulk_density|float) }} = {{ '%.3f'|format((token.volume_cft|float) * (token.product.bulk_density|float) / 1000) }} MT
+      {{ '%.2f'|format(token.volume_cft|float) }} CFT × {{ '%.2f'|format(token.product.bulk_density|float) }} kg/CFT = {{ '%.3f'|format((token.volume_cft|float) * (token.product.bulk_density|float) / 1000) }} MT
     </div>
     {% endif %}
   </div>
@@ -267,7 +267,6 @@
     {% if token.net_weight %}{{ '%.3f'|format(token.net_weight|float / 1000) }} MT{% else %}—{% endif %}
   </div>
   {% if token.net_weight and token.product and token.product.bulk_density and (token.product.bulk_density|float) > 0 %}
-  {# CFT = kg ÷ kg_per_cft  (bulk_density is in kg/CFT) #}
   <div class="sub">{{ '%.2f'|format(token.net_weight|float / (token.product.bulk_density|float)) }} CFT</div>
   {% endif %}
 </div>
@@ -293,6 +292,20 @@
 
 {% if token.remarks %}
 <div style="font-size: 9px; margin-bottom: 3px;"><b>Note:</b> {{ token.remarks }}</div>
+<hr class="sep">
+{% endif %}
+
+{% if rate is defined and rate and rate > 0 %}
+<div class="row">
+  <span class="row-label">{{ bl('rate') | upper }}</span>
+  <span class="row-value">₹{{ '%.2f'|format(rate) }}/MT</span>
+</div>
+{% if amount is defined and amount %}
+<div class="row bold" style="border-top:1px solid #000; padding-top:2px; margin-top:2px;">
+  <span class="row-label">{{ bl('amount') | upper }}</span>
+  <span class="row-value" style="font-size:12px;">₹{{ '%.2f'|format(amount) }}</span>
+</div>
+{% endif %}
 <hr class="sep">
 {% endif %}
 
