@@ -485,52 +485,49 @@ def get_column_migrations() -> list[str]:
         # Tyre count — used by the operator kiosk + printed slips. Stored
         # for ALL tokens (volume + weighbridge) so the slip shows truck class.
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS tyre_count SMALLINT",
-        # ── ONE-SHOT unit migration: CFT → m³  +  kg/CFT → kg/m³ ─────────────
-        # Reverses the earlier units_migrated_to_cft_v1 migration:
-        # canonical volume is now m³ (industry-standard SI); a per-tenant
-        # display setting (volume_unit: "m3"|"cft") handles field-level UX.
-        # Conversion factors:
-        #   1 CFT  = 1 / 35.3147 m³  (exact: ÷35.3147)
-        #   kg/CFT × 35.3147 = kg/m³  (e.g. 42.5 kg/CFT → 1500.9 kg/m³)
-        # Sanity: 10 m³ × 1500 kg/m³ = 15,000 kg
-        #         353.147 CFT × 42.475 kg/CFT ≈ 15,000 kg ✓
+        # ── ONE-SHOT remediation: ensure canonical CFT state ─────────────────
+        # The units_migrated_to_m3_v2 block (now removed) was an erroneous
+        # reversal that dropped volume_cft and re-created volume_m3, contradicting
+        # the app's declared canonical unit (CFT).  This block repairs any DB
+        # that ran that migration, and is a no-op on DBs that never ran it.
+        #
+        # Detection logic:
+        #   • volume_m3 exists AND volume_cft absent → m3_v2 ran; reverse it.
+        #   • volume_cft already present (or both absent) → no-op; just mark.
+        #
+        # Conversion: m³ × 35.3147 = CFT,  kg/m³ ÷ 35.3147 = kg/CFT
         """
         DO $$
         BEGIN
             IF NOT EXISTS (
-                SELECT 1 FROM app_settings WHERE key = 'units_migrated_to_m3_v2'
+                SELECT 1 FROM app_settings WHERE key = 'units_migrated_to_cft_v2'
             ) THEN
-                -- Step 1: add volume_m3 column if not present
-                IF NOT EXISTS (
+                -- Only act when the DB is in the post-m3_v2 broken state:
+                -- volume_m3 present and volume_cft absent.
+                IF EXISTS (
                     SELECT 1 FROM information_schema.columns
                     WHERE table_name='tokens' AND column_name='volume_m3'
-                ) THEN
-                    ALTER TABLE tokens ADD COLUMN volume_m3 NUMERIC(10,4);
-                END IF;
-
-                -- Step 2: copy volume_cft → volume_m3  (CFT ÷ 35.3147)
-                UPDATE tokens
-                SET volume_m3 = ROUND((volume_cft / 35.3147)::NUMERIC, 4)
-                WHERE volume_cft IS NOT NULL AND volume_m3 IS NULL;
-
-                -- Step 3: drop volume_cft (only if volume_m3 exists now)
-                IF EXISTS (
+                ) AND NOT EXISTS (
                     SELECT 1 FROM information_schema.columns
                     WHERE table_name='tokens' AND column_name='volume_cft'
                 ) THEN
-                    ALTER TABLE tokens DROP COLUMN volume_cft;
+                    -- Step 1: add volume_cft back
+                    ALTER TABLE tokens ADD COLUMN volume_cft NUMERIC(10,3);
+                    -- Step 2: convert volume_m3 → volume_cft
+                    UPDATE tokens
+                    SET volume_cft = ROUND((volume_m3 * 35.3147)::NUMERIC, 3)
+                    WHERE volume_m3 IS NOT NULL;
+                    -- Step 3: drop volume_m3
+                    ALTER TABLE tokens DROP COLUMN volume_m3;
+                    -- Step 4: revert bulk_density: kg/m³ → kg/CFT (÷ 35.3147)
+                    UPDATE products
+                    SET bulk_density = ROUND((bulk_density / 35.3147)::NUMERIC, 3)
+                    WHERE bulk_density IS NOT NULL;
                 END IF;
 
-                -- Step 4: products.bulk_density  kg/CFT → kg/m³  (× 35.3147)
-                -- Existing densities are in kg/CFT after the v1 migration.
-                -- kg/m³ = kg/CFT × 35.3147
-                UPDATE products
-                SET bulk_density = ROUND((bulk_density * 35.3147)::NUMERIC, 2)
-                WHERE bulk_density IS NOT NULL;
-
-                -- Mark complete.
+                -- Mark complete regardless (prevents re-running on next startup)
                 INSERT INTO app_settings (key, value, updated_at)
-                VALUES ('units_migrated_to_m3_v2', 'true', NOW())
+                VALUES ('units_migrated_to_cft_v2', 'true', NOW())
                 ON CONFLICT (key) DO NOTHING;
             END IF;
         END $$
