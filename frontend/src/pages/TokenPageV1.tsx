@@ -33,6 +33,7 @@ import api from '@/services/api';
 import type { Token, TokenListResponse, Party, Product, Vehicle, SnapshotResult, TokenSnapshotsResponse } from '@/types';
 import { cn } from '@/lib/utils';
 import { TokenDetailModal } from '@/components/TokenDetailModal';
+import { useTranslation } from 'react-i18next';
 
 // ------------------------------------------------------------------ //
 // Helpers (identical to TokenPage)
@@ -64,6 +65,7 @@ const canWeigh = (t: Token) =>
 // Scale Status bar
 // ------------------------------------------------------------------ //
 function ScaleStatus() {
+  const { t } = useTranslation();
   const { reading, formattedMT } = useWeight();
   return (
     <div className={cn(
@@ -74,10 +76,10 @@ function ScaleStatus() {
     )}>
       <div className="flex items-center gap-2">
         <Scale className={cn('h-4 w-4', reading.scale_connected ? 'text-green-600' : 'text-muted-foreground')} />
-        <span className="text-xs text-muted-foreground font-medium">Scale</span>
+        <span className="text-xs text-muted-foreground font-medium">{t('token.scaleLabel')}</span>
         {reading.scale_connected
-          ? <span className="flex items-center gap-1 text-xs text-green-600"><Wifi className="h-3 w-3" />Live</span>
-          : <span className="flex items-center gap-1 text-xs text-red-500"><WifiOff className="h-3 w-3" />Offline</span>
+          ? <span className="flex items-center gap-1 text-xs text-green-600"><Wifi className="h-3 w-3" />{t('token.scaleLive')}</span>
+          : <span className="flex items-center gap-1 text-xs text-red-500"><WifiOff className="h-3 w-3" />{t('token.scaleOffline')}</span>
         }
       </div>
       <div className="text-right">
@@ -91,7 +93,7 @@ function ScaleStatus() {
         </span>
         {reading.scale_connected && (
           <p className={cn('text-[10px]', reading.is_stable ? 'text-green-600' : 'text-amber-500 animate-pulse')}>
-            {reading.is_stable ? `Stable ${reading.stable_duration_sec.toFixed(1)}s` : 'Stabilising…'}
+            {reading.is_stable ? `${t('token.scaleStable')} ${reading.stable_duration_sec.toFixed(1)}s` : t('token.scaleStabilising')}
           </p>
         )}
       </div>
@@ -122,6 +124,7 @@ const TYRE_VOLUME_CFT: Record<number, number> = {
 const TYRE_OPTIONS = [4, 6, 8, 10, 12];
 
 function CreateTokenForm({ onCreated }: CreateFormProps) {
+  const { t } = useTranslation();
   const [form, setForm] = useState({
     vehicle_no: '',
     vehicle_type: '',
@@ -361,7 +364,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           </div>
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-200">Weighbridge</p>
-            <p className="text-xl font-black text-white tracking-tight">New Token</p>
+            <p className="text-xl font-black text-white tracking-tight">{t('token.newToken')}</p>
           </div>
           <div className="ml-auto">
             <span className="flex h-3 w-3">
@@ -382,11 +385,11 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
         {/* Token Type */}
         <div className="space-y-1">
-          <Label className="text-xs">Token Type</Label>
+          <Label className="text-xs">{t('token.tokenType')}</Label>
           <div className="grid grid-cols-2 gap-2">
             {[
-              { value: 'sale',     label: 'Sale',     sub: 'Outbound', color: 'border-blue-400 bg-blue-50 text-blue-700' },
-              { value: 'purchase', label: 'Purchase', sub: 'Inbound',  color: 'border-green-400 bg-green-50 text-green-700' },
+              { value: 'sale',     label: t('token.sale'),     sub: t('token.outbound'), color: 'border-blue-400 bg-blue-50 text-blue-700' },
+              { value: 'purchase', label: t('token.purchase'), sub: t('token.inbound'),  color: 'border-green-400 bg-green-50 text-green-700' },
             ].map(opt => (
               <button
                 key={opt.value}
@@ -406,7 +409,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
         {/* Vehicle */}
         <div className="space-y-1">
-          <Label className="text-xs">Vehicle Number <span className="text-destructive">*</span></Label>
+          <Label className="text-xs">{t('token.vehicleNo')} <span className="text-destructive">*</span></Label>
           {selectedVehicle ? (
             <div className="flex items-center gap-2 rounded-lg border-2 border-green-400 bg-green-50 px-3 py-2">
               <Truck className="h-4 w-4 text-green-600 shrink-0" />
@@ -420,7 +423,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
                 type="button"
                 onClick={() => { setSelectedVehicle(null); setForm(f => ({ ...f, vehicle_no: '', vehicle_id: '' })); }}
                 className="text-[10px] text-green-700 underline hover:text-green-900 shrink-0"
-              >Change</button>
+              >{t('token.changeVehicle')}</button>
             </div>
           ) : (
             <div className="space-y-1.5">
@@ -428,7 +431,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
                   className="pl-8 h-8 text-xs"
-                  placeholder="Search registered vehicle…"
+                  placeholder={t('token.vehicleSearch')}
                   value={vehicleSearch}
                   onChange={e => setVehicleSearch(e.target.value)}
                 />
@@ -463,7 +466,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
         {/* Vehicle Type */}
         <div className="space-y-1">
-          <Label className="text-xs">Vehicle Type</Label>
+          <Label className="text-xs">{t('token.vehicleType')}</Label>
           <Select value={form.vehicle_type || undefined} onValueChange={v => setForm(f => ({ ...f, vehicle_type: v ?? '' }))}>
             <SelectTrigger className="h-8 text-xs">
               <span className="truncate text-left flex-1">
@@ -484,7 +487,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
         {/* Party */}
         <div className="space-y-1">
-          <Label className="text-xs">Party</Label>
+          <Label className="text-xs">{t('token.party')}</Label>
           <div className="flex gap-1.5">
             <Select value={form.party_id || undefined} onValueChange={v => setForm(f => ({ ...f, party_id: v ?? '' }))}>
               <SelectTrigger className="h-8 text-xs flex-1">
@@ -531,7 +534,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
         {/* P1: Transit / Royalty Pass — only shown for purchase tokens */}
         {form.token_type === 'purchase' && (
           <div className="space-y-1">
-            <Label className="text-xs">Transit / Royalty Pass</Label>
+            <Label className="text-xs">{t('token.transitPass')}</Label>
             {passWarning && (
               <p className="text-[11px] text-amber-600 flex items-center gap-1">
                 <AlertCircle className="h-3 w-3 shrink-0" />{passWarning}
@@ -566,7 +569,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
         {/* Material */}
         <div className="space-y-1">
-          <Label className="text-xs">Material</Label>
+          <Label className="text-xs">{t('token.product')}</Label>
           <Select value={form.product_id || undefined} onValueChange={v => setForm(f => ({ ...f, product_id: v ?? '' }))}>
             <SelectTrigger className="h-8 text-xs">
               <span className="truncate text-left flex-1">
@@ -587,11 +590,11 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
         {/* Weighment method */}
         <div className="space-y-1">
-          <Label className="text-xs">Measurement Method</Label>
+          <Label className="text-xs">{t('token.weightMethod')}</Label>
           <div className="grid grid-cols-2 gap-2">
             {[
-              { value: 'weighbridge', label: 'Weighbridge', sub: 'Gross + Tare' },
-              { value: 'volume',      label: 'Volume',      sub: 'CFT × density' },
+              { value: 'weighbridge', label: t('token.weighbridge'), sub: 'Gross + Tare' },
+              { value: 'volume',      label: t('token.volume'),      sub: 'CFT × density' },
             ].map(opt => (
               <button
                 key={opt.value}
@@ -616,7 +619,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           <div className="space-y-3 rounded-lg border-2 border-amber-200 bg-amber-50/40 p-3">
             {/* Step 1: Pick tyre count → volume auto-fills */}
             <div className="space-y-1.5">
-              <Label className="text-xs">Truck size — tyre count</Label>
+              <Label className="text-xs">{t('token.truckSizeTyre')}</Label>
               <div className="grid grid-cols-5 gap-1.5">
                 {TYRE_OPTIONS.map(n => (
                   <button
@@ -646,7 +649,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
             {/* Step 2: Editable volume in CFT (auto-filled from tyre count, can override) */}
             <div className="space-y-1">
-              <Label className="text-xs">Volume (CFT) <span className="text-destructive">*</span></Label>
+              <Label className="text-xs">{t('token.volumeCft')} <span className="text-destructive">*</span></Label>
               <div className="flex gap-2 items-center">
                 <Input
                   type="number"
@@ -695,7 +698,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
         {/* Gate Pass */}
         <div className="space-y-1">
-          <Label className="text-xs">Gate Pass <span className="text-muted-foreground">(optional)</span></Label>
+          <Label className="text-xs">{t('token.gatePass')} <span className="text-muted-foreground">(optional)</span></Label>
           <Input
             className="h-8 text-xs"
             value={form.gate_pass}
@@ -706,7 +709,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
         {/* Remarks */}
         <div className="space-y-1">
-          <Label className="text-xs">Remarks <span className="text-muted-foreground">(optional)</span></Label>
+          <Label className="text-xs">{t('common.remarks')} <span className="text-muted-foreground">(optional)</span></Label>
           <Input
             className="h-8 text-xs"
             value={form.remarks}
@@ -727,7 +730,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           {saving
             ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             : <ArrowRight className="mr-2 h-4 w-4" />}
-          {weightMethod === 'volume' ? 'Create Token (Volume)' : 'Start Weighment'}
+          {weightMethod === 'volume' ? t('token.createTokenVolume') : t('token.startWeighment')}
         </Button>
       </div>
 
@@ -735,31 +738,31 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       <Dialog open={partyDialogOpen} onOpenChange={o => !o && setPartyDialogOpen(false)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add Party</DialogTitle>
+            <DialogTitle>{t('token.addParty')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
-              <Label className="text-xs">Party Type</Label>
+              <Label className="text-xs">{t('token.partyType')}</Label>
               <div className="grid grid-cols-3 gap-1.5">
-                {(['customer', 'supplier', 'both'] as const).map(t => (
+                {(['customer', 'supplier', 'both'] as const).map(pt => (
                   <button
-                    key={t}
+                    key={pt}
                     type="button"
-                    onClick={() => setQuickParty(q => ({ ...q, party_type: t }))}
+                    onClick={() => setQuickParty(q => ({ ...q, party_type: pt }))}
                     className={cn(
                       'rounded-md border-2 p-2 text-xs font-medium capitalize transition-all',
-                      quickParty.party_type === t
+                      quickParty.party_type === pt
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border text-muted-foreground hover:border-primary/40'
                     )}
                   >
-                    {t}
+                    {t(`party.${pt}`)}
                   </button>
                 ))}
               </div>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Name <span className="text-destructive">*</span></Label>
+              <Label className="text-xs">{t('token.partyName')} <span className="text-destructive">*</span></Label>
               <Input
                 autoFocus
                 value={quickParty.name}
@@ -768,7 +771,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Phone <span className="text-muted-foreground">(optional)</span></Label>
+              <Label className="text-xs">{t('party.phone')} <span className="text-muted-foreground">(optional)</span></Label>
               <Input
                 value={quickParty.phone}
                 onChange={e => setQuickParty(q => ({ ...q, phone: e.target.value }))}
@@ -776,7 +779,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">GSTIN <span className="text-muted-foreground">(optional)</span></Label>
+              <Label className="text-xs">{t('party.gstin')} <span className="text-muted-foreground">(optional)</span></Label>
               <Input
                 value={quickParty.gstin}
                 onChange={e => setQuickParty(q => ({ ...q, gstin: e.target.value.toUpperCase() }))}
@@ -790,10 +793,10 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPartyDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setPartyDialogOpen(false)}>{t('common.cancel')}</Button>
             <Button onClick={handleCreateParty} disabled={savingParty || !quickParty.name.trim()}>
               {savingParty ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-              Add Party
+              {t('token.addParty')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -819,6 +822,7 @@ function mtFromKg(kg: number) {
 }
 
 function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: WeightDialogProps) {
+  const { t } = useTranslation();
   const { reading, formattedMT } = useWeight();
   const [manualMode, setManualMode] = useState(false);
   const [manualWeight, setManualWeight] = useState('');
@@ -932,7 +936,7 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
             )}>
               {stageNum}
             </span>
-            Stage {stageNum} of 2 — {currentLabel}
+            {t('token.stageOf', { stage: stageNum, label: currentLabel })}
           </DialogTitle>
         </DialogHeader>
 
@@ -963,7 +967,7 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
 
           {weightStage === 'second' && stage1Weight > 0 && (
             <div className="rounded-lg border-2 border-dashed border-muted-foreground/20 p-3">
-              <p className="text-xs text-muted-foreground mb-1">{stage1Label} (recorded)</p>
+              <p className="text-xs text-muted-foreground mb-1">{stage1Label} ({t('token.recorded')})</p>
               <p className="font-mono text-xl font-bold">{wFmt(stage1Weight)}</p>
             </div>
           )}
@@ -983,10 +987,10 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
                 : 'border-border bg-muted/20'
             )}>
               <div className="flex items-center justify-center gap-2 mb-2">
-                <span className="text-xs uppercase tracking-widest text-muted-foreground font-semibold">Scale Reading</span>
+                <span className="text-xs uppercase tracking-widest text-muted-foreground font-semibold">{t('token.scaleReading')}</span>
                 {reading.scale_connected
-                  ? <Badge variant="outline" className="border-green-500 text-green-600 text-[10px]">LIVE</Badge>
-                  : <Badge variant="outline" className="border-red-400 text-red-500 text-[10px]">OFFLINE</Badge>
+                  ? <Badge variant="outline" className="border-green-500 text-green-600 text-[10px]">{t('token.liveStatus')}</Badge>
+                  : <Badge variant="outline" className="border-red-400 text-red-500 text-[10px]">{t('token.offlineStatus')}</Badge>
                 }
               </div>
               <div className={cn(
@@ -1000,14 +1004,14 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
               <div className="h-5 mt-1">
                 {reading.scale_connected && (
                   canCapture
-                    ? <p className="text-xs text-green-600 font-semibold">✓ Stable for {reading.stable_duration_sec.toFixed(1)}s</p>
-                    : <p className="text-xs text-amber-600 animate-pulse">Stabilising, please wait…</p>
+                    ? <p className="text-xs text-green-600 font-semibold">✓ {t('token.scaleStable')} {reading.stable_duration_sec.toFixed(1)}s</p>
+                    : <p className="text-xs text-amber-600 animate-pulse">{t('token.scaleStabilising')}</p>
                 )}
               </div>
             </div>
           ) : (
             <div className="space-y-2">
-              <Label>Enter Weight Manually (MT)</Label>
+              <Label>{t('token.enterWeightManual')}</Label>
               <Input
                 ref={manualRef}
                 type="number"
@@ -1024,7 +1028,7 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
           {liveNet !== null && liveWeight > 0 && (
             <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 flex items-center justify-between">
               <div>
-                <p className="text-xs text-muted-foreground">Live Net Weight Preview</p>
+                <p className="text-xs text-muted-foreground">{t('token.liveNetPreview')}</p>
                 <p className="font-mono text-2xl font-black text-primary">{mtFromKg(liveNet)}</p>
               </div>
               <div className="text-xs text-muted-foreground text-right">
@@ -1039,25 +1043,25 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
             onClick={() => setManualMode(m => !m)}
             className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
           >
-            {manualMode ? '← Use live scale instead' : 'Enter weight manually →'}
+            {manualMode ? t('token.useScaleInstead') : t('token.enterManuallyInstead')}
           </button>
 
           {capturePhase !== 'idle' && (
             <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
               <div className="flex items-center gap-2 text-sm font-medium">
                 {capturePhase === 'capturing' ? (
-                  <><Loader2 className="h-4 w-4 animate-spin text-primary" /> Capturing camera images…</>
+                  <><Loader2 className="h-4 w-4 animate-spin text-primary" /> {t('token.capturingImages')}</>
                 ) : (
-                  <><Camera className="h-4 w-4 text-green-600" /> Camera images captured</>
+                  <><Camera className="h-4 w-4 text-green-600" /> {t('token.imagesCapured')}</>
                 )}
               </div>
               {snapshots.map(s => (
                 <div key={s.camera_id} className="flex items-center gap-2 text-xs">
                   <Camera className="h-3 w-3 text-muted-foreground shrink-0" />
                   <span className="font-medium capitalize">{s.camera_label || s.camera_id} View</span>
-                  {s.capture_status === 'pending' && <span className="text-amber-600 ml-auto">Waiting…</span>}
-                  {s.capture_status === 'captured' && <span className="text-green-600 ml-auto">✓ Captured</span>}
-                  {s.capture_status === 'failed' && <span className="text-red-500 ml-auto">✗ Failed</span>}
+                  {s.capture_status === 'pending' && <span className="text-amber-600 ml-auto">{t('token.waiting')}</span>}
+                  {s.capture_status === 'captured' && <span className="text-green-600 ml-auto">{t('token.captured')}</span>}
+                  {s.capture_status === 'failed' && <span className="text-red-500 ml-auto">{t('token.failed')}</span>}
                 </div>
               ))}
               {capturePhase === 'done' && snapshots.some(s => s.url) && (
@@ -1082,7 +1086,7 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
 
         <DialogFooter className="gap-2 flex-wrap">
           <Button variant="outline" onClick={onClose} disabled={saving}>
-            {capturePhase !== 'idle' ? 'Close' : 'Cancel'}
+            {capturePhase !== 'idle' ? t('common.close') : t('common.cancel')}
           </Button>
           {capturePhase === 'idle' && hasStoredTare && (
             <Button
@@ -1093,7 +1097,7 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
               title={`Use vehicle's registered tare weight: ${(storedTare / 1000).toFixed(3)} MT`}
             >
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}
-              Use Reg. Tare ({(storedTare / 1000).toFixed(3)} MT)
+              {t('token.useRegTare')} ({(storedTare / 1000).toFixed(3)} MT)
             </Button>
           )}
           {capturePhase === 'idle' && (
@@ -1104,7 +1108,7 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
                 className="bg-green-600 hover:bg-green-700 text-white min-w-32"
               >
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Scale className="mr-2 h-4 w-4" />}
-                {canCapture ? 'Capture Weight' : 'Waiting…'}
+                {canCapture ? t('token.captureWeight') : t('token.waiting')}
               </Button>
             ) : (
               <Button
@@ -1113,7 +1117,7 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
                 className="min-w-32"
               >
                 {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save Weight
+                {t('token.saveWeight')}
               </Button>
             )
           )}
@@ -1319,6 +1323,7 @@ function StatusFilterPills({
   selected: Set<TokenStatus>;
   onChange: (s: Set<TokenStatus>) => void;
 }) {
+  const { t } = useTranslation();
   function toggle(s: TokenStatus) {
     const next = new Set(selected);
     if (next.has(s)) next.delete(s); else next.add(s);
@@ -1342,7 +1347,7 @@ function StatusFilterPills({
           )}
         >
           <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${selected.has(key) ? cfg.dot : 'bg-muted-foreground'}`} />
-          {cfg.label}
+          {t(`token.status.${key}`)}
         </button>
       ))}
     </div>
@@ -1353,6 +1358,7 @@ function StatusFilterPills({
 // Main Page
 // ------------------------------------------------------------------ //
 export default function TokenPageV1() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
 
@@ -1483,8 +1489,8 @@ export default function TokenPageV1() {
           >
             {/* ---- TOP — Live Cameras ---- */}
             <div className="h-full grid grid-cols-2 gap-3 min-h-0 pb-1">
-              <CameraPanel cameraId="front" label="Front Camera" />
-              <CameraPanel cameraId="top" label="Top Camera" />
+              <CameraPanel cameraId="front" label={t('token.frontCamera')} />
+              <CameraPanel cameraId="top" label={t('token.topCamera')} />
             </div>
 
             {/* ---- BOTTOM — Token List ---- */}
@@ -1494,10 +1500,10 @@ export default function TokenPageV1() {
           <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30 shrink-0 flex-wrap">
             <div className="min-w-0 mr-auto">
               <p className="text-sm font-semibold">
-                {dateFrom === today() && dateTo === today() ? "Today's Tokens" : 'Token List'}
+                {dateFrom === today() && dateTo === today() ? t('token.todayTokens') : t('token.tokenList')}
               </p>
               <p className="text-[10px] text-muted-foreground">
-                {filtered.length} of {tokens.length} · {tokens.filter(canWeigh).length} active
+                {filtered.length} of {tokens.length} · {tokens.filter(canWeigh).length} {t('token.activeCount')}
               </p>
             </div>
 
@@ -1521,7 +1527,7 @@ export default function TokenPageV1() {
                   className="text-[10px] text-muted-foreground hover:text-foreground px-1 underline underline-offset-2"
                   onClick={() => { setDateFrom(today()); setDateTo(today()); }}
                 >
-                  Today
+                  {t('common.today')}
                 </button>
               )}
             </div>
@@ -1544,7 +1550,7 @@ export default function TokenPageV1() {
               className="text-muted-foreground h-7 gap-1 text-xs shrink-0"
             >
               <RefreshCw className={cn('h-3 w-3', loading && 'animate-spin')} />
-              Refresh
+              {t('common.refresh')}
             </Button>
             <Button
               variant="ghost"
@@ -1590,9 +1596,9 @@ export default function TokenPageV1() {
             <span className="text-[9px] text-muted-foreground/60 select-none">|</span>
             <div className="flex gap-1">
               {([
-                { key: 'all',         label: 'All Methods', count: tokens.length },
-                { key: 'weighbridge', label: 'Weighbridge',  count: bridgeCount  },
-                { key: 'volume',      label: 'Volume',       count: volumeCount  },
+                { key: 'all',         label: t('token.allMethods'),  count: tokens.length },
+                { key: 'weighbridge', label: t('token.weighbridge'), count: bridgeCount  },
+                { key: 'volume',      label: t('token.volume'),      count: volumeCount  },
               ] as const).map(opt => (
                 <button
                   key={opt.key}
@@ -1627,12 +1633,12 @@ export default function TokenPageV1() {
             style={{ gridTemplateColumns: COLS }}
           >
             <div>#</div>
-            <div>Vehicle</div>
-            <div>Party</div>
-            <div>Material</div>
-            <div className="text-right">Gross (MT)</div>
-            <div className="text-right">Tare (MT)</div>
-            <div className="text-right">Net (MT)</div>
+            <div>{t('token.vehicle')}</div>
+            <div>{t('token.party')}</div>
+            <div>{t('token.product')}</div>
+            <div className="text-right">{t('token.grossWeight')} (MT)</div>
+            <div className="text-right">{t('token.tareWeight')} (MT)</div>
+            <div className="text-right">{t('token.netWeight')} (MT)</div>
             <div className="text-center">Act</div>
           </div>
 
@@ -1647,9 +1653,9 @@ export default function TokenPageV1() {
                 <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
                   <Scale className="h-6 w-6 text-muted-foreground/40" />
                 </div>
-                <p className="text-xs font-semibold">No tokens match</p>
+                <p className="text-xs font-semibold">{t('token.noTokensMatch')}</p>
                 <p className="mt-0.5 text-[10px] text-muted-foreground">
-                  Adjust the search or status filters above.
+                  {t('token.adjustFilters')}
                 </p>
               </div>
             ) : (
@@ -1735,7 +1741,7 @@ export default function TokenPageV1() {
                           size="icon"
                           variant="ghost"
                           className="h-6 w-6 text-amber-600 hover:text-amber-700 hover:bg-amber-100 shrink-0"
-                          title="Record weight"
+                          title={t('token.recordWeight')}
                           onClick={() => openWeight(token)}
                         >
                           <Scale className="h-3.5 w-3.5" />

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { Plus, Search, FileText, Loader2, Download, CheckCircle, XCircle, Banknote, Send, CheckCircle2, Ticket, Lock, Pencil, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, RotateCcw, GitFork, History, ArrowUpCircle } from 'lucide-react';
@@ -23,10 +24,11 @@ const INR = (v: number) => '₹' + v.toLocaleString('en-IN', { minimumFractionDi
 
 // ── Invoice Pipeline visual (Draft → Approved → Paid) ────────────────────────
 function InvoicePipeline({ status, paymentStatus }: { status: string; paymentStatus: string }) {
+  const { t } = useTranslation();
   if (status === 'cancelled') {
     return (
       <span className="text-[10px] rounded-full px-2 py-0.5 font-medium bg-red-100 text-red-600">
-        Cancelled
+        {t('invoice.status.cancelled')}
       </span>
     );
   }
@@ -36,9 +38,9 @@ function InvoicePipeline({ status, paymentStatus }: { status: string; paymentSta
 
   type Step = { label: string; done: boolean; active: boolean; partial?: boolean };
   const steps: Step[] = [
-    { label: 'Draft',    done: isFinal || isPaid,     active: !isFinal && !isPaid },
-    { label: 'Approved', done: isFinal && (isPaid || isPartial), active: isFinal && !isPaid && !isPartial },
-    { label: 'Paid',     done: isPaid,                active: isFinal && (isPaid || isPartial), partial: isPartial && !isPaid },
+    { label: t('invoice.pipelineDraft'),    done: isFinal || isPaid,     active: !isFinal && !isPaid },
+    { label: t('invoice.pipelineApproved'), done: isFinal && (isPaid || isPartial), active: isFinal && !isPaid && !isPartial },
+    { label: t('invoice.pipelinePaid'),     done: isPaid,                active: isFinal && (isPaid || isPartial), partial: isPartial && !isPaid },
   ];
 
   return (
@@ -64,7 +66,7 @@ function InvoicePipeline({ status, paymentStatus }: { status: string; paymentSta
               : step.active ? 'text-blue-600 font-semibold'
               : 'text-muted-foreground/50'
             }`}>
-              {step.partial ? 'Part' : step.label}
+              {step.partial ? t('invoice.pipelinePart') : step.label}
             </span>
           </div>
         </div>
@@ -75,26 +77,27 @@ function InvoicePipeline({ status, paymentStatus }: { status: string; paymentSta
 
 // ── eInvoice IRN Status Badge ─────────────────────────────────────────────────
 function EInvoiceBadge({ inv }: { inv: Invoice }) {
+  const { t } = useTranslation();
   if (inv.status !== 'final' || inv.einvoice_status === 'none') return null;
   const s = inv.einvoice_status;
   if (s === 'success') {
     return (
       <span className="inline-flex items-center gap-0.5 text-[9px] font-medium text-green-700 bg-green-50 rounded px-1.5 py-0.5" title={`IRN: ${inv.irn}\nAck: ${inv.irn_ack_no}`}>
-        <ShieldCheck className="h-2.5 w-2.5" /> IRN
+        <ShieldCheck className="h-2.5 w-2.5" /> {t('invoice.irnPending')}
       </span>
     );
   }
   if (s === 'failed') {
     return (
       <span className="inline-flex items-center gap-0.5 text-[9px] font-medium text-red-700 bg-red-50 rounded px-1.5 py-0.5" title={inv.einvoice_error || 'IRN generation failed'}>
-        <ShieldAlert className="h-2.5 w-2.5" /> IRN Failed
+        <ShieldAlert className="h-2.5 w-2.5" /> {t('invoice.irnFailed')}
       </span>
     );
   }
   if (s === 'cancelled') {
     return (
       <span className="inline-flex items-center gap-0.5 text-[9px] font-medium text-gray-600 bg-gray-100 rounded px-1.5 py-0.5" title="IRN cancelled">
-        <ShieldX className="h-2.5 w-2.5" /> IRN Cancelled
+        <ShieldX className="h-2.5 w-2.5" /> {t('invoice.irnCancelled')}
       </span>
     );
   }
@@ -129,6 +132,7 @@ interface CreateProps {
 }
 
 function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreateProps) {
+  const { t } = useTranslation();
   const { authorized: usbAuthorized } = useUsbGuard();
   const [parties, setParties] = useState<Party[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -295,7 +299,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="sm:max-w-4xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>New {invoiceType === 'sale' ? 'Sales' : 'Purchase'} Invoice</DialogTitle>
+          <DialogTitle>{invoiceType === 'sale' ? t('invoice.newSaleInvoice') : t('invoice.newPurchaseInvoice')}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -303,22 +307,22 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
 
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1">
-              <Label>Invoice Date *</Label>
+              <Label>{t('invoice.invoiceDate')} *</Label>
               <Input type="date" value={form.invoice_date}
                 onChange={e => setForm(f => ({ ...f, invoice_date: e.target.value }))} />
             </div>
             <div className="space-y-1">
-              <Label>Tax Type</Label>
+              <Label>{t('invoice.taxType')}</Label>
               <Select value={form.tax_type} onValueChange={v => setForm(f => ({ ...f, tax_type: v ?? 'gst' }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="gst">GST Invoice</SelectItem>
-                  {usbAuthorized && <SelectItem value="non_gst">Non-GST / Bill of Supply</SelectItem>}
+                  <SelectItem value="gst">{t('invoice.gst')}</SelectItem>
+                  {usbAuthorized && <SelectItem value="non_gst">{t('invoice.nonGst')}</SelectItem>}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
-              <Label>Link to Token (optional)</Label>
+              <Label>{t('invoice.linkToken')}</Label>
               <Select value={form.token_id || undefined} onValueChange={(v) => handleTokenSelect(v ?? '')}>
                 <SelectTrigger>
                   <span className="truncate text-left flex-1">
@@ -346,13 +350,13 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <Label>{walkIn ? 'Customer Name *' : 'Party *'}</Label>
+                <Label>{walkIn ? `${t('invoice.customerName')} *` : `${t('invoice.party')} *`}</Label>
                 <button
                   type="button"
                   className="text-xs text-primary underline-offset-2 hover:underline"
                   onClick={() => { setWalkIn(w => !w); setCustomerName(''); setForm(f => ({ ...f, party_id: '' })); }}
                 >
-                  {walkIn ? '← Select from master' : 'Walk-in / B2C →'}
+                  {walkIn ? t('invoice.selectFromMaster') : t('invoice.walkInB2c')}
                 </button>
               </div>
               {walkIn ? (
@@ -379,7 +383,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
               {!walkIn && form.party_id && <CreditStatusBanner partyId={form.party_id} className="mt-1.5" />}
             </div>
             <div className="space-y-1">
-              <Label>Vehicle No</Label>
+              <Label>{t('invoice.vehicleNo')}</Label>
               <Input value={form.vehicle_no}
                 onChange={e => setForm(f => ({ ...f, vehicle_no: e.target.value.toUpperCase() }))} />
             </div>
@@ -388,9 +392,9 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
           {/* Line Items */}
           <div className="border-t pt-3">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold">Line Items</p>
+              <p className="text-sm font-semibold">{t('invoice.lineItems')}</p>
               <Button size="sm" variant="outline" onClick={() => setLines(l => [...l, emptyLine()])}>
-                <Plus className="h-3 w-3 mr-1" /> Add Row
+                <Plus className="h-3 w-3 mr-1" /> {t('invoice.addRow')}
               </Button>
             </div>
             <div className="space-y-2">
@@ -398,7 +402,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
                 <div key={idx} className="grid gap-2 items-end"
                   style={{ gridTemplateColumns: 'minmax(0,2fr) minmax(80px,1.1fr) minmax(100px,1.4fr) minmax(70px,0.9fr) minmax(90px,1fr) 36px' }}>
                   <div className="space-y-1">
-                    {idx === 0 && <Label className="text-sm font-medium">Product</Label>}
+                    {idx === 0 && <Label className="text-sm font-medium">{t('invoice.productCol')}</Label>}
                     <Select value={line.product_id || undefined}
                       onValueChange={v => handleProductSelect(idx, v ?? '')}>
                       <SelectTrigger className="h-10 text-sm">
@@ -414,17 +418,17 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
                     </Select>
                   </div>
                   <div className="space-y-1 min-w-0">
-                    {idx === 0 && <Label className="text-sm font-medium">Qty</Label>}
+                    {idx === 0 && <Label className="text-sm font-medium">{t('invoice.qtyCol')}</Label>}
                     <Input className="h-10 text-sm font-semibold text-center w-full" type="number" min="0" step="0.001"
                       value={line.quantity} onChange={e => updateLine(idx, { quantity: e.target.value })} />
                   </div>
                   <div className="space-y-1 min-w-0">
-                    {idx === 0 && <Label className="text-sm font-medium">Rate (₹)</Label>}
+                    {idx === 0 && <Label className="text-sm font-medium">{t('invoice.rateCol')}</Label>}
                     <Input className="h-10 text-sm font-semibold w-full" type="number" min="0" step="0.01"
                       value={line.rate} onChange={e => updateLine(idx, { rate: e.target.value })} />
                   </div>
                   <div className="space-y-1 min-w-0">
-                    {idx === 0 && <Label className="text-sm font-medium">GST%</Label>}
+                    {idx === 0 && <Label className="text-sm font-medium">{t('invoice.gstCol')}</Label>}
                     <Select value={line.gst_rate} onValueChange={v => updateLine(idx, { gst_rate: v ?? '0' })}>
                       <SelectTrigger className="h-10 text-sm w-full"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -433,7 +437,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
                     </Select>
                   </div>
                   <div className="text-right space-y-1">
-                    {idx === 0 && <Label className="text-sm font-medium">Total</Label>}
+                    {idx === 0 && <Label className="text-sm font-medium">{t('invoice.totalCol')}</Label>}
                     <p className="text-sm font-semibold font-mono h-10 flex items-center justify-end pr-1">
                       {INR(lineTotal(line))}
                     </p>
@@ -447,47 +451,47 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
               ))}
             </div>
             <div className="text-right mt-2 text-sm font-semibold">
-              Est. Total: {INR(grandEstimate)}
+              {t('invoice.estTotal')} {INR(grandEstimate)}
             </div>
           </div>
 
           {/* Other fields */}
           <div className="grid grid-cols-3 gap-3 border-t pt-3">
             <div className="space-y-1">
-              <Label>Discount Type</Label>
+              <Label>{t('invoice.discountType')}</Label>
               <Select value={form.discount_type || 'none'}
                 onValueChange={v => setForm(f => ({ ...f, discount_type: (v === 'none' || !v) ? '' : v }))}>
-                <SelectTrigger><SelectValue placeholder="No discount" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t('invoice.noDiscount')} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  <SelectItem value="percentage">Percentage (%)</SelectItem>
-                  <SelectItem value="flat">Flat Amount (₹)</SelectItem>
+                  <SelectItem value="none">{t('invoice.discountNone')}</SelectItem>
+                  <SelectItem value="percentage">{t('invoice.discountPct')}</SelectItem>
+                  <SelectItem value="flat">{t('invoice.discountFlat')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             {form.discount_type && (
               <div className="space-y-1">
-                <Label>Discount Value</Label>
+                <Label>{t('invoice.discountValue')}</Label>
                 <Input type="number" min="0" value={form.discount_value}
                   onChange={e => setForm(f => ({ ...f, discount_value: e.target.value }))} />
               </div>
             )}
             <div className="space-y-1">
-              <Label>Freight (₹)</Label>
+              <Label>{t('invoice.freight')}</Label>
               <Input type="number" min="0" value={form.freight}
                 onChange={e => setForm(f => ({ ...f, freight: e.target.value }))} />
             </div>
             <div className="space-y-1">
-              <Label>Payment Mode</Label>
+              <Label>{t('payment.paymentMode')}</Label>
               <Select value={form.payment_mode || 'credit'}
                 onValueChange={v => setForm(f => ({ ...f, payment_mode: v ?? '' }))}>
                 <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="credit">Credit</SelectItem>
-                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="cash">{t('payment.cash')}</SelectItem>
                   <SelectItem value="upi">UPI</SelectItem>
-                  <SelectItem value="cheque">Cheque</SelectItem>
-                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                  <SelectItem value="cheque">{t('payment.cheque')}</SelectItem>
+                  <SelectItem value="bank_transfer">{t('payment.bank')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -496,27 +500,27 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
           {/* Transport & Dispatch Details (collapsible) */}
           <div className="border-t pt-3">
             <button type="button" className="flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => setShowTransport(t => !t)}>
+              onClick={() => setShowTransport(s => !s)}>
               {showTransport ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              Transport &amp; Dispatch Details
+              {t('invoice.transportDetails')}
               <span className="text-xs font-normal">(Royalty No., Driver, LR/RR, etc.)</span>
             </button>
             {showTransport && (
               <div className="grid grid-cols-2 gap-3 mt-3">
                 <div className="space-y-1">
-                  <Label>Royalty No.</Label>
+                  <Label>{t('invoice.royaltyNo')}</Label>
                   <Input value={form.royalty_no} onChange={e => setForm(f => ({ ...f, royalty_no: e.target.value }))} placeholder="Mining royalty receipt no." />
                 </div>
                 <div className="space-y-1">
-                  <Label>Delivery Note</Label>
+                  <Label>{t('invoice.deliveryNote')}</Label>
                   <Input value={form.delivery_note} onChange={e => setForm(f => ({ ...f, delivery_note: e.target.value }))} />
                 </div>
                 <div className="space-y-1">
-                  <Label>Driver Name</Label>
+                  <Label>{t('invoice.driverName')}</Label>
                   <Input value={form.driver_name} onChange={e => setForm(f => ({ ...f, driver_name: e.target.value }))} />
                 </div>
                 <div className="space-y-1">
-                  <Label>LR / RR No.</Label>
+                  <Label>{t('invoice.lrRrNo')}</Label>
                   <Input value={form.lr_rr_no} onChange={e => setForm(f => ({ ...f, lr_rr_no: e.target.value }))} />
                 </div>
                 <div className="space-y-1">
@@ -540,7 +544,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
                   <Input value={form.supplier_ref} onChange={e => setForm(f => ({ ...f, supplier_ref: e.target.value }))} />
                 </div>
                 <div className="space-y-1">
-                  <Label>Destination</Label>
+                  <Label>{t('invoice.destination')}</Label>
                   <Input value={form.destination} onChange={e => setForm(f => ({ ...f, destination: e.target.value }))} />
                 </div>
                 <div className="col-span-2 space-y-1">
@@ -553,10 +557,10 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
         </div>
 
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
           <Button onClick={handleSubmit} disabled={saving}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create Invoice
+            {t('invoice.createInvoice')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -575,6 +579,7 @@ interface EditProps {
 }
 
 function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
+  const { t } = useTranslation();
   const { authorized: usbAuthorized } = useUsbGuard();
   const [parties, setParties] = useState<Party[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -740,7 +745,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Pencil className="h-4 w-4 text-primary" />
-            Edit Draft {invoice.invoice_type === 'sale' ? 'Sales' : 'Purchase'} Invoice
+            {invoice.invoice_type === 'sale' ? t('invoice.editSaleInvoice') : t('invoice.editPurchaseInvoice')}
             {invoice.invoice_no && <span className="text-sm font-mono text-muted-foreground ml-1">{invoice.invoice_no}</span>}
           </DialogTitle>
         </DialogHeader>
@@ -750,22 +755,22 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
 
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1">
-              <Label>Invoice Date *</Label>
+              <Label>{t('invoice.invoiceDate')} *</Label>
               <Input type="date" value={form.invoice_date}
                 onChange={e => setForm(f => ({ ...f, invoice_date: e.target.value }))} />
             </div>
             <div className="space-y-1">
-              <Label>Tax Type</Label>
+              <Label>{t('invoice.taxType')}</Label>
               <Select value={form.tax_type} onValueChange={v => setForm(f => ({ ...f, tax_type: v ?? 'gst' }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="gst">GST Invoice</SelectItem>
-                  {usbAuthorized && <SelectItem value="non_gst">Non-GST / Bill of Supply</SelectItem>}
+                  <SelectItem value="gst">{t('invoice.gst')}</SelectItem>
+                  {usbAuthorized && <SelectItem value="non_gst">{t('invoice.nonGst')}</SelectItem>}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
-              <Label>Linked Token</Label>
+              <Label>{t('invoice.linkedToken')}</Label>
               <Input
                 value={invoice.token_no ? `#${invoice.token_no} — ${invoice.vehicle_no ?? ''}` : 'None'}
                 readOnly
@@ -777,13 +782,13 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <Label>{walkIn ? 'Customer Name *' : 'Party *'}</Label>
+                <Label>{walkIn ? `${t('invoice.customerName')} *` : `${t('invoice.party')} *`}</Label>
                 <button
                   type="button"
                   className="text-xs text-primary underline-offset-2 hover:underline"
                   onClick={() => { setWalkIn(w => !w); setCustomerName(''); setForm(f => ({ ...f, party_id: '' })); }}
                 >
-                  {walkIn ? '← Select from master' : 'Walk-in / B2C →'}
+                  {walkIn ? t('invoice.selectFromMaster') : t('invoice.walkInB2c')}
                 </button>
               </div>
               {walkIn ? (
@@ -810,7 +815,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
               {!walkIn && form.party_id && <CreditStatusBanner partyId={form.party_id} className="mt-1.5" />}
             </div>
             <div className="space-y-1">
-              <Label>Vehicle No</Label>
+              <Label>{t('invoice.vehicleNo')}</Label>
               <Input value={form.vehicle_no}
                 onChange={e => setForm(f => ({ ...f, vehicle_no: e.target.value.toUpperCase() }))} />
             </div>
@@ -819,9 +824,9 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
           {/* Line Items */}
           <div className="border-t pt-3">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold">Line Items</p>
+              <p className="text-sm font-semibold">{t('invoice.lineItems')}</p>
               <Button size="sm" variant="outline" onClick={() => setLines(l => [...l, emptyLine()])}>
-                <Plus className="h-3 w-3 mr-1" /> Add Row
+                <Plus className="h-3 w-3 mr-1" /> {t('invoice.addRow')}
               </Button>
             </div>
             <div className="space-y-2">
@@ -829,7 +834,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
                 <div key={idx} className="grid gap-2 items-end"
                   style={{ gridTemplateColumns: 'minmax(0,2fr) minmax(80px,1.1fr) minmax(100px,1.4fr) minmax(70px,0.9fr) minmax(90px,1fr) 36px' }}>
                   <div className="space-y-1">
-                    {idx === 0 && <Label className="text-sm font-medium">Product</Label>}
+                    {idx === 0 && <Label className="text-sm font-medium">{t('invoice.productCol')}</Label>}
                     <Select value={line.product_id || undefined}
                       onValueChange={v => handleProductSelect(idx, v ?? '')}>
                       <SelectTrigger className="h-10 text-sm">
@@ -845,17 +850,17 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
                     </Select>
                   </div>
                   <div className="space-y-1 min-w-0">
-                    {idx === 0 && <Label className="text-sm font-medium">Qty</Label>}
+                    {idx === 0 && <Label className="text-sm font-medium">{t('invoice.qtyCol')}</Label>}
                     <Input className="h-10 text-sm font-semibold text-center w-full" type="number" min="0" step="0.001"
                       value={line.quantity} onChange={e => updateLine(idx, { quantity: e.target.value })} />
                   </div>
                   <div className="space-y-1 min-w-0">
-                    {idx === 0 && <Label className="text-sm font-medium">Rate (₹)</Label>}
+                    {idx === 0 && <Label className="text-sm font-medium">{t('invoice.rateCol')}</Label>}
                     <Input className="h-10 text-sm font-semibold w-full" type="number" min="0" step="0.01"
                       value={line.rate} onChange={e => updateLine(idx, { rate: e.target.value })} />
                   </div>
                   <div className="space-y-1 min-w-0">
-                    {idx === 0 && <Label className="text-sm font-medium">GST%</Label>}
+                    {idx === 0 && <Label className="text-sm font-medium">{t('invoice.gstCol')}</Label>}
                     <Select value={line.gst_rate} onValueChange={v => updateLine(idx, { gst_rate: v ?? '0' })}>
                       <SelectTrigger className="h-10 text-sm w-full"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -864,7 +869,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
                     </Select>
                   </div>
                   <div className="text-right space-y-1">
-                    {idx === 0 && <Label className="text-sm font-medium">Total</Label>}
+                    {idx === 0 && <Label className="text-sm font-medium">{t('invoice.totalCol')}</Label>}
                     <p className="text-sm font-semibold font-mono h-10 flex items-center justify-end pr-1">
                       {INR(lineTotal(line))}
                     </p>
@@ -878,47 +883,47 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
               ))}
             </div>
             <div className="text-right mt-2 text-sm font-semibold">
-              Est. Total: {INR(grandEstimate)}
+              {t('invoice.estTotal')} {INR(grandEstimate)}
             </div>
           </div>
 
           {/* Other fields */}
           <div className="grid grid-cols-3 gap-3 border-t pt-3">
             <div className="space-y-1">
-              <Label>Discount Type</Label>
+              <Label>{t('invoice.discountType')}</Label>
               <Select value={form.discount_type || 'none'}
                 onValueChange={v => setForm(f => ({ ...f, discount_type: (v === 'none' || !v) ? '' : v }))}>
-                <SelectTrigger><SelectValue placeholder="No discount" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t('invoice.noDiscount')} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  <SelectItem value="percentage">Percentage (%)</SelectItem>
-                  <SelectItem value="flat">Flat Amount (₹)</SelectItem>
+                  <SelectItem value="none">{t('invoice.discountNone')}</SelectItem>
+                  <SelectItem value="percentage">{t('invoice.discountPct')}</SelectItem>
+                  <SelectItem value="flat">{t('invoice.discountFlat')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             {form.discount_type && (
               <div className="space-y-1">
-                <Label>Discount Value</Label>
+                <Label>{t('invoice.discountValue')}</Label>
                 <Input type="number" min="0" value={form.discount_value}
                   onChange={e => setForm(f => ({ ...f, discount_value: e.target.value }))} />
               </div>
             )}
             <div className="space-y-1">
-              <Label>Freight (₹)</Label>
+              <Label>{t('invoice.freight')}</Label>
               <Input type="number" min="0" value={form.freight}
                 onChange={e => setForm(f => ({ ...f, freight: e.target.value }))} />
             </div>
             <div className="space-y-1">
-              <Label>Payment Mode</Label>
+              <Label>{t('payment.paymentMode')}</Label>
               <Select value={form.payment_mode || 'credit'}
                 onValueChange={v => setForm(f => ({ ...f, payment_mode: v ?? '' }))}>
                 <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="credit">Credit</SelectItem>
-                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="cash">{t('payment.cash')}</SelectItem>
                   <SelectItem value="upi">UPI</SelectItem>
-                  <SelectItem value="cheque">Cheque</SelectItem>
-                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                  <SelectItem value="cheque">{t('payment.cheque')}</SelectItem>
+                  <SelectItem value="bank_transfer">{t('payment.bank')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -935,7 +940,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
                 placeholder="EWB number" />
             </div>
             <div className="col-span-3 space-y-1">
-              <Label>Notes</Label>
+              <Label>{t('common.notes')}</Label>
               <Input value={form.notes}
                 onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                 placeholder="Optional remarks…" />
@@ -945,27 +950,27 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
           {/* Transport & Dispatch Details (collapsible) */}
           <div className="border-t pt-3">
             <button type="button" className="flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => setShowTransport(t => !t)}>
+              onClick={() => setShowTransport(prev => !prev)}>
               {showTransport ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              Transport &amp; Dispatch Details
+              {t('invoice.transportDetails')}
               <span className="text-xs font-normal">(Royalty No., Driver, LR/RR, etc.)</span>
             </button>
             {showTransport && (
               <div className="grid grid-cols-2 gap-3 mt-3">
                 <div className="space-y-1">
-                  <Label>Royalty No.</Label>
+                  <Label>{t('invoice.royaltyNo')}</Label>
                   <Input value={form.royalty_no} onChange={e => setForm(f => ({ ...f, royalty_no: e.target.value }))} placeholder="Mining royalty receipt no." />
                 </div>
                 <div className="space-y-1">
-                  <Label>Delivery Note</Label>
+                  <Label>{t('invoice.deliveryNote')}</Label>
                   <Input value={form.delivery_note} onChange={e => setForm(f => ({ ...f, delivery_note: e.target.value }))} />
                 </div>
                 <div className="space-y-1">
-                  <Label>Driver Name</Label>
+                  <Label>{t('invoice.driverName')}</Label>
                   <Input value={form.driver_name} onChange={e => setForm(f => ({ ...f, driver_name: e.target.value }))} />
                 </div>
                 <div className="space-y-1">
-                  <Label>LR / RR No.</Label>
+                  <Label>{t('invoice.lrRrNo')}</Label>
                   <Input value={form.lr_rr_no} onChange={e => setForm(f => ({ ...f, lr_rr_no: e.target.value }))} />
                 </div>
                 <div className="space-y-1">
@@ -989,7 +994,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
                   <Input value={form.supplier_ref} onChange={e => setForm(f => ({ ...f, supplier_ref: e.target.value }))} />
                 </div>
                 <div className="space-y-1">
-                  <Label>Destination</Label>
+                  <Label>{t('invoice.destination')}</Label>
                   <Input value={form.destination} onChange={e => setForm(f => ({ ...f, destination: e.target.value }))} />
                 </div>
                 <div className="col-span-2 space-y-1">
@@ -1002,7 +1007,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
         </div>
 
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={saving}>{t('common.cancel')}</Button>
           <Button onClick={handleSave} disabled={saving}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Save Changes
@@ -1026,6 +1031,7 @@ interface RecordPaymentDialogProps {
 }
 
 function RecordPaymentDialog({ open, invoice, onClose, onSaved }: RecordPaymentDialogProps) {
+  const { t } = useTranslation();
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [amount, setAmount] = useState('');
   const [mode, setMode] = useState('cash');
@@ -1083,7 +1089,7 @@ function RecordPaymentDialog({ open, invoice, onClose, onSaved }: RecordPaymentD
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>
-            Record {invoice?.invoice_type === 'sale' ? 'Receipt' : 'Payment'}
+            {t('invoice.recordPaymentTitle')}
             {invoice && <span className="ml-2 font-mono text-sm text-muted-foreground">{invoice.invoice_no}</span>}
           </DialogTitle>
         </DialogHeader>
@@ -1093,38 +1099,38 @@ function RecordPaymentDialog({ open, invoice, onClose, onSaved }: RecordPaymentD
 
           <div className="rounded-lg bg-muted/50 p-3 text-sm space-y-1">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Invoice Total</span>
+              <span className="text-muted-foreground">{t('invoice.invoiceTotal')}</span>
               <span className="font-medium">{INR(invoice?.grand_total ?? 0)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Already Paid</span>
+              <span className="text-muted-foreground">{t('invoice.alreadyPaid')}</span>
               <span className="text-green-600">{INR(invoice?.amount_paid ?? 0)}</span>
             </div>
             <div className="flex justify-between border-t pt-1 mt-1">
-              <span className="font-medium">Balance Due</span>
+              <span className="font-medium">{t('invoice.balanceDue')}</span>
               <span className="font-semibold text-orange-600">{INR(balance)}</span>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label>Payment Date *</Label>
+              <Label>{t('payment.paymentDate')} *</Label>
               <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
             </div>
             <div className="space-y-1">
-              <Label>Amount (₹) *</Label>
+              <Label>{t('payment.amount')} (₹) *</Label>
               <Input type="number" min="0.01" step="0.01" value={amount}
                 onChange={e => setAmount(e.target.value)} placeholder="0.00" />
               {isPartial && (
                 <p className="text-[10px] text-orange-600">
-                  Partial — ₹{(balance - entered).toLocaleString('en-IN', { minimumFractionDigits: 2 })} will remain
+                  {t('invoice.partialRemains', { amount: (balance - entered).toLocaleString('en-IN', { minimumFractionDigits: 2 }) })}
                 </p>
               )}
             </div>
           </div>
 
           <div className="space-y-1">
-            <Label>Payment Mode *</Label>
+            <Label>{t('payment.paymentMode')} *</Label>
             <Select value={mode} onValueChange={v => setMode(v ?? 'cash')}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -1138,27 +1144,27 @@ function RecordPaymentDialog({ open, invoice, onClose, onSaved }: RecordPaymentD
           {mode !== 'cash' && (
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>Reference No</Label>
+                <Label>{t('payment.reference')}</Label>
                 <Input value={refNo} onChange={e => setRefNo(e.target.value)} placeholder="Cheque / UTR / TXN" />
               </div>
               <div className="space-y-1">
-                <Label>Bank Name</Label>
+                <Label>{t('invoice.bankName')}</Label>
                 <Input value={bankName} onChange={e => setBankName(e.target.value)} placeholder="Bank name" />
               </div>
             </div>
           )}
 
           <div className="space-y-1">
-            <Label>Notes</Label>
+            <Label>{t('common.notes')}</Label>
             <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional remarks" />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
           <Button onClick={handleSave} disabled={saving}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Record {invoice?.invoice_type === 'sale' ? 'Receipt' : 'Payment'}
+            {t('invoice.recordPaymentTitle')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1176,6 +1182,7 @@ interface InvoicesPageProps {
 type SortCol = 'invoice_no' | 'invoice_date' | 'party' | 'grand_total' | 'net_weight' | 'payment_status' | 'status';
 
 export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps) {
+  const { t } = useTranslation();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -1442,7 +1449,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
       const { data } = await api.post<{ entry_no: string; message: string }>(`/api/v1/invoices/${inv.id}/move-to-supplement`);
       toast.success(`Moved to Supplement as ${data.entry_no}`);
       setInvoices(prev => prev.filter(i => i.id !== inv.id));
-      setTotal(t => t - 1);
+      setTotal(prev => prev - 1);
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       toast.error(typeof detail === 'string' ? detail : 'Failed to move to Supplement');
@@ -1562,19 +1569,19 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Invoices</h1>
-          <p className="text-muted-foreground">{total} invoices · {displayed.length} shown</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('invoice.title')}</h1>
+          <p className="text-muted-foreground">{t('invoice.invoiceCount', { count: total, shown: displayed.length })}</p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" /> New Invoice
+          <Plus className="mr-2 h-4 w-4" /> {invoiceType === 'sale' ? t('invoice.newSaleInvoice') : t('invoice.newPurchaseInvoice')}
         </Button>
       </div>
 
       <div className="flex gap-3 flex-wrap items-center">
         <Tabs value={invoiceType} onValueChange={v => { setInvoiceType(v as 'sale' | 'purchase'); setPage(1); }}>
           <TabsList>
-            <TabsTrigger value="sale">Sales</TabsTrigger>
-            <TabsTrigger value="purchase">Purchase</TabsTrigger>
+            <TabsTrigger value="sale">{t('token.sale')}</TabsTrigger>
+            <TabsTrigger value="purchase">{t('token.purchase')}</TabsTrigger>
           </TabsList>
         </Tabs>
         <div className="relative flex-1 max-w-xs">
@@ -1585,7 +1592,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
         {Object.values(cf).some(Boolean) && (
           <Button variant="ghost" size="sm" className="text-xs text-muted-foreground"
             onClick={() => setCf({ invoice_no: '', party: '', vehicle_no: '', payment_status: '', status: '', date_from: '', date_to: '' })}>
-            Clear filters ×
+            {t('invoice.clearFilters')}
           </Button>
         )}
         <Button
@@ -1621,7 +1628,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
             {syncingIds.size > 0
               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
               : <Send className="h-3.5 w-3.5" />}
-            Send to Tally
+            {t('invoice.sendToTally')}
             <span className="ml-0.5 rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold leading-none">
               {selectedIds.size}
             </span>
@@ -1653,21 +1660,21 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                       />
                     </th>
                     <th className={thSortClass} onClick={() => toggleSort('invoice_no')}>
-                      Invoice No <SortIcon col="invoice_no" />
+                      {t('invoice.invoiceNo')} <SortIcon col="invoice_no" />
                     </th>
                     <th className={thSortClass} onClick={() => toggleSort('invoice_date')}>
-                      Date <SortIcon col="invoice_date" />
+                      {t('common.date')} <SortIcon col="invoice_date" />
                     </th>
                     <th className={thSortClass} onClick={() => toggleSort('party')}>
-                      Party / Customer <SortIcon col="party" />
+                      {t('invoice.party')} <SortIcon col="party" />
                     </th>
                     <th className={thClass}>Vehicle</th>
                     <th className={thClass}>Token</th>
                     <th className={thSortClass + ' text-right'} onClick={() => toggleSort('net_weight')}>
-                      Net Wt (MT) <SortIcon col="net_weight" />
+                      {t('invoice.netWeight')} (MT) <SortIcon col="net_weight" />
                     </th>
                     <th className={thSortClass + ' text-right'} onClick={() => toggleSort('grand_total')}>
-                      Amount <SortIcon col="grand_total" />
+                      {t('common.amount')} <SortIcon col="grand_total" />
                     </th>
                     <th className={thClass + ' text-center'}>Progress</th>
                     <th className={thClass}></th>
@@ -1702,10 +1709,10 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                       <Select value={cf.payment_status || 'all'} onValueChange={v => setCf(f => ({ ...f, payment_status: (v ?? '') === 'all' ? '' : (v ?? '') }))}>
                         <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="all">All</SelectItem>
-                          <SelectItem value="unpaid">Unpaid</SelectItem>
-                          <SelectItem value="partial">Partial</SelectItem>
-                          <SelectItem value="paid">Paid</SelectItem>
+                          <SelectItem value="all">{t('common.all')}</SelectItem>
+                          <SelectItem value="unpaid">{t('invoice.paymentStatus.unpaid')}</SelectItem>
+                          <SelectItem value="partial">{t('invoice.paymentStatus.partial')}</SelectItem>
+                          <SelectItem value="paid">{t('invoice.paymentStatus.paid')}</SelectItem>
                         </SelectContent>
                       </Select>
                     </td>
@@ -1713,10 +1720,10 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                       <Select value={cf.status || 'all'} onValueChange={v => setCf(f => ({ ...f, status: (v ?? '') === 'all' ? '' : (v ?? '') }))}>
                         <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="all">All</SelectItem>
-                          <SelectItem value="draft">Draft</SelectItem>
-                          <SelectItem value="final">Approved</SelectItem>
-                          <SelectItem value="cancelled">Cancelled</SelectItem>
+                          <SelectItem value="all">{t('common.all')}</SelectItem>
+                          <SelectItem value="draft">{t('invoice.status.draft')}</SelectItem>
+                          <SelectItem value="final">{t('invoice.status.final')}</SelectItem>
+                          <SelectItem value="cancelled">{t('invoice.status.cancelled')}</SelectItem>
                         </SelectContent>
                       </Select>
                     </td>
@@ -1731,9 +1738,9 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
                             <FileText className="h-8 w-8 text-muted-foreground/40" />
                           </div>
-                          <h3 className="text-sm font-semibold">No invoices found</h3>
+                          <h3 className="text-sm font-semibold">{t('invoice.noInvoicesFound')}</h3>
                           <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-                            Try adjusting your filters, or create a new invoice to get started.
+                            {t('invoice.adjustFilters')}
                           </p>
                         </div>
                       </td>
@@ -1752,7 +1759,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                       </td>
                       <td className="px-3 py-2 font-mono text-xs font-semibold whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
-                          <span>{inv.invoice_no?.split('/Rv')[0] ?? <span className="text-amber-600 italic text-[10px] font-normal">Draft — not assigned</span>}</span>
+                          <span>{inv.invoice_no?.split('/Rv')[0] ?? <span className="text-amber-600 italic text-[10px] font-normal">{t('invoice.draftNotAssigned')}</span>}</span>
                           {inv.revision_no > 1 && (
                             <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-200" title={`Revision ${inv.revision_no} — click History to see previous versions`}>
                               v{inv.revision_no}
@@ -1768,7 +1775,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                       <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{inv.invoice_date}</td>
                       <td className="px-3 py-2 max-w-[200px]">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <p className="truncate text-sm">{inv.party?.name ?? inv.customer_name ?? <span className="italic text-muted-foreground">Walk-in</span>}</p>
+                          <p className="truncate text-sm">{inv.party?.name ?? inv.customer_name ?? <span className="italic text-muted-foreground">{t('invoice.walkIn')}</span>}</p>
                           {inv.party?.gstin
                             ? <span className="shrink-0 text-[9px] font-semibold px-1 py-0.5 rounded bg-blue-100 text-blue-700">B2B</span>
                             : <span className="shrink-0 text-[9px] font-semibold px-1 py-0.5 rounded bg-gray-100 text-gray-600">B2C</span>
@@ -1816,7 +1823,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                             a4Url={`/api/v1/invoices/${inv.id}/pdf`}
                             iconOnly
                           />
-                          <Button size="icon" variant="ghost" className="h-7 w-7" title="Download PDF" onClick={() => downloadPdf(inv)}>
+                          <Button size="icon" variant="ghost" className="h-7 w-7" title={t('invoice.downloadPdf')} onClick={() => downloadPdf(inv)}>
                             <Download className="h-3.5 w-3.5" />
                           </Button>
                           {/* ── Finalized invoice actions (role-gated) ── */}
@@ -1832,7 +1839,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                                   ? `Synced to Tally${inv.tally_sync_at ? ' · ' + new Date(inv.tally_sync_at).toLocaleDateString('en-IN') : ''}`
                                   : inv.tally_synced
                                     ? 'Modified since last sync — click to re-sync'
-                                    : 'Send to Tally'
+                                    : t('invoice.syncTally')
                               }
                               onClick={() => syncToTally(inv)}
                             >
@@ -1858,7 +1865,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                           {inv.status === 'final' && canEInvoice && (inv.einvoice_status === 'failed' || inv.einvoice_status === 'none') && inv.party && (inv.party as { gstin?: string | null })?.gstin && (
                             <Button
                               size="icon" variant="ghost" className="h-7 w-7"
-                              title={inv.einvoice_status === 'failed' ? 'Retry IRN Generation' : 'Generate IRN'}
+                              title={t('invoice.generateIrn')}
                               disabled={irnLoadingIds.has(inv.id)}
                               onClick={() => generateIrn(inv)}
                             >
@@ -1893,14 +1900,14 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                             </Button>
                           )}
                           {inv.status === 'final' && canRecordPayment && inv.payment_status !== 'paid' && inv.party && (
-                            <Button size="icon" variant="ghost" className="h-7 w-7" title="Record Payment" onClick={() => setPaymentInvoice(inv)}>
+                            <Button size="icon" variant="ghost" className="h-7 w-7" title={t('invoice.recordPayment')} onClick={() => setPaymentInvoice(inv)}>
                               <Banknote className="h-3.5 w-3.5 text-blue-600" />
                             </Button>
                           )}
                           {inv.status === 'final' && canWriteOff && inv.payment_status !== 'paid' && (
                             <Button
                               size="icon" variant="ghost" className="h-7 w-7"
-                              title="Write off balance (bad debt)"
+                              title={t('invoice.writeOff')}
                               onClick={() => writeOff(inv)}
                             >
                               <XCircle className="h-3.5 w-3.5 text-amber-600" />
@@ -1917,7 +1924,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                           {inv.status === 'final' && canRevise && (
                             <Button
                               size="icon" variant="ghost" className="h-7 w-7"
-                              title="Create Revision / Amendment"
+                              title={t('invoice.createRevision')}
                               disabled={revisionLoadingIds.has(inv.id)}
                               onClick={() => createRevision(inv)}
                             >
@@ -1944,7 +1951,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                                 </Button>
                               )}
                               {canFinalize && (!isSalesExec && !isPurchaseExec || (isSalesExec && inv.invoice_type !== 'purchase') || (isPurchaseExec && inv.invoice_type === 'purchase')) && (
-                                <Button size="icon" variant="ghost" className="h-7 w-7" title="Send Bill (lock + assign number)" onClick={() => finalise(inv.id)}>
+                                <Button size="icon" variant="ghost" className="h-7 w-7" title={t('invoice.finalise')} onClick={() => finalise(inv.id)}>
                                   <CheckCircle className="h-3.5 w-3.5 text-green-600" />
                                 </Button>
                               )}
@@ -1974,7 +1981,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                                 </Button>
                               )}
                               {canCancelDraft && (
-                                <Button size="icon" variant="ghost" className="h-7 w-7" title="Cancel" onClick={() => cancel(inv.id)}>
+                                <Button size="icon" variant="ghost" className="h-7 w-7" title={t('invoice.cancel')} onClick={() => cancel(inv.id)}>
                                   <XCircle className="h-3.5 w-3.5 text-red-500" />
                                 </Button>
                               )}
@@ -1997,8 +2004,8 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
             Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
           </p>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
-            <Button variant="outline" size="sm" disabled={page * PAGE_SIZE >= total} onClick={() => setPage(p => p + 1)}>Next</Button>
+            <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>{t('invoice.previous')}</Button>
+            <Button variant="outline" size="sm" disabled={page * PAGE_SIZE >= total} onClick={() => setPage(p => p + 1)}>{t('invoice.next')}</Button>
           </div>
         </div>
       )}
@@ -2007,7 +2014,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
         open={createOpen}
         invoiceType={invoiceType}
         onClose={() => setCreateOpen(false)}
-        onCreated={inv => { setInvoices(p => [inv, ...p]); setTotal(t => t + 1); }}
+        onCreated={inv => { setInvoices(p => [inv, ...p]); setTotal(prev => prev + 1); }}
       />
 
       <EditInvoiceDialog
