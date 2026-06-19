@@ -406,12 +406,14 @@ async def create_token(
     resolved_gate_pass_no: str | None = None
     if payload.gate_pass_id:
         gp_row = await db.execute(
-            text("SELECT gate_pass_no FROM gate_passes WHERE id = :id AND company_id = :cid"),
+            text("SELECT gate_pass_no, token_id FROM gate_passes WHERE id = :id AND company_id = :cid"),
             {"id": str(payload.gate_pass_id), "cid": str(company.id)},
         )
         gp = gp_row.fetchone()
         if not gp:
             raise HTTPException(status_code=404, detail="Gate pass not found. Create a gate pass first from the Gate Register.")
+        if gp.token_id:
+            raise HTTPException(status_code=409, detail="Gate pass already linked to another token. Select a different gate pass.")
         resolved_gate_pass_no = gp.gate_pass_no
     else:
         resolved_gate_pass_no = await next_gate_pass_no(db, company.id, fy.id, branch_id=branch_id)
@@ -501,6 +503,22 @@ async def create_volume_token(
     # weight_kg = CFT × (kg/CFT)
     net_kg = (payload.volume_cft * product.bulk_density).quantize(Decimal("0.01"))
 
+    # Resolve gate pass number (same logic as weighbridge create_token)
+    resolved_vol_gate_pass_no: str | None = None
+    if payload.gate_pass_id:
+        vgp_row = await db.execute(
+            text("SELECT gate_pass_no, token_id FROM gate_passes WHERE id = :id AND company_id = :cid"),
+            {"id": str(payload.gate_pass_id), "cid": str(company.id)},
+        )
+        vgp = vgp_row.fetchone()
+        if not vgp:
+            raise HTTPException(status_code=404, detail="Gate pass not found.")
+        if vgp.token_id:
+            raise HTTPException(status_code=409, detail="Gate pass already linked to another token. Select a different gate pass.")
+        resolved_vol_gate_pass_no = vgp.gate_pass_no
+    else:
+        resolved_vol_gate_pass_no = await next_gate_pass_no(db, company.id, fy.id, branch_id=branch_id)
+
     token = Token(
         company_id=company.id,
         branch_id=branch_id,
@@ -518,14 +536,7 @@ async def create_volume_token(
         driver_id=payload.driver_id,
         transporter_id=payload.transporter_id,
         gate_pass=payload.gate_pass,
-        gate_pass_no=(
-            (await db.execute(
-                text("SELECT gate_pass_no FROM gate_passes WHERE id = :id AND company_id = :cid"),
-                {"id": str(payload.gate_pass_id), "cid": str(company.id)},
-            )).scalar()
-            if payload.gate_pass_id
-            else await next_gate_pass_no(db, company.id, fy.id, branch_id=branch_id)
-        ),
+        gate_pass_no=resolved_vol_gate_pass_no,
         transit_pass_id=payload.transit_pass_id,
         vehicle_rent=payload.vehicle_rent,
         remarks=payload.remarks,

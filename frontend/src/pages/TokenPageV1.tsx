@@ -196,7 +196,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const loadGatePasses = useCallback(async () => {
     try {
       const { data } = await api.get<{ items: GatePass[] }>('/api/v1/gate/passes', {
-        params: { status: 'inside', page_size: 200 },
+        params: { status: 'inside', unlinked: true, page_size: 200 },
       });
       setOpenGatePasses(data.items ?? []);
     } catch { /* silent — gate management may not be active on all deployments */ }

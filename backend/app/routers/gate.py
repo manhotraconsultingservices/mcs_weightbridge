@@ -253,6 +253,7 @@ async def list_gate_passes(
     pass_date: str | None = None,
     status: str | None = None,
     vehicle_no: str | None = None,
+    unlinked: bool = False,
     page: int = 1,
     page_size: int = 50,
     db: AsyncSession = Depends(get_db),
@@ -270,6 +271,8 @@ async def list_gate_passes(
     if vehicle_no:
         filters += " AND vehicle_no ILIKE :vno"
         params["vno"] = f"%{vehicle_no}%"
+    if unlinked:
+        filters += " AND gp.token_id IS NULL"
 
     rows = await db.execute(
         text(f"""
@@ -286,7 +289,7 @@ async def list_gate_passes(
     items = [dict(r._mapping) for r in rows.fetchall()]
 
     total_row = await db.execute(
-        text(f"SELECT COUNT(*) FROM gate_passes WHERE company_id = :cid {filters}"),
+        text(f"SELECT COUNT(*) FROM gate_passes gp WHERE gp.company_id = :cid {filters}"),
         {k: v for k, v in params.items() if k not in ("lim", "off")},
     )
     total = total_row.scalar() or 0
