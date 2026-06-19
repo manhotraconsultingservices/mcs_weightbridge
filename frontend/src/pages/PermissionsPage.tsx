@@ -20,6 +20,7 @@ const PAGE_GROUPS = [
   {
     group: 'Operations',
     pages: [
+      { path: '/gate',            label: 'Gate Register' },
       { path: '/tokens-v1',       label: 'Token (Weighing)' },
       { path: '/tokens',          label: 'Token Dashboard (Analytics)' },
       { path: '/camera-scale',    label: 'Camera & Scale' },
@@ -77,6 +78,7 @@ const DEFAULT_INVOICE_ACTION_PERMS: Record<string, string[]> = {
   accountant:         ['edit_draft', 'finalize', 'cancel_draft', 'record_payment', 'tally_sync', 'einvoice', 'create_revision'],
   sales_executive:    ['edit_draft', 'finalize'],
   purchase_executive: ['edit_draft', 'finalize'],
+  gate_guard:         [],
   store_manager:      [],
   operator:           [],
   viewer:             [],
@@ -86,6 +88,7 @@ const DEFAULT_INVOICE_ACTION_PERMS: Record<string, string[]> = {
 // ── Role definitions for the tabs ─────────────────────────────────────────── //
 
 const ROLE_TABS = [
+  { value: 'gate_guard',         label: 'Gate Guard',         color: 'text-rose-600' },
   { value: 'store_manager',      label: 'Store Manager',      color: 'text-emerald-600' },
   { value: 'operator',           label: 'Operator',           color: 'text-blue-600' },
   { value: 'sales_executive',    label: 'Sales Executive',    color: 'text-green-600' },
