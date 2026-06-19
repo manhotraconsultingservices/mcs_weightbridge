@@ -34,6 +34,15 @@ SERVICE="${SERVICE:-weighbridge}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:9001/api/v1/health}"
 LOG_FILE="${LOG_FILE:-/var/log/weighbridge-deploy.log}"
 LOCK_FILE="/var/lock/weighbridge-deploy.lock"
+# Marker recording the commit we last actually BUILT + promoted to nginx.
+# Change detection compares the new HEAD against this, NOT against git's
+# pre-pull HEAD — so a manual `git pull` on the VPS (which leaves the script's
+# own reset a no-op) can never trick us into skipping a rebuild. If the marker
+# is missing (first run after this change, or a fresh box) we rebuild both
+# sides unconditionally, which is the safe default.
+DEPLOY_MARKER="${DEPLOY_MARKER:-$APP_DIR/.last_deployed_sha}"
+# Set FORCE_BUILD=1 in the environment to rebuild both sides regardless.
+FORCE_BUILD="${FORCE_BUILD:-0}"
 
 # ── Concurrency guard — block parallel deploys ─────────────────────────────
 exec 9>"$LOCK_FILE"
@@ -47,32 +56,38 @@ log "━━━ CI/CD deploy started"
 
 cd "$APP_DIR"
 
-# Capture commit hashes for change detection + summary
+# Capture commit hashes for logging + summary
 BEFORE=$(git rev-parse HEAD 2>/dev/null || echo "none")
-log "  Before: $BEFORE"
+log "  Git HEAD before pull: $BEFORE"
 
 # Hard reset to remote main — this discards any local commits on the VPS.
 # That's intentional: the VPS is a deploy target, not a dev environment.
 git fetch --quiet origin main
 git reset --hard --quiet origin/main
 AFTER=$(git rev-parse HEAD)
-log "  After:  $AFTER"
+log "  Git HEAD after pull:  $AFTER"
 
-if [ "$BEFORE" = "$AFTER" ]; then
-    log "  No commits — nothing to deploy. Still running nginx -t for sanity."
+# What did we LAST successfully build + promote? (not the pre-pull HEAD)
+LAST_DEPLOYED=$(cat "$DEPLOY_MARKER" 2>/dev/null || echo "none")
+log "  Last deployed commit: $LAST_DEPLOYED"
+
+if [ "$FORCE_BUILD" != "1" ] && [ "$LAST_DEPLOYED" = "$AFTER" ]; then
+    log "  Already deployed $AFTER — nothing to do. Still running nginx -t for sanity."
     nginx -t > /dev/null 2>&1 && systemctl reload nginx
     log "✅ No-op deploy complete in $(($(date +%s) - $(date -d "$START_TS" +%s)))s"
     exit 0
 fi
 
-# ── Decide what changed ────────────────────────────────────────────────────
+# ── Decide what changed (vs last DEPLOYED commit, not pre-pull HEAD) ─────────
 # git diff returns one filename per line. Use grep -c to count, not -E so the
 # empty regex case can't false-positive.
-if [ "$BEFORE" = "none" ]; then
+if [ "$FORCE_BUILD" = "1" ] || [ "$LAST_DEPLOYED" = "none" ]; then
+    log "  $([ "$FORCE_BUILD" = "1" ] && echo "FORCE_BUILD set" || echo "No deploy marker") — rebuilding both sides"
     FRONTEND_CHANGED=1
     BACKEND_CHANGED=1
+    REQ_CHANGED=1
 else
-    CHANGES=$(git diff --name-only "$BEFORE" "$AFTER" || echo "")
+    CHANGES=$(git diff --name-only "$LAST_DEPLOYED" "$AFTER" || echo "")
     FRONTEND_CHANGED=$(echo "$CHANGES" | grep -c '^frontend/' || true)
     BACKEND_CHANGED=$(echo "$CHANGES" | grep -c '^backend/' || true)
     REQ_CHANGED=$(echo "$CHANGES" | grep -c '^backend/requirements.txt$' || true)
@@ -153,6 +168,11 @@ case "$HEALTH_CODE" in
         exit 1
         ;;
 esac
+
+# ── Record what we deployed ─────────────────────────────────────────────────
+# Only written after the health check passed, so a failed deploy never advances
+# the marker — the next run will retry the rebuild.
+echo "$AFTER" > "$DEPLOY_MARKER"
 
 # ── Summary ─────────────────────────────────────────────────────────────────
 DURATION=$(( $(date +%s) - $(date -d "$START_TS" +%s) ))
