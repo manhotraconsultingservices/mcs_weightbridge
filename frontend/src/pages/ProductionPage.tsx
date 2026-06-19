@@ -8,9 +8,10 @@
  *
  * Finalising a cycle posts its outputs to product_stock as cycle_output movements.
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Plus, Factory, Trash2, CheckCircle, FileEdit, History } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -89,114 +90,115 @@ const fmtMt = (kg: number | null | undefined, decimals = 3) =>
 const fmtPct = (n: number | null | undefined) =>
   n == null ? '—' : `${n.toFixed(2)}%`;
 
-// ─── Column definitions for the cycles DataTable ─────────────────────────────
-// Defined as a module-level constant so the DataTable's reference equality on
-// `columns` is stable across renders.
-const CYCLE_COLUMNS: ColumnDef<ProductionCycle>[] = [
-  {
-    key: 'cycle_date', label: 'Date', type: 'date',
-    accessor: c => c.cycle_date,
-    format: v => new Date(String(v)).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-    exportValue: c => c.cycle_date,
-  },
-  {
-    key: 'cycle_no', label: 'Cycle #', type: 'number', align: 'right',
-    accessor: c => c.cycle_no,
-    className: 'font-mono',
-  },
-  {
-    key: 'raw_material_name', label: 'Raw Material', type: 'string',
-    accessor: c => c.raw_material_name ?? '',
-    format: v => v ? (
-      <Badge variant="outline" className="text-[10px] border-amber-300 bg-amber-50 text-amber-800">{String(v)}</Badge>
-    ) : <span className="text-xs text-muted-foreground italic">—</span>,
-    defaultVisible: true,
-  },
-  {
-    key: 'input_kg', label: 'Input', type: 'number', align: 'right',
-    accessor: c => c.input_kg,
-    format: v => fmtMt(v as number),
-    className: 'font-mono',
-  },
-  {
-    key: 'stage1_output_kg', label: 'Stage 1', type: 'number', align: 'right', defaultVisible: true,
-    accessor: c => c.stage1_output_kg,
-    format: v => fmtMt(v as number | null),
-    className: 'font-mono text-muted-foreground',
-  },
-  {
-    key: 'stage2_output_kg', label: 'Stage 2', type: 'number', align: 'right', defaultVisible: true,
-    accessor: c => c.stage2_output_kg,
-    format: v => fmtMt(v as number | null),
-    className: 'font-mono text-muted-foreground',
-  },
-  {
-    key: 'stage3_output_kg', label: 'Stage 3', type: 'number', align: 'right', defaultVisible: true,
-    accessor: c => c.stage3_output_kg,
-    format: v => fmtMt(v as number | null),
-    className: 'font-mono text-muted-foreground',
-  },
-  {
-    key: 'total_output_kg', label: 'Output (4)', type: 'number', align: 'right',
-    accessor: c => c.total_output_kg,
-    format: v => fmtMt(v as number),
-    className: 'font-mono',
-  },
-  {
-    // Products produced in this cycle — comma-separated, sortable by product count
-    key: 'products', label: 'Products', type: 'string',
-    accessor: c => c.outputs.map(o => o.product_name ?? '?').join(', '),
-    format: (_, row) => (
-      <div className="flex flex-wrap gap-1 max-w-[260px]">
-        {row.outputs.length === 0
-          ? <span className="text-muted-foreground italic text-xs">—</span>
-          : row.outputs.map(o => (
-              <Badge key={o.product_id} variant="secondary" className="text-[10px] font-normal">
-                {o.product_name ?? '?'}
-                <span className="ml-1 text-muted-foreground">
-                  {(Number(o.output_kg) / 1000).toFixed(1)}t
-                </span>
-              </Badge>
-            ))}
-      </div>
-    ),
-    exportValue: c => c.outputs.map(o => `${o.product_name ?? '?'} (${(Number(o.output_kg) / 1000).toFixed(2)} MT)`).join('; '),
-  },
-  {
-    key: 'yield_pct', label: 'Yield', type: 'number', align: 'right',
-    accessor: c => c.yield_pct,
-    format: v => {
-      const n = v as number | null;
-      const cls = (n ?? 0) > 80 ? 'text-green-600' : (n ?? 0) > 60 ? 'text-amber-600' : 'text-red-600';
-      return <span className={`font-mono ${cls}`}>{fmtPct(n)}</span>;
-    },
-  },
-  {
-    key: 'belt_loss_pct', label: 'Belt Loss', type: 'number', align: 'right',
-    accessor: c => c.belt_loss_pct,
-    format: v => fmtPct(v as number | null),
-    className: 'font-mono text-muted-foreground',
-  },
-  {
-    key: 'status', label: 'Status', type: 'enum', align: 'center',
-    enumOptions: ['Draft', 'Finalised'],
-    accessor: c => c.is_finalised ? 'Finalised' : 'Draft',
-    format: v => v === 'Finalised'
-      ? <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Finalised</Badge>
-      : <Badge variant="secondary">Draft</Badge>,
-  },
-  {
-    key: 'notes', label: 'Notes', type: 'string', defaultVisible: false,
-    accessor: c => c.notes ?? '',
-  },
-];
-
 export default function ProductionPage() {
+  const { t } = useTranslation();
   const [cycles, setCycles] = useState<ProductionCycle[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ProductionCycle | null>(null);
+
+  // ─── Column definitions for the cycles DataTable ───────────────────────────
+  // useMemo keeps column references stable across renders while still
+  // allowing t() for translated labels.
+  const CYCLE_COLUMNS = useMemo<ColumnDef<ProductionCycle>[]>(() => [
+    {
+      key: 'cycle_date', label: t('production.cycleDate'), type: 'date',
+      accessor: c => c.cycle_date,
+      format: v => new Date(String(v)).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      exportValue: c => c.cycle_date,
+    },
+    {
+      key: 'cycle_no', label: t('production.cycleNo'), type: 'number', align: 'right',
+      accessor: c => c.cycle_no,
+      className: 'font-mono',
+    },
+    {
+      key: 'raw_material_name', label: t('production.rawMaterial'), type: 'string',
+      accessor: c => c.raw_material_name ?? '',
+      format: v => v ? (
+        <Badge variant="outline" className="text-[10px] border-amber-300 bg-amber-50 text-amber-800">{String(v)}</Badge>
+      ) : <span className="text-xs text-muted-foreground italic">—</span>,
+      defaultVisible: true,
+    },
+    {
+      key: 'input_kg', label: t('production.inputMt'), type: 'number', align: 'right',
+      accessor: c => c.input_kg,
+      format: v => fmtMt(v as number),
+      className: 'font-mono',
+    },
+    {
+      key: 'stage1_output_kg', label: t('production.stage1Output'), type: 'number', align: 'right', defaultVisible: true,
+      accessor: c => c.stage1_output_kg,
+      format: v => fmtMt(v as number | null),
+      className: 'font-mono text-muted-foreground',
+    },
+    {
+      key: 'stage2_output_kg', label: t('production.stage2Output'), type: 'number', align: 'right', defaultVisible: true,
+      accessor: c => c.stage2_output_kg,
+      format: v => fmtMt(v as number | null),
+      className: 'font-mono text-muted-foreground',
+    },
+    {
+      key: 'stage3_output_kg', label: t('production.stage3Output'), type: 'number', align: 'right', defaultVisible: true,
+      accessor: c => c.stage3_output_kg,
+      format: v => fmtMt(v as number | null),
+      className: 'font-mono text-muted-foreground',
+    },
+    {
+      key: 'total_output_kg', label: t('production.totalOutput'), type: 'number', align: 'right',
+      accessor: c => c.total_output_kg,
+      format: v => fmtMt(v as number),
+      className: 'font-mono',
+    },
+    {
+      // Products produced in this cycle — comma-separated, sortable by product count
+      key: 'products', label: t('production.products'), type: 'string',
+      accessor: c => c.outputs.map(o => o.product_name ?? '?').join(', '),
+      format: (_, row) => (
+        <div className="flex flex-wrap gap-1 max-w-[260px]">
+          {row.outputs.length === 0
+            ? <span className="text-muted-foreground italic text-xs">—</span>
+            : row.outputs.map(o => (
+                <Badge key={o.product_id} variant="secondary" className="text-[10px] font-normal">
+                  {o.product_name ?? '?'}
+                  <span className="ml-1 text-muted-foreground">
+                    {(Number(o.output_kg) / 1000).toFixed(1)}t
+                  </span>
+                </Badge>
+              ))}
+        </div>
+      ),
+      exportValue: c => c.outputs.map(o => `${o.product_name ?? '?'} (${(Number(o.output_kg) / 1000).toFixed(2)} MT)`).join('; '),
+    },
+    {
+      key: 'yield_pct', label: t('production.yieldPct'), type: 'number', align: 'right',
+      accessor: c => c.yield_pct,
+      format: v => {
+        const n = v as number | null;
+        const cls = (n ?? 0) > 80 ? 'text-green-600' : (n ?? 0) > 60 ? 'text-amber-600' : 'text-red-600';
+        return <span className={`font-mono ${cls}`}>{fmtPct(n)}</span>;
+      },
+    },
+    {
+      key: 'belt_loss_pct', label: t('production.beltLossPct'), type: 'number', align: 'right',
+      accessor: c => c.belt_loss_pct,
+      format: v => fmtPct(v as number | null),
+      className: 'font-mono text-muted-foreground',
+    },
+    {
+      key: 'status', label: t('common.status'), type: 'enum', align: 'center',
+      enumOptions: [t('production.statusDraft'), t('production.statusFinalised')],
+      accessor: c => c.is_finalised ? t('production.statusFinalised') : t('production.statusDraft'),
+      format: v => v === t('production.statusFinalised')
+        ? <Badge className="bg-green-100 text-green-700 hover:bg-green-100">{t('production.statusFinalised')}</Badge>
+        : <Badge variant="secondary">{t('production.statusDraft')}</Badge>,
+    },
+    {
+      key: 'notes', label: t('common.notes'), type: 'string', defaultVisible: false,
+      accessor: c => c.notes ?? '',
+    },
+  ], [t]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -219,26 +221,26 @@ export default function ProductionPage() {
   const openEdit = (c: ProductionCycle) => { setEditing(c); setDialogOpen(true); };
 
   const handleFinalise = async (c: ProductionCycle) => {
-    if (!confirm(`Finalise cycle ${c.cycle_date}? Stock will be credited for ${c.outputs.length} product(s). This can't be undone.`)) return;
+    if (!confirm(t('production.confirmFinalise', { date: c.cycle_date, count: c.outputs.length }))) return;
     try {
       await api.post(`/api/v1/production/cycles/${c.id}/finalise`);
-      toast.success('Cycle finalised and stock posted');
+      toast.success(t('production.toastFinalised'));
       load();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } };
-      toast.error(err.response?.data?.detail ?? 'Failed to finalise');
+      toast.error(err.response?.data?.detail ?? t('production.toastFinaliseFailed'));
     }
   };
 
   const handleDelete = async (c: ProductionCycle) => {
-    if (!confirm(`Delete cycle ${c.cycle_date}? Its finished-goods stock will be reversed out of Stock on Hand.`)) return;
+    if (!confirm(t('production.confirmDelete', { date: c.cycle_date }))) return;
     try {
       await api.delete(`/api/v1/production/cycles/${c.id}`);
-      toast.success('Cycle deleted');
+      toast.success(t('production.toastDeleted'));
       load();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } };
-      toast.error(err.response?.data?.detail ?? 'Delete failed');
+      toast.error(err.response?.data?.detail ?? t('production.toastDeleteFailed'));
     }
   };
 
@@ -254,32 +256,30 @@ export default function ProductionPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Production Cycles</h1>
-          <p className="text-muted-foreground">
-            One cycle per day. Track input, stage-wise weights, and per-product Stage 4 outputs. Finished goods post to Stock on Hand automatically on save.
-          </p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('production.title')}</h1>
+          <p className="text-muted-foreground">{t('production.subtitle')}</p>
         </div>
         <Button onClick={openCreate}>
-          <Plus className="mr-2 h-4 w-4" /> New Cycle
+          <Plus className="mr-2 h-4 w-4" /> {t('production.newCycle')}
         </Button>
       </div>
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card><CardContent className="pt-4">
-          <p className="text-xs text-muted-foreground">Cycles</p>
+          <p className="text-xs text-muted-foreground">{t('production.cardCycles')}</p>
           <p className="text-2xl font-bold">{cycles.length}</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <p className="text-xs text-muted-foreground">Total Input</p>
+          <p className="text-xs text-muted-foreground">{t('production.cardTotalInput')}</p>
           <p className="text-2xl font-bold">{(totals.input / 1000).toFixed(2)} MT</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <p className="text-xs text-muted-foreground">Total Output</p>
+          <p className="text-xs text-muted-foreground">{t('production.cardTotalOutput')}</p>
           <p className="text-2xl font-bold text-green-600">{(totals.output / 1000).toFixed(2)} MT</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <p className="text-xs text-muted-foreground">Avg Yield</p>
+          <p className="text-xs text-muted-foreground">{t('production.cardAvgYield')}</p>
           <p className={`text-2xl font-bold ${avgYield > 80 ? 'text-green-600' : avgYield > 60 ? 'text-amber-600' : 'text-red-600'}`}>
             {avgYield.toFixed(1)}%
           </p>
@@ -294,22 +294,22 @@ export default function ProductionPage() {
         rowKey={c => c.id}
         exportFilename="production-cycles"
         defaultSort={{ key: 'cycle_date', direction: 'desc' }}
-        emptyMessage={`No cycles logged yet. Click "New Cycle" to record today's production.`}
+        emptyMessage={t('production.emptyMessage')}
         columns={CYCLE_COLUMNS}
         rowActions={c => (
           <div className="flex gap-1 justify-end">
             {/* Cycles auto-post to Stock on Hand on save. Editing reverses the old
                 stock and re-posts the new values; deleting reverses it. So edit +
                 delete are always available now. */}
-            <Button variant="ghost" size="icon" title="Edit (re-syncs stock)" onClick={() => openEdit(c)}>
+            <Button variant="ghost" size="icon" title={t('production.editResyncStock')} onClick={() => openEdit(c)}>
               <FileEdit className="h-4 w-4" />
             </Button>
             {!c.is_finalised && (
-              <Button variant="ghost" size="icon" title="Post to stock" onClick={() => handleFinalise(c)}>
+              <Button variant="ghost" size="icon" title={t('production.postToStock')} onClick={() => handleFinalise(c)}>
                 <CheckCircle className="h-4 w-4 text-green-600" />
               </Button>
             )}
-            <Button variant="ghost" size="icon" title="Delete (reverses stock)" onClick={() => handleDelete(c)}>
+            <Button variant="ghost" size="icon" title={t('production.deleteReversesStock')} onClick={() => handleDelete(c)}>
               <Trash2 className="h-4 w-4 text-red-600" />
             </Button>
           </div>
@@ -318,7 +318,7 @@ export default function ProductionPage() {
       {!loading && cycles.length === 0 && (
         <div className="flex flex-col items-center justify-center py-8 text-center">
           <Factory className="h-10 w-10 mb-2 text-muted-foreground/40" />
-          <p className="text-sm font-medium">No cycles logged yet</p>
+          <p className="text-sm font-medium">{t('production.noCyclesYet')}</p>
         </div>
       )}
 

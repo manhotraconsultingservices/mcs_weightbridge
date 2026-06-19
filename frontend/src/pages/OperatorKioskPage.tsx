@@ -430,19 +430,19 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
             {t('kiosk.pendingCount')} ({pendingTokens.length})
           </label>
           <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 snap-x">
-            {pendingTokens.map(t => (
+            {pendingTokens.map(tok => (
               <button
-                key={t.id}
-                onClick={() => onResume(t)}
+                key={tok.id}
+                onClick={() => onResume(tok)}
                 className="snap-start shrink-0 w-56 p-4 rounded-2xl border-2 border-amber-300 bg-amber-50 hover:bg-amber-100 transition-colors text-left shadow-sm"
-                title={`Tap to capture 2nd weight for token #${t.token_no ?? '—'}`}
+                title={`Tap to capture 2nd weight for token #${tok.token_no ?? '—'}`}
               >
                 <div className="flex items-center gap-2 mb-1">
                   <Truck className="h-4 w-4 text-amber-700 shrink-0" />
-                  <span className="font-mono font-bold text-lg text-amber-900 tracking-wide truncate">{t.vehicle_no}</span>
+                  <span className="font-mono font-bold text-lg text-amber-900 tracking-wide truncate">{tok.vehicle_no}</span>
                 </div>
-                <div className="text-sm font-semibold text-slate-800 truncate">{t.party?.name ?? '—'}</div>
-                <div className="text-xs text-slate-600 truncate mt-0.5">{t.product?.name ?? '—'}</div>
+                <div className="text-sm font-semibold text-slate-800 truncate">{tok.party?.name ?? '—'}</div>
+                <div className="text-xs text-slate-600 truncate mt-0.5">{tok.product?.name ?? '—'}</div>
                 <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-200 text-amber-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                   <ArrowRight className="h-3 w-3" /> {t('kiosk.waitingForWeight')}
                 </div>

@@ -217,7 +217,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       });
       // Refresh list then auto-select the new pass and pre-fill vehicle no
       await loadGatePasses();
-      setForm(f => ({ ...f, gate_pass_id: data.id, vehicle_no: f.vehicle_no || data.vehicle_no }));
+      setForm(f => ({ ...f, gate_pass_id: data.id, vehicle_no: f.vehicle_no || data.vehicle_no || '' }));
       setQuickGp({ vehicle_no: '', driver_name: '', driver_phone: '' });
       setGpDialogOpen(false);
       toast.success(`Gate pass ${data.gate_pass_no} created`);
