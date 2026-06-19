@@ -38,8 +38,7 @@ class Token(Base):
     net_weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     # How the net_weight was determined: 'weighbridge' (gross-tare) or 'volume' (volume_cft × bulk_density)
     weight_method: Mapped[str] = mapped_column(String(20), default="weighbridge")
-    # Recorded volume for audit trail when weight_method='volume' (CFT, canonical unit).
-    # Old DBs migrated from m³ via ×35.3147 — see ddl.py units_migrated_to_cft_v1 marker.
+    # Recorded volume in CFT (canonical unit) for audit trail when weight_method='volume'.
     volume_cft: Mapped[Decimal | None] = mapped_column(Numeric(10, 3))
     first_weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     second_weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))

@@ -31,8 +31,7 @@ import type { User, Party, Product, Token, TokenListResponse } from '@/types';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-// Default volume per tyre-class in CFT (cubic feet — the standard unit in
-// the Indian stone-crusher trade). Operator can still override per token.
+// Default volume per tyre-class in CFT (canonical unit stored in DB).
 const TYRE_VOLUME_CFT: Record<number, number> = {
   4: 106, 6: 247, 8: 353, 10: 459, 12: 600,
 };

@@ -478,7 +478,7 @@ async def create_volume_token(
             f"Set it on the product before using volume-based tokens.",
         )
 
-    # weight_kg = CFT × (kg/CFT)  → kg
+    # weight_kg = CFT × (kg/CFT)
     net_kg = (payload.volume_cft * product.bulk_density).quantize(Decimal("0.01"))
 
     token = Token(
@@ -924,8 +924,10 @@ async def print_token(
     current_user: User = Depends(get_current_user),
 ):
     """Return an HTML weighment slip for printing. format=a4 (default) or thermal."""
+    from app.routers.app_settings import VOLUME_UNIT_KEY, _get_raw
     token = await _load_token(db, token_id)
     company, _ = await _get_company_and_fy(db)
+    volume_unit = (await _get_raw(db, VOLUME_UNIT_KEY)) or "m3"
     template = "token_thermal.html" if format == "thermal" else "token_a4.html"
-    html = render_html(template, {"token": token, "company": company})
+    html = render_html(template, {"token": token, "company": company, "volume_unit": volume_unit})
     return HTMLResponse(content=html)

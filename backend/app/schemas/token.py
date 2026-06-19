@@ -36,8 +36,7 @@ class TokenSecondWeight(BaseModel):
 class TokenVolumeCreate(BaseModel):
     """Volume-based load: skip the bridge, compute weight from volume × bulk_density.
 
-    Volume is in CFT (cubic feet) — the standard unit in the Indian stone-crusher
-    trade. Density is also in kg/CFT on the product. Weight = volume_cft × density.
+    Calculation: weight_kg = volume_cft × bulk_density(kg/CFT).
     """
     token_date: date
     direction: str = "outbound"
@@ -50,7 +49,7 @@ class TokenVolumeCreate(BaseModel):
     tyre_count: Optional[int] = None     # 4/6/8/10/12 — also drives default volume in UI
     driver_id: Optional[UUID] = None
     transporter_id: Optional[UUID] = None
-    volume_cft: Decimal                  # cubic feet — canonical unit in this system
+    volume_cft: Decimal                  # cubic feet — canonical unit stored in DB
     gate_pass: Optional[str] = None
     remarks: Optional[str] = None
     transit_pass_id: Optional[UUID] = None
@@ -78,7 +77,7 @@ class ProductBrief(BaseModel):
     id: UUID
     name: str
     unit: str
-    bulk_density: Decimal | None = None    # kg/CFT — for client-side weight/volume display
+    bulk_density: Decimal | None = None    # kg/m³ — for client-side weight/volume display
     model_config = {"from_attributes": True}
 
 
@@ -136,7 +135,7 @@ class TokenResponse(BaseModel):
     first_weight_type: Optional[str] = None
     is_manual_weight: bool = False
     weight_method: str = "weighbridge"   # 'weighbridge' | 'volume'
-    volume_cft: Optional[Decimal] = None     # cubic feet (when weight_method='volume')
+    volume_cft: Optional[Decimal] = None     # cubic feet, canonical unit (when weight_method='volume')
     is_supplement: bool = False
     gate_pass: Optional[str] = None          # legacy free-text gate-pass note
     gate_pass_no: Optional[str] = None       # auto-allocated GP/25-26/0001
