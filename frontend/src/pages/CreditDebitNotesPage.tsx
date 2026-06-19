@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { PrintButton } from '@/components/PrintButton';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 
 interface Note {
   id: string; invoice_no: string | null; invoice_date: string; invoice_type: string;
@@ -17,6 +18,61 @@ interface Note {
 interface SrcInvoice { id: string; invoice_no: string | null; invoice_type: string; status: string; party: { name: string } | null; grand_total: number | string }
 
 const INR = (v: number | string) => '₹' + Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
+const NOTE_COLUMNS: ColumnDef<Note>[] = [
+  {
+    key: 'invoice_no', label: 'Note No', type: 'string',
+    accessor: n => n.invoice_no ?? '',
+    format: (_, n) => (n as Note).invoice_no
+      ? <span className="font-mono font-semibold">{(n as Note).invoice_no}</span>
+      : <span className="italic text-muted-foreground">draft</span>,
+  },
+  {
+    key: 'invoice_date', label: 'Date', type: 'date',
+    accessor: n => n.invoice_date,
+    format: v => new Date(String(v)).toLocaleDateString('en-IN'),
+  },
+  {
+    key: 'invoice_type', label: 'Type', type: 'enum', enumOptions: ['credit_note', 'debit_note'],
+    accessor: n => n.invoice_type,
+    format: (_, n) => {
+      const isCredit = (n as Note).invoice_type === 'credit_note';
+      return (
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${isCredit ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
+          {isCredit ? <FileMinus className="h-3 w-3" /> : <FilePlus className="h-3 w-3" />}
+          {isCredit ? 'Credit' : 'Debit'}
+        </span>
+      );
+    },
+    exportValue: n => n.invoice_type === 'credit_note' ? 'Credit' : 'Debit',
+  },
+  {
+    key: 'party', label: 'Party', type: 'string',
+    accessor: n => n.party?.name ?? 'Cash',
+    className: 'max-w-[160px] truncate',
+  },
+  {
+    key: 'note_reason', label: 'Reason', type: 'string',
+    accessor: n => n.note_reason ?? '',
+    format: (v) => <span className="text-xs text-muted-foreground">{String(v) || '—'}</span>,
+    className: 'max-w-[200px] truncate',
+  },
+  {
+    key: 'grand_total', label: 'Amount', type: 'number', align: 'right',
+    accessor: n => Number(n.grand_total ?? 0),
+    format: (v) => INR(v as number),
+    exportValue: n => Number(n.grand_total ?? 0),
+  },
+  {
+    key: 'status', label: 'Status', type: 'enum', enumOptions: ['draft', 'final'],
+    accessor: n => n.status,
+    format: (v) => (
+      <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${v === 'final' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+        {String(v)}
+      </span>
+    ),
+  },
+];
 
 export default function CreditDebitNotesPage() {
   const [notes, setNotes] = useState<Note[]>([]);
@@ -90,50 +146,27 @@ export default function CreditDebitNotesPage() {
         <Button onClick={() => { setErr(''); setOpen(true); }} className="gap-1.5"><Plus className="h-4 w-4" /> New Note</Button>
       </div>
 
-      <div className="rounded-lg border overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-xs">
-            <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:text-left">
-              <th>Note No</th><th>Date</th><th>Type</th><th>Party</th><th>Reason</th>
-              <th className="text-right">Amount</th><th>Status</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && <tr><td colSpan={8} className="px-3 py-6 text-center text-muted-foreground"><Loader2 className="inline h-4 w-4 animate-spin" /> Loading…</td></tr>}
-            {!loading && notes.length === 0 && <tr><td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">No credit/debit notes yet.</td></tr>}
-            {notes.map(n => {
-              const isCredit = n.invoice_type === 'credit_note';
-              return (
-                <tr key={n.id} className="border-t [&>td]:px-3 [&>td]:py-2">
-                  <td className="font-mono font-semibold">{n.invoice_no ?? <span className="italic text-muted-foreground">draft</span>}</td>
-                  <td>{new Date(n.invoice_date).toLocaleDateString('en-IN')}</td>
-                  <td>
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${isCredit ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
-                      {isCredit ? <FileMinus className="h-3 w-3" /> : <FilePlus className="h-3 w-3" />}
-                      {isCredit ? 'Credit' : 'Debit'}
-                    </span>
-                  </td>
-                  <td className="max-w-[160px] truncate">{n.party?.name ?? 'Cash'}</td>
-                  <td className="max-w-[200px] truncate text-xs text-muted-foreground" title={n.note_reason ?? ''}>{n.note_reason ?? '—'}</td>
-                  <td className="text-right">{INR(n.grand_total)}</td>
-                  <td><span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${n.status === 'final' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>{n.status}</span></td>
-                  <td>
-                    <div className="flex items-center gap-1 justify-end">
-                      <PrintButton a4Url={`/api/v1/invoices/${n.id}/pdf`} url={`/api/v1/invoices/${n.id}/pdf`} iconOnly />
-                      {n.status === 'draft' && (
-                        <button onClick={() => finalise(n)} title="Finalise (assign number)"
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-emerald-700">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <DataTable<Note>
+        id="creditdebitnotes.main"
+        data={notes}
+        loading={loading}
+        columns={NOTE_COLUMNS}
+        rowKey={n => n.id}
+        exportFilename="credit-debit-notes"
+        defaultSort={{ key: 'invoice_date', direction: 'desc' }}
+        emptyMessage="No credit/debit notes yet."
+        rowActions={n => (
+          <div className="flex items-center gap-1 justify-end">
+            <PrintButton a4Url={`/api/v1/invoices/${n.id}/pdf`} url={`/api/v1/invoices/${n.id}/pdf`} iconOnly />
+            {n.status === 'draft' && (
+              <button onClick={() => finalise(n)} title="Finalise (assign number)"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-emerald-700">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+      />
 
       {/* New note dialog */}
       <Dialog open={open} onOpenChange={setOpen}>

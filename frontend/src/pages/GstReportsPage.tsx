@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, Download, FileJson } from 'lucide-react';
+import { Search, FileJson } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,17 +7,11 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import api from '@/services/api';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 
 const fmt = (n: number) => '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const today = () => new Date().toISOString().slice(0, 10);
 const monthStart = () => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); };
-
-function downloadCSV(filename: string, headers: string[], rows: (string | number | null)[][]) {
-  const lines = [headers.join(','), ...rows.map(r => r.map(c => `"${c ?? ''}"`).join(','))];
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = filename; a.click();
-}
 
 // ── GSTR-1 types ─────────────────────────────────────────────────────────────
 
@@ -44,19 +38,6 @@ interface Gstr3bData {
 
 // ── Shared components ─────────────────────────────────────────────────────────
 
-function TotalsRow({ totals, label }: { totals: GstTotals; label: string }) {
-  return (
-    <tr className="bg-muted/30 font-semibold text-sm">
-      <td colSpan={2} className="px-3 py-2">{label}</td>
-      <td className="px-3 py-2 text-right">{fmt(totals.taxable)}</td>
-      <td className="px-3 py-2 text-right">{fmt(totals.cgst)}</td>
-      <td className="px-3 py-2 text-right">{fmt(totals.sgst)}</td>
-      <td className="px-3 py-2 text-right">{fmt(totals.igst)}</td>
-      <td className="px-3 py-2 text-right">{fmt(totals.total)}</td>
-    </tr>
-  );
-}
-
 function TaxCard({ label, igst, cgst, sgst, total }: { label: string; igst: number; cgst: number; sgst: number; total: number }) {
   return (
     <div className="rounded-lg border p-4 space-y-2">
@@ -67,6 +48,228 @@ function TaxCard({ label, igst, cgst, sgst, total }: { label: string; igst: numb
         <span>SGST: {fmt(sgst)}</span>
         <span>IGST: {fmt(igst)}</span>
       </div>
+    </div>
+  );
+}
+
+// ── Column definitions ────────────────────────────────────────────────────────
+
+const B2B_COLUMNS: ColumnDef<GstRow>[] = [
+  {
+    key: 'invoice_no',
+    label: 'Invoice No',
+    type: 'string',
+    accessor: r => r.invoice_no,
+    format: (v) => <span className="font-mono text-xs font-medium">{String(v ?? '')}</span>,
+  },
+  {
+    key: 'invoice_date',
+    label: 'Date',
+    type: 'date',
+    accessor: r => r.invoice_date,
+    format: (v) => <span className="text-xs text-muted-foreground">{String(v ?? '')}</span>,
+  },
+  {
+    key: 'party_name',
+    label: 'Party',
+    type: 'string',
+    accessor: r => r.party_name,
+  },
+  {
+    key: 'gstin',
+    label: 'GSTIN',
+    type: 'string',
+    accessor: r => r.gstin ?? '',
+    format: (v) => <span className="font-mono text-xs text-muted-foreground">{String(v ?? '')}</span>,
+  },
+  {
+    key: 'taxable_amount',
+    label: 'Taxable',
+    type: 'number',
+    align: 'right',
+    accessor: r => r.taxable_amount,
+    format: (v) => fmt(Number(v ?? 0)),
+    exportValue: r => r.taxable_amount,
+  },
+  {
+    key: 'cgst_amount',
+    label: 'CGST',
+    type: 'number',
+    align: 'right',
+    accessor: r => r.cgst_amount,
+    format: (v) => fmt(Number(v ?? 0)),
+    exportValue: r => r.cgst_amount,
+  },
+  {
+    key: 'sgst_amount',
+    label: 'SGST',
+    type: 'number',
+    align: 'right',
+    accessor: r => r.sgst_amount,
+    format: (v) => fmt(Number(v ?? 0)),
+    exportValue: r => r.sgst_amount,
+  },
+  {
+    key: 'igst_amount',
+    label: 'IGST',
+    type: 'number',
+    align: 'right',
+    accessor: r => r.igst_amount,
+    format: (v) => fmt(Number(v ?? 0)),
+    exportValue: r => r.igst_amount,
+  },
+  {
+    key: 'grand_total',
+    label: 'Total',
+    type: 'number',
+    align: 'right',
+    accessor: r => r.grand_total,
+    format: (v) => <span className="font-semibold">{fmt(Number(v ?? 0))}</span>,
+    exportValue: r => r.grand_total,
+  },
+];
+
+const B2C_COLUMNS: ColumnDef<GstRow>[] = [
+  {
+    key: 'invoice_no',
+    label: 'Invoice No',
+    type: 'string',
+    accessor: r => r.invoice_no,
+    format: (v) => <span className="font-mono text-xs font-medium">{String(v ?? '')}</span>,
+  },
+  {
+    key: 'invoice_date',
+    label: 'Date',
+    type: 'date',
+    accessor: r => r.invoice_date,
+    format: (v) => <span className="text-xs text-muted-foreground">{String(v ?? '')}</span>,
+  },
+  {
+    key: 'party_name',
+    label: 'Party',
+    type: 'string',
+    accessor: r => r.party_name,
+  },
+  {
+    key: 'taxable_amount',
+    label: 'Taxable',
+    type: 'number',
+    align: 'right',
+    accessor: r => r.taxable_amount,
+    format: (v) => fmt(Number(v ?? 0)),
+    exportValue: r => r.taxable_amount,
+  },
+  {
+    key: 'cgst_amount',
+    label: 'CGST',
+    type: 'number',
+    align: 'right',
+    accessor: r => r.cgst_amount,
+    format: (v) => fmt(Number(v ?? 0)),
+    exportValue: r => r.cgst_amount,
+  },
+  {
+    key: 'sgst_amount',
+    label: 'SGST',
+    type: 'number',
+    align: 'right',
+    accessor: r => r.sgst_amount,
+    format: (v) => fmt(Number(v ?? 0)),
+    exportValue: r => r.sgst_amount,
+  },
+  {
+    key: 'igst_amount',
+    label: 'IGST',
+    type: 'number',
+    align: 'right',
+    accessor: r => r.igst_amount,
+    format: (v) => fmt(Number(v ?? 0)),
+    exportValue: r => r.igst_amount,
+  },
+  {
+    key: 'grand_total',
+    label: 'Total',
+    type: 'number',
+    align: 'right',
+    accessor: r => r.grand_total,
+    format: (v) => <span className="font-semibold">{fmt(Number(v ?? 0))}</span>,
+    exportValue: r => r.grand_total,
+  },
+];
+
+const HSN_COLUMNS: ColumnDef<HsnRow>[] = [
+  {
+    key: 'hsn_code',
+    label: 'HSN Code',
+    type: 'string',
+    accessor: r => r.hsn_code,
+    format: (v) => <span className="font-mono font-medium">{String(v ?? '')}</span>,
+  },
+  {
+    key: 'unit',
+    label: 'UQC',
+    type: 'string',
+    accessor: r => r.unit,
+    format: (v) => <span className="text-muted-foreground">{String(v ?? '')}</span>,
+  },
+  {
+    key: 'quantity',
+    label: 'Quantity',
+    type: 'number',
+    align: 'right',
+    accessor: r => r.quantity,
+    format: (v) => Number(v ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 3 }),
+    exportValue: r => r.quantity,
+  },
+  {
+    key: 'taxable_amount',
+    label: 'Taxable',
+    type: 'number',
+    align: 'right',
+    accessor: r => r.taxable_amount,
+    format: (v) => fmt(Number(v ?? 0)),
+    exportValue: r => r.taxable_amount,
+  },
+  {
+    key: 'cgst_amount',
+    label: 'CGST',
+    type: 'number',
+    align: 'right',
+    accessor: r => r.cgst_amount,
+    format: (v) => fmt(Number(v ?? 0)),
+    exportValue: r => r.cgst_amount,
+  },
+  {
+    key: 'sgst_amount',
+    label: 'SGST',
+    type: 'number',
+    align: 'right',
+    accessor: r => r.sgst_amount,
+    format: (v) => fmt(Number(v ?? 0)),
+    exportValue: r => r.sgst_amount,
+  },
+  {
+    key: 'igst_amount',
+    label: 'IGST',
+    type: 'number',
+    align: 'right',
+    accessor: r => r.igst_amount,
+    format: (v) => fmt(Number(v ?? 0)),
+    exportValue: r => r.igst_amount,
+  },
+];
+
+// ── Totals summary strip (replaces the old TotalsRow inside <tbody>) ──────────
+
+function TotalsSummary({ totals, count, label }: { totals: GstTotals; count: number; label: string }) {
+  return (
+    <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+      <span className="font-medium text-foreground">{label} ({count})</span>
+      <span>Taxable: <span className="font-semibold text-foreground">{fmt(totals.taxable)}</span></span>
+      <span>CGST: <span className="font-semibold text-foreground">{fmt(totals.cgst)}</span></span>
+      <span>SGST: <span className="font-semibold text-foreground">{fmt(totals.sgst)}</span></span>
+      <span>IGST: <span className="font-semibold text-foreground">{fmt(totals.igst)}</span></span>
+      <span>Total: <span className="font-bold text-foreground">{fmt(totals.total)}</span></span>
     </div>
   );
 }
@@ -178,116 +381,57 @@ export default function GstReportsPage() {
                 </TabsList>
 
                 <TabsContent value="b2b" className="mt-4">
-                  <div className="flex justify-end mb-2">
-                    {gstr1Data.b2b.length > 0 && (
-                      <Button size="sm" variant="outline" onClick={() => downloadCSV(`gstr1-b2b-${from}-${to}.csv`, ['Invoice No', 'Date', 'Party', 'GSTIN', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total'], gstr1Data.b2b.map(r => [r.invoice_no, r.invoice_date, r.party_name, r.gstin, r.taxable_amount, r.cgst_amount, r.sgst_amount, r.igst_amount, r.grand_total]))}>
-                        <Download className="mr-2 h-3.5 w-3.5" /> CSV
-                      </Button>
-                    )}
-                  </div>
-                  <Card><CardContent className="p-0">
-                    <table className="w-full text-sm">
-                      <thead><tr className="border-b bg-muted/50">
-                        <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t('invoice.invoiceNo')}</th>
-                        <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t('gst.partyGstin')}</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">{t('gst.taxable')}</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">CGST</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">SGST</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">IGST</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">{t('common.total')}</th>
-                      </tr></thead>
-                      <tbody>
-                        {gstr1Data.b2b.map((r, i) => (
-                          <tr key={i} className="border-b hover:bg-muted/20">
-                            <td className="px-3 py-2"><p className="font-mono text-xs font-medium">{r.invoice_no}</p><p className="text-xs text-muted-foreground">{r.invoice_date}</p></td>
-                            <td className="px-3 py-2"><p className="text-sm">{r.party_name}</p><p className="text-xs text-muted-foreground font-mono">{r.gstin}</p></td>
-                            <td className="px-3 py-2 text-right">{fmt(r.taxable_amount)}</td>
-                            <td className="px-3 py-2 text-right">{fmt(r.cgst_amount)}</td>
-                            <td className="px-3 py-2 text-right">{fmt(r.sgst_amount)}</td>
-                            <td className="px-3 py-2 text-right">{fmt(r.igst_amount)}</td>
-                            <td className="px-3 py-2 text-right font-semibold">{fmt(r.grand_total)}</td>
-                          </tr>
-                        ))}
-                        {gstr1Data.b2b.length > 0 && <TotalsRow totals={gstr1Data.b2b_totals} label={`Total (${gstr1Data.b2b.length})`} />}
-                      </tbody>
-                    </table>
-                    {gstr1Data.b2b.length === 0 && <div className="py-12 text-center text-muted-foreground text-sm">{t('gst.noB2b')}</div>}
-                  </CardContent></Card>
+                  <DataTable<GstRow>
+                    id="gstr1.b2b"
+                    data={gstr1Data.b2b}
+                    columns={B2B_COLUMNS}
+                    rowKey={(r, i) => `${r.invoice_no}-${i}`}
+                    exportFilename={`gstr1-b2b-${from}-${to}`}
+                    defaultSort={{ key: 'invoice_date', direction: 'desc' }}
+                    emptyMessage={t('gst.noB2b')}
+                    toolbarLeft={
+                      gstr1Data.b2b.length > 0 ? (
+                        <TotalsSummary
+                          totals={gstr1Data.b2b_totals}
+                          count={gstr1Data.b2b.length}
+                          label="B2B Total"
+                        />
+                      ) : undefined
+                    }
+                  />
                 </TabsContent>
 
                 <TabsContent value="b2c" className="mt-4">
-                  <div className="flex justify-end mb-2">
-                    {gstr1Data.b2c.length > 0 && (
-                      <Button size="sm" variant="outline" onClick={() => downloadCSV(`gstr1-b2c-${from}-${to}.csv`, ['Invoice No', 'Date', 'Party', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total'], gstr1Data.b2c.map(r => [r.invoice_no, r.invoice_date, r.party_name, r.taxable_amount, r.cgst_amount, r.sgst_amount, r.igst_amount, r.grand_total]))}>
-                        <Download className="mr-2 h-3.5 w-3.5" /> CSV
-                      </Button>
-                    )}
-                  </div>
-                  <Card><CardContent className="p-0">
-                    <table className="w-full text-sm">
-                      <thead><tr className="border-b bg-muted/50">
-                        <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t('invoice.invoiceNo')}</th>
-                        <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t('gst.party')}</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">{t('gst.taxable')}</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">CGST</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">SGST</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">IGST</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">{t('common.total')}</th>
-                      </tr></thead>
-                      <tbody>
-                        {gstr1Data.b2c.map((r, i) => (
-                          <tr key={i} className="border-b hover:bg-muted/20">
-                            <td className="px-3 py-2"><p className="font-mono text-xs font-medium">{r.invoice_no}</p><p className="text-xs text-muted-foreground">{r.invoice_date}</p></td>
-                            <td className="px-3 py-2 text-sm">{r.party_name}</td>
-                            <td className="px-3 py-2 text-right">{fmt(r.taxable_amount)}</td>
-                            <td className="px-3 py-2 text-right">{fmt(r.cgst_amount)}</td>
-                            <td className="px-3 py-2 text-right">{fmt(r.sgst_amount)}</td>
-                            <td className="px-3 py-2 text-right">{fmt(r.igst_amount)}</td>
-                            <td className="px-3 py-2 text-right font-semibold">{fmt(r.grand_total)}</td>
-                          </tr>
-                        ))}
-                        {gstr1Data.b2c.length > 0 && <TotalsRow totals={gstr1Data.b2c_totals} label={`Total (${gstr1Data.b2c.length})`} />}
-                      </tbody>
-                    </table>
-                    {gstr1Data.b2c.length === 0 && <div className="py-12 text-center text-muted-foreground text-sm">{t('gst.noB2c')}</div>}
-                  </CardContent></Card>
+                  <DataTable<GstRow>
+                    id="gstr1.b2c"
+                    data={gstr1Data.b2c}
+                    columns={B2C_COLUMNS}
+                    rowKey={(r, i) => `${r.invoice_no}-${i}`}
+                    exportFilename={`gstr1-b2c-${from}-${to}`}
+                    defaultSort={{ key: 'invoice_date', direction: 'desc' }}
+                    emptyMessage={t('gst.noB2c')}
+                    toolbarLeft={
+                      gstr1Data.b2c.length > 0 ? (
+                        <TotalsSummary
+                          totals={gstr1Data.b2c_totals}
+                          count={gstr1Data.b2c.length}
+                          label="B2C Total"
+                        />
+                      ) : undefined
+                    }
+                  />
                 </TabsContent>
 
                 <TabsContent value="hsn" className="mt-4">
-                  <div className="flex justify-end mb-2">
-                    {gstr1Data.hsn_summary.length > 0 && (
-                      <Button size="sm" variant="outline" onClick={() => downloadCSV(`gstr1-hsn-${from}-${to}.csv`, ['HSN Code', 'Unit', 'Quantity', 'Taxable', 'CGST', 'SGST', 'IGST'], gstr1Data.hsn_summary.map(r => [r.hsn_code, r.unit, r.quantity, r.taxable_amount, r.cgst_amount, r.sgst_amount, r.igst_amount]))}>
-                        <Download className="mr-2 h-3.5 w-3.5" /> CSV
-                      </Button>
-                    )}
-                  </div>
-                  <Card><CardContent className="p-0">
-                    <table className="w-full text-sm">
-                      <thead><tr className="border-b bg-muted/50">
-                        <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t('gst.hsnCode')}</th>
-                        <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t('gst.uqc')}</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">{t('gst.quantity')}</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">{t('gst.taxable')}</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">CGST</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">SGST</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">IGST</th>
-                      </tr></thead>
-                      <tbody>
-                        {gstr1Data.hsn_summary.map((r, i) => (
-                          <tr key={i} className="border-b hover:bg-muted/20">
-                            <td className="px-3 py-2 font-mono font-medium">{r.hsn_code}</td>
-                            <td className="px-3 py-2 text-muted-foreground">{r.unit}</td>
-                            <td className="px-3 py-2 text-right">{r.quantity.toLocaleString('en-IN', { maximumFractionDigits: 3 })}</td>
-                            <td className="px-3 py-2 text-right">{fmt(r.taxable_amount)}</td>
-                            <td className="px-3 py-2 text-right">{fmt(r.cgst_amount)}</td>
-                            <td className="px-3 py-2 text-right">{fmt(r.sgst_amount)}</td>
-                            <td className="px-3 py-2 text-right">{fmt(r.igst_amount)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {gstr1Data.hsn_summary.length === 0 && <div className="py-12 text-center text-muted-foreground text-sm">{t('gst.noHsn')}</div>}
-                  </CardContent></Card>
+                  <DataTable<HsnRow>
+                    id="gstr1.hsn"
+                    data={gstr1Data.hsn_summary}
+                    columns={HSN_COLUMNS}
+                    rowKey={(r, i) => `${r.hsn_code}-${i}`}
+                    exportFilename={`gstr1-hsn-${from}-${to}`}
+                    defaultSort={{ key: 'taxable_amount', direction: 'desc' }}
+                    emptyMessage={t('gst.noHsn')}
+                  />
                 </TabsContent>
               </Tabs>
             </>

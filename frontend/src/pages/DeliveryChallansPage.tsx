@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { PrintButton } from '@/components/PrintButton';
 import CreditStatusBanner from '@/components/CreditStatusBanner';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 
 interface Party { id: string; name: string; party_type: string; gstin?: string | null }
 interface Product { id: string; name: string; hsn_code?: string | null; unit?: string | null; default_rate?: number | string | null; gst_rate?: number | string | null }
@@ -149,6 +150,57 @@ export default function DeliveryChallansPage() {
     }
   }
 
+  const CHALLAN_COLUMNS: ColumnDef<Challan>[] = [
+    {
+      key: 'challan_no', label: 'Challan No', type: 'string',
+      accessor: r => r.challan_no ?? '',
+      format: (_v, r) => <span className="font-mono font-semibold">{r.challan_no ?? '—'}</span>,
+    },
+    {
+      key: 'challan_date', label: 'Date', type: 'date',
+      accessor: r => r.challan_date,
+      format: v => new Date(String(v)).toLocaleDateString('en-IN'),
+    },
+    {
+      key: 'party_name', label: 'Party', type: 'string',
+      accessor: r => r.party_name ?? r.customer_name ?? 'Cash',
+      className: 'max-w-[180px] truncate',
+    },
+    {
+      key: 'vehicle_no', label: 'Vehicle', type: 'string',
+      accessor: r => r.vehicle_no ?? '',
+      format: (_v, r) => <span className="font-mono text-xs">{r.vehicle_no ?? '—'}</span>,
+    },
+    {
+      key: 'total_amount', label: 'Value', type: 'number', align: 'right',
+      accessor: r => Number(r.total_amount ?? 0),
+      format: v => INR(v as number),
+      exportValue: r => Number(r.total_amount ?? 0),
+    },
+    {
+      key: 'ewb_no', label: 'E-Way Bill', type: 'string',
+      accessor: r => r.ewb_no ?? '',
+      format: (_v, r) => r.ewb_no
+        ? <span className="font-mono text-xs text-emerald-700">{r.ewb_no}</span>
+        : <span className="text-muted-foreground text-xs">—</span>,
+    },
+    {
+      key: 'status', label: 'Status', type: 'enum',
+      enumOptions: ['open', 'invoiced', 'cancelled'],
+      accessor: r => r.status,
+      format: (_v, r) => (
+        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_PILL[r.status] ?? ''}`}>
+          {r.status}
+        </span>
+      ),
+    },
+    {
+      key: 'invoice_no', label: 'Invoice', type: 'string',
+      accessor: r => r.invoice_no ?? (r.invoice_id ? 'draft' : ''),
+      format: (_v, r) => <span className="text-xs">{r.invoice_no ? r.invoice_no : (r.invoice_id ? 'draft' : '—')}</span>,
+    },
+  ];
+
   return (
     <div className="p-4 space-y-4">
       <div className="flex items-center justify-between">
@@ -161,55 +213,39 @@ export default function DeliveryChallansPage() {
         </Button>
       </div>
 
-      <div className="rounded-lg border overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-xs">
-            <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:text-left">
-              <th>Challan No</th><th>Date</th><th>Party</th><th>Vehicle</th>
-              <th className="text-right">Value</th><th>E-Way Bill</th><th>Status</th><th>Invoice</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && <tr><td colSpan={9} className="px-3 py-6 text-center text-muted-foreground"><Loader2 className="inline h-4 w-4 animate-spin" /> Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={9} className="px-3 py-6 text-center text-muted-foreground">No delivery challans yet.</td></tr>}
-            {rows.map(c => (
-              <tr key={c.id} className="border-t [&>td]:px-3 [&>td]:py-2">
-                <td className="font-mono font-semibold">{c.challan_no ?? '—'}</td>
-                <td>{new Date(c.challan_date).toLocaleDateString('en-IN')}</td>
-                <td className="max-w-[180px] truncate">{c.party_name ?? c.customer_name ?? 'Cash'}</td>
-                <td className="font-mono text-xs">{c.vehicle_no ?? '—'}</td>
-                <td className="text-right">{INR(c.total_amount)}</td>
-                <td>{c.ewb_no ? <span className="font-mono text-xs text-emerald-700">{c.ewb_no}</span> : <span className="text-muted-foreground text-xs">—</span>}</td>
-                <td><span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_PILL[c.status] ?? ''}`}>{c.status}</span></td>
-                <td className="text-xs">{c.invoice_no ? c.invoice_no : (c.invoice_id ? 'draft' : '—')}</td>
-                <td>
-                  <div className="flex items-center gap-1 justify-end">
-                    <PrintButton a4Url={`/api/v1/delivery-challans/${c.id}/pdf`} url={`/api/v1/delivery-challans/${c.id}/pdf`} iconOnly />
-                    {c.status === 'open' && !c.ewb_no && (
-                      <button onClick={() => genEwb(c)} title="Generate E-Way Bill"
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-blue-700">
-                        <FileBadge className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                    {c.status === 'open' && (
-                      <>
-                        <button onClick={() => convert(c)} title="Convert to tax invoice"
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-emerald-700">
-                          <ArrowRightLeft className="h-3.5 w-3.5" />
-                        </button>
-                        <button onClick={() => cancel(c)} title="Cancel challan"
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-red-600">
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable<Challan>
+        id="deliverychallans.main"
+        data={rows}
+        columns={CHALLAN_COLUMNS}
+        loading={loading}
+        rowKey={r => r.id}
+        exportFilename="delivery-challans"
+        defaultSort={{ key: 'challan_date', direction: 'desc' }}
+        emptyMessage="No delivery challans yet."
+        rowActions={c => (
+          <div className="flex items-center gap-1 justify-end">
+            <PrintButton a4Url={`/api/v1/delivery-challans/${c.id}/pdf`} url={`/api/v1/delivery-challans/${c.id}/pdf`} iconOnly />
+            {c.status === 'open' && !c.ewb_no && (
+              <button onClick={() => genEwb(c)} title="Generate E-Way Bill"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-blue-700">
+                <FileBadge className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {c.status === 'open' && (
+              <>
+                <button onClick={() => convert(c)} title="Convert to tax invoice"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-emerald-700">
+                  <ArrowRightLeft className="h-3.5 w-3.5" />
+                </button>
+                <button onClick={() => cancel(c)} title="Cancel challan"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-red-600">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      />
 
       {/* Create dialog */}
       <Dialog open={open} onOpenChange={setOpen}>

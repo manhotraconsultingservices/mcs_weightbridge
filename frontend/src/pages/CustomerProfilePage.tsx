@@ -26,6 +26,7 @@ import {
 import api from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
 import PortalAccessDialog from '@/components/PortalAccessDialog';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 import type { Party360Response } from '@/types';
 
 const INR = (v: number | string | null | undefined) => {
@@ -483,190 +484,341 @@ export default function CustomerProfilePage() {
               </Button>
             </div>
           )}
-          <Card>
-            <CardContent className="p-0">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                  <tr>
-                    {canWriteOff && <th className="px-2 py-2 w-8" />}
-                    <th className="px-3 py-2 text-left">Invoice #</th>
-                    <th className="px-3 py-2 text-left">Date</th>
-                    <th className="px-3 py-2 text-left">Type</th>
-                    <th className="px-3 py-2 text-right">Amount</th>
-                    <th className="px-3 py-2 text-right">Paid</th>
-                    <th className="px-3 py-2 text-right">Due</th>
-                    <th className="px-3 py-2 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {recent_invoices.length === 0 && (
-                    <tr><td colSpan={canWriteOff ? 8 : 7} className="px-3 py-8 text-center text-slate-400">
-                      No invoices yet
-                    </td></tr>
-                  )}
-                  {recent_invoices.map(inv => {
-                    const eligible = writeOffEligible.has(inv.id);
-                    const checked = selectedIds.has(inv.id);
-                    return (
-                    <tr key={inv.id} className={`hover:bg-slate-50 ${checked ? 'bg-amber-50/50' : ''}`}>
-                      {canWriteOff && (
-                        <td className="px-2 py-2 text-center">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={!eligible}
-                            onChange={() => toggleSelect(inv.id)}
-                            title={eligible ? 'Select for bulk write-off' : 'Not eligible (paid, cancelled, or draft)'}
-                            className="h-4 w-4 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
-                          />
-                        </td>
-                      )}
-                      <td className="px-3 py-2 font-mono text-xs">
-                        <Link to={`/${inv.invoice_type === 'purchase' ? 'purchase-' : ''}invoices?inv=${inv.id}`}
-                              className="text-blue-600 hover:underline">
-                          {inv.invoice_no ?? <span className="italic text-slate-400">draft</span>}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2 text-xs text-slate-600">{fmtDate(inv.invoice_date)}</td>
-                      <td className="px-3 py-2 text-xs">
-                        <Badge variant="outline" className="text-[9px] uppercase">
-                          {inv.invoice_type}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2 text-right font-medium">{INR(inv.grand_total)}</td>
-                      <td className="px-3 py-2 text-right text-emerald-700">{INR(inv.amount_paid)}</td>
-                      <td className={`px-3 py-2 text-right font-medium ${
-                        inv.amount_due > 0 ? 'text-rose-700' : 'text-slate-400'
-                      }`}>
-                        {INR(inv.amount_due)}
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        <Badge
-                          variant="outline"
-                          className={
-                            inv.status === 'cancelled'
-                              ? 'border-slate-300 bg-slate-100 text-slate-600'
-                              : inv.payment_status === 'paid'
-                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                                : inv.payment_status === 'partial'
-                                  ? 'border-amber-300 bg-amber-50 text-amber-700'
-                                  : 'border-rose-300 bg-rose-50 text-rose-700'
-                          }
-                        >
-                          {inv.status === 'cancelled' ? 'Cancelled' : inv.payment_status}
-                        </Badge>
-                      </td>
-                    </tr>
-                  );})}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
+          {(() => {
+            type InvRow = Party360Response['recent_invoices'][number];
+            const invoiceColumns: ColumnDef<InvRow>[] = [
+              ...(canWriteOff ? [{
+                key: 'select',
+                label: '',
+                accessor: (inv: InvRow) => selectedIds.has(inv.id) ? 'checked' : 'unchecked',
+                format: (_v: unknown, inv: InvRow) => {
+                  const eligible = writeOffEligible.has(inv.id);
+                  const checked = selectedIds.has(inv.id);
+                  return (
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={!eligible}
+                      onChange={() => toggleSelect(inv.id)}
+                      title={eligible ? 'Select for bulk write-off' : 'Not eligible (paid, cancelled, or draft)'}
+                      className="h-4 w-4 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
+                    />
+                  );
+                },
+                sortable: false,
+                filterable: false,
+                alwaysVisible: true,
+                align: 'center' as const,
+                exportValue: (inv: InvRow) => selectedIds.has(inv.id) ? 'selected' : '',
+              }] : []),
+              {
+                key: 'invoice_no',
+                label: 'Invoice #',
+                type: 'string',
+                accessor: (inv: InvRow) => inv.invoice_no ?? '',
+                format: (_v: unknown, inv: InvRow) => (
+                  <Link
+                    to={`/${inv.invoice_type === 'purchase' ? 'purchase-' : ''}invoices?inv=${inv.id}`}
+                    className="font-mono text-xs text-blue-600 hover:underline"
+                  >
+                    {inv.invoice_no ?? <span className="italic text-slate-400">draft</span>}
+                  </Link>
+                ),
+                exportValue: (inv: InvRow) => inv.invoice_no ?? 'draft',
+              },
+              {
+                key: 'invoice_date',
+                label: 'Date',
+                type: 'date',
+                accessor: (inv: InvRow) => inv.invoice_date ?? '',
+                format: (_v: unknown, inv: InvRow) => (
+                  <span className="text-xs text-slate-600">{fmtDate(inv.invoice_date)}</span>
+                ),
+                exportValue: (inv: InvRow) => fmtDate(inv.invoice_date),
+              },
+              {
+                key: 'invoice_type',
+                label: 'Type',
+                type: 'enum',
+                enumOptions: ['sale', 'purchase', 'credit_note', 'debit_note'],
+                accessor: (inv: InvRow) => inv.invoice_type,
+                format: (_v: unknown, inv: InvRow) => (
+                  <Badge variant="outline" className="text-[9px] uppercase">
+                    {inv.invoice_type}
+                  </Badge>
+                ),
+              },
+              {
+                key: 'grand_total',
+                label: 'Amount',
+                type: 'number',
+                align: 'right',
+                accessor: (inv: InvRow) => Number(inv.grand_total ?? 0),
+                format: (_v: unknown, inv: InvRow) => (
+                  <span className="font-medium">{INR(inv.grand_total)}</span>
+                ),
+                exportValue: (inv: InvRow) => Number(inv.grand_total ?? 0).toFixed(2),
+              },
+              {
+                key: 'amount_paid',
+                label: 'Paid',
+                type: 'number',
+                align: 'right',
+                accessor: (inv: InvRow) => Number(inv.amount_paid ?? 0),
+                format: (_v: unknown, inv: InvRow) => (
+                  <span className="text-emerald-700">{INR(inv.amount_paid)}</span>
+                ),
+                exportValue: (inv: InvRow) => Number(inv.amount_paid ?? 0).toFixed(2),
+              },
+              {
+                key: 'amount_due',
+                label: 'Due',
+                type: 'number',
+                align: 'right',
+                accessor: (inv: InvRow) => Number(inv.amount_due ?? 0),
+                format: (_v: unknown, inv: InvRow) => (
+                  <span className={`font-medium ${Number(inv.amount_due) > 0 ? 'text-rose-700' : 'text-slate-400'}`}>
+                    {INR(inv.amount_due)}
+                  </span>
+                ),
+                exportValue: (inv: InvRow) => Number(inv.amount_due ?? 0).toFixed(2),
+              },
+              {
+                key: 'payment_status',
+                label: 'Status',
+                type: 'enum',
+                enumOptions: ['unpaid', 'partial', 'paid', 'cancelled'],
+                align: 'center',
+                accessor: (inv: InvRow) => inv.status === 'cancelled' ? 'cancelled' : (inv.payment_status ?? ''),
+                format: (_v: unknown, inv: InvRow) => (
+                  <Badge
+                    variant="outline"
+                    className={
+                      inv.status === 'cancelled'
+                        ? 'border-slate-300 bg-slate-100 text-slate-600'
+                        : inv.payment_status === 'paid'
+                          ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                          : inv.payment_status === 'partial'
+                            ? 'border-amber-300 bg-amber-50 text-amber-700'
+                            : 'border-rose-300 bg-rose-50 text-rose-700'
+                    }
+                  >
+                    {inv.status === 'cancelled' ? 'Cancelled' : inv.payment_status}
+                  </Badge>
+                ),
+                exportValue: (inv: InvRow) => inv.status === 'cancelled' ? 'cancelled' : (inv.payment_status ?? ''),
+              },
+            ];
+            return (
+              <DataTable<InvRow>
+                id="customer360.invoices"
+                data={recent_invoices}
+                columns={invoiceColumns}
+                rowKey={inv => inv.id}
+                exportFilename={`invoices-${party.name.replace(/\s+/g, '-')}`}
+                defaultSort={{ key: 'invoice_date', direction: 'desc' }}
+                emptyMessage="No invoices yet"
+              />
+            );
+          })()}
         </TabsContent>
 
         {/* ── Recent payments ─────────────────────────────────────────── */}
         <TabsContent value="payments" className="mt-3">
-          <Card>
-            <CardContent className="p-0">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Voucher #</th>
-                    <th className="px-3 py-2 text-left">Date</th>
-                    <th className="px-3 py-2 text-left">Direction</th>
-                    <th className="px-3 py-2 text-left">Mode</th>
-                    <th className="px-3 py-2 text-left">Ref</th>
-                    <th className="px-3 py-2 text-right">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {recent_payments.length === 0 && (
-                    <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-400">
-                      No payments yet
-                    </td></tr>
-                  )}
-                  {recent_payments.map(p => (
-                    <tr key={p.id} className="hover:bg-slate-50">
-                      <td className="px-3 py-2 font-mono text-xs text-blue-600">{p.voucher_no}</td>
-                      <td className="px-3 py-2 text-xs text-slate-600">{fmtDate(p.payment_date)}</td>
-                      <td className="px-3 py-2 text-xs">
-                        <Badge variant="outline" className={
-                          p.kind === 'receipt'
-                            ? 'border-emerald-300 bg-emerald-50 text-[9px] uppercase text-emerald-700'
-                            : 'border-amber-300 bg-amber-50 text-[9px] uppercase text-amber-700'
-                        }>
-                          {p.kind === 'receipt' ? 'Received' : 'Paid'}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2 text-xs uppercase text-slate-600">{p.payment_mode}</td>
-                      <td className="px-3 py-2 text-xs text-slate-500">{p.reference_no ?? '—'}</td>
-                      <td className={`px-3 py-2 text-right font-medium ${
-                        p.kind === 'receipt' ? 'text-emerald-700' : 'text-amber-700'
-                      }`}>
-                        {p.kind === 'receipt' ? '+' : '−'} {INR(p.amount)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
+          {(() => {
+            type PayRow = Party360Response['recent_payments'][number];
+            const paymentColumns: ColumnDef<PayRow>[] = [
+              {
+                key: 'voucher_no',
+                label: 'Voucher #',
+                type: 'string',
+                accessor: (p: PayRow) => p.voucher_no ?? '',
+                format: (_v: unknown, p: PayRow) => (
+                  <span className="font-mono text-xs text-blue-600">{p.voucher_no}</span>
+                ),
+              },
+              {
+                key: 'payment_date',
+                label: 'Date',
+                type: 'date',
+                accessor: (p: PayRow) => p.payment_date ?? '',
+                format: (_v: unknown, p: PayRow) => (
+                  <span className="text-xs text-slate-600">{fmtDate(p.payment_date)}</span>
+                ),
+                exportValue: (p: PayRow) => fmtDate(p.payment_date),
+              },
+              {
+                key: 'kind',
+                label: 'Direction',
+                type: 'enum',
+                enumOptions: ['receipt', 'voucher'],
+                accessor: (p: PayRow) => p.kind,
+                format: (_v: unknown, p: PayRow) => (
+                  <Badge
+                    variant="outline"
+                    className={
+                      p.kind === 'receipt'
+                        ? 'border-emerald-300 bg-emerald-50 text-[9px] uppercase text-emerald-700'
+                        : 'border-amber-300 bg-amber-50 text-[9px] uppercase text-amber-700'
+                    }
+                  >
+                    {p.kind === 'receipt' ? 'Received' : 'Paid'}
+                  </Badge>
+                ),
+                exportValue: (p: PayRow) => p.kind === 'receipt' ? 'Received' : 'Paid',
+              },
+              {
+                key: 'payment_mode',
+                label: 'Mode',
+                type: 'string',
+                accessor: (p: PayRow) => p.payment_mode ?? '',
+                format: (_v: unknown, p: PayRow) => (
+                  <span className="text-xs uppercase text-slate-600">{p.payment_mode}</span>
+                ),
+              },
+              {
+                key: 'reference_no',
+                label: 'Ref',
+                type: 'string',
+                accessor: (p: PayRow) => p.reference_no ?? '',
+                format: (_v: unknown, p: PayRow) => (
+                  <span className="text-xs text-slate-500">{p.reference_no ?? '—'}</span>
+                ),
+              },
+              {
+                key: 'amount',
+                label: 'Amount',
+                type: 'number',
+                align: 'right',
+                accessor: (p: PayRow) => Number(p.amount ?? 0),
+                format: (_v: unknown, p: PayRow) => (
+                  <span className={`font-medium ${p.kind === 'receipt' ? 'text-emerald-700' : 'text-amber-700'}`}>
+                    {p.kind === 'receipt' ? '+' : '−'} {INR(p.amount)}
+                  </span>
+                ),
+                exportValue: (p: PayRow) => {
+                  const sign = p.kind === 'receipt' ? 1 : -1;
+                  return (sign * Number(p.amount ?? 0)).toFixed(2);
+                },
+              },
+            ];
+            return (
+              <DataTable<PayRow>
+                id="customer360.payments"
+                data={recent_payments}
+                columns={paymentColumns}
+                rowKey={p => p.id}
+                exportFilename={`payments-${party.name.replace(/\s+/g, '-')}`}
+                defaultSort={{ key: 'payment_date', direction: 'desc' }}
+                emptyMessage="No payments yet"
+              />
+            );
+          })()}
         </TabsContent>
 
         {/* ── Custom pricing ──────────────────────────────────────────── */}
         <TabsContent value="pricing" className="mt-3">
-          <Card>
-            <CardContent className="p-0">
-              {custom_rates.length === 0 ? (
-                <div className="px-4 py-8 text-center text-sm text-slate-400">
-                  No custom rates set — this customer pays product default rates.
-                  <div className="mt-2">
-                    <Link to={`/pricing-matrix?party=${party.id}`}>
-                      <Button size="sm" variant="outline">
-                        <Tag className="mr-1.5 h-3 w-3" /> Set custom rates
-                      </Button>
-                    </Link>
-                  </div>
+          {custom_rates.length === 0 ? (
+            <Card>
+              <CardContent className="px-4 py-8 text-center text-sm text-slate-400">
+                No custom rates set — this customer pays product default rates.
+                <div className="mt-2">
+                  <Link to={`/pricing-matrix?party=${party.id}`}>
+                    <Button size="sm" variant="outline">
+                      <Tag className="mr-1.5 h-3 w-3" /> Set custom rates
+                    </Button>
+                  </Link>
                 </div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2 text-left">Product</th>
-                      <th className="px-3 py-2 text-left">Unit</th>
-                      <th className="px-3 py-2 text-right">Default Rate</th>
-                      <th className="px-3 py-2 text-right">Custom Rate</th>
-                      <th className="px-3 py-2 text-right">Diff</th>
-                      <th className="px-3 py-2 text-left">Since</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {custom_rates.map(r => {
-                      // Backend Decimals arrive as strings; coerce explicitly.
-                      const customRate = Number(r.custom_rate ?? 0);
-                      const defaultRate = Number(r.default_rate ?? 0);
-                      const diff = customRate - defaultRate;
-                      const pct = defaultRate > 0 ? (diff / defaultRate) * 100 : 0;
-                      return (
-                        <tr key={r.product_id} className="hover:bg-slate-50">
-                          <td className="px-3 py-2 font-medium">{r.product_name}</td>
-                          <td className="px-3 py-2 text-xs uppercase text-slate-500">{r.product_unit}</td>
-                          <td className="px-3 py-2 text-right text-slate-500">{INR(r.default_rate)}</td>
-                          <td className="px-3 py-2 text-right font-bold text-slate-900">{INR(r.custom_rate)}</td>
-                          <td className={`px-3 py-2 text-right text-xs ${
-                            diff > 0 ? 'text-emerald-700' : diff < 0 ? 'text-rose-700' : 'text-slate-400'
-                          }`}>
-                            {diff === 0 ? '—' : `${diff > 0 ? '+' : ''}${INR(diff)} (${pct.toFixed(1)}%)`}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-slate-500">{fmtDate(r.effective_from)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          ) : (() => {
+            type RateRow = Party360Response['custom_rates'][number];
+            const rateColumns: ColumnDef<RateRow>[] = [
+              {
+                key: 'product_name',
+                label: 'Product',
+                type: 'string',
+                accessor: (r: RateRow) => r.product_name ?? '',
+                format: (_v: unknown, r: RateRow) => (
+                  <span className="font-medium">{r.product_name}</span>
+                ),
+              },
+              {
+                key: 'product_unit',
+                label: 'Unit',
+                type: 'string',
+                accessor: (r: RateRow) => r.product_unit ?? '',
+                format: (_v: unknown, r: RateRow) => (
+                  <span className="text-xs uppercase text-slate-500">{r.product_unit}</span>
+                ),
+              },
+              {
+                key: 'default_rate',
+                label: 'Default Rate',
+                type: 'number',
+                align: 'right',
+                accessor: (r: RateRow) => Number(r.default_rate ?? 0),
+                format: (_v: unknown, r: RateRow) => (
+                  <span className="text-slate-500">{INR(r.default_rate)}</span>
+                ),
+                exportValue: (r: RateRow) => Number(r.default_rate ?? 0).toFixed(2),
+              },
+              {
+                key: 'custom_rate',
+                label: 'Custom Rate',
+                type: 'number',
+                align: 'right',
+                accessor: (r: RateRow) => Number(r.custom_rate ?? 0),
+                format: (_v: unknown, r: RateRow) => (
+                  <span className="font-bold text-slate-900">{INR(r.custom_rate)}</span>
+                ),
+                exportValue: (r: RateRow) => Number(r.custom_rate ?? 0).toFixed(2),
+              },
+              {
+                key: 'rate_diff',
+                label: 'Diff',
+                type: 'number',
+                align: 'right',
+                accessor: (r: RateRow) => Number(r.custom_rate ?? 0) - Number(r.default_rate ?? 0),
+                format: (_v: unknown, r: RateRow) => {
+                  const customRate = Number(r.custom_rate ?? 0);
+                  const defaultRate = Number(r.default_rate ?? 0);
+                  const diff = customRate - defaultRate;
+                  const pct = defaultRate > 0 ? (diff / defaultRate) * 100 : 0;
+                  return (
+                    <span className={`text-xs ${diff > 0 ? 'text-emerald-700' : diff < 0 ? 'text-rose-700' : 'text-slate-400'}`}>
+                      {diff === 0 ? '—' : `${diff > 0 ? '+' : ''}${INR(diff)} (${pct.toFixed(1)}%)`}
+                    </span>
+                  );
+                },
+                exportValue: (r: RateRow) => {
+                  const diff = Number(r.custom_rate ?? 0) - Number(r.default_rate ?? 0);
+                  return diff.toFixed(2);
+                },
+              },
+              {
+                key: 'effective_from',
+                label: 'Since',
+                type: 'date',
+                accessor: (r: RateRow) => r.effective_from ?? '',
+                format: (_v: unknown, r: RateRow) => (
+                  <span className="text-xs text-slate-500">{fmtDate(r.effective_from)}</span>
+                ),
+                exportValue: (r: RateRow) => fmtDate(r.effective_from),
+              },
+            ];
+            return (
+              <DataTable<RateRow>
+                id="customer360.rates"
+                data={custom_rates}
+                columns={rateColumns}
+                rowKey={r => r.product_id}
+                exportFilename={`rates-${party.name.replace(/\s+/g, '-')}`}
+                defaultSort={{ key: 'product_name', direction: 'asc' }}
+                emptyMessage="No custom rates"
+              />
+            );
+          })()}
         </TabsContent>
       </Tabs>
 

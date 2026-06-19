@@ -1,14 +1,14 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Plus, Lock, Usb, Shield, AlertTriangle, LogOut, HardDrive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import api from '@/services/api';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
 import { TokenDetailModal } from '@/components/TokenDetailModal';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 
 const INR = (v: number) => '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2 });
 const PAYMENT_MODES = ['cash', 'cheque', 'upi', 'bank_transfer'];
@@ -197,6 +197,96 @@ export default function PrivateInvoicesPage() {
   const [usbError, setUsbError] = useState('');
   const [usbLoading2, setUsbLoading2] = useState(false);
 
+  // Column definitions for the DataTable
+  const columns = useMemo<ColumnDef<PrivateInvoice>[]>(() => [
+    {
+      key: 'invoice_no',
+      label: 'Invoice No',
+      type: 'string',
+      accessor: r => r.invoice_no,
+      format: (v) => (
+        <span className="font-mono text-xs font-semibold text-purple-700">{String(v)}</span>
+      ),
+    },
+    {
+      key: 'invoice_date',
+      label: 'Date',
+      type: 'date',
+      accessor: r => r.invoice_date,
+      format: (v) => <span className="text-muted-foreground">{String(v)}</span>,
+    },
+    {
+      key: 'customer_name',
+      label: 'Customer',
+      type: 'string',
+      accessor: r => r.customer_name ?? '',
+    },
+    {
+      key: 'vehicle_no',
+      label: 'Vehicle',
+      type: 'string',
+      accessor: r => r.vehicle_no ?? '',
+      format: (v) => v ? <span className="font-mono text-xs">{String(v)}</span> : <span>—</span>,
+    },
+    {
+      key: 'token_no',
+      label: 'Token',
+      type: 'string',
+      accessor: r => r.token_no ?? '',
+      sortable: false,
+      filterable: false,
+      format: (_v, row) => row.token_no ? (
+        <span>
+          <button
+            className="font-mono font-semibold text-primary hover:underline cursor-pointer text-xs"
+            onClick={() => row.token_id && setTokenModalId(row.token_id)}
+            title="View token details"
+          >
+            #{row.token_no}
+          </button>
+          {row.token_date && <span className="block text-[10px] text-muted-foreground">{row.token_date}</span>}
+        </span>
+      ) : <span>—</span>,
+    },
+    {
+      key: 'net_weight',
+      label: 'Net Wt (MT)',
+      type: 'number',
+      align: 'right',
+      accessor: r => r.net_weight,
+      format: (v) => v != null ? Number(v).toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '—',
+      exportValue: r => r.net_weight != null ? r.net_weight : '',
+    },
+    {
+      key: 'rate',
+      label: 'Rate',
+      type: 'number',
+      align: 'right',
+      accessor: r => r.rate,
+      format: (v) => v != null ? INR(Number(v)) : '—',
+      exportValue: r => r.rate != null ? r.rate : '',
+    },
+    {
+      key: 'amount',
+      label: 'Amount',
+      type: 'number',
+      align: 'right',
+      accessor: r => r.amount,
+      format: (v) => <span className="font-semibold">{INR(Number(v ?? 0))}</span>,
+      exportValue: r => r.amount,
+    },
+    {
+      key: 'payment_mode',
+      label: 'Mode',
+      type: 'enum',
+      enumOptions: PAYMENT_MODES,
+      accessor: r => r.payment_mode,
+      format: (v) => (
+        <span className="text-xs bg-muted px-1.5 py-0.5 rounded">{String(v).toUpperCase()}</span>
+      ),
+    },
+  ], []);
+
   const load = useCallback(async () => {
     if (!authorized) return;
     setListLoading(true);
@@ -339,75 +429,33 @@ export default function PrivateInvoicesPage() {
         </div>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="text-left p-3 font-medium">Invoice No</th>
-                  <th className="text-left p-3 font-medium">Date</th>
-                  <th className="text-left p-3 font-medium">Customer</th>
-                  <th className="text-left p-3 font-medium">Vehicle</th>
-                  <th className="text-left p-3 font-medium">Token</th>
-                  <th className="text-right p-3 font-medium">Net Wt (MT)</th>
-                  <th className="text-right p-3 font-medium">Rate</th>
-                  <th className="text-right p-3 font-medium">Amount</th>
-                  <th className="text-left p-3 font-medium">Mode</th>
-                </tr>
-              </thead>
-              <tbody>
-                {listLoading ? (
-                  <tr><td colSpan={8} className="text-center p-8 text-muted-foreground">Loading...</td></tr>
-                ) : invoices.length === 0 ? (
-                  <tr><td colSpan={8} className="text-center p-12 text-muted-foreground">No private invoices yet</td></tr>
-                ) : invoices.map(inv => (
-                  <tr key={inv.id} className="border-b hover:bg-muted/30">
-                    <td className="p-3 font-mono text-xs font-semibold text-purple-700">{inv.invoice_no}</td>
-                    <td className="p-3 text-muted-foreground">{inv.invoice_date}</td>
-                    <td className="p-3">{inv.customer_name ?? '—'}</td>
-                    <td className="p-3 font-mono text-xs">{inv.vehicle_no ?? '—'}</td>
-                    <td className="p-3 text-xs text-muted-foreground">
-                      {inv.token_no ? (
-                        <button
-                          className="font-mono font-semibold text-primary hover:underline cursor-pointer"
-                          onClick={() => inv.token_id && setTokenModalId(inv.token_id)}
-                          title="View token details"
-                        >
-                          #{inv.token_no}
-                        </button>
-                      ) : '—'}
-                      {inv.token_date && <span className="block text-[10px]">{inv.token_date}</span>}
-                    </td>
-                    <td className="p-3 text-right">{inv.net_weight != null ? inv.net_weight.toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '—'}</td>
-                    <td className="p-3 text-right text-muted-foreground">{inv.rate != null ? INR(inv.rate) : '—'}</td>
-                    <td className="p-3 text-right font-semibold">{INR(inv.amount)}</td>
-                    <td className="p-3"><span className="text-xs bg-muted px-1.5 py-0.5 rounded">{inv.payment_mode.toUpperCase()}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-              {invoices.length > 0 && (
-                <tfoot>
-                  <tr className="border-t bg-muted/30">
-                    <td colSpan={6} className="p-3 text-right text-sm font-medium text-muted-foreground">Total ({total} invoices)</td>
-                    <td className="p-3 text-right font-bold">{INR(totalAmount)}</td>
-                    <td />
-                  </tr>
-                </tfoot>
-              )}
-            </table>
+      <DataTable<PrivateInvoice>
+        id="privateinvoices.main"
+        data={invoices}
+        columns={columns}
+        loading={listLoading}
+        rowKey={r => r.id}
+        exportFilename="private-invoices"
+        defaultSort={{ key: 'invoice_date', direction: 'desc' }}
+        emptyMessage="No private invoices yet"
+        toolbarLeft={
+          invoices.length > 0 ? (
+            <span className="text-sm text-muted-foreground">
+              Total: <span className="font-bold text-foreground">{INR(totalAmount)}</span>
+            </span>
+          ) : undefined
+        }
+      />
+
+      {total > 50 && (
+        <div className="flex justify-between items-center py-2 text-sm">
+          <span className="text-muted-foreground">Showing {(page - 1) * 50 + 1}–{Math.min(page * 50, total)} of {total}</span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Button>
+            <Button variant="outline" size="sm" disabled={page * 50 >= total} onClick={() => setPage(p => p + 1)}>Next</Button>
           </div>
-          {total > 50 && (
-            <div className="flex justify-between items-center p-3 border-t text-sm">
-              <span className="text-muted-foreground">Showing {(page - 1) * 50 + 1}–{Math.min(page * 50, total)} of {total}</span>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Button>
-                <Button variant="outline" size="sm" disabled={page * 50 >= total} onClick={() => setPage(p => p + 1)}>Next</Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        </div>
+      )}
 
       <NewPrivateInvoiceDialog open={createOpen} onClose={() => setCreateOpen(false)} onCreated={load} />
       <TokenDetailModal tokenId={tokenModalId} onClose={() => setTokenModalId(null)} />

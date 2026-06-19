@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { Loader2, AlertTriangle, CheckCircle2, ShieldAlert, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const daysAgo = (n: number) => {
@@ -51,23 +52,100 @@ interface AnomalyResult {
   detectors: Record<string, DetectorResult>;
 }
 
-// Column definitions per detector key
-const COLUMNS: Record<string, string[]> = {
-  high_frequency:  ['date', 'vehicle_no', 'trip_count'],
-  weight_variance: ['date', 'token_no', 'vehicle_no', 'product', 'net_weight_mt', 'mean_mt', 'variance_pct'],
-  tare_deviation:  ['date', 'token_no', 'vehicle_no', 'token_tare_kg', 'master_tare_kg', 'diff_kg'],
-  invoice_leakage: ['date', 'token_no', 'vehicle_no', 'net_mt', 'hours_since'],
-  after_hours:     ['date', 'token_no', 'vehicle_no', 'hour_ist', 'net_mt'],
-  round_weight:    ['date', 'token_no', 'vehicle_no', 'net_mt'],
-  unlinked_passes: ['date', 'token_no', 'vehicle_no', 'supplier', 'net_mt'],
+// ─── Per-detector ColumnDef arrays ────────────────────────────────────────────
+
+type AnomalyRow = Record<string, unknown>;
+
+const HIGH_FREQUENCY_COLS: ColumnDef<AnomalyRow>[] = [
+  { key: 'date',       label: 'Date',     type: 'date',   accessor: r => r.date,
+    format: v => String(v ?? '—') },
+  { key: 'vehicle_no', label: 'Vehicle',  type: 'string', accessor: r => r.vehicle_no },
+  { key: 'trip_count', label: 'Trips',    type: 'number', align: 'right',
+    accessor: r => r.trip_count },
+];
+
+const WEIGHT_VARIANCE_COLS: ColumnDef<AnomalyRow>[] = [
+  { key: 'date',           label: 'Date',        type: 'date',   accessor: r => r.date,
+    format: v => String(v ?? '—') },
+  { key: 'token_no',       label: 'Token #',     type: 'string', accessor: r => r.token_no },
+  { key: 'vehicle_no',     label: 'Vehicle',     type: 'string', accessor: r => r.vehicle_no },
+  { key: 'product',        label: 'Material',    type: 'string', accessor: r => r.product },
+  { key: 'net_weight_mt',  label: 'Net (MT)',    type: 'number', align: 'right',
+    accessor: r => r.net_weight_mt },
+  { key: 'mean_mt',        label: 'Mean (MT)',   type: 'number', align: 'right',
+    accessor: r => r.mean_mt },
+  { key: 'variance_pct',   label: 'Variance %',  type: 'number', align: 'right',
+    accessor: r => r.variance_pct,
+    format: v => (
+      <span className="text-red-600 font-semibold">{String(v ?? '—')}%</span>
+    ) },
+];
+
+const TARE_DEVIATION_COLS: ColumnDef<AnomalyRow>[] = [
+  { key: 'date',           label: 'Date',               type: 'date',   accessor: r => r.date,
+    format: v => String(v ?? '—') },
+  { key: 'token_no',       label: 'Token #',            type: 'string', accessor: r => r.token_no },
+  { key: 'vehicle_no',     label: 'Vehicle',            type: 'string', accessor: r => r.vehicle_no },
+  { key: 'token_tare_kg',  label: 'Token Tare (kg)',    type: 'number', align: 'right',
+    accessor: r => r.token_tare_kg },
+  { key: 'master_tare_kg', label: 'Master Tare (kg)',   type: 'number', align: 'right',
+    accessor: r => r.master_tare_kg },
+  { key: 'diff_kg',        label: 'Diff (kg)',          type: 'number', align: 'right',
+    accessor: r => r.diff_kg },
+];
+
+const INVOICE_LEAKAGE_COLS: ColumnDef<AnomalyRow>[] = [
+  { key: 'date',        label: 'Date',       type: 'date',   accessor: r => r.date,
+    format: v => String(v ?? '—') },
+  { key: 'token_no',    label: 'Token #',    type: 'string', accessor: r => r.token_no },
+  { key: 'vehicle_no',  label: 'Vehicle',    type: 'string', accessor: r => r.vehicle_no },
+  { key: 'net_mt',      label: 'Net (MT)',   type: 'number', align: 'right',
+    accessor: r => r.net_mt },
+  { key: 'hours_since', label: 'Hours ago',  type: 'number', align: 'right',
+    accessor: r => r.hours_since },
+];
+
+const AFTER_HOURS_COLS: ColumnDef<AnomalyRow>[] = [
+  { key: 'date',       label: 'Date',      type: 'date',   accessor: r => r.date,
+    format: v => String(v ?? '—') },
+  { key: 'token_no',   label: 'Token #',   type: 'string', accessor: r => r.token_no },
+  { key: 'vehicle_no', label: 'Vehicle',   type: 'string', accessor: r => r.vehicle_no },
+  { key: 'hour_ist',   label: 'Hour (IST)',type: 'number', align: 'right',
+    accessor: r => r.hour_ist },
+  { key: 'net_mt',     label: 'Net (MT)',  type: 'number', align: 'right',
+    accessor: r => r.net_mt },
+];
+
+const ROUND_WEIGHT_COLS: ColumnDef<AnomalyRow>[] = [
+  { key: 'date',       label: 'Date',      type: 'date',   accessor: r => r.date,
+    format: v => String(v ?? '—') },
+  { key: 'token_no',   label: 'Token #',   type: 'string', accessor: r => r.token_no },
+  { key: 'vehicle_no', label: 'Vehicle',   type: 'string', accessor: r => r.vehicle_no },
+  { key: 'net_mt',     label: 'Net (MT)',  type: 'number', align: 'right',
+    accessor: r => r.net_mt },
+];
+
+const UNLINKED_PASSES_COLS: ColumnDef<AnomalyRow>[] = [
+  { key: 'date',       label: 'Date',      type: 'date',   accessor: r => r.date,
+    format: v => String(v ?? '—') },
+  { key: 'token_no',   label: 'Token #',   type: 'string', accessor: r => r.token_no },
+  { key: 'vehicle_no', label: 'Vehicle',   type: 'string', accessor: r => r.vehicle_no },
+  { key: 'supplier',   label: 'Supplier',  type: 'string', accessor: r => r.supplier },
+  { key: 'net_mt',     label: 'Net (MT)',  type: 'number', align: 'right',
+    accessor: r => r.net_mt },
+];
+
+const DETECTOR_COLUMNS: Record<string, ColumnDef<AnomalyRow>[]> = {
+  high_frequency:  HIGH_FREQUENCY_COLS,
+  weight_variance: WEIGHT_VARIANCE_COLS,
+  tare_deviation:  TARE_DEVIATION_COLS,
+  invoice_leakage: INVOICE_LEAKAGE_COLS,
+  after_hours:     AFTER_HOURS_COLS,
+  round_weight:    ROUND_WEIGHT_COLS,
+  unlinked_passes: UNLINKED_PASSES_COLS,
 };
-const COL_LABEL: Record<string, string> = {
-  date: 'Date', token_no: 'Token #', vehicle_no: 'Vehicle', trip_count: 'Trips',
-  net_weight_mt: 'Net (MT)', net_mt: 'Net (MT)', mean_mt: 'Mean (MT)',
-  variance_pct: 'Variance %', product: 'Material',
-  token_tare_kg: 'Token Tare (kg)', master_tare_kg: 'Master Tare (kg)', diff_kg: 'Diff (kg)',
-  hours_since: 'Hours ago', hour_ist: 'Hour (IST)', supplier: 'Supplier',
-};
+
+// ─── DetectorCard ─────────────────────────────────────────────────────────────
 
 function DetectorCard({
   id, d, expanded, onToggle,
@@ -78,7 +156,7 @@ function DetectorCard({
   onToggle: () => void;
 }) {
   const sev = d.severity ?? 'ok';
-  const cols = COLUMNS[id] ?? Object.keys(d.items[0] ?? {});
+  const cols = DETECTOR_COLUMNS[id] ?? [];
   return (
     <div className={`rounded-lg border p-4 ${SEV_COLOR[sev] ?? ''}`}>
       <div
@@ -105,30 +183,16 @@ function DetectorCard({
       <p className="text-xs text-muted-foreground mt-1 md:hidden">{d.description}</p>
 
       {expanded && d.items.length > 0 && (
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="[&>th]:pr-4 [&>th]:py-1 [&>th]:text-left [&>th]:font-semibold [&>th]:text-muted-foreground border-b">
-                {cols.map(c => <th key={c}>{COL_LABEL[c] ?? c}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {d.items.map((row, i) => (
-                <tr key={i} className="border-t border-border/30 [&>td]:pr-4 [&>td]:py-1">
-                  {cols.map(c => (
-                    <td
-                      key={c}
-                      className={c === 'variance_pct' ? 'text-red-600 font-semibold' : ''}
-                    >
-                      {c === 'variance_pct'
-                        ? `${row[c]}%`
-                        : String(row[c] ?? '—')}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="mt-3">
+          <DataTable<AnomalyRow>
+            id={`anomaly.${id}`}
+            data={d.items}
+            columns={cols}
+            rowKey={(_, i) => String(i)}
+            exportFilename={`anomaly-${id}`}
+            emptyMessage="No anomalies detected"
+            defaultSort={{ key: 'date', direction: 'desc' }}
+          />
           {d.items.length >= 50 && (
             <p className="text-[11px] text-muted-foreground mt-1">
               Showing first 50 results. Narrow the date range to see all.
@@ -147,6 +211,8 @@ function DetectorCard({
     </div>
   );
 }
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AnomalyReportPage() {
   const [range, setRange] = useState({ from: monthStart(), to: today() });

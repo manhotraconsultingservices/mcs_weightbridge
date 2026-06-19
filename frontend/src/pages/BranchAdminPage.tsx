@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 
 interface Branch {
   id: string; name: string; code: string; gstin: string | null; city: string | null;
@@ -14,6 +15,36 @@ interface Branch {
 }
 
 const blank = { name: '', code: '', gstin: '', address_line1: '', city: '', state: '', state_code: '', pincode: '', phone: '', is_default: false };
+
+const BRANCH_COLUMNS: ColumnDef<Branch>[] = [
+  {
+    key: 'name', label: 'Name', type: 'string',
+    accessor: b => b.name,
+    format: (_, b) => (
+      <span className="font-medium flex items-center gap-1">
+        {(b as Branch).name}
+        {(b as Branch).is_default && <Star className="inline h-3.5 w-3.5 text-amber-500" />}
+      </span>
+    ),
+  },
+  { key: 'code', label: 'Code', type: 'string', accessor: b => b.code, className: 'font-mono' },
+  { key: 'gstin', label: 'GSTIN', type: 'string', accessor: b => b.gstin ?? '', format: (v) => v ? <span className="font-mono text-xs">{String(v)}</span> : <span className="text-muted-foreground">—</span> },
+  {
+    key: 'city_state', label: 'City / State', type: 'string',
+    accessor: b => [b.city, b.state].filter(Boolean).join(', '),
+    format: (v) => <span className="text-xs">{String(v) || '—'}</span>,
+  },
+  { key: 'phone', label: 'Phone', type: 'string', accessor: b => b.phone ?? '', format: (v) => <span className="text-xs">{String(v) || '—'}</span> },
+  {
+    key: 'status', label: 'Status', type: 'enum', enumOptions: ['active', 'inactive'],
+    accessor: b => b.is_active ? 'active' : 'inactive',
+    format: (v) => (
+      <span className={`px-2 py-0.5 rounded-full text-[11px] ${v === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-500'}`}>
+        {String(v)}
+      </span>
+    ),
+  },
+];
 
 export default function BranchAdminPage() {
   const [rows, setRows] = useState<Branch[]>([]);
@@ -67,29 +98,24 @@ export default function BranchAdminPage() {
         <Button onClick={openNew} className="gap-1.5"><Plus className="h-4 w-4" /> New Branch</Button>
       </div>
 
-      <div className="rounded-lg border overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-xs"><tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:text-left"><th>Name</th><th>Code</th><th>GSTIN</th><th>City / State</th><th>Phone</th><th>Status</th><th></th></tr></thead>
-          <tbody>
-            {loading && <tr><td colSpan={7} className="px-3 py-6 text-center text-muted-foreground"><Loader2 className="inline h-4 w-4 animate-spin" /> Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">No branches yet — single-plant mode. Add a branch to enable multi-branch.</td></tr>}
-            {rows.map(b => (
-              <tr key={b.id} className={`border-t [&>td]:px-3 [&>td]:py-2 ${!b.is_active ? 'opacity-50' : ''}`}>
-                <td className="font-medium">{b.name} {b.is_default && <Star className="inline h-3.5 w-3.5 text-amber-500" />}</td>
-                <td className="font-mono">{b.code}</td>
-                <td className="font-mono text-xs">{b.gstin ?? '—'}</td>
-                <td className="text-xs">{[b.city, b.state].filter(Boolean).join(', ') || '—'}</td>
-                <td className="text-xs">{b.phone ?? '—'}</td>
-                <td><span className={`px-2 py-0.5 rounded-full text-[11px] ${b.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-500'}`}>{b.is_active ? 'active' : 'inactive'}</span></td>
-                <td className="text-right">
-                  <Button size="sm" variant="ghost" onClick={() => openEdit(b)}>Edit</Button>
-                  <button onClick={() => toggleActive(b)} title={b.is_active ? 'Deactivate' : 'Reactivate'} className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent"><Power className={`h-3.5 w-3.5 ${b.is_active ? 'text-red-500' : 'text-emerald-600'}`} /></button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable<Branch>
+        id="branchadmin.main"
+        data={rows}
+        loading={loading}
+        columns={BRANCH_COLUMNS}
+        rowKey={b => b.id}
+        exportFilename="branches"
+        defaultSort={{ key: 'name', direction: 'asc' }}
+        emptyMessage="No branches yet — single-plant mode. Add a branch to enable multi-branch."
+        rowActions={b => (
+          <div className="flex items-center gap-1 justify-end">
+            <Button size="sm" variant="ghost" onClick={() => openEdit(b)}>Edit</Button>
+            <button onClick={() => toggleActive(b)} title={b.is_active ? 'Deactivate' : 'Reactivate'} className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent">
+              <Power className={`h-3.5 w-3.5 ${b.is_active ? 'text-red-500' : 'text-emerald-600'}`} />
+            </button>
+          </div>
+        )}
+      />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg">

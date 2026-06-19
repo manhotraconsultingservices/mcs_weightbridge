@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 
 interface Party { id: string; name: string }
 interface Product { id: string; name: string }
@@ -51,6 +52,94 @@ const STATUS_PILL: Record<string, string> = {
   active: 'bg-emerald-100 text-emerald-700', exhausted: 'bg-blue-100 text-blue-700',
   expired: 'bg-amber-100 text-amber-700', cancelled: 'bg-gray-200 text-gray-500',
 };
+
+// ─── DataTable column definitions ────────────────────────────────────────────
+
+const PASS_COLUMNS: ColumnDef<Pass>[] = [
+  {
+    key: 'pass_no',
+    label: 'Pass No',
+    type: 'string',
+    accessor: r => r.pass_no,
+    format: v => <span className="font-mono font-semibold">{String(v ?? '')}</span>,
+  },
+  {
+    key: 'pass_type',
+    label: 'Type',
+    type: 'enum',
+    enumOptions: ['royalty', 'e_transit', 'mineral_permit'],
+    accessor: r => r.pass_type,
+    format: v => <span className="text-xs capitalize">{String(v ?? '').replace('_', ' ')}</span>,
+  },
+  {
+    key: 'source_name',
+    label: 'Source / Supplier',
+    type: 'string',
+    accessor: r => r.source_name ?? r.party_name ?? '',
+    format: (_v, r) => (
+      <span className="max-w-[160px] truncate block">{r.source_name ?? r.party_name ?? '—'}</span>
+    ),
+  },
+  {
+    key: 'mineral',
+    label: 'Mineral',
+    type: 'string',
+    accessor: r => r.mineral ?? '',
+    format: v => <span className="text-xs">{String(v ?? '') || '—'}</span>,
+  },
+  {
+    key: 'valid_till',
+    label: 'Valid Till',
+    type: 'date',
+    accessor: r => r.valid_till ?? '',
+    format: (_v, r) => (
+      <span className="text-xs">
+        {r.valid_till ? new Date(r.valid_till).toLocaleDateString('en-IN') : '—'}
+        {r.days_to_expiry != null && r.days_to_expiry <= 15 && r.status === 'active' && (
+          <span className="text-amber-600"> ({r.days_to_expiry}d)</span>
+        )}
+      </span>
+    ),
+    exportValue: r => r.valid_till ?? '',
+  },
+  {
+    key: 'utilization',
+    label: 'Utilisation',
+    type: 'number',
+    accessor: r => Number(r.utilization_pct) || 0,
+    format: (_v, r) => {
+      const pct = Math.min(100, Number(r.utilization_pct) || 0);
+      const over = Number(r.balance_mt) < 0;
+      return (
+        <div className="w-40">
+          <div className="h-2 rounded-full bg-muted overflow-hidden">
+            <div
+              className={`h-full ${over ? 'bg-red-500' : pct > 85 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            {MT(r.consumed_mt)} / {MT(r.quantity_mt)} · bal {MT(r.balance_mt)}
+          </p>
+        </div>
+      );
+    },
+    exportValue: r => `${Number(r.consumed_mt).toFixed(3)} / ${Number(r.quantity_mt).toFixed(3)}`,
+    sortable: false,
+  },
+  {
+    key: 'status',
+    label: 'Status',
+    type: 'enum',
+    enumOptions: ['active', 'exhausted', 'expired', 'cancelled'],
+    accessor: r => r.status,
+    format: v => (
+      <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_PILL[String(v ?? '')] ?? ''}`}>
+        {String(v ?? '')}
+      </span>
+    ),
+  },
+];
 
 export default function RoyaltyPassesPage() {
   const [rows, setRows] = useState<Pass[]>([]);
@@ -175,10 +264,10 @@ export default function RoyaltyPassesPage() {
 
   // P3: CSV export for a pass's consumption history
   function exportCsv(passNo: string, passId: string) {
-    const rows = consumptions[passId];
-    if (!rows || rows.length === 0) { toast.error('Load history first'); return; }
+    const csRows = consumptions[passId];
+    if (!csRows || csRows.length === 0) { toast.error('Load history first'); return; }
     const hdr = ['Date', 'Token No', 'Vehicle No', 'Authorised MT', 'Actual MT', 'Variance MT', 'Quantity MT', 'Notes'];
-    const lines = rows.map(c => [
+    const lines = csRows.map(c => [
       c.consumed_date, c.token_no ?? '', c.vehicle_no ?? '',
       Number(c.authorized_mt ?? 0).toFixed(3), Number(c.actual_mt ?? 0).toFixed(3),
       Number(c.variance_mt ?? 0).toFixed(3), Number(c.quantity_mt).toFixed(3),
@@ -243,6 +332,9 @@ export default function RoyaltyPassesPage() {
   }
 
   const expiring = rows.filter(p => p.status === 'active' && p.days_to_expiry != null && p.days_to_expiry <= 15);
+
+  // The currently-expanded pass (for the consumption panel below the table)
+  const expandedPass = rows.find(p => p.id === expandedId) ?? null;
 
   return (
     <div className="p-4 space-y-4">
@@ -322,130 +414,118 @@ export default function RoyaltyPassesPage() {
         </div>
       )}
 
-      {/* Passes table with expandable consumption rows */}
-      <div className="rounded-lg border overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-xs">
-            <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:text-left">
-              <th className="w-6"></th>
-              <th>Pass No</th><th>Type</th><th>Source / Supplier</th><th>Mineral</th>
-              <th>Valid Till</th><th className="w-48">Utilisation</th><th>Status</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && <tr><td colSpan={9} className="px-3 py-6 text-center text-muted-foreground"><Loader2 className="inline h-4 w-4 animate-spin" /> Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={9} className="px-3 py-6 text-center text-muted-foreground">No royalty passes yet.</td></tr>}
-            {rows.map(p => {
-              const pct = Math.min(100, Number(p.utilization_pct) || 0);
-              const over = Number(p.balance_mt) < 0;
-              const isExpanded = expandedId === p.id;
-              return (
-                <>
-                  <tr key={p.id} className="border-t [&>td]:px-3 [&>td]:py-2 align-middle">
-                    {/* Expand toggle */}
-                    <td>
-                      <button onClick={() => toggleConsumptions(p.id)}
-                        className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-accent text-muted-foreground"
-                        title="Show consumption history">
-                        {loadingCons === p.id
-                          ? <Loader2 className="h-3 w-3 animate-spin" />
-                          : isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                      </button>
-                    </td>
-                    <td className="font-mono font-semibold">{p.pass_no}</td>
-                    <td className="text-xs capitalize">{p.pass_type.replace('_', ' ')}</td>
-                    <td className="max-w-[160px] truncate">{p.source_name ?? p.party_name ?? '—'}</td>
-                    <td className="text-xs">{p.mineral ?? '—'}</td>
-                    <td className="text-xs">
-                      {p.valid_till ? new Date(p.valid_till).toLocaleDateString('en-IN') : '—'}
-                      {p.days_to_expiry != null && p.days_to_expiry <= 15 && p.status === 'active' && (
-                        <span className="text-amber-600"> ({p.days_to_expiry}d)</span>
-                      )}
-                    </td>
-                    <td>
-                      <div className="h-2 rounded-full bg-muted overflow-hidden">
-                        <div className={`h-full ${over ? 'bg-red-500' : pct > 85 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
-                      </div>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">{MT(p.consumed_mt)} / {MT(p.quantity_mt)} · bal {MT(p.balance_mt)}</p>
-                    </td>
-                    <td><span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_PILL[p.status] ?? ''}`}>{p.status}</span></td>
-                    <td>
-                      <div className="flex items-center gap-1 justify-end">
-                        {p.status !== 'cancelled' && (
-                          <button onClick={() => { setConsumeFor(p); setConsumeForm({ quantity_mt: '', notes: '' }); }} title="Record consumption"
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-blue-700">
-                            <MinusCircle className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                        {p.status !== 'cancelled' && (
-                          <button onClick={() => cancel(p)} title="Cancel pass"
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-red-600">
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+      {/* Main passes DataTable */}
+      <DataTable<Pass>
+        id="royaltypasses.main"
+        data={rows}
+        columns={PASS_COLUMNS}
+        loading={loading}
+        rowKey={r => r.id}
+        exportFilename="royalty-passes"
+        defaultSort={{ key: 'valid_till', direction: 'desc' }}
+        emptyMessage="No royalty passes yet."
+        rowActions={r => (
+          <div className="flex items-center gap-1 justify-end">
+            {/* Expand consumption history */}
+            <button
+              onClick={() => toggleConsumptions(r.id)}
+              className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent text-muted-foreground"
+              title="Show consumption history"
+            >
+              {loadingCons === r.id
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : expandedId === r.id
+                  ? <ChevronDown className="h-3.5 w-3.5" />
+                  : <ChevronRight className="h-3.5 w-3.5" />}
+            </button>
+            {r.status !== 'cancelled' && (
+              <button
+                onClick={() => { setConsumeFor(r); setConsumeForm({ quantity_mt: '', notes: '' }); }}
+                title="Record consumption"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-blue-700"
+              >
+                <MinusCircle className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {r.status !== 'cancelled' && (
+              <button
+                onClick={() => cancel(r)}
+                title="Cancel pass"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-red-600"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+      />
 
-                  {/* P3: Expandable consumption sub-table */}
-                  {isExpanded && (
-                    <tr key={`${p.id}-cons`} className="bg-muted/20">
-                      <td colSpan={9} className="px-4 py-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Consumption History — {p.pass_no}</span>
-                          {consumptions[p.id]?.length > 0 && (
-                            <button onClick={() => exportCsv(p.pass_no, p.id)}
-                              className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline">
-                              <Download className="h-3 w-3" /> Export CSV
-                            </button>
-                          )}
-                        </div>
-                        {!consumptions[p.id] ? (
-                          <p className="text-xs text-muted-foreground">Loading…</p>
-                        ) : consumptions[p.id].length === 0 ? (
-                          <p className="text-xs text-muted-foreground italic">No consumptions recorded yet.</p>
-                        ) : (
-                          <table className="w-full text-xs">
-                            <thead>
-                              <tr className="[&>th]:px-2 [&>th]:py-1 [&>th]:text-left text-muted-foreground font-medium border-b">
-                                <th>Date</th><th>Token #</th><th>Vehicle</th>
-                                <th className="text-right">Authorised MT</th>
-                                <th className="text-right">Actual MT</th>
-                                <th className="text-right">Variance MT</th>
-                                <th className="text-right">Qty MT</th>
-                                <th>Notes</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {consumptions[p.id].map(c => {
-                                const variance = Number(c.variance_mt ?? 0);
-                                return (
-                                  <tr key={c.id} className="border-t [&>td]:px-2 [&>td]:py-1.5 align-middle">
-                                    <td>{c.consumed_date}</td>
-                                    <td className="font-mono">{c.token_no ?? '—'}</td>
-                                    <td>{c.vehicle_no ?? '—'}</td>
-                                    <td className="text-right">{Number(c.authorized_mt ?? 0).toFixed(3)}</td>
-                                    <td className="text-right">{Number(c.actual_mt ?? 0).toFixed(3)}</td>
-                                    <td className={`text-right font-medium ${variance > 0.01 ? 'text-red-600' : variance < -0.01 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
-                                      {variance > 0 ? '+' : ''}{variance.toFixed(3)}
-                                    </td>
-                                    <td className="text-right font-semibold">{Number(c.quantity_mt).toFixed(3)}</td>
-                                    <td className="text-muted-foreground max-w-[180px] truncate">{c.notes ?? '—'}</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                </>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      {/* P3: Expandable consumption sub-table — rendered below the DataTable */}
+      {expandedId && expandedPass && (
+        <div className="rounded-lg border bg-muted/20 px-4 py-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Consumption History — {expandedPass.pass_no}
+            </span>
+            <div className="flex items-center gap-2">
+              {consumptions[expandedId]?.length > 0 && (
+                <button
+                  onClick={() => exportCsv(expandedPass.pass_no, expandedId)}
+                  className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline"
+                >
+                  <Download className="h-3 w-3" /> Export CSV
+                </button>
+              )}
+              <button
+                onClick={() => setExpandedId(null)}
+                className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-accent text-muted-foreground"
+                title="Close"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+          {!consumptions[expandedId] ? (
+            <p className="text-xs text-muted-foreground">Loading…</p>
+          ) : consumptions[expandedId].length === 0 ? (
+            <p className="text-xs text-muted-foreground italic">No consumptions recorded yet.</p>
+          ) : (
+            <div className="overflow-x-auto rounded border bg-card">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="[&>th]:px-2 [&>th]:py-1.5 [&>th]:text-left text-muted-foreground font-medium border-b bg-muted/40">
+                    <th>Date</th><th>Token #</th><th>Vehicle</th>
+                    <th className="text-right">Authorised MT</th>
+                    <th className="text-right">Actual MT</th>
+                    <th className="text-right">Variance MT</th>
+                    <th className="text-right">Qty MT</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {consumptions[expandedId].map(c => {
+                    const variance = Number(c.variance_mt ?? 0);
+                    return (
+                      <tr key={c.id} className="border-t [&>td]:px-2 [&>td]:py-1.5 align-middle hover:bg-muted/20">
+                        <td>{c.consumed_date}</td>
+                        <td className="font-mono">{c.token_no ?? '—'}</td>
+                        <td>{c.vehicle_no ?? '—'}</td>
+                        <td className="text-right">{Number(c.authorized_mt ?? 0).toFixed(3)}</td>
+                        <td className="text-right">{Number(c.actual_mt ?? 0).toFixed(3)}</td>
+                        <td className={`text-right font-medium ${variance > 0.01 ? 'text-red-600' : variance < -0.01 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                          {variance > 0 ? '+' : ''}{variance.toFixed(3)}
+                        </td>
+                        <td className="text-right font-semibold">{Number(c.quantity_mt).toFixed(3)}</td>
+                        <td className="text-muted-foreground max-w-[180px] truncate">{c.notes ?? '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* New pass dialog */}
       <Dialog open={open} onOpenChange={setOpen}>

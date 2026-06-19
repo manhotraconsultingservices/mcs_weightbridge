@@ -651,7 +651,9 @@ All endpoints prefixed `/api/v1` unless noted.
 
 ### `DataTable<T>` — reusable sortable / filterable / exportable table
 
-Located at `frontend/src/components/DataTable.tsx`. Use this for any new tabular view. Migrate existing tables to it incrementally.
+Located at `frontend/src/components/DataTable.tsx`.
+
+> **MANDATORY STANDARD:** Every multi-row data table in the app MUST use `DataTable<T>`. Raw `<table>` / `<tbody>` HTML is forbidden for data grids. This applies to new tables and any future page additions.
 
 **Features:**
 - Click column header to toggle sort: asc → desc → none (3-state).
@@ -662,12 +664,14 @@ Located at `frontend/src/components/DataTable.tsx`. Use this for any new tabular
 
 **Usage pattern:**
 ```tsx
+import { DataTable, type ColumnDef } from '@/components/DataTable';
+
 const COLUMNS: ColumnDef<MyRow>[] = [
   { key: 'date',    label: 'Date',    type: 'date',   accessor: r => r.date,
     format: v => new Date(String(v)).toLocaleDateString('en-IN') },
   { key: 'amount',  label: 'Amount',  type: 'number', align: 'right',
     accessor: r => r.amount,
-    format: v => `₹${(v as number).toFixed(2)}` },
+    format: v => `₹${Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` },
   { key: 'status',  label: 'Status',  type: 'enum',   enumOptions: ['draft', 'final'],
     accessor: r => r.status },
   { key: 'notes',   label: 'Notes',   defaultVisible: false,   // hidden by default
@@ -675,7 +679,7 @@ const COLUMNS: ColumnDef<MyRow>[] = [
 ];
 
 <DataTable<MyRow>
-  id="invoices.main"                              // stable; used as localStorage key
+  id="invoices.main"                              // stable; used as localStorage key — must be globally unique
   data={rows}
   columns={COLUMNS}
   rowKey={r => r.id}
@@ -688,12 +692,27 @@ const COLUMNS: ColumnDef<MyRow>[] = [
 
 **Column types:** `string` (default), `number`, `date`, `enum`. Behaviour of sort + filter is type-aware.
 
+**`id` naming convention:** `<pagename>.<tablename>` — e.g. `invoices.main`, `gstr1.b2b`, `anomaly.high_frequency`, `customer360.invoices`. Must be globally unique (drives localStorage key isolation).
+
+**`exportValue` field:** provide when the `format` renders UI elements (badges, icons, links) that would pollute the CSV. Return a raw string or number:
+```tsx
+{ key: 'amount', ..., format: v => `₹${...}`, exportValue: r => r.amount }
+```
+
+**`defaultVisible: false`:** use for noisy/rarely-needed columns (e.g. internal IDs, long notes, timestamps). They appear in the column picker but are hidden by default.
+
 **Per-table localStorage keys** (all JSON):
 - `dt.{id}.sort` — `{ key, direction } | null`
 - `dt.{id}.filters` — `{ [colKey]: filterValue }`
 - `dt.{id}.visible` — `string[]` of column keys
 
-First migrated: ProductionPage (`/production`). Pattern is ready for InvoicesPage, ProductsPage, PartiesPage, etc. — migrate incrementally to keep diffs small.
+**Acceptable exceptions** (raw `<table>` is OK):
+- Diff/comparison displays (e.g. `InvoiceRevisionDialog` old→new change rows) — structured layout, not a data grid
+- Expandable sub-panels nested inside a DataTable row (e.g. RoyaltyPassesPage consumption sub-table)
+- GSTR-3B summary sections (single aggregated row per tax type, not sortable/filterable data)
+
+**Pages migrated (complete — all data grids use DataTable):**
+ProductsPage · PartiesPage · InvoicesPage · QuotationsPage · PaymentsPage · LedgerPage · ProductInventoryPage · InventoryPage · TokenPageV1 · AuditPage · UserManagementPage · CompliancePage · NotificationsPage · AnprEventsPage · AnprTripsPage · WriteOffsReportPage · GstSplitReportPage · PricingMatrixPage · ProductionPage · BranchAdminPage · CreditDebitNotesPage · DeliveryChallansPage · PrivateAdminPage · PrivateInvoicesPage · GstReportsPage · RoyaltyPassesPage · CustomerProfilePage · AnomalyReportPage · Gstr2bReconcilePage
 
 ### `ResizableSplit` — draggable two-pane split
 
@@ -1029,4 +1048,5 @@ SUPER_ADMIN_SECRET=change-this-to-a-strong-secret
 | 2026-06-16 | **Royalty P1+P3.** P1: `tokens.transit_pass_id` FK column — operator links a purchase token to its royalty/transit pass at creation time. Auto-draw on token completion: `_auto_consume_royalty_pass()` (non-blocking, in both `record_second_weight` and `create_volume_token`, swallows all errors) deducts `net_weight_mt` from the pass balance and records `authorized_mt`, `actual_mt`, `variance_mt` per consumption row. Pass auto-marks `exhausted` when balance reaches zero. Overruns (actual > authorized) are recorded but never blocked. New `GET /api/v1/royalty/passes/{id}/consumptions` returns full consumption history with `token_no` batch-joined. P3 frontend: expandable per-pass consumption sub-table with green/amber/red variance column; 6th "Royalty paid ₹" KPI card in reconciliation strip; CSV export of pass register. Transit pass picker on TokenPageV1 (purchase tokens only, shows live balance, warns if < 5 MT remaining). |
 | 2026-06-16 | **H3-C: Fraud / Anomaly Analytics.** New `GET /api/v1/reports/anomalies?date_from=&date_to=` runs 7 detectors: (1) high-frequency trips (same vehicle >8/day), (2) weight variance (>25% from 30-day rolling mean, min 3 samples), (3) tare deviation (token tare differs from vehicle master by >200 kg), (4) invoice leakage (COMPLETED tokens >6 h with no `final` invoice), (5) after-hours activity (before 05:00 or after 21:00 IST), (6) round weights (weighbridge net divisible by 1000 kg — possible manual override), (7) unlinked purchase loads (`transit_pass_id IS NULL`). Each detector runs in an isolated try/except — one failure never blocks others. Returns `{overall: high/medium/low/ok, detectors: {...}}`. Thresholds configurable via `GET/PUT /api/v1/reports/anomaly-config` (stored in `app_settings.anomaly_config`). New `AnomalyReportPage` at Reports hub → Anomaly tab: overall severity banner, 7 collapsible `DetectorCard` components that auto-expand on findings, CSV export. |
 | 2026-06-16 | **H3-D: Unmanned Barrier Relay Trigger.** New `backend/app/services/barrier.py` — `trigger_barrier(db, direction, vehicle_no, gate_pass_no)` fires a GET or POST to a configured HTTP relay URL (supports ESP8266/ESP32 boards, smart relays, webhook endpoints). Loaded non-blocking via `asyncio.create_task()` inside `_handle_detection()` in `anpr.py` — only for registered vehicles (not `needs_review`). Unknown plates never open the gate. Config key `barrier_config` in `app_settings`: `enabled`, `trigger_entry/exit/unknown`, `http_url`, `http_method`, `http_open_param` (appended to URL, e.g. `?state=on&duration=5`), Basic Auth, timeout. New endpoints: `GET/PUT /api/v1/app-settings/barrier-config` + `POST /barrier-config/test` (fires one synthetic trigger). Settings → Barrier tab with all config fields + inline test result. Disabled by default. |
+| 2026-06-20 | **DataTable universal migration.** All multi-row data tables across the app now use the shared `DataTable<T>` component — sortable, per-column filterable, column-show/hide, CSV export, localStorage-persisted preferences. 10 remaining pages migrated: BranchAdminPage · CreditDebitNotesPage · DeliveryChallansPage · PrivateAdminPage · PrivateInvoicesPage · GstReportsPage (B2B/B2C/HSN tabs) · RoyaltyPassesPage · CustomerProfilePage (invoices/payments/rates tabs) · AnomalyReportPage (7 per-detector DataTables) · Gstr2bReconcilePage (4 bucket tabs). Raw `<table>` HTML is now banned for data grids — documented as mandatory standard in CLAUDE.md → Shared UI Components. Zero TypeScript errors after migration. |
 | 2026-06-20 | **Gate Management System** — guard-managed gate pass register for standard CP Plus 4MP IP cameras (not ANPR). New `gate_passes` + `gate_pass_daily_seq` + `gate_camera_events` tables (DDL in `ddl.py`). New role `gate_guard` (lands on `/gate` on login). Gate pass number: `GP/YYYY-MM-DD/NNN` — atomic daily reset using `INSERT … ON CONFLICT DO UPDATE`. Backend router `/api/v1/gate` (10 endpoints): create pass, list, summary (mismatch flag), update guard details, record exit (mandatory token link for weighbridge purpose), cancel, on-demand CP Plus snapshot, CP Plus vehicle-detection webhook, camera-events queue. Exit enforcement: `POST /passes/{id}/exit` returns HTTP 400 if `purpose='weighbridge'` and `token_id IS NULL`. CP Plus webhook uses `X-Gate-Secret` header auth. Background photo capture on entry/exit via `async_session_factory`. Gate camera config stored in `app_settings.gate_camera_config`. Frontend: `GatePassPage` at `/gate` with summary strip + Inside/All Today tabs + New Gate Pass + Exit dialogs with per-position `CaptureButton`. Sidebar "Gate Register" item (DoorOpen icon) visible when user has `/gate` permission. Settings → "Gate Cameras" tab for entry/exit camera URL/credentials, webhook secret, EOD alert time. |

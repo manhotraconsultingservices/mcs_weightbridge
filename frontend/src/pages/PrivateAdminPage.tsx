@@ -8,10 +8,10 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Download, ShieldAlert, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import api from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 
 const INR = (v: number) => '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2 });
 
@@ -97,6 +97,69 @@ export default function PrivateAdminPage() {
 
   const totalAmount = filtered.reduce((s, i) => s + i.amount, 0);
 
+  const ADMIN_COLUMNS: ColumnDef<AdminInvoice>[] = [
+    {
+      key: 'invoice_no', label: 'Invoice No', type: 'string',
+      accessor: r => r.invoice_no,
+      format: (_v, r) => <span className="font-mono text-xs font-semibold text-purple-700">{r.invoice_no}</span>,
+    },
+    {
+      key: 'invoice_date', label: 'Date', type: 'date',
+      accessor: r => r.invoice_date,
+      format: v => <span className="text-muted-foreground whitespace-nowrap">{String(v)}</span>,
+    },
+    {
+      key: 'customer_name', label: 'Customer', type: 'string',
+      accessor: r => r.customer_name ?? '',
+      format: (_v, r) => r.customer_name ?? '—',
+    },
+    {
+      key: 'vehicle_no', label: 'Vehicle', type: 'string',
+      accessor: r => r.vehicle_no ?? '',
+      format: (_v, r) => <span className="font-mono text-xs">{r.vehicle_no ?? '—'}</span>,
+    },
+    {
+      key: 'net_weight', label: 'Net Wt (MT)', type: 'number', align: 'right',
+      accessor: r => r.net_weight != null ? Number(r.net_weight) / 1000 : 0,
+      format: (_v, r) => r.net_weight != null
+        ? <span className="font-mono text-xs">{(Number(r.net_weight) / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</span>
+        : '—',
+      exportValue: r => r.net_weight != null ? Number(r.net_weight) / 1000 : '',
+    },
+    {
+      key: 'rate', label: 'Rate', type: 'number', align: 'right',
+      accessor: r => r.rate != null ? Number(r.rate) : 0,
+      format: (_v, r) => <span className="text-muted-foreground">{r.rate != null ? INR(r.rate) : '—'}</span>,
+    },
+    {
+      key: 'amount', label: 'Amount', type: 'number', align: 'right',
+      accessor: r => r.amount,
+      format: v => <span className="font-semibold">{INR(v as number)}</span>,
+    },
+    {
+      key: 'payment_mode', label: 'Mode', type: 'string',
+      accessor: r => r.payment_mode,
+      format: (_v, r) => <span className="text-xs bg-muted px-1.5 py-0.5 rounded">{r.payment_mode.toUpperCase()}</span>,
+    },
+    {
+      key: 'notes', label: 'Notes', type: 'string',
+      accessor: r => r.notes ?? '',
+      format: (_v, r) => <span className="text-muted-foreground text-xs truncate block max-w-[150px]">{r.notes ?? '—'}</span>,
+      defaultVisible: false,
+    },
+    {
+      key: 'created_by_username', label: 'Created By', type: 'string',
+      accessor: r => r.created_by_username ?? '',
+      format: (_v, r) => <span className="text-xs text-muted-foreground">{r.created_by_username ?? '—'}</span>,
+    },
+    {
+      key: 'created_at', label: 'Created At', type: 'date',
+      accessor: r => r.created_at,
+      format: (_v, r) => <span className="text-xs text-muted-foreground whitespace-nowrap">{r.created_at.slice(0, 16).replace('T', ' ')}</span>,
+      exportValue: r => r.created_at.slice(0, 16).replace('T', ' '),
+    },
+  ];
+
   if (user?.role !== 'private_admin') return null;
 
   return (
@@ -143,70 +206,33 @@ export default function PrivateAdminPage() {
           <div className="bg-destructive/10 text-destructive text-sm rounded p-3">{error}</div>
         )}
 
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="text-left p-3 font-medium">Invoice No</th>
-                    <th className="text-left p-3 font-medium">Date</th>
-                    <th className="text-left p-3 font-medium">Customer</th>
-                    <th className="text-left p-3 font-medium">Vehicle</th>
-                    <th className="text-right p-3 font-medium">Net Wt (MT)</th>
-                    <th className="text-right p-3 font-medium">Rate</th>
-                    <th className="text-right p-3 font-medium">Amount</th>
-                    <th className="text-left p-3 font-medium">Mode</th>
-                    <th className="text-left p-3 font-medium">Notes</th>
-                    <th className="text-left p-3 font-medium">Created By</th>
-                    <th className="text-left p-3 font-medium">Created At</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr><td colSpan={11} className="text-center p-8 text-muted-foreground">Loading...</td></tr>
-                  ) : filtered.length === 0 ? (
-                    <tr><td colSpan={11} className="text-center p-12 text-muted-foreground">No records found</td></tr>
-                  ) : filtered.map(inv => (
-                    <tr key={inv.id} className="border-b hover:bg-muted/30">
-                      <td className="p-3 font-mono text-xs font-semibold text-purple-700">{inv.invoice_no}</td>
-                      <td className="p-3 text-muted-foreground whitespace-nowrap">{inv.invoice_date}</td>
-                      <td className="p-3">{inv.customer_name ?? '—'}</td>
-                      <td className="p-3 font-mono text-xs">{inv.vehicle_no ?? '—'}</td>
-                      <td className="p-3 text-right font-mono text-xs">{inv.net_weight != null ? (Number(inv.net_weight) / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : '—'}</td>
-                      <td className="p-3 text-right text-muted-foreground">{inv.rate != null ? INR(inv.rate) : '—'}</td>
-                      <td className="p-3 text-right font-semibold">{INR(inv.amount)}</td>
-                      <td className="p-3"><span className="text-xs bg-muted px-1.5 py-0.5 rounded">{inv.payment_mode.toUpperCase()}</span></td>
-                      <td className="p-3 text-muted-foreground text-xs max-w-[150px] truncate">{inv.notes ?? '—'}</td>
-                      <td className="p-3 text-xs text-muted-foreground">{inv.created_by_username ?? '—'}</td>
-                      <td className="p-3 text-xs text-muted-foreground whitespace-nowrap">{inv.created_at.slice(0, 16).replace('T', ' ')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                {filtered.length > 0 && (
-                  <tfoot>
-                    <tr className="border-t bg-muted/30">
-                      <td colSpan={6} className="p-3 text-right text-sm font-medium text-muted-foreground">
-                        Total ({filtered.length}{search ? ` of ${total}` : ''} records)
-                      </td>
-                      <td className="p-3 text-right font-bold">{INR(totalAmount)}</td>
-                      <td colSpan={4} />
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
+        {filtered.length > 0 && (
+          <div className="text-sm text-right text-muted-foreground pb-1">
+            Total ({filtered.length}{search ? ` of ${total}` : ''} records):&nbsp;
+            <span className="font-bold text-foreground">{INR(totalAmount)}</span>
+          </div>
+        )}
+
+        <DataTable<AdminInvoice>
+          id="privateadmin.invoices"
+          data={filtered}
+          loading={loading}
+          columns={ADMIN_COLUMNS}
+          rowKey={r => r.id}
+          exportFilename="private_invoices"
+          defaultSort={{ key: 'invoice_date', direction: 'desc' }}
+          emptyMessage="No records found"
+        />
+
+        {total > 50 && (
+          <div className="flex justify-between items-center p-3 border rounded text-sm">
+            <span className="text-muted-foreground">{total} total · page {page}</span>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Button>
+              <Button variant="outline" size="sm" disabled={page * 50 >= total} onClick={() => setPage(p => p + 1)}>Next</Button>
             </div>
-            {total > 50 && (
-              <div className="flex justify-between items-center p-3 border-t text-sm">
-                <span className="text-muted-foreground">{total} total · page {page}</span>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Button>
-                  <Button variant="outline" size="sm" disabled={page * 50 >= total} onClick={() => setPage(p => p + 1)}>Next</Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          </div>
+        )}
       </div>
     </div>
   );
