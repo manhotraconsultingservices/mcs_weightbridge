@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { BookOpen, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -81,6 +82,8 @@ function fmt(n: number) {
 }
 
 export default function LedgerPage() {
+  const { t } = useTranslation();
+
   // Respect ?tab=outstanding (linked from Dashboard Outstanding KPI)
   // Respect ?party=<id> (linked from Customer 360 / Parties / Dashboard)
   const initialTab =
@@ -129,15 +132,15 @@ export default function LedgerPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Ledger & Accounts</h1>
-          <p className="text-muted-foreground">Party ledger, outstanding invoices, ageing analysis</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('ledger.title')}</h1>
+          <p className="text-muted-foreground">{t('ledger.subtitle')}</p>
         </div>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="ledger">Party Ledger</TabsTrigger>
-          <TabsTrigger value="outstanding">Outstanding</TabsTrigger>
+          <TabsTrigger value="ledger">{t('ledger.partyLedger')}</TabsTrigger>
+          <TabsTrigger value="outstanding">{t('ledger.outstanding')}</TabsTrigger>
         </TabsList>
 
         {/* ── Party Ledger ── */}
@@ -148,30 +151,30 @@ export default function LedgerPage() {
                 <span className="truncate text-left flex-1">
                   {partyId
                     ? (parties.find(p => p.id === partyId)?.name ?? '…')
-                    : <span className="text-muted-foreground">Select a party to view ledger</span>}
+                    : <span className="text-muted-foreground">{t('ledger.selectPartyPrompt')}</span>}
                 </span>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">— Select party —</SelectItem>
+                <SelectItem value="none">{t('ledger.selectPartyOption')}</SelectItem>
                 {parties.map(p => (
                   <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
             {ledger && (
-              <Button variant="outline" size="sm" onClick={() => window.print()}>Print</Button>
+              <Button variant="outline" size="sm" onClick={() => window.print()}>{t('common.print')}</Button>
             )}
           </div>
 
           {!partyId && (
             <div className="py-16 text-center">
               <BookOpen className="mx-auto mb-3 h-10 w-10 text-muted-foreground/30" />
-              <p className="text-muted-foreground">Select a party to view their ledger</p>
+              <p className="text-muted-foreground">{t('ledger.selectPartyPrompt')}</p>
             </div>
           )}
 
           {partyId && loadingLedger && (
-            <div className="py-8 text-center text-muted-foreground text-sm">Loading ledger…</div>
+            <div className="py-8 text-center text-muted-foreground text-sm">{t('ledger.loadingLedger')}</div>
           )}
 
           {ledger && !loadingLedger && (
@@ -179,18 +182,18 @@ export default function LedgerPage() {
               {/* Summary cards */}
               <div className="grid grid-cols-3 gap-4">
                 <Card>
-                  <CardHeader className="pb-1"><CardTitle className="text-sm font-medium text-muted-foreground">Total Debit</CardTitle></CardHeader>
+                  <CardHeader className="pb-1"><CardTitle className="text-sm font-medium text-muted-foreground">{t('ledger.totalDebit')}</CardTitle></CardHeader>
                   <CardContent><p className="text-2xl font-bold text-foreground">{fmt(ledger.total_debit)}</p></CardContent>
                 </Card>
                 <Card>
-                  <CardHeader className="pb-1"><CardTitle className="text-sm font-medium text-muted-foreground">Total Credit</CardTitle></CardHeader>
+                  <CardHeader className="pb-1"><CardTitle className="text-sm font-medium text-muted-foreground">{t('ledger.totalCredit')}</CardTitle></CardHeader>
                   <CardContent><p className="text-2xl font-bold text-foreground">{fmt(ledger.total_credit)}</p></CardContent>
                 </Card>
                 <Card>
-                  <CardHeader className="pb-1"><CardTitle className="text-sm font-medium text-muted-foreground">Closing Balance</CardTitle></CardHeader>
+                  <CardHeader className="pb-1"><CardTitle className="text-sm font-medium text-muted-foreground">{t('ledger.closingBalance')}</CardTitle></CardHeader>
                   <CardContent>
                     <p className={`text-2xl font-bold ${ledger.closing_balance > 0 ? 'text-foreground' : 'text-green-600'}`}>
-                      {fmt(ledger.closing_balance)} {ledger.closing_balance < 0 ? 'Cr' : 'Dr'}
+                      {fmt(ledger.closing_balance)} {ledger.closing_balance < 0 ? t('ledger.cr') : t('ledger.dr')}
                     </p>
                   </CardContent>
                 </Card>
@@ -202,18 +205,18 @@ export default function LedgerPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b bg-muted/50">
-                        <th className="px-4 py-2 text-left font-medium text-muted-foreground">Date</th>
-                        <th className="px-4 py-2 text-left font-medium text-muted-foreground">Type</th>
-                        <th className="px-4 py-2 text-left font-medium text-muted-foreground">Voucher No</th>
-                        <th className="px-4 py-2 text-left font-medium text-muted-foreground">Narration</th>
-                        <th className="px-4 py-2 text-right font-medium text-muted-foreground">Debit</th>
-                        <th className="px-4 py-2 text-right font-medium text-muted-foreground">Credit</th>
-                        <th className="px-4 py-2 text-right font-medium text-muted-foreground">Balance</th>
+                        <th className="px-4 py-2 text-left font-medium text-muted-foreground">{t('common.date')}</th>
+                        <th className="px-4 py-2 text-left font-medium text-muted-foreground">{t('ledger.type')}</th>
+                        <th className="px-4 py-2 text-left font-medium text-muted-foreground">{t('ledger.voucherNo')}</th>
+                        <th className="px-4 py-2 text-left font-medium text-muted-foreground">{t('ledger.narration')}</th>
+                        <th className="px-4 py-2 text-right font-medium text-muted-foreground">{t('ledger.debit')}</th>
+                        <th className="px-4 py-2 text-right font-medium text-muted-foreground">{t('ledger.credit')}</th>
+                        <th className="px-4 py-2 text-right font-medium text-muted-foreground">{t('ledger.balance')}</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr className="border-b bg-muted/20">
-                        <td colSpan={4} className="px-4 py-2 text-muted-foreground italic">Opening Balance</td>
+                        <td colSpan={4} className="px-4 py-2 text-muted-foreground italic">{t('ledger.openingBalance')}</td>
                         <td className="px-4 py-2 text-right">—</td>
                         <td className="px-4 py-2 text-right">—</td>
                         <td className="px-4 py-2 text-right font-medium">{fmt(ledger.opening_balance)}</td>
@@ -235,12 +238,12 @@ export default function LedgerPage() {
                             {Number(e.credit) > 0 ? <span className="text-green-700">{fmt(Number(e.credit))}</span> : <span className="text-muted-foreground">—</span>}
                           </td>
                           <td className="px-4 py-2 text-right font-medium">
-                            {fmt(Number(e.balance))} <span className="text-xs text-muted-foreground">{Number(e.balance) >= 0 ? 'Dr' : 'Cr'}</span>
+                            {fmt(Number(e.balance))} <span className="text-xs text-muted-foreground">{Number(e.balance) >= 0 ? t('ledger.dr') : t('ledger.cr')}</span>
                           </td>
                         </tr>
                       ))}
                       <tr className="bg-muted/30 font-semibold">
-                        <td colSpan={4} className="px-4 py-2">Closing Balance</td>
+                        <td colSpan={4} className="px-4 py-2">{t('ledger.closingBalance')}</td>
                         <td className="px-4 py-2 text-right">{fmt(ledger.total_debit)}</td>
                         <td className="px-4 py-2 text-right text-green-700">{fmt(ledger.total_credit)}</td>
                         <td className="px-4 py-2 text-right">{fmt(ledger.closing_balance)}</td>
@@ -249,7 +252,7 @@ export default function LedgerPage() {
                   </table>
 
                   {ledger.entries.length === 0 && (
-                    <div className="py-10 text-center text-muted-foreground text-sm">No transactions in current financial year</div>
+                    <div className="py-10 text-center text-muted-foreground text-sm">{t('ledger.noTransactions')}</div>
                   )}
                 </CardContent>
               </Card>
@@ -265,9 +268,9 @@ export default function LedgerPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Invoices</SelectItem>
-                <SelectItem value="sale">Sales</SelectItem>
-                <SelectItem value="purchase">Purchases</SelectItem>
+                <SelectItem value="all">{t('ledger.allInvoices')}</SelectItem>
+                <SelectItem value="sale">{t('ledger.sales')}</SelectItem>
+                <SelectItem value="purchase">{t('ledger.purchases')}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={partyId || 'all'} onValueChange={v => setPartyId(v === 'all' ? '' : (v ?? ''))}>
@@ -275,11 +278,11 @@ export default function LedgerPage() {
                 <span className="truncate text-left flex-1">
                   {partyId
                     ? (parties.find(p => p.id === partyId)?.name ?? '…')
-                    : 'All Parties'}
+                    : t('ledger.allParties')}
                 </span>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Parties</SelectItem>
+                <SelectItem value="all">{t('ledger.allParties')}</SelectItem>
                 {parties.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -288,24 +291,24 @@ export default function LedgerPage() {
           {outstanding && (
             <div className="grid grid-cols-2 gap-4">
               <Card>
-                <CardHeader className="pb-1"><CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2"><TrendingUp className="h-4 w-4" />Total Outstanding</CardTitle></CardHeader>
+                <CardHeader className="pb-1"><CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2"><TrendingUp className="h-4 w-4" />{t('ledger.totalOutstanding')}</CardTitle></CardHeader>
                 <CardContent><p className="text-2xl font-bold">{fmt(Number(outstanding.total_outstanding))}</p></CardContent>
               </Card>
               <Card>
-                <CardHeader className="pb-1"><CardTitle className="text-sm font-medium text-destructive flex items-center gap-2"><AlertCircle className="h-4 w-4" />Overdue Amount</CardTitle></CardHeader>
+                <CardHeader className="pb-1"><CardTitle className="text-sm font-medium text-destructive flex items-center gap-2"><AlertCircle className="h-4 w-4" />{t('ledger.overdueAmount')}</CardTitle></CardHeader>
                 <CardContent><p className="text-2xl font-bold text-destructive">{fmt(Number(outstanding.total_overdue))}</p></CardContent>
               </Card>
             </div>
           )}
 
-          {loadingOutstanding && <div className="py-8 text-center text-muted-foreground text-sm">Loading…</div>}
+          {loadingOutstanding && <div className="py-8 text-center text-muted-foreground text-sm">{t('common.loading')}</div>}
 
           {outstanding && !loadingOutstanding && (
             outstanding.items.length === 0 ? (
               <Card>
                 <CardContent className="py-16 text-center">
                   <TrendingDown className="mx-auto mb-3 h-10 w-10 text-green-500/50" />
-                  <p className="text-muted-foreground text-sm">No outstanding invoices</p>
+                  <p className="text-muted-foreground text-sm">{t('ledger.noOutstanding')}</p>
                 </CardContent>
               </Card>
             ) : (
@@ -322,49 +325,52 @@ export default function LedgerPage() {
 // Outstanding DataTable
 // ------------------------------------------------------------------ //
 function OutstandingTable({ items }: { items: OutstandingItem[] }) {
+  const { t } = useTranslation();
+
   const columns = useMemo<ColumnDef<OutstandingItem>[]>(() => [
-    { key: 'invoice_no', label: 'Invoice', accessor: i => i.invoice_no, className: 'font-mono text-xs font-medium' },
-    { key: 'invoice_date', label: 'Date', type: 'date', accessor: i => i.invoice_date, className: 'text-muted-foreground' },
-    { key: 'due_date', label: 'Due', type: 'date', accessor: i => i.due_date ?? '', defaultVisible: false },
+    { key: 'invoice_no', label: t('invoice.invoiceNo'), accessor: i => i.invoice_no, className: 'font-mono text-xs font-medium' },
+    { key: 'invoice_date', label: t('common.date'), type: 'date', accessor: i => i.invoice_date, className: 'text-muted-foreground' },
+    { key: 'due_date', label: t('ledger.dueDate'), type: 'date', accessor: i => i.due_date ?? '', defaultVisible: false },
     {
-      key: 'invoice_type', label: 'Type', type: 'enum',
+      key: 'invoice_type', label: t('ledger.type'), type: 'enum',
       enumOptions: ['sale', 'purchase'],
       accessor: i => i.invoice_type,
       format: v => <span className="capitalize text-xs">{String(v)}</span>,
     },
     {
-      key: 'party_name', label: 'Party', accessor: i => i.party_name,
+      key: 'party_name', label: t('invoice.party'), accessor: i => i.party_name,
       format: (_v, row) => (
-        <Link to={`/customers/${row.party_id}`} className="text-blue-600 hover:underline" title="View customer 360">
+        <Link to={`/customers/${row.party_id}`} className="text-blue-600 hover:underline" title={t('ledger.viewCustomer360')}>
           {row.party_name}
         </Link>
       ),
     },
     {
-      key: 'grand_total', label: 'Total', type: 'number', align: 'right',
+      key: 'grand_total', label: t('common.total'), type: 'number', align: 'right',
       accessor: i => i.grand_total, format: v => fmt(Number(v)),
     },
     {
-      key: 'amount_paid', label: 'Paid', type: 'number', align: 'right',
+      key: 'amount_paid', label: t('ledger.paid'), type: 'number', align: 'right',
       accessor: i => i.amount_paid,
       format: v => Number(v) > 0 ? <span className="text-green-700">{fmt(Number(v))}</span> : <span className="text-muted-foreground">—</span>,
     },
     {
-      key: 'balance', label: 'Balance', type: 'number', align: 'right',
+      key: 'balance', label: t('ledger.balance'), type: 'number', align: 'right',
       accessor: i => i.balance,
       format: v => <span className="font-semibold text-destructive">{fmt(Number(v))}</span>,
     },
     {
-      key: 'age_bucket', label: 'Age', type: 'enum', align: 'center',
+      key: 'age_bucket', label: t('ledger.age'), type: 'enum', align: 'center',
       enumOptions: ['current', '1-30', '31-60', '61-90', '90+'],
       accessor: i => i.age_bucket,
       format: v => (
         <Badge className={`text-[10px] ${AGE_COLORS[String(v)] || ''}`}>
-          {v === 'current' ? 'Current' : `${v} days`}
+          {v === 'current' ? t('ledger.current') : `${v} ${t('ledger.days')}`}
         </Badge>
       ),
     },
-  ], []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [t]);
 
   return (
     <DataTable<OutstandingItem>
@@ -374,7 +380,7 @@ function OutstandingTable({ items }: { items: OutstandingItem[] }) {
       rowKey={i => i.id}
       exportFilename="outstanding-invoices"
       defaultSort={{ key: 'invoice_date', direction: 'asc' }}
-      emptyMessage="No outstanding invoices"
+      emptyMessage={t('ledger.noOutstanding')}
     />
   );
 }

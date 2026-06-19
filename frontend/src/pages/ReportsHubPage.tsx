@@ -5,6 +5,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield, XCircle, PieChart, TrendingUp, ShieldAlert } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import PaymentsPage from './PaymentsPage';
@@ -21,27 +22,28 @@ import AnomalyReportPage from './AnomalyReportPage';
 
 type Tab = 'payments' | 'statement' | 'gst' | 'gstr2b' | 'gst-split' | 'sales-status' | 'reports' | 'write-offs' | 'compliance' | 'activity' | 'anomaly';
 
-const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-  { value: 'payments', label: 'Payments', icon: CreditCard },
-  { value: 'statement', label: 'Account Statement', icon: BookOpen },
-  { value: 'gst', label: 'GST Returns', icon: FileBarChart },
-  { value: 'gstr2b', label: 'GSTR-2B (ITC)', icon: FileBarChart },
-  { value: 'gst-split', label: 'GST vs Cash Split', icon: PieChart },
-  { value: 'sales-status', label: 'Sales by Status', icon: TrendingUp },
-  { value: 'reports', label: 'P&L + Sales', icon: BarChart3 },
-  { value: 'write-offs', label: 'Write-offs', icon: XCircle },
-  { value: 'compliance', label: 'Documents', icon: ShieldCheck },
-  { value: 'activity', label: 'Activity Log', icon: Shield },
-  { value: 'anomaly', label: 'Anomaly', icon: ShieldAlert },
-];
-
 export default function ReportsHubPage() {
+  const { t } = useTranslation();
   const nav = useNavigate();
   const loc = useLocation();
   // Default to "reports" so /reports URL behaves like the old /reports page.
   // Sidebar links can override via ?tab=<x>.
   const initial = (new URLSearchParams(loc.search).get('tab') as Tab) || 'reports';
   const [tab, setTab] = useState<Tab>(initial);
+
+  const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
+    { value: 'payments', label: t('payment.title'), icon: CreditCard },
+    { value: 'statement', label: t('reports.accountStatement'), icon: BookOpen },
+    { value: 'gst', label: t('reports.gstReturns'), icon: FileBarChart },
+    { value: 'gstr2b', label: t('reports.gstr2b'), icon: FileBarChart },
+    { value: 'gst-split', label: t('reports.gstVsCash'), icon: PieChart },
+    { value: 'sales-status', label: t('reports.salesByStatus'), icon: TrendingUp },
+    { value: 'reports', label: t('reports.plSales'), icon: BarChart3 },
+    { value: 'write-offs', label: t('reports.writeoffs'), icon: XCircle },
+    { value: 'compliance', label: t('reports.documents'), icon: ShieldCheck },
+    { value: 'activity', label: t('reports.activityLog'), icon: Shield },
+    { value: 'anomaly', label: t('reports.anomaly'), icon: ShieldAlert },
+  ];
 
   useEffect(() => {
     const params = new URLSearchParams(loc.search);
