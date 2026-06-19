@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Search, Pencil, Loader2, ExternalLink } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -57,6 +58,7 @@ interface PartyDialogProps {
 }
 
 function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
+  const { t } = useTranslation();
   const [form, setForm] = useState<PartyForm>({ ...EMPTY });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -112,7 +114,7 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{editing ? 'Edit Party' : 'New Party'}</DialogTitle>
+          <DialogTitle>{editing ? t('party.editParty') : t('party.newParty')}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-5">
@@ -121,63 +123,63 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
           {/* Basic */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label>Party Type *</Label>
+              <Label>{t('party.type')} *</Label>
               <Select value={form.party_type} onValueChange={v => set('party_type', v ?? 'customer')}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="customer">Customer</SelectItem>
-                  <SelectItem value="supplier">Supplier</SelectItem>
-                  <SelectItem value="both">Both</SelectItem>
+                  <SelectItem value="customer">{t('party.customer')}</SelectItem>
+                  <SelectItem value="supplier">{t('party.supplier')}</SelectItem>
+                  <SelectItem value="both">{t('party.both')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
-              <Label>Name *</Label>
+              <Label>{t('party.name')} *</Label>
               <Input value={form.name ?? ''} onChange={e => set('name', e.target.value)} placeholder="Party / Company name" />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label>GSTIN</Label>
+              <Label>{t('party.gstin')}</Label>
               <Input value={form.gstin ?? ''} onChange={e => set('gstin', e.target.value.toUpperCase())} placeholder="27XXXXX" maxLength={15} />
             </div>
             <div className="space-y-1">
-              <Label>PAN</Label>
+              <Label>{t('party.pan')}</Label>
               <Input value={form.pan ?? ''} onChange={e => set('pan', e.target.value.toUpperCase())} placeholder="AAAAA0000A" maxLength={10} />
             </div>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1">
-              <Label>Phone</Label>
+              <Label>{t('party.phone')}</Label>
               <Input value={form.phone ?? ''} onChange={e => set('phone', e.target.value)} placeholder="9876543210" />
             </div>
             <div className="space-y-1">
-              <Label>Email</Label>
+              <Label>{t('party.email')}</Label>
               <Input value={form.email ?? ''} onChange={e => set('email', e.target.value)} type="email" />
             </div>
             <div className="space-y-1">
-              <Label>Contact Person</Label>
+              <Label>{t('party.contactPerson')}</Label>
               <Input value={form.contact_person ?? ''} onChange={e => set('contact_person', e.target.value)} />
             </div>
           </div>
 
           {/* Address */}
           <div className="border-t pt-4">
-            <p className="text-sm font-medium mb-3">Billing Address</p>
+            <p className="text-sm font-medium mb-3">{t('party.billingAddress')}</p>
             <div className="space-y-3">
               <div className="space-y-1">
-                <Label>Address</Label>
+                <Label>{t('party.address')}</Label>
                 <Input value={form.billing_address} onChange={e => set('billing_address', e.target.value)} placeholder="Street / Plot no" />
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1">
-                  <Label>City</Label>
+                  <Label>{t('party.city')}</Label>
                   <Input value={form.billing_city} onChange={e => set('billing_city', e.target.value)} />
                 </div>
                 <div className="space-y-1">
-                  <Label>State</Label>
+                  <Label>{t('party.state')}</Label>
                   <Select value={form.billing_state_code} onValueChange={v => {
                     const s = STATES.find(s => s.code === v);
                     set('billing_state_code', v ?? '');
@@ -190,7 +192,7 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label>Pincode</Label>
+                  <Label>{t('party.pincode')}</Label>
                   <Input value={form.billing_pincode} onChange={e => set('billing_pincode', e.target.value)} maxLength={6} />
                 </div>
               </div>
@@ -199,30 +201,30 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
 
           {/* Financial */}
           <div className="border-t pt-4">
-            <p className="text-sm font-medium mb-3">Financial Settings</p>
+            <p className="text-sm font-medium mb-3">{t('party.financialSettings')}</p>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
-                <Label>Credit Limit (₹)</Label>
+                <Label>{t('party.creditLimit')} (₹)</Label>
                 <Input type="number" min="0" value={form.credit_limit ?? 0} onChange={e => set('credit_limit', parseFloat(e.target.value) || 0)} />
               </div>
               <div className="space-y-1">
-                <Label>Payment Terms (days)</Label>
+                <Label>{t('party.paymentTerms')}</Label>
                 <Input type="number" min="0" value={form.payment_terms_days ?? 0} onChange={e => set('payment_terms_days', parseInt(e.target.value) || 0)} />
               </div>
               <div className="space-y-1">
-                <Label>Mode of Payment</Label>
+                <Label>{t('party.paymentMode')}</Label>
                 <Select
                   value={form.default_payment_mode}
                   onValueChange={v => set('default_payment_mode', (v === 'online' ? 'online' : 'cash'))}
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="cash">Cash (Bill of Supply · no GST · no Tally)</SelectItem>
-                    <SelectItem value="online">Online (GST invoice)</SelectItem>
+                    <SelectItem value="cash">{t('party.cashDesc')}</SelectItem>
+                    <SelectItem value="online">{t('party.onlineDesc')}</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-[10px] text-muted-foreground">
-                  Drives invoice tax type + Tally eligibility.
+                  {t('party.paymentModeHint')}
                 </p>
               </div>
             </div>
@@ -230,13 +232,13 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
 
           {/* Tally Integration */}
           <div className="border-t pt-4">
-            <p className="text-sm font-medium mb-1">Tally Integration</p>
+            <p className="text-sm font-medium mb-1">{t('party.tallyIntegration')}</p>
             <p className="text-xs text-muted-foreground mb-3">
               Override the ledger name used when syncing this party's invoices to Tally.
               Leave blank to use the party name as-is.
             </p>
             <div className="space-y-1">
-              <Label>Tally Ledger Name</Label>
+              <Label>{t('party.tallyLedger')}</Label>
               <Input
                 value={form.tally_ledger_name}
                 onChange={e => set('tally_ledger_name', e.target.value)}
@@ -247,10 +249,10 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
           <Button onClick={handleSubmit} disabled={saving}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {editing ? 'Update' : 'Create'} Party
+            {editing ? t('party.updateParty') : t('party.createParty')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -262,6 +264,7 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
 const PARTY_FETCH_SIZE = 500;
 
 export default function PartiesPage() {
+  const { t } = useTranslation();
   const [parties, setParties] = useState<Party[]>([]);
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -291,11 +294,11 @@ export default function PartiesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Parties</h1>
-          <p className="text-muted-foreground">Customers & Suppliers — {parties.length} records</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('party.title')}</h1>
+          <p className="text-muted-foreground">{t('party.subtitle', { count: parties.length })}</p>
         </div>
         <Button onClick={() => { setEditing(null); setDialogOpen(true); }}>
-          <Plus className="mr-2 h-4 w-4" /> Add Party
+          <Plus className="mr-2 h-4 w-4" /> {t('party.addParty')}
         </Button>
       </div>
 
@@ -321,12 +324,12 @@ export default function PartiesPage() {
             onChange={e => { setSearch(e.target.value); }} />
         </div>
         <Select value={filterType || 'all'} onValueChange={v => { setFilterType(v && v !== 'all' ? v : ''); }}>
-          <SelectTrigger className="w-36"><SelectValue placeholder="All types" /></SelectTrigger>
+          <SelectTrigger className="w-36"><SelectValue placeholder={t('common.all')} /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="customer">Customer</SelectItem>
-            <SelectItem value="supplier">Supplier</SelectItem>
-            <SelectItem value="both">Both</SelectItem>
+            <SelectItem value="all">{t('common.all')}</SelectItem>
+            <SelectItem value="customer">{t('party.customer')}</SelectItem>
+            <SelectItem value="supplier">{t('party.supplier')}</SelectItem>
+            <SelectItem value="both">{t('party.both')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -353,9 +356,10 @@ function PartiesTable({
   onEdit: (p: Party) => void;
 }) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const columns = useMemo<ColumnDef<Party>[]>(() => [
     {
-      key: 'name', label: 'Name', accessor: p => p.name, className: 'font-medium',
+      key: 'name', label: t('party.name'), accessor: p => p.name, className: 'font-medium',
       format: (_v, row) => (
         <Link
           to={`/customers/${row.id}`}
@@ -368,19 +372,19 @@ function PartiesTable({
       ),
     },
     {
-      key: 'party_type', label: 'Type', type: 'enum',
+      key: 'party_type', label: t('party.type'), type: 'enum',
       enumOptions: ['customer', 'supplier', 'both'],
       accessor: p => p.party_type,
       format: v => <Badge variant="outline" className="text-[10px] capitalize">{String(v)}</Badge>,
     },
-    { key: 'gstin', label: 'GSTIN', accessor: p => p.gstin ?? '', className: 'font-mono text-xs' },
-    { key: 'phone', label: 'Phone', accessor: p => p.phone ?? '', className: 'font-mono text-xs' },
-    { key: 'email', label: 'Email', accessor: p => p.email ?? '', defaultVisible: false },
-    { key: 'contact_person', label: 'Contact', accessor: p => p.contact_person ?? '', defaultVisible: false },
-    { key: 'billing_city', label: 'City', accessor: p => p.billing_city ?? '' },
-    { key: 'billing_state', label: 'State', accessor: p => p.billing_state ?? '', defaultVisible: false },
+    { key: 'gstin', label: t('party.gstin'), accessor: p => p.gstin ?? '', className: 'font-mono text-xs' },
+    { key: 'phone', label: t('party.phone'), accessor: p => p.phone ?? '', className: 'font-mono text-xs' },
+    { key: 'email', label: t('party.email'), accessor: p => p.email ?? '', defaultVisible: false },
+    { key: 'contact_person', label: t('party.contact'), accessor: p => p.contact_person ?? '', defaultVisible: false },
+    { key: 'billing_city', label: t('party.city'), accessor: p => p.billing_city ?? '' },
+    { key: 'billing_state', label: t('party.state'), accessor: p => p.billing_state ?? '', defaultVisible: false },
     {
-      key: 'current_balance', label: 'Balance (₹)', type: 'number', align: 'right',
+      key: 'current_balance', label: `${t('party.balance')} (₹)`, type: 'number', align: 'right',
       accessor: p => p.current_balance,
       format: (v, row) => {
         const n = Number(v);
@@ -393,18 +397,18 @@ function PartiesTable({
       },
     },
     {
-      key: 'credit_limit', label: 'Credit Limit', type: 'number', align: 'right',
+      key: 'credit_limit', label: t('party.creditLimit'), type: 'number', align: 'right',
       defaultVisible: false,
       accessor: p => p.credit_limit,
       format: v => `₹${Number(v).toLocaleString('en-IN')}`,
     },
     {
-      key: 'payment_terms_days', label: 'Terms (d)', type: 'number', align: 'right',
+      key: 'payment_terms_days', label: t('party.termsD'), type: 'number', align: 'right',
       defaultVisible: false,
       accessor: p => p.payment_terms_days,
     },
     {
-      key: 'default_payment_mode', label: 'Mode', type: 'enum', align: 'center',
+      key: 'default_payment_mode', label: t('party.mode'), type: 'enum', align: 'center',
       enumOptions: ['cash', 'online'],   // cash listed first to match default
       accessor: p => p.default_payment_mode ?? 'cash',
       format: v => v === 'online'
@@ -412,14 +416,14 @@ function PartiesTable({
         : <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 text-[10px]">CASH · BoS</Badge>,
     },
     {
-      key: 'is_active', label: 'Status', type: 'enum', align: 'center',
+      key: 'is_active', label: t('common.status'), type: 'enum', align: 'center',
       enumOptions: ['Active', 'Inactive'],
       accessor: p => p.is_active ? 'Active' : 'Inactive',
       format: v => v === 'Active'
         ? <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Active</Badge>
         : <Badge variant="secondary">Inactive</Badge>,
     },
-  ], []);
+  ], [t]);
 
   return (
     <DataTable<Party>
