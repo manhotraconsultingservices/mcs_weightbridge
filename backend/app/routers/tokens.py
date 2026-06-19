@@ -927,19 +927,44 @@ async def print_token(
 ):
     """Return an HTML weighment slip for printing. format=a4 (default) or thermal."""
     from app.routers.app_settings import VOLUME_UNIT_KEY, _get_raw
+    from app.models.invoice import Invoice, InvoiceItem
     token = await _load_token(db, token_id)
     company, _ = await _get_company_and_fy(db)
     volume_unit = (await _get_raw(db, VOLUME_UNIT_KEY)) or "cft"
-    rate = await _fetch_rate(db, token.party_id, token.product_id)
+
+    # Prefer rate/amount from the linked invoice's line item — that's the value
+    # actually billed, regardless of whether party_rates or default_rate are set.
+    rate: float = 0.0
     amount: float | None = None
-    if token.net_weight and rate:
-        amount = float(rate) * float(token.net_weight) / 1000  # net_weight in kg → MT
+    inv_row = (await db.execute(
+        select(Invoice.id)
+        .where(Invoice.token_id == token_id, Invoice.status != "cancelled")
+        .order_by(Invoice.created_at.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    if inv_row:
+        item_row = (await db.execute(
+            select(InvoiceItem.rate, InvoiceItem.amount)
+            .where(InvoiceItem.invoice_id == inv_row)
+            .limit(1)
+        )).first()
+        if item_row:
+            rate = float(item_row.rate)
+            amount = float(item_row.amount)
+
+    # Fallback: derive from party_rates / product.default_rate
+    if rate == 0.0:
+        fetched = await _fetch_rate(db, token.party_id, token.product_id)
+        rate = float(fetched)
+        if rate > 0 and token.net_weight:
+            amount = rate * float(token.net_weight) / 1000
+
     template = "token_thermal.html" if format == "thermal" else "token_a4.html"
     html = render_html(template, {
         "token": token,
         "company": company,
         "volume_unit": volume_unit,
-        "rate": float(rate),
+        "rate": rate,
         "amount": amount,
     })
     return HTMLResponse(content=html)
