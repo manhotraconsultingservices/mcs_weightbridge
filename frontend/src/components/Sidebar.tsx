@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getTenantModules } from '@/hooks/useAuth';
+import LanguageToggle from '@/components/LanguageToggle';
 import type { User } from '@/types';
 
 // ── Hub → child paths (for permission expansion + module gating) ───────────
@@ -220,6 +221,7 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
             <p className="truncate text-sm font-medium text-sidebar-foreground">{user.full_name || user.username}</p>
             <p className="truncate text-xs text-sidebar-foreground/50 capitalize">{user.role.replace(/_/g, ' ')}</p>
           </div>
+          <LanguageToggle />
           {/* Admin gear — admins only */}
           {isAdmin && (
             <Button
