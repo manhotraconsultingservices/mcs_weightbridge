@@ -120,6 +120,14 @@
   .net-big .val { font-size: 13px; }
   .net-big .sub { font-size: 8px; color: #666; }
 
+  .total-row {
+    border-top: 1px solid #000;
+    padding-top: 2px;
+    margin-top: 2px;
+    font-size: 12px;
+    font-weight: bold;
+  }
+
   .thank-you    { text-align: center; margin-top: 4px; }
 
   /* Feed paper at the end so the cutter cuts cleanly */
@@ -164,6 +172,11 @@
 {% if company.gstin %}
 <div class="center" style="font-size:9px;">GSTIN: {{ company.gstin }}</div>
 {% endif %}
+{% if company.address_line1 or company.city %}
+<div class="center" style="font-size:9px;">
+  {{ company.address_line1 or '' }}{% if company.city %}, {{ company.city }}{% endif %}{% if company.state %}, {{ company.state }}{% endif %}
+</div>
+{% endif %}
 <div class="slip-title">
   {% if is_volume %}VOLUME SLIP{% else %}WEIGHMENT SLIP{% endif %}
 </div>
@@ -177,13 +190,24 @@
   <span class="row-value">{{ token.token_no or 'PENDING' }}</span>
 </div>
 <div class="row">
-  <span class="row-label">DATE</span>
-  <span class="row-value">{{ token.token_date.strftime('%d-%m-%Y') if token.token_date else '—' }}</span>
+  <span class="row-label">DATE/TIME</span>
+  <span class="row-value">
+    {%- if token.completed_at %}{{ token.completed_at.strftime('%d-%m-%Y %H:%M') }}
+    {%- elif token.first_weight_at %}{{ token.first_weight_at.strftime('%d-%m-%Y %H:%M') }}
+    {%- elif token.token_date %}{{ token.token_date.strftime('%d-%m-%Y') }}
+    {%- else %}—{% endif -%}
+  </span>
 </div>
 <div class="row">
   <span class="row-label">TYPE</span>
   <span class="row-value">{{ (token.token_type or 'SALE') | upper }}</span>
 </div>
+{% if token.gate_pass_no or token.gate_pass %}
+<div class="row">
+  <span class="row-label">GATE PASS</span>
+  <span class="row-value">{{ token.gate_pass_no or token.gate_pass }}</span>
+</div>
+{% endif %}
 <hr class="sep">
 
 <div class="row">
@@ -201,26 +225,29 @@
   <span class="row-value">{{ token.vehicle_type | replace('_', ' ') | title }}</span>
 </div>
 {% endif %}
+{% if token.driver %}
+<div class="row">
+  <span class="row-label">DRIVER</span>
+  <span class="row-value">{{ token.driver.name }}{% if token.driver.phone %} {{ token.driver.phone }}{% endif %}</span>
+</div>
+{% endif %}
+<hr class="sep">
+
 <div class="row">
   <span class="row-label">PARTY</span>
   <span class="row-value">{{ token.party.name if token.party else '—' }}</span>
 </div>
+{% if token.party and (token.party.billing_address or token.party.billing_city) %}
+<div style="font-size:8px; text-align:right; margin: 1px 0 2px; color:#444;">
+  {%- if token.party.billing_address %}{{ token.party.billing_address }}, {% endif -%}
+  {%- if token.party.billing_city %}{{ token.party.billing_city }}{% endif -%}
+  {%- if token.party.billing_state %}, {{ token.party.billing_state }}{% endif -%}
+</div>
+{% endif %}
 <div class="row">
   <span class="row-label">PRODUCT</span>
   <span class="row-value">{{ token.product.name if token.product else '—' }}</span>
 </div>
-{% if token.driver %}
-<div class="row">
-  <span class="row-label">DRIVER</span>
-  <span class="row-value">{{ token.driver.name }}</span>
-</div>
-{% endif %}
-{% if token.gate_pass_no or token.gate_pass %}
-<div class="row">
-  <span class="row-label">GATE PASS</span>
-  <span class="row-value">{{ token.gate_pass_no or token.gate_pass }}</span>
-</div>
-{% endif %}
 <hr class="sep">
 
 {% if is_volume %}
@@ -295,15 +322,37 @@
 <hr class="sep">
 {% endif %}
 
+{# ── Financial summary ── #}
+{% set has_fin = (rate is defined and rate and rate > 0) or (royalty_amount is defined and royalty_amount and royalty_amount > 0) or (vehicle_rent is defined and vehicle_rent and vehicle_rent > 0) %}
+{% if has_fin %}
 {% if rate is defined and rate and rate > 0 %}
 <div class="row">
   <span class="row-label">{{ bl('rate') | upper }}</span>
   <span class="row-value">₹{{ '%.2f'|format(rate) }}/MT</span>
 </div>
+{% endif %}
 {% if amount is defined and amount %}
-<div class="row bold" style="border-top:1px solid #000; padding-top:2px; margin-top:2px;">
+<div class="row">
   <span class="row-label">{{ bl('amount') | upper }}</span>
-  <span class="row-value" style="font-size:12px;">₹{{ '%.2f'|format(amount) }}</span>
+  <span class="row-value">₹{{ '%.2f'|format(amount) }}</span>
+</div>
+{% endif %}
+{% if royalty_amount is defined and royalty_amount and royalty_amount > 0 %}
+<div class="row">
+  <span class="row-label">ROYALTY{% if royalty_per_mt and royalty_per_mt > 0 %} {{ '%.0f'|format(royalty_per_mt) }}{% endif %}</span>
+  <span class="row-value">₹{{ '%.2f'|format(royalty_amount) }}</span>
+</div>
+{% endif %}
+{% if vehicle_rent is defined and vehicle_rent and vehicle_rent > 0 %}
+<div class="row">
+  <span class="row-label">VEH RENT</span>
+  <span class="row-value">₹{{ '%.2f'|format(vehicle_rent) }}</span>
+</div>
+{% endif %}
+{% if total_amount is defined and total_amount and total_amount > 0 %}
+<div class="row total-row">
+  <span class="row-label">TOTAL</span>
+  <span class="row-value">₹{{ '%.2f'|format(total_amount) }}</span>
 </div>
 {% endif %}
 <hr class="sep">

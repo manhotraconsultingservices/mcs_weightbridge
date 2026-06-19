@@ -208,6 +208,8 @@ export interface Token {
   source: 'manual' | 'anpr' | 'kiosk' | string;
   anpr_entry_at: string | null;
   anpr_exit_at: string | null;
+  transit_pass_id: string | null;
+  vehicle_rent: number | null;
   remarks: string | null;
   created_at: string;
   first_weight_at: string | null;

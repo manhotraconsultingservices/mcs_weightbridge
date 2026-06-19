@@ -52,19 +52,24 @@
   .vol-net .val { font-size: 16px; font-weight: bold; }
   .vol-net .sub { font-size: 9px; color: #555; }
 
-  .footer { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 12px; padding-top: 4px; border-top: 1px solid #000; }
+  /* Financial summary table */
+  .fin-tbl { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  .fin-tbl td { padding: 1px 0; }
+  .fin-tbl .lbl { font-weight: bold; }
+  .fin-tbl .val { text-align: right; }
+  .fin-tbl .total td { border-top: 1px solid #000; font-weight: bold; font-size: 13px; padding-top: 2px; }
+
+  .footer { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 8px; padding-top: 4px; border-top: 1px solid #000; }
   .footer .timestamp { font-size: 10px; }
   .footer .sig { font-weight: bold; font-size: 12px; }
 </style>
 </head>
 <body>
 
-{% macro format_dt(dt) %}{% if dt %}{{ dt.strftime('%d-%b-%Y %H:%M:%S') }}{% endif %}{% endmacro %}
+{% macro format_dt(dt) %}{% if dt %}{{ dt.strftime('%d-%b-%Y %H:%M') }}{% endif %}{% endmacro %}
 {% macro format_date(dt) %}{% if dt %}{{ dt.strftime('%d-%b-%Y') }}{% endif %}{% endmacro %}
-{# Weight in MT (3 decimals) — universal display for gross/tare/net #}
+{# Weight in MT (3 decimals) #}
 {% macro format_wt_mt(w) %}{% if w %}{{ '%.3f' % (w|float / 1000) }} MT{% else %}—{% endif %}{% endmacro %}
-{# Net weight with MT. For volume tokens, also show volume equivalent.
-   bulk_density is in kg/m³. vol_display unit depends on volume_unit setting. #}
 {% macro format_wt_dual(w, bulk_density) %}
   {% if w %}
     {{ '%.3f' % (w|float / 1000) }} MT
@@ -79,7 +84,6 @@
   {% if cft %}{{ '%.2f' % (cft|float) }} CFT{% else %}—{% endif %}
 {% endmacro %}
 
-{# Slip-type label: "Volume Slip" or "Weight Slip" based on token.weight_method #}
 {% macro slip_title(token) %}
   {% if token.weight_method == 'volume' %}Volume Slip{% else %}Weight Slip{% endif %}
 {% endmacro %}
@@ -103,14 +107,19 @@
 
   <div class="sep"></div>
 
-  {# ── Header block: common to both modes ── #}
+  {# ── Header: token no + datetime ── #}
   <div class="row-split">
-    <div class="left"><span class="lbl">TNO:</span> <span>{{ token.token_no or '—' }}</span></div>
-    <div class="right"><span class="lbl">DATE:</span> <span>{{ format_date(token.token_date) }}</span></div>
+    <div class="left"><span class="lbl">TNO:</span>&nbsp;<span>{{ token.token_no or '—' }}</span></div>
+    <div class="right">
+      <span class="lbl">DATE/TIME:</span>&nbsp;
+      <span>{{ format_dt(token.completed_at or token.first_weight_at) or format_date(token.token_date) }}</span>
+    </div>
   </div>
+
   {% if token.gate_pass_no or token.gate_pass %}
   <div class="row"><span class="lbl">Gate Pass:</span><span class="val">{{ token.gate_pass_no or token.gate_pass }}{% if token.gate_pass_no and token.gate_pass %} · {{ token.gate_pass }}{% endif %}</span></div>
   {% endif %}
+
   <div class="row">
     <span class="lbl">VEHICLE:</span>
     <span class="val">
@@ -124,7 +133,20 @@
   {% if token.driver and token.driver.name %}
   <div class="row"><span class="lbl">DRIVER:</span><span class="val">{{ token.driver.name }}{% if token.driver.phone %} · {{ token.driver.phone }}{% endif %}</span></div>
   {% endif %}
+
   <div class="row"><span class="lbl">PARTY:</span><span class="val">{{ token.party.name if token.party else 'Cash' }}</span></div>
+  {% if token.party and (token.party.billing_address or token.party.billing_city) %}
+  <div class="row">
+    <span class="lbl" style="min-width:80px;"></span>
+    <span class="val" style="font-size:10px; color:#444;">
+      {%- if token.party.billing_address %}{{ token.party.billing_address }}, {% endif -%}
+      {%- if token.party.billing_city %}{{ token.party.billing_city }}{% endif -%}
+      {%- if token.party.billing_state %}, {{ token.party.billing_state }}{% endif -%}
+      {%- if token.party.billing_pincode %} - {{ token.party.billing_pincode }}{% endif -%}
+    </span>
+  </div>
+  {% endif %}
+
   <div class="row">
     <span class="lbl">ITEM:</span>
     <span class="val">{{ token.product.name if token.product else '—' }}
@@ -136,7 +158,6 @@
 
   {# ── Mode-specific body ── #}
   {% if is_volume %}
-    {# ===== VOLUME MODE: show tyre + volume + density → net ===== #}
     <div class="vol-block">
       <div class="vol-grid">
         <div class="vol-cell">
@@ -170,7 +191,6 @@
       </div>
     </div>
   {% else %}
-    {# ===== WEIGHBRIDGE MODE: gross / tare / net table ===== #}
     <div class="sep" style="margin-top:4px;"></div>
     <table class="wt-tbl">
       <thead>
@@ -201,14 +221,42 @@
     </table>
   {% endif %}
 
-  {% if rate is defined and rate and rate > 0 %}
+  {# ── Financial summary ── #}
+  {% set has_fin = (rate is defined and rate and rate > 0) or (royalty_amount is defined and royalty_amount and royalty_amount > 0) or (vehicle_rent is defined and vehicle_rent and vehicle_rent > 0) %}
+  {% if has_fin %}
   <div class="sep"></div>
-  <div class="row-split">
-    <div class="left"><span class="lbl">{{ bl('rate') }}:</span>&nbsp;<span>₹{{ '%.2f' % rate }}/MT</span></div>
-    {% if amount is defined and amount %}
-    <div class="right"><span class="lbl">{{ bl('amount') }}:</span>&nbsp;<span style="font-weight:bold;">₹{{ '%.2f' % amount }}</span></div>
+  <table class="fin-tbl">
+    {% if rate is defined and rate and rate > 0 %}
+    <tr>
+      <td class="lbl">{{ bl('rate') }}</td>
+      <td class="val">₹{{ '%.2f' % rate }}/MT</td>
+    </tr>
     {% endif %}
-  </div>
+    {% if amount is defined and amount %}
+    <tr>
+      <td class="lbl">{{ bl('amount') }}</td>
+      <td class="val">₹{{ '%.2f' % amount }}</td>
+    </tr>
+    {% endif %}
+    {% if royalty_amount is defined and royalty_amount and royalty_amount > 0 %}
+    <tr>
+      <td class="lbl">Royalty{% if royalty_per_mt and royalty_per_mt > 0 %} (₹{{ '%.2f' % royalty_per_mt }}/MT){% endif %}</td>
+      <td class="val">₹{{ '%.2f' % royalty_amount }}</td>
+    </tr>
+    {% endif %}
+    {% if vehicle_rent is defined and vehicle_rent and vehicle_rent > 0 %}
+    <tr>
+      <td class="lbl">Vehicle Rent</td>
+      <td class="val">₹{{ '%.2f' % vehicle_rent }}</td>
+    </tr>
+    {% endif %}
+    {% if total_amount is defined and total_amount and total_amount > 0 %}
+    <tr class="total">
+      <td class="lbl">TOTAL</td>
+      <td class="val">₹{{ '%.2f' % total_amount }}</td>
+    </tr>
+    {% endif %}
+  </table>
   {% endif %}
 
   {% if token.remarks %}
@@ -216,8 +264,8 @@
   {% endif %}
 
   <div class="footer">
-    <div class="timestamp">Printed {{ format_dt(token.completed_at if token.completed_at else token.first_weight_at) }}</div>
-    <div class="sig">Signature</div>
+    <div class="timestamp">{{ label }} · Printed {{ format_dt(token.completed_at if token.completed_at else token.first_weight_at) }}</div>
+    <div class="sig">Authorised Signatory</div>
   </div>
 </div>
 {% endmacro %}

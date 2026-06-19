@@ -774,6 +774,8 @@ def get_column_migrations() -> list[str]:
 
         # Royalty P1: link token to its transit pass + variance tracking on consumptions
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS transit_pass_id UUID REFERENCES royalty_passes(id)",
+        # Vehicle rent — payment to truck owner per trip (stone crusher practice)
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS vehicle_rent NUMERIC(14,2) DEFAULT 0",
         "ALTER TABLE royalty_pass_consumptions ADD COLUMN IF NOT EXISTS authorized_mt NUMERIC(14,3)",
         "ALTER TABLE royalty_pass_consumptions ADD COLUMN IF NOT EXISTS actual_mt NUMERIC(14,3)",
         "ALTER TABLE royalty_pass_consumptions ADD COLUMN IF NOT EXISTS variance_mt NUMERIC(14,3)",

@@ -21,6 +21,7 @@ class TokenCreate(BaseModel):
     gate_pass: Optional[str] = None
     remarks: Optional[str] = None
     transit_pass_id: Optional[UUID] = None   # links purchase token to its transit/royalty pass
+    vehicle_rent: Optional[Decimal] = None   # payment to truck owner per trip
 
 
 class TokenFirstWeight(BaseModel):
@@ -53,6 +54,7 @@ class TokenVolumeCreate(BaseModel):
     gate_pass: Optional[str] = None
     remarks: Optional[str] = None
     transit_pass_id: Optional[UUID] = None
+    vehicle_rent: Optional[Decimal] = None
 
 
 class TokenUpdate(BaseModel):
@@ -143,6 +145,7 @@ class TokenResponse(BaseModel):
     anpr_entry_at: Optional[datetime] = None
     anpr_exit_at: Optional[datetime] = None
     transit_pass_id: Optional[UUID] = None
+    vehicle_rent: Optional[Decimal] = None
     remarks: Optional[str] = None
     created_at: datetime
     first_weight_at: Optional[datetime] = None

@@ -133,6 +133,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     gate_pass: '',
     remarks: '',
     transit_pass_id: '',   // P1: link purchase token to its royalty/transit pass
+    vehicle_rent: '',      // optional payment to truck owner per trip
   });
   // Volume-based weighment (skips the bridge) — volume entered in CFT only
   const [weightMethod, setWeightMethod] = useState<'weighbridge' | 'volume'>('weighbridge');
@@ -205,7 +206,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   }, []);
 
   function resetForm() {
-    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass: '', remarks: '', transit_pass_id: '' });
+    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass: '', remarks: '', transit_pass_id: '', vehicle_rent: '' });
     setVehicleSearch('');
     setSelectedVehicle(null);
     setVolumeValue('');
@@ -225,7 +226,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     : 0;
 
   const handleTypeChange = (type: string) => {
-    setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '' }));
+    setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '', vehicle_rent: '' }));
     if (type === 'purchase') {
       api.get('/api/v1/royalty/passes', { params: { status: 'active', page_size: 100 } })
         .then(r => {
@@ -286,6 +287,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           volume_cft: Number(volumeCft.toFixed(3)),
           transit_pass_id: form.transit_pass_id || undefined,
           gate_pass: form.gate_pass || undefined,
+          vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
           remarks: form.remarks
             ? `${form.remarks}${tyreCount ? ` | ${tyreCount}-tyre truck` : ''}`
             : (tyreCount ? `${tyreCount}-tyre truck` : undefined),
@@ -329,6 +331,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       product_id: form.product_id || undefined,
       vehicle_id: form.vehicle_id || undefined,
       transit_pass_id: form.transit_pass_id || undefined,
+      vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
       remarks: form.remarks || undefined,
     };
     try {
@@ -705,6 +708,20 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             value={form.gate_pass}
             onChange={e => setForm(f => ({ ...f, gate_pass: e.target.value }))}
             placeholder="GP-001…"
+          />
+        </div>
+
+        {/* Vehicle Rent */}
+        <div className="space-y-1">
+          <Label className="text-xs">Vehicle Rent ₹ <span className="text-muted-foreground">(optional)</span></Label>
+          <Input
+            className="h-8 text-xs"
+            type="number"
+            min="0"
+            step="0.01"
+            value={form.vehicle_rent}
+            onChange={e => setForm(f => ({ ...f, vehicle_rent: e.target.value }))}
+            placeholder="0.00"
           />
         </div>
 

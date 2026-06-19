@@ -429,6 +429,7 @@ async def create_token(
         gate_pass=payload.gate_pass,    # optional free-text note from the form
         gate_pass_no=gate_pass_no,
         transit_pass_id=payload.transit_pass_id,
+        vehicle_rent=payload.vehicle_rent,
         remarks=payload.remarks,
         created_by=current_user.id,
         status="OPEN",
@@ -502,6 +503,7 @@ async def create_volume_token(
         gate_pass=payload.gate_pass,
         gate_pass_no=await next_gate_pass_no(db, company.id, fy.id, branch_id=branch_id),
         transit_pass_id=payload.transit_pass_id,
+        vehicle_rent=payload.vehicle_rent,
         remarks=payload.remarks,
         created_by=current_user.id,
         status="COMPLETED",
@@ -928,24 +930,26 @@ async def print_token(
     """Return an HTML weighment slip for printing. format=a4 (default) or thermal."""
     from app.routers.app_settings import VOLUME_UNIT_KEY, _get_raw
     from app.models.invoice import Invoice, InvoiceItem
+    from app.models.royalty import RoyaltyPassConsumption, RoyaltyPass
     token = await _load_token(db, token_id)
     company, _ = await _get_company_and_fy(db)
     volume_unit = (await _get_raw(db, VOLUME_UNIT_KEY)) or "cft"
 
-    # Prefer rate/amount from the linked invoice's line item — that's the value
-    # actually billed, regardless of whether party_rates or default_rate are set.
+    # Prefer rate/amount from the linked invoice's line item
     rate: float = 0.0
     amount: float | None = None
+    grand_total: float | None = None
     inv_row = (await db.execute(
-        select(Invoice.id)
+        select(Invoice.id, Invoice.grand_total)
         .where(Invoice.token_id == token_id, Invoice.status != "cancelled")
         .order_by(Invoice.created_at.desc())
         .limit(1)
-    )).scalar_one_or_none()
+    )).first()
     if inv_row:
+        grand_total = float(inv_row.grand_total) if inv_row.grand_total else None
         item_row = (await db.execute(
             select(InvoiceItem.rate, InvoiceItem.amount)
-            .where(InvoiceItem.invoice_id == inv_row)
+            .where(InvoiceItem.invoice_id == inv_row.id)
             .limit(1)
         )).first()
         if item_row:
@@ -959,6 +963,22 @@ async def print_token(
         if rate > 0 and token.net_weight:
             amount = rate * float(token.net_weight) / 1000
 
+    # Royalty: look up the consumption linked to this token
+    royalty_amount: float = 0.0
+    royalty_per_mt: float = 0.0
+    royalty_row = (await db.execute(
+        select(RoyaltyPassConsumption.quantity_mt, RoyaltyPass.rate)
+        .join(RoyaltyPass, RoyaltyPassConsumption.pass_id == RoyaltyPass.id)
+        .where(RoyaltyPassConsumption.token_id == token_id)
+        .limit(1)
+    )).first()
+    if royalty_row:
+        royalty_per_mt = float(royalty_row.rate)
+        royalty_amount = float(royalty_row.quantity_mt) * royalty_per_mt
+
+    vehicle_rent = float(token.vehicle_rent or 0)
+    total_amount = (amount or 0) + royalty_amount + vehicle_rent
+
     template = "token_thermal.html" if format == "thermal" else "token_a4.html"
     html = render_html(template, {
         "token": token,
@@ -966,5 +986,10 @@ async def print_token(
         "volume_unit": volume_unit,
         "rate": rate,
         "amount": amount,
+        "grand_total": grand_total,
+        "royalty_amount": royalty_amount,
+        "royalty_per_mt": royalty_per_mt,
+        "vehicle_rent": vehicle_rent,
+        "total_amount": total_amount,
     })
     return HTMLResponse(content=html)
