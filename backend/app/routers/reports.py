@@ -152,6 +152,7 @@ async def gstr1_summary(
         select(Invoice, Party)
         .join(Party, Invoice.party_id == Party.id)
         .where(Invoice.invoice_type == "sale", Invoice.status == "final",
+               Invoice.tax_type == "gst",   # exclude non-GST Bill-of-Supply from GSTR-1
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
         .order_by(Invoice.invoice_date)
     )
@@ -189,6 +190,7 @@ async def gstr1_summary(
                func.sum(InvoiceItem.igst_amount).label("igst"))
         .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
         .where(Invoice.invoice_type == "sale", Invoice.status == "final",
+               Invoice.tax_type == "gst",   # exclude non-GST Bill-of-Supply from GSTR-1 HSN
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
         .group_by(InvoiceItem.hsn_code, InvoiceItem.unit)
         .order_by(InvoiceItem.hsn_code)
@@ -258,6 +260,7 @@ async def gstr1_json_export(
         select(Invoice, Party)
         .join(Party, Invoice.party_id == Party.id)
         .where(Invoice.invoice_type == "sale", Invoice.status == "final",
+               Invoice.tax_type == "gst",   # exclude non-GST Bill-of-Supply from GSTR-1 JSON
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
         .order_by(Invoice.invoice_date)
     )
@@ -369,6 +372,7 @@ async def gstr1_json_export(
         .outerjoin(Product, InvoiceItem.product_id == Product.id)
         .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
         .where(Invoice.invoice_type == "sale", Invoice.status == "final",
+               Invoice.tax_type == "gst",   # exclude non-GST Bill-of-Supply from GSTR-1 JSON HSN
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
         .group_by(InvoiceItem.hsn_code, InvoiceItem.unit, Product.name)
         .order_by(InvoiceItem.hsn_code)
@@ -611,6 +615,26 @@ async def profit_loss(
         .group_by(wo_yr, wo_mo)
     )
 
+    # Credit/Debit notes against SALES — net them from revenue.
+    #   credit_note REDUCES revenue (sales return / rate allowance)
+    #   debit_note  INCREASES revenue (under-billing correction)
+    # Netted on the same TAXABLE (ex-GST) basis as revenue above.
+    note_yr = func.extract("year", Invoice.invoice_date)
+    note_mo = func.extract("month", Invoice.invoice_date)
+    note_result = await db.execute(
+        select(
+            note_yr.label("yr"), note_mo.label("mo"),
+            Invoice.invoice_type.label("itype"),
+            func.sum(Invoice.taxable_amount).label("taxable"),
+        )
+        .where(
+            Invoice.invoice_type.in_(("credit_note", "debit_note")),
+            Invoice.status == "final",
+            Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date,
+        )
+        .group_by(note_yr, note_mo, Invoice.invoice_type)
+    )
+
     import calendar
 
     def _month_label(yr_val, mo_val) -> tuple[str, str]:
@@ -620,12 +644,17 @@ async def profit_loss(
     rev_by_month: dict[str, dict] = {}
     for r in rev_result.all():
         key, label = _month_label(r.yr, r.mo)
-        rev_by_month[key] = {"month": key, "label": label, "revenue": _r2(r.total), "revenue_taxable": _r2(r.taxable), "sale_count": int(r.count)}
+        # Revenue is the TAXABLE (ex-GST) value — output GST collected is a
+        # liability to the government, NOT income. (Bill-of-Supply cash sales
+        # have taxable == grand_total, so they're unaffected.)
+        rev_by_month[key] = {"month": key, "label": label, "revenue": _r2(r.taxable), "revenue_with_tax": _r2(r.total), "sale_count": int(r.count)}
 
     cogs_by_month: dict[str, dict] = {}
     for r in cogs_result.all():
         key, label = _month_label(r.yr, r.mo)
-        cogs_by_month[key] = {"month": key, "label": label, "cogs": _r2(r.total), "cogs_taxable": _r2(r.taxable), "purchase_count": int(r.count)}
+        # COGS is the TAXABLE (ex-GST) value — input GST paid is recoverable
+        # ITC, not a cost.
+        cogs_by_month[key] = {"month": key, "label": label, "cogs": _r2(r.taxable), "cogs_with_tax": _r2(r.total), "purchase_count": int(r.count)}
 
     wo_by_month: dict[str, dict] = {}
     for r in wo_result.all():
@@ -634,8 +663,18 @@ async def profit_loss(
         key, label = _month_label(r.yr, r.mo)
         wo_by_month[key] = {"month": key, "label": label, "write_off": _r2(r.total or 0), "write_off_count": int(r.count or 0)}
 
+    # Net credit (−) / debit (+) notes per month, on the taxable basis
+    note_net_by_month: dict[str, float] = {}
+    for r in note_result.all():
+        if r.yr is None or r.mo is None:
+            continue
+        key, _lbl = _month_label(r.yr, r.mo)
+        signed = _r2(r.taxable or 0) if r.itype == "debit_note" else -_r2(r.taxable or 0)
+        note_net_by_month[key] = _r2(note_net_by_month.get(key, 0.0) + signed)
+
     # Merge by month
-    all_months = sorted(set(list(rev_by_month.keys()) + list(cogs_by_month.keys()) + list(wo_by_month.keys())))
+    all_months = sorted(set(list(rev_by_month.keys()) + list(cogs_by_month.keys())
+                            + list(wo_by_month.keys()) + list(note_net_by_month.keys())))
     monthly = []
     total_revenue = total_cogs = total_write_off = 0.0
     for key in all_months:
@@ -643,7 +682,9 @@ async def profit_loss(
         cogs = cogs_by_month.get(key, {})
         wo = wo_by_month.get(key, {})
         label = rev.get("label") or cogs.get("label") or wo.get("label") or key
-        revenue = rev.get("revenue", 0.0)
+        note_net = note_net_by_month.get(key, 0.0)
+        # Revenue net of credit/debit notes (sales returns reduce revenue)
+        revenue = _r2(rev.get("revenue", 0.0) + note_net)
         cost = cogs.get("cogs", 0.0)
         write_off = wo.get("write_off", 0.0)
         gross_profit = _r2(revenue - cost)
@@ -655,6 +696,7 @@ async def profit_loss(
         monthly.append({
             "month": key, "label": label,
             "revenue": revenue, "cogs": cost,
+            "credit_debit_note_net": note_net,
             "write_off": write_off,
             "gross_profit": gross_profit,
             "net_profit": net_profit,

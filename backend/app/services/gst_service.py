@@ -122,9 +122,14 @@ def calculate_invoice_totals(
     # 4. TCS (Tax Collected at Source) — on invoice value
     tcs_amount = _round2(total_amount * tcs_rate / 100) if tcs_rate > 0 else Decimal("0")
 
+    # Round the grand total to the NEAREST WHOLE RUPEE — standard Indian
+    # tax-invoice practice. round_off carries the ± adjustment so the invoice
+    # still foots exactly:
+    #   taxable + cgst + sgst + igst + freight + tcs + round_off == grand_total
     pre_round = total_amount + tcs_amount
-    grand_total = _round2(pre_round)
-    round_off = grand_total - pre_round
+    grand_total = pre_round.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    round_off = _round2(grand_total - pre_round)
+    grand_total = _round2(grand_total)   # keep 2dp scale for the NUMERIC(14,2) column
 
     return {
         "subtotal": subtotal,

@@ -1472,15 +1472,15 @@ function mtFmt(v: number | null | undefined) {
   if (v == null) return '—';
   return (v / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' MT';
 }
-/** Returns "9.750 MT / 6.50 m³" (or CFT) when bulk_density(kg/m³) available, else "9.750 MT" */
-function dualFmt(weightKg: number | null | undefined, bulkDensity: number | null | undefined, unit: 'm3' | 'cft' = 'm3'): string {
+/** Returns "9.750 MT / 229.41 CFT" when bulk_density(kg/CFT) available, else "9.750 MT".
+ *  bulk_density is kg/CFT (canonical), so CFT = kg ÷ kg_per_CFT and m³ = CFT ÷ 35.3147. */
+function dualFmt(weightKg: number | null | undefined, bulkDensity: number | null | undefined, unit: 'm3' | 'cft' = 'cft'): string {
   if (weightKg == null) return '—';
   const mt = (weightKg / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
   if (!bulkDensity || bulkDensity <= 0) return `${mt} MT`;
-  // bulk_density is kg/m³, so m³ = kg ÷ kg_per_m3
-  const m3 = weightKg / Number(bulkDensity);
-  if (unit === 'cft') return `${mt} MT / ${(m3 * 35.3147).toFixed(2)} CFT`;
-  return `${mt} MT / ${m3.toFixed(4)} m³`;
+  const cft = weightKg / Number(bulkDensity);            // kg ÷ (kg/CFT) = CFT
+  if (unit === 'm3') return `${mt} MT / ${(cft / 35.3147).toFixed(3)} m³`;
+  return `${mt} MT / ${cft.toFixed(2)} CFT`;
 }
 
 // Active statuses (default filter)
