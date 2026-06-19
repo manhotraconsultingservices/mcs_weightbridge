@@ -4,7 +4,6 @@ import { Toaster } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
 import { useAppSettings } from '@/hooks/useAppSettings';
-import LanguageToggle from '@/components/LanguageToggle';
 import LoginPage from '@/pages/LoginPage';
 import LandingPage from '@/pages/LandingPage';
 import LicenseExpiredPage from '@/pages/LicenseExpiredPage';
@@ -132,7 +131,6 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <AmcBanner />
         <div className="fixed top-2 right-3 z-50 flex items-center gap-2">
-          <LanguageToggle />
           <BranchPicker role={user.role} />
           <OfflineIndicator />
         </div>

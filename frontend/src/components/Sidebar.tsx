@@ -221,7 +221,7 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
             <p className="truncate text-sm font-medium text-sidebar-foreground">{user.full_name || user.username}</p>
             <p className="truncate text-xs text-sidebar-foreground/50 capitalize">{user.role.replace(/_/g, ' ')}</p>
           </div>
-          <LanguageToggle />
+          <LanguageToggle className="h-7 px-2 text-xs font-medium text-sidebar-foreground/70 hover:text-sidebar-foreground border border-sidebar-border hover:bg-sidebar-accent" />
           {/* Admin gear — admins only */}
           {isAdmin && (
             <Button

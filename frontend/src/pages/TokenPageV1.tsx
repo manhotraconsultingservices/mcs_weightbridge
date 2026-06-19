@@ -334,6 +334,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     try {
       if (!navigator.onLine) throw new Error('offline');
       const { data } = await api.post<Token>('/api/v1/tokens', tokenPayload);
+      if (data.gate_pass_no) toast.success(`Gate Pass ${data.gate_pass_no} issued`);
       onCreated(data);
       resetForm();
     } catch (e: unknown) {
@@ -961,6 +962,13 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
               <div className="flex items-center gap-2">
                 <Package className="h-4 w-4 text-muted-foreground shrink-0" />
                 <span className="text-sm text-muted-foreground">{token.product.name}</span>
+              </div>
+            )}
+            {token.gate_pass_no && (
+              <div className="flex items-center gap-2 mt-1 pt-1 border-t border-border/30">
+                <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-0.5 font-mono">
+                  Gate Pass: {token.gate_pass_no}
+                </span>
               </div>
             )}
           </div>
