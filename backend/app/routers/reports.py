@@ -1228,8 +1228,8 @@ async def gate_pass_register(
     ]
     params: dict = {
         "company_id": str(current_user.company_id),
-        "from_date": from_date.isoformat(),
-        "to_date": to_date.isoformat(),
+        "from_date": from_date,
+        "to_date": to_date,
     }
     if status:
         filters.append("gp.status = :status")

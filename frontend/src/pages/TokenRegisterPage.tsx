@@ -124,15 +124,20 @@ export default function TokenRegisterPage() {
   const [status, setStatus] = useState('all');
   const [data, setData] = useState<TokenRegister | null>(null);
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
 
   const fetch = useCallback(() => {
     setLoading(true);
+    setErr('');
     const p = new URLSearchParams({ from_date: fromDate, to_date: toDate });
     if (tokenType !== 'all') p.set('token_type', tokenType);
     if (status !== 'all') p.set('status', status);
     api.get<TokenRegister>(`/api/v1/reports/token-register?${p}`)
       .then(r => setData(r.data))
-      .catch(() => setData(null))
+      .catch(e => {
+        setData(null);
+        setErr((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to load token data. Check the console for details.');
+      })
       .finally(() => setLoading(false));
   }, [fromDate, toDate, tokenType, status]);
 
@@ -146,6 +151,8 @@ export default function TokenRegisterPage() {
         <Ticket className="h-5 w-5 text-primary" />
         <h2 className="text-lg font-semibold">Token Register</h2>
       </div>
+
+      {err && <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">{err}</p>}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-end">

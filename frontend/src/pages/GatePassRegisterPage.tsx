@@ -100,16 +100,21 @@ export default function GatePassRegisterPage() {
   const [vehicleNo, setVehicleNo] = useState('');
   const [data, setData] = useState<GatePassRegister | null>(null);
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
 
   const fetch = useCallback(() => {
     setLoading(true);
+    setErr('');
     const p = new URLSearchParams({ from_date: fromDate, to_date: toDate });
     if (status !== 'all') p.set('status', status);
     if (purpose !== 'all') p.set('purpose', purpose);
     if (vehicleNo.trim()) p.set('vehicle_no', vehicleNo.trim());
     api.get<GatePassRegister>(`/api/v1/reports/gate-pass-register?${p}`)
       .then(r => setData(r.data))
-      .catch(() => setData(null))
+      .catch(e => {
+        setData(null);
+        setErr((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to load gate pass data. Check the console for details.');
+      })
       .finally(() => setLoading(false));
   }, [fromDate, toDate, status, purpose, vehicleNo]);
 
@@ -123,6 +128,8 @@ export default function GatePassRegisterPage() {
         <DoorOpen className="h-5 w-5 text-primary" />
         <h2 className="text-lg font-semibold">Gate Pass Register</h2>
       </div>
+
+      {err && <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">{err}</p>}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-end">
