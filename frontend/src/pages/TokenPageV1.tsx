@@ -1821,23 +1821,25 @@ export default function TokenPageV1() {
             </div>
           </div>
 
-          {/* Table header */}
-          <div
-            className="grid gap-x-1 px-3 py-1.5 border-b bg-muted/20 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground shrink-0"
-            style={{ gridTemplateColumns: COLS }}
-          >
-            {visibleCols.includes('token_no') && <div>#</div>}
-            {visibleCols.includes('vehicle')  && <div>{t('token.vehicle')}</div>}
-            {visibleCols.includes('party')    && <div>{t('token.party')}</div>}
-            {visibleCols.includes('product')  && <div>{t('token.product')}</div>}
-            {visibleCols.includes('gross')    && <div className="text-right">{t('token.grossWeight')} (MT)</div>}
-            {visibleCols.includes('tare')     && <div className="text-right">{t('token.tareWeight')} (MT)</div>}
-            {visibleCols.includes('net')      && <div className="text-right">{t('token.netWeight')} (MT)</div>}
-            {visibleCols.includes('actions')  && <div className="text-center">Act</div>}
-          </div>
+          {/* Table header + body share ONE overflow-auto container so they scroll together horizontally.
+              The header uses sticky top-0 so it stays visible during vertical scroll. */}
+          <div className="overflow-auto flex-1 min-h-0">
 
-          {/* Table body */}
-          <div className="overflow-y-auto flex-1">
+            {/* Sticky table header */}
+            <div
+              className="grid gap-x-1 px-3 py-1.5 border-b bg-muted/20 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sticky top-0 z-10"
+              style={{ gridTemplateColumns: COLS }}
+            >
+              {visibleCols.includes('token_no') && <div>#</div>}
+              {visibleCols.includes('vehicle')  && <div>{t('token.vehicle')}</div>}
+              {visibleCols.includes('party')    && <div>{t('token.party')}</div>}
+              {visibleCols.includes('product')  && <div>{t('token.product')}</div>}
+              {visibleCols.includes('gross')    && <div className="text-right">{t('token.grossWeight')} (MT)</div>}
+              {visibleCols.includes('tare')     && <div className="text-right">{t('token.tareWeight')} (MT)</div>}
+              {visibleCols.includes('net')      && <div className="text-right">{t('token.netWeight')} (MT)</div>}
+              {visibleCols.includes('actions')  && <div className="text-center">Act</div>}
+            </div>
+
             {loading && tokens.length === 0 ? (
               <div className="flex items-center justify-center py-10">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
