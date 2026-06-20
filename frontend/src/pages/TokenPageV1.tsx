@@ -761,7 +761,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           </div>
         )}
 
-        {/* Gate Pass — optional, created by gate guard */}
+        {/* Gate Pass — required, created by gate guard */}
         {(() => {
           const vno = form.vehicle_no.trim().toUpperCase();
           const matchingPasses = vno
@@ -771,7 +771,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-semibold">
-                  Gate Pass <span className="text-muted-foreground font-normal">(optional)</span>
+                  Gate Pass <span className="text-rose-500 font-normal text-xs">*</span>
                 </Label>
                 <button
                   type="button"
