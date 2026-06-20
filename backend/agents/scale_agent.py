@@ -133,7 +133,7 @@ class ScaleReader:
     def __init__(self, config: dict):
         self.cfg = config
         self.running = False
-        self.last_weight = 0.0
+        self.last_weight = -1.0   # sentinel: -1 means "never read"
         self.connected = False
         self.push_count = 0
         self.error_count = 0
@@ -143,6 +143,7 @@ class ScaleReader:
         # is observable. Token creation resilience lives in the PWA queue.
         self.cloud_online = True
         self._thread = None
+        self._last_push_time = 0.0
 
     def start(self):
         self.running = True
@@ -156,6 +157,7 @@ class ScaleReader:
             self._thread.join(timeout=5)
 
     def _read_loop(self):
+        import queue as _queue
         import serial
         import requests
 
@@ -174,6 +176,35 @@ class ScaleReader:
         push_interval = self.cfg.get("push_interval_ms", 500) / 1000.0
         api_url = f"{self.cfg['cloud_url'].rstrip('/')}/api/v1/weight/external-reading"
 
+        # ── Non-blocking HTTP push via background thread ──────────────────────
+        # Posting to the cloud inside the serial-read thread blocks for up to
+        # 5 s on each request (network latency / timeout). That stalls serial
+        # reads and lets the OS buffer fill with hundreds of unread frames,
+        # causing the parser to see jumbled multi-frame chunks. Instead, queue
+        # payloads and let a dedicated daemon thread do the HTTP work.
+        push_q: _queue.Queue = _queue.Queue(maxsize=20)
+
+        def _push_worker():
+            while self.running or not push_q.empty():
+                try:
+                    payload = push_q.get(timeout=2)
+                except _queue.Empty:
+                    continue
+                try:
+                    requests.post(api_url, json=payload, timeout=5)
+                    self.push_count += 1
+                    if not self.cloud_online:
+                        log.info("Cloud reachable again — weight streaming resumed")
+                    self.cloud_online = True
+                except requests.RequestException as e:
+                    self.error_count += 1
+                    self.cloud_online = False
+                    if self.error_count % 50 == 1:
+                        log.warning("Cloud unreachable (count=%d): %s", self.error_count, e)
+
+        push_thread = threading.Thread(target=_push_worker, daemon=True, name="scale-push")
+        push_thread.start()
+
         reconnect_delay = 5
         buffer = b""
 
@@ -185,44 +216,95 @@ class ScaleReader:
                     port=port, baudrate=baud, bytesize=byte_size,
                     stopbits=stop_bits, parity=parity, timeout=2,
                 )
+                # DTR/RTS — many Indian indicators won't transmit without these.
+                ser.dtr = True
+                ser.rts = True
+                ser.reset_input_buffer()
                 self.connected = True
-                log.info("Scale connected: %s", port)
+                log.info("Scale connected: %s (DTR=on, RTS=on)", port)
                 reconnect_delay = 5
 
                 while self.running:
+                    # Grab whatever is waiting; if nothing, block up to 2 s.
                     chunk = ser.read(ser.in_waiting or 1)
                     if not chunk:
                         continue
 
                     buffer += chunk
-                    weight = self._parse_weight(buffer)
 
-                    if weight is not None:
-                        self.last_weight = weight
-                        buffer = b""
+                    # ── Frame-based parsing (CR/LF delimited) ─────────────
+                    # Process every complete line before sleeping.  Most Indian
+                    # indicators end frames with CR, LF, or CRLF.  Parsing only
+                    # complete frames prevents the regex from matching across two
+                    # partial frames when the buffer is flushed in bulk.
+                    while True:
+                        cr = buffer.find(b'\r')
+                        lf = buffer.find(b'\n')
+                        # Pick the earliest delimiter.
+                        candidates = [p for p in (cr, lf) if p >= 0]
+                        if not candidates:
+                            break
+                        delim = min(candidates)
+                        frame = buffer[:delim]
+                        # Consume delimiter (and a trailing LF after CR).
+                        rest = buffer[delim + 1:]
+                        if rest and rest[0:1] == b'\n':
+                            rest = rest[1:]
+                        buffer = rest
 
-                        try:
-                            requests.post(api_url, json={
+                        # Strip STX (0x02) and other control bytes before parsing.
+                        clean = bytes(b for b in frame if b >= 0x20)
+                        if not clean:
+                            continue
+
+                        weight = self._parse_frame(clean)
+                        if weight is None:
+                            continue
+
+                        now = time.time()
+                        # Push if weight changed by more than 1 kg OR interval elapsed.
+                        if (abs(weight - self.last_weight) >= 1.0 or
+                                now - self._last_push_time >= push_interval):
+                            self.last_weight = weight
+                            self._last_push_time = now
+                            payload = {
                                 "weight_kg": weight,
                                 "tenant": self.cfg["tenant_slug"],
                                 "agent_key": self.cfg["agent_key"],
-                                "raw": chunk.decode("ascii", errors="replace"),
-                            }, timeout=5)
-                            self.push_count += 1
-                            if not self.cloud_online:
-                                log.info("Cloud reachable again — weight streaming resumed")
-                            self.cloud_online = True
-                        except requests.RequestException as e:
-                            self.error_count += 1
-                            self.cloud_online = False
-                            if self.error_count % 50 == 1:
-                                log.warning("Cloud unreachable (count=%d) — scale still readable locally on :%s. %s",
-                                            self.error_count, self.cfg.get("local_port", 9002), e)
+                                "raw": clean.decode("ascii", errors="replace"),
+                            }
+                            try:
+                                push_q.put_nowait(payload)
+                            except _queue.Full:
+                                pass  # drop — queue has 20 slots; cloud is lagging
 
+                    # Delimiter-free fallback: some indicators (Leo FSD 501) emit
+                    # continuous repeating blocks without CR/LF.  If the buffer
+                    # has accumulated ≥16 bytes without a delimiter, try parsing
+                    # the whole thing and keep only the last 16 bytes.
+                    if len(buffer) >= 16:
+                        clean = bytes(b for b in buffer if b >= 0x20)
+                        weight = self._parse_frame(clean)
+                        if weight is not None:
+                            now = time.time()
+                            if (abs(weight - self.last_weight) >= 1.0 or
+                                    now - self._last_push_time >= push_interval):
+                                self.last_weight = weight
+                                self._last_push_time = now
+                                try:
+                                    push_q.put_nowait({
+                                        "weight_kg": weight,
+                                        "tenant": self.cfg["tenant_slug"],
+                                        "agent_key": self.cfg["agent_key"],
+                                        "raw": clean.decode("ascii", errors="replace"),
+                                    })
+                                except _queue.Full:
+                                    pass
+                        buffer = buffer[-16:]
+
+                    # Absolute overflow guard.
                     if len(buffer) > 4096:
-                        buffer = buffer[-1024:]
-
-                    time.sleep(push_interval)
+                        buffer = buffer[-256:]
 
             except Exception as e:
                 self.connected = False
@@ -236,16 +318,30 @@ class ScaleReader:
                     except Exception:
                         pass
 
-    def _parse_weight(self, data: bytes) -> float | None:
-        """Extract weight from common indicator serial formats."""
+    def _parse_frame(self, data: bytes) -> float | None:
+        """Extract weight from a single complete indicator frame.
+
+        Handles common Indian weighbridge formats:
+          NT   12345 kg   (Essae, Leo — no decimal, kg int)
+          ST   12345.00   (stable, decimal)
+               012345     (bare digits)
+          k      0k      0  (Leo FSD 501 continuous, no delimiter)
+        Returns the numeric weight as a float (kg), or None if not parseable.
+        Zero IS a valid weight (empty scale / truck driven off).
+        """
         try:
-            text = data.decode("ascii", errors="replace")
-            matches = re.findall(r"[+-]?\s*(\d{3,6}(?:\.\d{1,3})?)", text)
-            if matches:
-                weights = [float(m.replace(" ", "")) for m in matches]
-                weight = max(weights)
-                if 0 < weight < 200000:
-                    return weight
+            text = data.decode("ascii", errors="replace").strip()
+            if not text:
+                return None
+            # Match 1–6 digits optionally followed by up to 3 decimal places.
+            # Word-boundary anchors avoid matching partial strings like "31" in "COM31".
+            matches = re.findall(r'(?<!\d)(\d{1,6}(?:\.\d{1,3})?)(?!\d)', text)
+            if not matches:
+                return None
+            weights = [float(m) for m in matches]
+            weight = max(weights)
+            if 0.0 <= weight < 200000.0:
+                return weight
         except Exception:
             pass
         return None

@@ -56,8 +56,23 @@ async def ws_weight(websocket: WebSocket, tenant: str = Query("")):
 
     manager = _get_manager_for_tenant(tenant if settings.MULTI_TENANT else None)
     if manager is None:
-        await websocket.close(code=1013)
-        return
+        if settings.MULTI_TENANT and tenant:
+            # Auto-create a passive (external-push) manager so the WebSocket
+            # connects immediately and shows "0 kg / not connected" instead of
+            # closing with 1013.  The first POST from scale_agent.py will start
+            # broadcasting real weight.  Without this, the browser backs off for
+            # 30 s between retries and shows "scale not connected" indefinitely
+            # when the agent starts after the page is already loaded.
+            from app.integrations.serial_port.manager import WeightScaleManager
+            passive = WeightScaleManager(port="EXTERNAL", baud_rate=9600)
+            passive._running = True
+            passive._serial_open = True
+            _tenant_weight_managers[tenant] = passive
+            manager = passive
+            log.info("Auto-created passive weight manager for tenant '%s' (WebSocket connect)", tenant)
+        else:
+            await websocket.close(code=1013)
+            return
 
     await manager.connect(websocket)
     try:
