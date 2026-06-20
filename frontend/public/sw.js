@@ -8,7 +8,10 @@
  *   - other GET assets → cache-first with runtime caching (hashed JS/CSS get
  *                        cached on first load).
  */
-const CACHE = 'wb-shell-v1';
+// CACHE version is stamped with the git SHA by ci-deploy.sh on each deploy.
+// Changing this string forces all browsers to update the service worker and
+// discard the old cached shell — critical for deploying new frontend builds.
+const CACHE = 'wb-shell-v2';
 const SHELL = ['/', '/index.html'];
 
 self.addEventListener('install', (event) => {

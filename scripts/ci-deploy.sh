@@ -143,6 +143,16 @@ if [ "$FRONTEND_CHANGED" -gt 0 ]; then
     fi
     SIZE=$(du -sh "$FRONTEND_DIR" 2>/dev/null | cut -f1)
     log "  Frontend deployed (size: $SIZE)"
+
+    # Stamp the deployed sw.js with the current git SHA so its content changes
+    # on every deploy. Browsers byte-compare sw.js to detect updates — if the
+    # file is identical to the cached version the browser never updates the SW
+    # and users keep seeing the old app shell indefinitely.
+    SW_FILE="$FRONTEND_DIR/sw.js"
+    if [ -f "$SW_FILE" ]; then
+        sed -i "s/const CACHE = 'wb-shell-[^']*'/const CACHE = 'wb-${AFTER:0:8}'/" "$SW_FILE"
+        log "  SW cache version → wb-${AFTER:0:8}"
+    fi
 else
     log "→ Frontend unchanged — nginx docroot untouched"
 fi
