@@ -403,22 +403,23 @@ async def create_token(
     # If a gate_pass_id is supplied (guard created a gate pass first), use that
     # record's GP number and link back.  Otherwise auto-generate from number_sequences
     # (ANPR, kiosk, backward-compat).
-    resolved_gate_pass_no: str | None = None
-    if payload.gate_pass_id:
-        gp_row = await db.execute(
-            text("SELECT gate_pass_no, token_id FROM gate_passes WHERE id = :id AND company_id = :cid"),
-            {"id": str(payload.gate_pass_id), "cid": str(company.id)},
+    if not payload.gate_pass_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Gate pass is required. Ask the gate guard to register the truck at the Gate Register first.",
         )
-        gp = gp_row.fetchone()
-        if not gp:
-            raise HTTPException(status_code=404, detail="Gate pass not found. Create a gate pass first from the Gate Register.")
-        if gp.token_id:
-            raise HTTPException(status_code=409, detail="Gate pass already linked to another token. Select a different gate pass.")
-        resolved_gate_pass_no = gp.gate_pass_no
-    else:
-        resolved_gate_pass_no = await next_gate_pass_no(db, company.id, fy.id, branch_id=branch_id)
-        if not resolved_gate_pass_no:
-            raise HTTPException(status_code=500, detail="Failed to generate gate pass number. Token not created.")
+    gp_row = await db.execute(
+        text("SELECT gate_pass_no, token_id, status FROM gate_passes WHERE id = :id AND company_id = :cid"),
+        {"id": str(payload.gate_pass_id), "cid": str(company.id)},
+    )
+    gp = gp_row.fetchone()
+    if not gp:
+        raise HTTPException(status_code=404, detail="Gate pass not found. Create a gate pass first from the Gate Register.")
+    if gp.status == "cancelled":
+        raise HTTPException(status_code=409, detail="Gate pass is cancelled. Create a new gate pass for this truck.")
+    if gp.token_id:
+        raise HTTPException(status_code=409, detail="Gate pass already linked to another token. Select a different gate pass.")
+    resolved_gate_pass_no = gp.gate_pass_no
 
     token = Token(
         company_id=company.id,
@@ -503,21 +504,24 @@ async def create_volume_token(
     # weight_kg = m³ × (MT/m³) × 1000
     net_kg = (payload.volume_m3 * product.bulk_density * Decimal("1000")).quantize(Decimal("0.01"))
 
-    # Resolve gate pass number (same logic as weighbridge create_token)
-    resolved_vol_gate_pass_no: str | None = None
-    if payload.gate_pass_id:
-        vgp_row = await db.execute(
-            text("SELECT gate_pass_no, token_id FROM gate_passes WHERE id = :id AND company_id = :cid"),
-            {"id": str(payload.gate_pass_id), "cid": str(company.id)},
+    # Resolve gate pass number — gate_pass_id is required for manual token creation
+    if not payload.gate_pass_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Gate pass is required. Ask the gate guard to register the truck at the Gate Register first.",
         )
-        vgp = vgp_row.fetchone()
-        if not vgp:
-            raise HTTPException(status_code=404, detail="Gate pass not found.")
-        if vgp.token_id:
-            raise HTTPException(status_code=409, detail="Gate pass already linked to another token. Select a different gate pass.")
-        resolved_vol_gate_pass_no = vgp.gate_pass_no
-    else:
-        resolved_vol_gate_pass_no = await next_gate_pass_no(db, company.id, fy.id, branch_id=branch_id)
+    vgp_row = await db.execute(
+        text("SELECT gate_pass_no, token_id, status FROM gate_passes WHERE id = :id AND company_id = :cid"),
+        {"id": str(payload.gate_pass_id), "cid": str(company.id)},
+    )
+    vgp = vgp_row.fetchone()
+    if not vgp:
+        raise HTTPException(status_code=404, detail="Gate pass not found.")
+    if vgp.status == "cancelled":
+        raise HTTPException(status_code=409, detail="Gate pass is cancelled. Create a new gate pass for this truck.")
+    if vgp.token_id:
+        raise HTTPException(status_code=409, detail="Gate pass already linked to another token. Select a different gate pass.")
+    resolved_vol_gate_pass_no = vgp.gate_pass_no
 
     token = Token(
         company_id=company.id,

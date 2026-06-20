@@ -114,6 +114,8 @@ interface ArrivalDraft {
   party: Party | null;
   product: Product | null;
   tyre_count: number | null;     // null → weighbridge mode; number → volume mode
+  gate_pass_id: string | null;   // required before token creation
+  gate_pass_no: string | null;   // display only
 }
 
 // ── Main page ──────────────────────────────────────────────────────────────
@@ -129,6 +131,7 @@ export default function OperatorKioskPage({ user, onLogout }: OperatorKioskPageP
   const [stage, setStage] = useState<Stage>('arrival');
   const [draft, setDraft] = useState<ArrivalDraft>({
     vehicle_no: '', token_type: 'sale', party: null, product: null, tyre_count: null,
+    gate_pass_id: null, gate_pass_no: null,
   });
   const [activeToken, setActiveToken] = useState<Token | null>(null);
   const [sosOpen, setSosOpen] = useState(false);
@@ -159,7 +162,7 @@ export default function OperatorKioskPage({ user, onLogout }: OperatorKioskPageP
 
   // Reset to start a brand-new token (also refreshes pending strip)
   const reset = useCallback(() => {
-    setDraft({ vehicle_no: '', token_type: 'sale', party: null, product: null, tyre_count: null });
+    setDraft({ vehicle_no: '', token_type: 'sale', party: null, product: null, tyre_count: null, gate_pass_id: null, gate_pass_no: null });
     setActiveToken(null);
     setStage('arrival');
     fetchPending();
@@ -316,6 +319,34 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
     return () => { if (lookupTimer.current) clearTimeout(lookupTimer.current); };
   }, [draft.vehicle_no]);
 
+  // ── Gate pass lookup: auto-find the guard's open gate pass for this truck ──
+  useEffect(() => {
+    const plate = draft.vehicle_no.trim().toUpperCase();
+    if (plate.length < 4) {
+      setDraft(d => ({ ...d, gate_pass_id: null, gate_pass_no: null }));
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await api.get<{ items: { id: string; gate_pass_no: string; vehicle_no: string; status: string }[] }>(
+          '/api/v1/gate/passes',
+          { params: { unlinked: true, status: 'inside', page_size: 50 } }
+        );
+        const matches = (data.items ?? []).filter(
+          gp => gp.vehicle_no?.toUpperCase().replace(/\s+/g, '') === plate.replace(/\s+/g, '')
+        );
+        if (matches.length === 1) {
+          setDraft(d => ({ ...d, gate_pass_id: matches[0].id, gate_pass_no: matches[0].gate_pass_no }));
+        } else {
+          setDraft(d => ({ ...d, gate_pass_id: null, gate_pass_no: null }));
+        }
+      } catch {
+        setDraft(d => ({ ...d, gate_pass_id: null, gate_pass_no: null }));
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [draft.vehicle_no]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Filter party list by search. NO cap — show everything in a scrollable
   // grid so the operator can find their customer without typing if literacy
   // is a barrier. Filtering on city as well as name.
@@ -349,12 +380,13 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
   }
 
   const canProceed =
-    draft.vehicle_no.trim().length >= 4 && draft.party && draft.product;
+    draft.vehicle_no.trim().length >= 4 && draft.party && draft.product && !!draft.gate_pass_id;
 
   // What's missing? Shown below the START button so operator knows why
-  // it's disabled. Order: vehicle → product → party.
+  // it's disabled. Order: vehicle → gate pass → product → party.
   const missingItems: string[] = [];
   if (draft.vehicle_no.trim().length < 4) missingItems.push('Vehicle number');
+  if (draft.vehicle_no.trim().length >= 4 && !draft.gate_pass_id) missingItems.push('Gate Pass (ask guard)');
   if (!draft.product) missingItems.push('Material');
   if (!draft.party) missingItems.push('Customer');
 
@@ -377,6 +409,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
           product_id: draft.product.id,
           volume_m3: m3,
           tyre_count: draft.tyre_count,
+          gate_pass_id: draft.gate_pass_id,
         });
         speak(
           `Volume token created. ${draft.product.name}, ${m3} cubic metres, for ${draft.party.name}. Bill will print.`,
@@ -393,6 +426,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
         party_id: draft.party.id,
         product_id: draft.product.id,
         tyre_count: draft.tyre_count,    // null when "Weigh" is chosen — that's fine
+        gate_pass_id: draft.gate_pass_id,
       });
       speak(`Truck in. ${draft.product.name} for ${draft.party.name}. Drive onto the bridge.`);
       onProceed(data);
@@ -478,6 +512,31 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
           )}
         </div>
       </section>
+
+      {/* ── Gate pass status ── */}
+      {draft.vehicle_no.trim().length >= 4 && (
+        draft.gate_pass_id ? (
+          <div className="flex items-center gap-3 rounded-xl border-2 border-emerald-400 bg-emerald-50 px-4 py-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white shrink-0">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            </div>
+            <div>
+              <div className="text-xs font-bold uppercase tracking-widest text-emerald-700">Gate Pass Found</div>
+              <div className="font-mono font-bold text-emerald-900">{draft.gate_pass_no}</div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 rounded-xl border-2 border-rose-400 bg-rose-50 px-4 py-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-600 text-white shrink-0">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            </div>
+            <div>
+              <div className="text-xs font-bold uppercase tracking-widest text-rose-700">No Gate Pass</div>
+              <div className="text-sm text-rose-800">Ask the guard to create a gate pass for this truck first.</div>
+            </div>
+          </div>
+        )
+      )}
 
       {/* ── URGENT: plate matches a pending token → big "tap for 2nd weight" banner ── */}
       {matchingPending && (

@@ -223,10 +223,9 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const loadGatePasses = useCallback(async () => {
     try {
       const { data } = await api.get<{ items: GatePass[] }>('/api/v1/gate/passes', {
-        params: { unlinked: true, page_size: 200 },
+        params: { unlinked: true, status: 'inside', page_size: 200 },
       });
-      // Show inside + exited passes (both need a token linked); skip cancelled
-      setOpenGatePasses((data.items ?? []).filter(gp => gp.status !== 'cancelled'));
+      setOpenGatePasses(data.items ?? []);
     } catch { /* silent */ }
   }, []);
 
@@ -313,6 +312,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
   async function handleSubmit() {
     if (!form.vehicle_no.trim()) { setError('Vehicle number is required'); return; }
+    if (!form.gate_pass_id) { setError('Gate pass is required. Ask the gate guard to register this truck at the Gate Register first.'); return; }
 
     // ── Volume mode: skip weighbridge, single POST creates + completes token ──
     if (weightMethod === 'volume') {
@@ -865,7 +865,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           className="w-full"
           size="sm"
           onClick={handleSubmit}
-          disabled={saving || !form.vehicle_no.trim()}
+          disabled={saving || !form.vehicle_no.trim() || !form.gate_pass_id}
         >
           {saving
             ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
