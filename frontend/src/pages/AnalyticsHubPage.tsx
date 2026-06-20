@@ -9,15 +9,17 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { TrendingUp, ShieldAlert, XCircle, BarChart3, PieChart } from 'lucide-react';
+import { TrendingUp, ShieldAlert, XCircle, BarChart3, PieChart, DoorOpen, Ticket } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import ReportsPage from './ReportsPage';
 import AnomalyReportPage from './AnomalyReportPage';
 import WriteOffsReportPage from './WriteOffsReportPage';
 import SalesStatusReportPage from './SalesStatusReportPage';
 import GstSplitReportPage from './GstSplitReportPage';
+import GatePassRegisterPage from './GatePassRegisterPage';
+import TokenRegisterPage from './TokenRegisterPage';
 
-type Tab = 'pl' | 'anomaly' | 'write-offs' | 'sales-status' | 'gst-split';
+type Tab = 'pl' | 'anomaly' | 'write-offs' | 'sales-status' | 'gst-split' | 'gate-passes' | 'token-register';
 
 export default function AnalyticsHubPage() {
   const nav = useNavigate();
@@ -37,12 +39,14 @@ export default function AnalyticsHubPage() {
   return (
     <div className="space-y-3">
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList>
+        <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="pl" className="gap-1.5"><TrendingUp className="h-3.5 w-3.5" /> P&amp;L &amp; Sales</TabsTrigger>
           <TabsTrigger value="anomaly" className="gap-1.5"><ShieldAlert className="h-3.5 w-3.5" /> Anomaly Detection</TabsTrigger>
           <TabsTrigger value="write-offs" className="gap-1.5"><XCircle className="h-3.5 w-3.5" /> Write-offs</TabsTrigger>
           <TabsTrigger value="sales-status" className="gap-1.5"><BarChart3 className="h-3.5 w-3.5" /> Sales by Status</TabsTrigger>
           <TabsTrigger value="gst-split" className="gap-1.5"><PieChart className="h-3.5 w-3.5" /> GST vs Cash</TabsTrigger>
+          <TabsTrigger value="gate-passes" className="gap-1.5"><DoorOpen className="h-3.5 w-3.5" /> Gate Pass Register</TabsTrigger>
+          <TabsTrigger value="token-register" className="gap-1.5"><Ticket className="h-3.5 w-3.5" /> Token Register</TabsTrigger>
         </TabsList>
         <TabsContent value="pl" className="mt-4">
           <ReportsPage />
@@ -58,6 +62,12 @@ export default function AnalyticsHubPage() {
         </TabsContent>
         <TabsContent value="gst-split" className="mt-4">
           <GstSplitReportPage />
+        </TabsContent>
+        <TabsContent value="gate-passes" className="mt-4">
+          <GatePassRegisterPage />
+        </TabsContent>
+        <TabsContent value="token-register" className="mt-4">
+          <TokenRegisterPage />
         </TabsContent>
       </Tabs>
     </div>
