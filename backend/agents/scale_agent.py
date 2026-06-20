@@ -55,6 +55,13 @@ DEFAULT_CONFIG = {
     "parity": "N",
     "push_interval_ms": 500,
     "status_port": 9002,
+    # Calibration: add this value (kg) to every parsed weight before pushing.
+    # Use a negative value to subtract.  Example: indicator shows 12500 but
+    # serial output is always 12550 → set calibration_offset_kg to -50.
+    "calibration_offset_kg": 0.0,
+    # Set to true to log every raw serial frame at DEBUG level — useful for
+    # diagnosing indicator format / wrong-value issues.
+    "log_raw_frames": False,
 }
 
 
@@ -117,6 +124,17 @@ def setup_wizard():
     par = input(f"Parity (N=None, E=Even, O=Odd) [{cfg['parity']}]: ").strip().upper()
     if par:
         cfg["parity"] = par
+
+    print("\nCalibration (press Enter to skip):")
+    print("  If the indicator display shows a different value than what the app")
+    print("  receives, enter the difference here: offset = display − serial_raw.")
+    print("  Example: display shows 12500, app shows 12550 → enter -50")
+    cal = input(f"Calibration offset in kg (+ or −) [{cfg['calibration_offset_kg']}]: ").strip()
+    if cal:
+        cfg["calibration_offset_kg"] = float(cal)
+
+    raw_log = input("Log raw serial frames for debugging? (y/N): ").strip().lower()
+    cfg["log_raw_frames"] = raw_log in ("y", "yes")
 
     save_config(cfg)
     print(f"\n  Config saved: {CONFIG_FILE}")
@@ -186,6 +204,7 @@ class ScaleReader:
         self.cloud_online = True
         self._thread = None
         self._last_push_time = 0.0
+        self.last_raw_frame = ""   # last frame string from the serial port (pre-calibration)
 
     def start(self):
         self.running = True
@@ -319,6 +338,15 @@ class ScaleReader:
                         if weight is None:
                             continue
 
+                        raw_str = clean.decode("ascii", errors="replace")
+                        self.last_raw_frame = raw_str
+                        if self.cfg.get("log_raw_frames", False):
+                            log.debug("RAW frame: %r → %.3f kg (raw)", raw_str, weight)
+                        # Apply operator-configured calibration offset.
+                        offset = float(self.cfg.get("calibration_offset_kg", 0.0))
+                        if offset:
+                            weight = weight + offset
+
                         now = time.time()
                         # Push if weight changed by more than 1 kg OR interval elapsed.
                         if (abs(weight - self.last_weight) >= 1.0 or
@@ -329,7 +357,7 @@ class ScaleReader:
                                 "weight_kg": weight,
                                 "tenant": self.cfg["tenant_slug"],
                                 "agent_key": self.cfg["agent_key"],
-                                "raw": clean.decode("ascii", errors="replace"),
+                                "raw": raw_str,
                             }
                             try:
                                 push_q.put_nowait(payload)
@@ -344,6 +372,13 @@ class ScaleReader:
                         clean = bytes(b for b in buffer if b >= 0x20)
                         weight = self._parse_frame(clean)
                         if weight is not None:
+                            raw_str = clean.decode("ascii", errors="replace")
+                            self.last_raw_frame = raw_str
+                            if self.cfg.get("log_raw_frames", False):
+                                log.debug("RAW frame (no-delim): %r → %.3f kg (raw)", raw_str, weight)
+                            offset = float(self.cfg.get("calibration_offset_kg", 0.0))
+                            if offset:
+                                weight = weight + offset
                             now = time.time()
                             if (abs(weight - self.last_weight) >= 1.0 or
                                     now - self._last_push_time >= push_interval):
@@ -354,7 +389,7 @@ class ScaleReader:
                                         "weight_kg": weight,
                                         "tenant": self.cfg["tenant_slug"],
                                         "agent_key": self.cfg["agent_key"],
-                                        "raw": clean.decode("ascii", errors="replace"),
+                                        "raw": raw_str,
                                     })
                                 except _queue.Full:
                                     pass
@@ -436,6 +471,8 @@ class StatusServer:
                     "scale_connected": reader.connected,
                     "cloud_online": reader.cloud_online,
                     "last_weight_kg": reader.last_weight,
+                    "last_raw_frame": reader.last_raw_frame,
+                    "calibration_offset_kg": reader.cfg.get("calibration_offset_kg", 0.0),
                     "push_count": reader.push_count,
                     "error_count": reader.error_count,
                     "port": reader.cfg["port"],
