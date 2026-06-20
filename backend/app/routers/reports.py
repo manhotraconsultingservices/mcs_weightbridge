@@ -1372,6 +1372,7 @@ async def token_register(
             "id": tid,
             "token_no": token.token_no,
             "token_date": token.token_date.isoformat(),
+            "created_at": token.created_at.isoformat() if token.created_at else None,
             "token_type": token.token_type,
             "status": token.status,
             "source": getattr(token, "source", "manual"),

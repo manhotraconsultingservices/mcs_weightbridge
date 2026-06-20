@@ -44,9 +44,13 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: 'bg-red-100 text-red-800 border-red-300',
 };
 
-function fmtTime(iso: string | null) {
+function fmtIST(iso: string | null) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  return new Date(iso).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  });
 }
 
 function today() { return new Date().toISOString().split('T')[0]; }
@@ -76,10 +80,10 @@ const COLUMNS: ColumnDef<GatePassRow>[] = [
       </Badge>
     ),
     exportValue: r => r.status },
-  { key: 'entry_time', label: 'Entry', accessor: r => r.entry_time ?? '',
-    format: v => fmtTime(v as string | null) },
-  { key: 'exit_time', label: 'Exit', accessor: r => r.exit_time ?? '',
-    format: v => fmtTime(v as string | null) },
+  { key: 'entry_time', label: 'Entry (IST)', accessor: r => r.entry_time ?? '',
+    format: v => fmtIST(v as string | null) },
+  { key: 'exit_time', label: 'Exit (IST)', accessor: r => r.exit_time ?? '',
+    format: v => fmtIST(v as string | null) },
   { key: 'dwell_minutes', label: 'Dwell (min)', type: 'number', align: 'right',
     accessor: r => r.dwell_minutes ?? '',
     format: v => v !== '' ? `${v} min` : '—' },

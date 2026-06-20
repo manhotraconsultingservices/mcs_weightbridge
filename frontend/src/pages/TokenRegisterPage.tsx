@@ -7,10 +7,20 @@ import { Badge } from '@/components/ui/badge';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 
+function fmtIST(iso: string | null) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  });
+}
+
 interface TokenRow {
   id: string;
   token_no: number | null;
   token_date: string;
+  created_at: string | null;
   token_type: string;
   status: string;
   source: string;
@@ -69,6 +79,8 @@ const COLUMNS: ColumnDef<TokenRow>[] = [
     format: v => v !== '' ? <span className="font-mono font-semibold">#{String(v)}</span> : <span className="text-muted-foreground text-xs">—</span> },
   { key: 'token_date', label: 'Date', type: 'date', accessor: r => r.token_date,
     format: v => new Date(String(v)).toLocaleDateString('en-IN') },
+  { key: 'created_at', label: 'Time (IST)', accessor: r => r.created_at ?? '',
+    format: v => fmtIST(v as string | null) },
   { key: 'token_type', label: 'Type', type: 'enum',
     enumOptions: ['sale', 'purchase', 'general'],
     accessor: r => r.token_type,
