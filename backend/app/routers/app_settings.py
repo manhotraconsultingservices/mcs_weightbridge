@@ -126,10 +126,12 @@ PERMISSIONS_KEY = "role_permissions"
 
 DEFAULT_ROLE_PERMISSIONS: dict[str, list[str]] = {
     "admin": ["*"],
+    "store_manager": ["/inventory", "/product-inventory", "/production", "/production/dashboard", "/products"],
     "operator": ["/tokens"],
-    "sales_executive": ["/invoices", "/quotations", "/parties", "/vehicles"],
+    "gate_guard": ["/gate"],
+    "sales_executive": ["/invoices", "/quotations", "/parties", "/vehicles", "/pricing-matrix", "/products"],
     "purchase_executive": ["/purchase-invoices", "/parties", "/products"],
-    "accountant": ["/payments", "/ledger", "/gst-reports", "/reports", "/parties"],
+    "accountant": ["/payments", "/ledger", "/gst-reports", "/reports", "/parties", "/pricing-matrix", "/products"],
     "viewer": ["/reports", "/gst-reports", "/ledger"],
 }
 

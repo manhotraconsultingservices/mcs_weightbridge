@@ -5,12 +5,12 @@ import api from '@/services/api';
 
 export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
   admin: ['*'],
-  store_manager: ['/inventory', '/product-inventory', '/production', '/production/dashboard'],
+  store_manager: ['/inventory', '/product-inventory', '/production', '/production/dashboard', '/products'],
   operator: ['/tokens-v1', '/tokens', '/snapshot-search', '/gate'],
   gate_guard: ['/gate'],
-  sales_executive: ['/invoices', '/quotations', '/parties', '/vehicles', '/pricing-matrix'],
+  sales_executive: ['/invoices', '/quotations', '/parties', '/vehicles', '/pricing-matrix', '/products'],
   purchase_executive: ['/invoices', '/parties', '/products'],
-  accountant: ['/payments', '/ledger', '/gst-reports', '/reports', '/parties', '/pricing-matrix'],
+  accountant: ['/payments', '/ledger', '/gst-reports', '/reports', '/parties', '/pricing-matrix', '/products'],
   viewer: ['/reports', '/gst-reports', '/ledger'],
 };
 

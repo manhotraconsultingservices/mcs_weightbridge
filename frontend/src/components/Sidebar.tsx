@@ -17,7 +17,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard, Scale, FileText, ShoppingCart, Factory,
-  BookOpen, TrendingUp,
+  BookOpen, TrendingUp, Package,
   LogOut, Usb, Settings,
   Bell, HardDrive, Upload, UserCog, Lock, ImageIcon, Building2,
 } from 'lucide-react';
@@ -83,6 +83,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/sales',       icon: FileText,     labelKey: 'sidebar.salesCrm' },
       { to: '/procurement', icon: ShoppingCart, labelKey: 'sidebar.procurement' },
+      { to: '/products',    icon: Package,       labelKey: 'sidebar.catalog' },
     ],
   },
   {

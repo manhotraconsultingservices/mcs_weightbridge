@@ -78,6 +78,7 @@
     "weighbridge": "Weighbridge",
     "salesCrm": "Sales & CRM",
     "procurement": "Procurement",
+    "catalog": "Item Catalog",
     "inventoryProduction": "Inventory & Production",
     "accounts": "Accounts",
     "analytics": "Analytics"
