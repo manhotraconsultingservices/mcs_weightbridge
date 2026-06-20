@@ -85,10 +85,10 @@ export function useWeight() {
     maximumFractionDigits: 2,
   }) + ' kg';
 
-  /** Formatted weight in metric tonnes, e.g. "1.235 MT" (primary unit). */
+  /** Formatted weight in metric tonnes, e.g. "1.2350 MT" (primary unit). */
   const formattedMT = (reading.weight_kg / 1000).toLocaleString('en-IN', {
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
   }) + ' MT';
 
   return { reading, formatted, formattedMT };

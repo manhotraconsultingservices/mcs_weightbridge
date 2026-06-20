@@ -784,7 +784,7 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
   // Effective weight: live scale OR manual MT × 1000
   const manualKg = (parseFloat(manualMt) || 0) * 1000;
   const weightKg = manualMode ? manualKg : reading.weight_kg;
-  const formattedMT = (weightKg / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  const formattedMT = (weightKg / 1000).toLocaleString('en-IN', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
   const canCapture = manualMode
     ? weightKg > 0
     : reading.scale_connected && reading.is_stable && weightKg > 0;

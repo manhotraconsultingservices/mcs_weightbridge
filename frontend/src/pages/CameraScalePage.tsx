@@ -299,7 +299,7 @@ function WeightPanel() {
   const { weight_kg, is_stable, scale_connected } = reading;
   const weightMT = weight_kg / 1000;
 
-  const mtStr = weightMT.toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  const mtStr = weightMT.toLocaleString('en-IN', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 
   return (
     <div className="flex flex-col gap-3 h-full">

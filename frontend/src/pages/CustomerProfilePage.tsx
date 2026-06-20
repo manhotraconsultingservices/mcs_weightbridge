@@ -39,7 +39,7 @@ const fmtDate = (s: string | null | undefined) =>
 
 // Backend serialises pydantic Decimal as a STRING in JSON. Always coerce
 // with Number(...) before any numeric operation/method like .toFixed().
-const fmtMT = (n: number | string | null | undefined) => `${Number(n ?? 0).toFixed(3)} MT`;
+const fmtMT = (n: number | string | null | undefined) => `${Number(n ?? 0).toFixed(4)} MT`;
 
 // ── Mini stat card ──────────────────────────────────────────────────────────
 function KpiCard({

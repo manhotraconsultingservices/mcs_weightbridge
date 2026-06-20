@@ -66,7 +66,7 @@ const TOKEN_COLS_LS = 'dt.tokens-v1.visible';
 // Weight values are stored in kg in the DB. UI displays MT.
 function wFmt(v: number | null | undefined) {
   if (v == null) return '—';
-  return (Number(v) / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' MT';
+  return (Number(v) / 1000).toLocaleString('en-IN', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) + ' MT';
 }
 
 function today() {
@@ -1421,13 +1421,13 @@ function CameraPanel({ cameraId, label }: CameraPanelProps) {
 // ------------------------------------------------------------------ //
 function mtFmt(v: number | null | undefined) {
   if (v == null) return '—';
-  return (v / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' MT';
+  return (v / 1000).toLocaleString('en-IN', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) + ' MT';
 }
-/** Returns "9.750 MT / 229.41 CFT" when bulk_density(kg/CFT) available, else "9.750 MT".
+/** Returns "9.7500 MT / 229.41 CFT" when bulk_density(kg/CFT) available, else "9.7500 MT".
  *  bulk_density is kg/CFT (canonical), so CFT = kg ÷ kg_per_CFT and m³ = CFT ÷ 35.3147. */
 function dualFmt(weightKg: number | null | undefined, bulkDensity: number | null | undefined, unit: 'm3' | 'cft' = 'cft'): string {
   if (weightKg == null) return '—';
-  const mt = (weightKg / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  const mt = (weightKg / 1000).toLocaleString('en-IN', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
   if (!bulkDensity || bulkDensity <= 0) return `${mt} MT`;
   const cft = weightKg / Number(bulkDensity);            // kg ÷ (kg/CFT) = CFT
   if (unit === 'm3') return `${mt} MT / ${(cft / 35.3147).toFixed(3)} m³`;
@@ -1731,9 +1731,9 @@ export default function TokenPageV1() {
                     t.weight_method ?? 'weighbridge',
                     t.party?.name ?? '',
                     t.product?.name ?? '',
-                    t.gross_weight != null ? (Number(t.gross_weight) / 1000).toFixed(3) : '',
-                    t.tare_weight != null ? (Number(t.tare_weight) / 1000).toFixed(3) : '',
-                    t.net_weight != null ? (Number(t.net_weight) / 1000).toFixed(3) : '',
+                    t.gross_weight != null ? (Number(t.gross_weight) / 1000).toFixed(4) : '',
+                    t.tare_weight != null ? (Number(t.tare_weight) / 1000).toFixed(4) : '',
+                    t.net_weight != null ? (Number(t.net_weight) / 1000).toFixed(4) : '',
                     cft,
                     t.volume_cft != null ? Number(t.volume_cft).toFixed(2) : '',
                     t.status,

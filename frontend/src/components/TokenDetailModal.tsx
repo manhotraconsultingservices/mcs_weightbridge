@@ -6,15 +6,15 @@ import {
 import api from '@/services/api';
 import type { Token, SnapshotResult, TokenSnapshotsResponse } from '@/types';
 
-// DB stores kg; UI displays MT (3 decimals).
+// DB stores kg; UI displays MT (4 decimals).
 function wFmt(v: number | null | undefined) {
   if (v == null) return '—';
-  return (Number(v) / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' MT';
+  return (Number(v) / 1000).toLocaleString('en-IN', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) + ' MT';
 }
 
 function mtFmt(v: number | null | undefined) {
   if (v == null) return '—';
-  return (v / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3 }) + ' MT';
+  return (v / 1000).toLocaleString('en-IN', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) + ' MT';
 }
 
 const STATUS_COLORS: Record<string, string> = {
