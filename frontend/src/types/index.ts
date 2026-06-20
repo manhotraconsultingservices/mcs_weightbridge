@@ -792,6 +792,7 @@ export interface GatePass {
   vehicle_no: string | null;
   vehicle_name: string | null;
   vehicle_id: string | null;
+  vehicle_type: string | null;
   driver_name: string | null;
   driver_phone: string | null;
   material: string | null;

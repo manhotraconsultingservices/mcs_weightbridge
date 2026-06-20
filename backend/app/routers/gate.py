@@ -177,14 +177,14 @@ async def create_gate_pass(
         text("""
             INSERT INTO gate_passes
                 (company_id, gate_pass_no, pass_date, seq_no,
-                 vehicle_no, vehicle_name, vehicle_id,
+                 vehicle_no, vehicle_name, vehicle_id, vehicle_type,
                  driver_name, driver_phone, driver_id,
                  material, product_id, purpose,
                  token_id, entry_time, status, notes,
                  created_by, updated_by)
             VALUES
                 (:cid, :gpno, CURRENT_DATE, :seq,
-                 :vno, :vname, :vid,
+                 :vno, :vname, :vid, :vtype,
                  :dname, :dphone, :did,
                  :mat, :pid, :purpose,
                  :tid, COALESCE(CAST(:etime AS TIMESTAMPTZ), NOW()), 'inside', :notes,
@@ -198,6 +198,7 @@ async def create_gate_pass(
             "vno": body.get("vehicle_no"),
             "vname": body.get("vehicle_name"),
             "vid": body.get("vehicle_id"),
+            "vtype": body.get("vehicle_type"),
             "dname": body.get("driver_name"),
             "dphone": body.get("driver_phone"),
             "did": body.get("driver_id"),
@@ -259,7 +260,6 @@ async def list_gate_passes(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    _guard_check(current_user)
     company_id = str(current_user.company_id)
     target_date_str = pass_date or date.today().isoformat()
     target_date = date.fromisoformat(target_date_str)  # asyncpg needs date obj, not str
@@ -360,12 +360,12 @@ async def get_gate_pass(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    _guard_check(current_user)
     row = await db.execute(
         text("""
             SELECT gp.*,
                    v.registration_no AS vehicle_registration,
                    t.token_no, t.net_weight,
+                   COALESCE(gp.vehicle_type, t.vehicle_type) AS vehicle_type,
                    u.full_name AS created_by_name
             FROM gate_passes gp
             LEFT JOIN vehicles v ON v.id = gp.vehicle_id
@@ -398,6 +398,7 @@ async def update_gate_pass(
                 vehicle_no   = COALESCE(:vno,   vehicle_no),
                 vehicle_name = COALESCE(:vname, vehicle_name),
                 vehicle_id   = COALESCE(:vid,   vehicle_id),
+                vehicle_type = COALESCE(:vtype, vehicle_type),
                 driver_name  = COALESCE(:dname, driver_name),
                 driver_phone = COALESCE(:dphone,driver_phone),
                 material     = COALESCE(:mat,   material),
@@ -413,6 +414,7 @@ async def update_gate_pass(
             "vno": body.get("vehicle_no"),
             "vname": body.get("vehicle_name"),
             "vid": body.get("vehicle_id"),
+            "vtype": body.get("vehicle_type"),
             "dname": body.get("driver_name"),
             "dphone": body.get("driver_phone"),
             "mat": body.get("material"),

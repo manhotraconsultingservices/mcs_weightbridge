@@ -916,6 +916,7 @@ def get_column_migrations() -> list[str]:
         "CREATE INDEX IF NOT EXISTS ix_gate_passes_token ON gate_passes(token_id)",
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_gate_passes_no ON gate_passes(company_id, gate_pass_no)",
         "CREATE INDEX IF NOT EXISTS ix_gate_passes_status ON gate_passes(company_id, status, pass_date DESC)",
+        "ALTER TABLE gate_passes ADD COLUMN IF NOT EXISTS vehicle_type VARCHAR(50)",
 
         # Daily sequence counter — one row per (company, date); INSERT … ON CONFLICT
         # DO UPDATE is atomic so no separate FOR UPDATE lock needed.
