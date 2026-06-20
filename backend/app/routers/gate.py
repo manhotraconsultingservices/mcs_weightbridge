@@ -22,7 +22,7 @@ from datetime import date, datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Header
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, Header, UploadFile
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -735,6 +735,132 @@ async def list_camera_events(
         params,
     )
     return _serialize([dict(r._mapping) for r in rows.fetchall()])
+
+
+# ── Client-side agent endpoints (gate pass photo upload) ─────────────────────
+
+@router.get("/agent-pending")
+async def gate_agent_pending(
+    tenant_slug: str = Query(""),
+    agent_key: str = Query(""),
+):
+    """
+    Return gate passes needing entry or exit photos for the client-side agent to capture.
+
+    The agent polls this endpoint every 5 seconds. Returns:
+    - status='inside' passes with no entry_photo_path, created in the last 5 minutes
+    - status='exited' passes with no exit_photo_path, exited in the last 5 minutes
+
+    Auth via tenant_slug + agent_key (same pattern as /api/v1/cameras/agent-pending).
+    """
+    from app.config import get_settings
+    settings = get_settings()
+
+    if settings.MULTI_TENANT:
+        if not tenant_slug or not agent_key:
+            raise HTTPException(400, "tenant_slug and agent_key required")
+        from app.multitenancy.registry import tenant_registry
+        if not await tenant_registry.validate_agent_key(tenant_slug, agent_key):
+            raise HTTPException(403, "Invalid agent key")
+
+    from app.database import get_tenant_session
+    _session_cm = await get_tenant_session(tenant_slug if settings.MULTI_TENANT else None)
+    async with _session_cm as db:
+        rows = (await db.execute(text("""
+            SELECT id, gate_pass_no, vehicle_no,
+                   CASE
+                       WHEN status = 'inside' AND entry_photo_path IS NULL THEN 'entry'
+                       WHEN status = 'exited' AND exit_photo_path IS NULL  THEN 'exit'
+                   END AS position
+            FROM gate_passes
+            WHERE (
+                (status = 'inside' AND entry_photo_path IS NULL
+                    AND entry_time > NOW() - INTERVAL '5 minutes')
+                OR
+                (status = 'exited' AND exit_photo_path IS NULL
+                    AND exit_time > NOW() - INTERVAL '5 minutes')
+            )
+            ORDER BY entry_time DESC
+            LIMIT 20
+        """))).fetchall()
+
+        events = [
+            {
+                "gate_pass_id": str(r._mapping["id"]),
+                "gate_pass_no": r._mapping["gate_pass_no"],
+                "vehicle_no": r._mapping.get("vehicle_no"),
+                "position": r._mapping["position"],
+            }
+            for r in rows
+            if r._mapping.get("position")
+        ]
+
+    return {"events": events, "count": len(events)}
+
+
+@router.post("/agent-upload")
+async def gate_agent_upload(
+    gate_pass_id: str = Form(...),
+    position: str = Form(...),
+    tenant_slug: str = Form(""),
+    agent_key: str = Form(""),
+    file: UploadFile = File(...),
+):
+    """
+    Accept a gate pass photo uploaded by the client-side camera agent.
+    Updates entry_photo_path or exit_photo_path on the gate_passes row.
+
+    position: 'entry' or 'exit'
+    Auth via tenant_slug + agent_key (same as /api/v1/cameras/agent-upload).
+    """
+    import io
+    from PIL import Image
+    from app.config import get_settings
+    settings = get_settings()
+
+    if settings.MULTI_TENANT:
+        if not tenant_slug or not agent_key:
+            raise HTTPException(400, "tenant_slug and agent_key required")
+        from app.multitenancy.registry import tenant_registry
+        if not await tenant_registry.validate_agent_key(tenant_slug, agent_key):
+            raise HTTPException(403, "Invalid agent key for tenant")
+
+    if position not in ("entry", "exit"):
+        raise HTTPException(400, "position must be 'entry' or 'exit'")
+
+    content = await file.read()
+    if len(content) < 100:
+        raise HTTPException(400, "Image file too small")
+
+    try:
+        img = Image.open(io.BytesIO(content))
+        img.verify()
+    except Exception:
+        raise HTTPException(400, "Invalid image file")
+
+    today_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    ts = datetime.now(timezone.utc).strftime("%H%M%S")
+    filename = f"{position}_{gate_pass_id}_{ts}.jpg"
+    save_dir = os.path.join(_uploads_base(), "gate", today_str)
+    os.makedirs(save_dir, exist_ok=True)
+    full_path = os.path.join(save_dir, filename)
+    with open(full_path, "wb") as f:
+        f.write(content)
+    rel_path = f"uploads/gate/{today_str}/{filename}"
+
+    photo_col = "entry_photo_path" if position == "entry" else "exit_photo_path"
+
+    from app.database import get_tenant_session
+    _session_cm = await get_tenant_session(tenant_slug if settings.MULTI_TENANT else None)
+    async with _session_cm as db:
+        await db.execute(
+            text(f"UPDATE gate_passes SET {photo_col} = :p, updated_at = NOW() WHERE id = :gid"),  # noqa: S608
+            {"p": rel_path, "gid": gate_pass_id},
+        )
+        await db.commit()
+
+    logger.info("Agent gate photo: gp=%s position=%s path=%s", gate_pass_id, position, rel_path)
+    return {"success": True, "gate_pass_id": gate_pass_id, "position": position, "path": rel_path}
 
 
 # ── Serialisation helpers ─────────────────────────────────────────────────────

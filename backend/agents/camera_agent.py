@@ -77,6 +77,22 @@ DEFAULT_CONFIG = {
             "password": "",
         },
     },
+    # Gate pass cameras — captures entry/exit photos for the Gate Register.
+    # Leave url empty to reuse the front camera above (default behaviour).
+    "gate_cameras": {
+        "entry": {
+            "label": "Gate Entry",
+            "url": "",        # empty = reuse cameras.front
+            "username": "",
+            "password": "",
+        },
+        "exit": {
+            "label": "Gate Exit",
+            "url": "",        # empty = reuse cameras.front
+            "username": "",
+            "password": "",
+        },
+    },
 }
 
 
@@ -127,6 +143,19 @@ def setup_wizard():
     for cam in ("front", "top"):
         cfg["cameras"][cam]["username"] = cam_user
         cfg["cameras"][cam]["password"] = cam_pass
+
+    print("\n--- Gate Cameras (for Gate Pass entry/exit photos) ---")
+    print("Leave URL blank to reuse the front camera above.\n")
+    gate_entry_url = input(f"Gate entry camera URL [reuse front]: ").strip()
+    gate_exit_url  = input(f"Gate exit camera URL  [reuse front]: ").strip()
+    if gate_entry_url:
+        cfg["gate_cameras"]["entry"]["url"] = gate_entry_url
+        cfg["gate_cameras"]["entry"]["username"] = cam_user
+        cfg["gate_cameras"]["entry"]["password"] = cam_pass
+    if gate_exit_url:
+        cfg["gate_cameras"]["exit"]["url"] = gate_exit_url
+        cfg["gate_cameras"]["exit"]["username"] = cam_user
+        cfg["gate_cameras"]["exit"]["password"] = cam_pass
 
     save_config(cfg)
     print(f"\n  Config saved: {CONFIG_FILE}")
@@ -350,6 +379,135 @@ class EventListener:
                 pass
             except Exception as e:
                 log.error("Poll error: %s", e)
+
+            time.sleep(poll_sec)
+
+
+# ── Gate Pass Listener ───────────────────────────────────────────────────────
+
+class GatePassListener:
+    """Polls cloud API for pending gate pass photo events and uploads captures.
+
+    Works exactly like EventListener but targets the Gate Register endpoints:
+      GET  /api/v1/gate/agent-pending   → returns gate passes needing entry/exit photos
+      POST /api/v1/gate/agent-upload    → uploads captured JPEG
+
+    Camera selection: uses gate_cameras.entry / gate_cameras.exit from config.
+    If those URLs are empty, falls back to cameras.front (the token camera).
+    """
+
+    def __init__(self, config: dict, capturer: CameraCapturer):
+        self.cfg = config
+        self.capturer = capturer
+        self.running = False
+        self._thread = None
+        # Dedup: "gate_pass_id_position" → timestamp
+        self._processed: collections.OrderedDict[str, float] = collections.OrderedDict()
+
+    def _resolve_gate_cam(self, position: str) -> dict:
+        """Return the camera dict to use for this gate position.
+
+        Priority:
+          1. gate_cameras.<position>.url if non-empty
+          2. cameras.front (fallback / default)
+        """
+        gate_cams = self.cfg.get("gate_cameras", {})
+        cam = gate_cams.get(position, {})
+        if cam.get("url"):
+            return cam
+        # Fallback to token front camera
+        return self.cfg.get("cameras", {}).get("front", {})
+
+    def _capture_and_upload(self, gate_pass_id: str, position: str) -> bool:
+        """Capture one JPEG for the gate pass and upload to cloud. Returns True on success."""
+        import requests
+
+        cam = self._resolve_gate_cam(position)
+        cam_url = cam.get("url", "")
+        if not cam_url:
+            log.warning("Gate camera URL not configured for position '%s' and no front camera fallback", position)
+            return False
+
+        log.info("Gate capture: gp=%s position=%s url=%s", gate_pass_id, position, cam_url)
+
+        image_data = self.capturer._capture_single(cam_url, cam, f"gate_{position}")
+        if image_data is None:
+            log.warning("Gate snapshot capture failed for gp=%s position=%s", gate_pass_id, position)
+            return False
+
+        log.info("Gate captured %d bytes for gp=%s position=%s", len(image_data), gate_pass_id, position)
+
+        upload_url = f"{self.cfg['cloud_url'].rstrip('/')}/api/v1/gate/agent-upload"
+        try:
+            files = {"file": (f"gate_{position}.jpg", image_data, "image/jpeg")}
+            data = {
+                "gate_pass_id": gate_pass_id,
+                "position": position,
+                "tenant_slug": self.cfg["tenant_slug"],
+                "agent_key": self.cfg["agent_key"],
+            }
+            resp = requests.post(upload_url, files=files, data=data, timeout=30)
+            if resp.status_code == 200:
+                log.info("Gate photo uploaded: gp=%s position=%s", gate_pass_id, position)
+                return True
+            else:
+                log.warning("Gate upload failed: HTTP %d — %s", resp.status_code, resp.text[:200])
+                return False
+        except requests.RequestException as e:
+            log.warning("Gate upload error: %s", e)
+            return False
+
+    def start(self):
+        self.running = True
+        self._thread = threading.Thread(target=self._poll_loop, daemon=True, name="GatePassListener")
+        self._thread.start()
+        poll_sec = self.cfg.get("poll_interval_sec", 5)
+        log.info("Gate pass listener started (polling every %ds)", poll_sec)
+
+    def stop(self):
+        self.running = False
+        if self._thread:
+            self._thread.join(timeout=5)
+
+    def _poll_loop(self):
+        import requests
+
+        cloud_url = self.cfg["cloud_url"].rstrip("/")
+        poll_url = f"{cloud_url}/api/v1/gate/agent-pending"
+        poll_sec = self.cfg.get("poll_interval_sec", 5)
+
+        while self.running:
+            try:
+                resp = requests.get(poll_url, params={
+                    "tenant_slug": self.cfg["tenant_slug"],
+                    "agent_key": self.cfg["agent_key"],
+                }, timeout=10)
+
+                if resp.status_code == 200:
+                    events = resp.json().get("events", [])
+                    for evt in events:
+                        key = f"{evt['gate_pass_id']}_{evt['position']}"
+                        if key in self._processed:
+                            continue
+
+                        log.info("Gate event: gp=%s vehicle=%s position=%s",
+                                 evt.get("gate_pass_no", "?"), evt.get("vehicle_no", "?"),
+                                 evt["position"])
+
+                        self._capture_and_upload(evt["gate_pass_id"], evt["position"])
+                        self._processed[key] = time.time()
+
+                        # Trim cache to last 500 entries
+                        while len(self._processed) > 500:
+                            self._processed.popitem(last=False)
+
+                elif resp.status_code not in (404, 403):
+                    log.warning("Gate poll HTTP %d", resp.status_code)
+
+            except requests.RequestException:
+                pass
+            except Exception as e:
+                log.error("Gate poll error: %s", e)
 
             time.sleep(poll_sec)
 
@@ -673,9 +831,13 @@ def main():
     capturer.test_cameras()
     print()
 
-    # Start event listener
+    # Start token snapshot listener
     listener = EventListener(cfg, capturer)
     listener.start()
+
+    # Start gate pass photo listener
+    gate_listener = GatePassListener(cfg, capturer)
+    gate_listener.start()
 
     # Status API (HTTP — for direct browser access & health checks)
     StatusServer(capturer, port=cfg.get("status_port", 9003)).start()
@@ -689,6 +851,7 @@ def main():
     def _shutdown(sig, frame):
         log.info("Shutting down...")
         listener.stop()
+        gate_listener.stop()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, _shutdown)
