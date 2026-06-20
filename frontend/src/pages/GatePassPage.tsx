@@ -461,21 +461,51 @@ function EditDialog({ gp, open, onClose, onSaved }: {
 function TruckOutDialog({ gp, open, onClose, onExited }: {
   gp: GatePass; open: boolean; onClose: () => void; onExited: () => void;
 }) {
-  const [tokenId, setTokenId] = useState(gp.token_id ?? '');
+  const [tokenInput, setTokenInput] = useState('');
+  const [resolvedId, setResolvedId] = useState(gp.token_id ?? '');
+  const [resolvedNo, setResolvedNo] = useState<number | null>(gp.token_no ?? null);
+  const [looking, setLooking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
 
   const needsToken = gp.purpose === 'weighbridge' && !gp.token_id;
+  const isLinked = !!gp.token_id || !!resolvedId;
+
+  async function handleInput(val: string) {
+    setTokenInput(val);
+    setErr('');
+    setResolvedId('');
+    setResolvedNo(null);
+    const v = val.trim();
+    if (!v || !/^\d+$/.test(v)) return;          // only look up pure numbers
+    setLooking(true);
+    try {
+      const res = await api.get('/api/v1/tokens', { params: { search: v, page_size: 20 } });
+      const items: Array<{ id: string; token_no: number; vehicle_no: string }> = res.data.items ?? [];
+      const match = items.find(t => String(t.token_no) === v);
+      if (match) {
+        setResolvedId(match.id);
+        setResolvedNo(match.token_no);
+      } else {
+        setErr(`Token #${v} not found. Check the weighbridge slip.`);
+      }
+    } catch {
+      setErr('Could not look up token. Try again.');
+    } finally {
+      setLooking(false);
+    }
+  }
 
   async function doExit() {
-    if (needsToken && !tokenId.trim()) {
-      setErr('This truck used the weighbridge. You must link the token ID before exit.');
+    const tid = resolvedId || gp.token_id;
+    if (needsToken && !tid) {
+      setErr('Enter the token number from the weighbridge slip.');
       return;
     }
     setSaving(true); setErr('');
     try {
       await api.post(`/api/v1/gate/passes/${gp.id}/exit`, {
-        token_id: tokenId || undefined,
+        token_id: tid || undefined,
         capture_photo: true,
       });
       onExited();
@@ -511,17 +541,25 @@ function TruckOutDialog({ gp, open, onClose, onExited }: {
               <label className="text-xs font-medium flex items-center gap-1">
                 <Link2 className="h-3 w-3" />
                 {gp.token_id
-                  ? <span className="text-green-600 font-semibold">✓ Token linked ({gp.token_no ?? gp.token_id})</span>
+                  ? <span className="text-green-600 font-semibold">✓ Token #{gp.token_no ?? gp.token_id} already linked</span>
+                  : resolvedId
+                  ? <span className="text-green-600 font-semibold">✓ Token #{resolvedNo} found — ready to exit</span>
                   : <span className="text-destructive font-semibold">* Enter token number (from weighbridge slip)</span>
                 }
               </label>
               {!gp.token_id && (
-                <Input
-                  value={tokenId}
-                  onChange={e => setTokenId(e.target.value)}
-                  placeholder="e.g. 8686"
-                  className="h-10"
-                />
+                <div className="relative">
+                  <Input
+                    value={tokenInput}
+                    onChange={e => handleInput(e.target.value)}
+                    placeholder="e.g. 8686"
+                    className="h-10 pr-8"
+                    inputMode="numeric"
+                  />
+                  {looking && (
+                    <Loader2 className="absolute right-2 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -532,7 +570,7 @@ function TruckOutDialog({ gp, open, onClose, onExited }: {
           <Button
             className="flex-1 h-14 text-lg font-bold bg-red-600 hover:bg-red-700"
             onClick={doExit}
-            disabled={saving}
+            disabled={saving || looking || (needsToken && !isLinked)}
           >
             {saving ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <LogOut className="h-5 w-5 mr-2" />}
             TRUCK OUT

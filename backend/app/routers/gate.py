@@ -470,13 +470,17 @@ async def record_exit(
 
     # Accept token_no (e.g. "8686") in addition to a UUID
     if token_id and not _is_uuid(str(token_id)):
+        try:
+            token_no_int = int(str(token_id).strip())
+        except ValueError:
+            raise HTTPException(400, f"'{token_id}' is not a valid token number.")
         resolved = await db.execute(
             text("SELECT id FROM tokens WHERE token_no = :no AND company_id = :cid"),
-            {"no": str(token_id).strip(), "cid": company_id},
+            {"no": token_no_int, "cid": company_id},
         )
         resolved_id = resolved.scalar()
         if not resolved_id:
-            raise HTTPException(400, f"Token #{token_id} not found. Check the token number on the slip.")
+            raise HTTPException(400, f"Token #{token_no_int} not found. Check the weighbridge slip.")
         token_id = str(resolved_id)
 
     if gp.purpose == "weighbridge" and not token_id:
