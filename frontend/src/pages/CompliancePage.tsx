@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
   Plus, FolderOpen, Edit2, Trash2, Upload,
@@ -49,17 +50,18 @@ type AlertFilter = 'expired' | 'critical' | 'warning' | 'ok' | null;
 
 // ── Helpers ─────────────────────────────────────────────────────────────── //
 
-function typeLabel(t: string) {
-  return t.charAt(0).toUpperCase() + t.slice(1);
+function typeLabel(type: string) {
+  return type.charAt(0).toUpperCase() + type.slice(1);
 }
 
 // ── Alert helpers ───────────────────────────────────────────────────────── //
 
 function AlertBadge({ level, days }: { level: string | null; days: number | null }) {
+  const { t } = useTranslation();
   if (!level || level === 'ok') return null;
 
   const configs = {
-    expired: { color: 'bg-red-100 text-red-700 border-red-200', icon: XCircle, label: 'Expired' },
+    expired: { color: 'bg-red-100 text-red-700 border-red-200', icon: XCircle, label: t('compliance.alertLevel.expired') },
     critical: { color: 'bg-orange-100 text-orange-700 border-orange-200', icon: AlertTriangle, label: `${days}d left` },
     warning: { color: 'bg-yellow-100 text-yellow-700 border-yellow-200', icon: Clock, label: `${days}d left` },
   };
@@ -76,18 +78,17 @@ function AlertBadge({ level, days }: { level: string | null; days: number | null
   );
 }
 
-// StatusDot was used in the old card layout; AlertBadge now serves the role in the DataTable Status column.
-
 // ── Threshold Settings Panel ─────────────────────────────────────────────── //
 
 interface ThresholdPanelProps {
   open: boolean;
   onClose: () => void;
   thresholds: ComplianceThresholds;
-  onSaved: (t: ComplianceThresholds) => void;
+  onSaved: (thresholds: ComplianceThresholds) => void;
 }
 
 function ThresholdSettingsPanel({ open, onClose, thresholds, onSaved }: ThresholdPanelProps) {
+  const { t } = useTranslation();
   const [form, setForm] = useState({ warning_days: String(thresholds.warning_days), critical_days: String(thresholds.critical_days) });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -102,75 +103,75 @@ function ThresholdSettingsPanel({ open, onClose, thresholds, onSaved }: Threshol
   async function handleSave() {
     const w = parseInt(form.warning_days);
     const c = parseInt(form.critical_days);
-    if (!w || !c || w < 1 || c < 1) { setError('Both values must be positive numbers'); return; }
-    if (c >= w) { setError('Critical days must be less than Warning days'); return; }
+    if (!w || !c || w < 1 || c < 1) { setError(t('compliance.thresholdValidation')); return; }
+    if (c >= w) { setError(t('compliance.thresholdOrderError')); return; }
     setSaving(true); setError('');
     try {
       const { data } = await api.put<ComplianceThresholds>('/api/v1/compliance/settings/thresholds', { warning_days: w, critical_days: c });
       onSaved(data);
-      toast.success('Alert thresholds saved');
+      toast.success(t('compliance.thresholdsSaved'));
       onClose();
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(typeof detail === 'string' ? detail : 'Failed to save');
+      setError(typeof detail === 'string' ? detail : t('compliance.thresholdSaveFailed'));
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <Sheet open={open} onOpenChange={v => !v && onClose()}>
+    <Sheet open={open} onOpenChange={prev => !prev && onClose()}>
       <SheetContent side="right" className="w-80">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <Settings2 className="h-4 w-4" />
-            Alert Thresholds
+            {t('compliance.alertThresholds')}
           </SheetTitle>
         </SheetHeader>
 
         <div className="mt-6 space-y-5">
           <p className="text-sm text-muted-foreground">
-            Configure how many days before expiry an item is flagged as <span className="text-yellow-600 font-medium">Warning</span> or <span className="text-orange-600 font-medium">Critical</span>.
+            {t('compliance.thresholdDesc')} <span className="text-yellow-600 font-medium">{t('compliance.alertLevel.warning')}</span> {t('compliance.thresholdOr')} <span className="text-orange-600 font-medium">{t('compliance.alertLevel.critical')}</span>.
           </p>
 
           {error && <p className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
 
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label className="text-yellow-700">Warning threshold (days)</Label>
+              <Label className="text-yellow-700">{t('compliance.warningThresholdLabel')}</Label>
               <Input
                 type="number" min={1} max={365}
                 value={form.warning_days}
-                onChange={e => setForm(f => ({ ...f, warning_days: e.target.value }))}
+                onChange={e => setForm(prev => ({ ...prev, warning_days: e.target.value }))}
                 className="border-yellow-300 focus-visible:ring-yellow-400"
               />
-              <p className="text-[11px] text-muted-foreground">Items expiring within this many days show a yellow warning.</p>
+              <p className="text-[11px] text-muted-foreground">{t('compliance.warningThresholdHint')}</p>
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-orange-700">Critical threshold (days)</Label>
+              <Label className="text-orange-700">{t('compliance.criticalThresholdLabel')}</Label>
               <Input
                 type="number" min={1} max={365}
                 value={form.critical_days}
-                onChange={e => setForm(f => ({ ...f, critical_days: e.target.value }))}
+                onChange={e => setForm(prev => ({ ...prev, critical_days: e.target.value }))}
                 className="border-orange-300 focus-visible:ring-orange-400"
               />
-              <p className="text-[11px] text-muted-foreground">Items expiring within this many days show an orange critical alert.</p>
+              <p className="text-[11px] text-muted-foreground">{t('compliance.criticalThresholdHint')}</p>
             </div>
           </div>
 
           <div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
-            <p className="font-medium text-foreground">Alert levels (in order):</p>
-            <p><span className="text-red-600 font-medium">Expired</span> — past expiry date</p>
-            <p><span className="text-orange-600 font-medium">Critical</span> — within {form.critical_days || '?'} days</p>
-            <p><span className="text-yellow-600 font-medium">Warning</span> — within {form.warning_days || '?'} days</p>
-            <p><span className="text-green-600 font-medium">Valid</span> — beyond {form.warning_days || '?'} days</p>
+            <p className="font-medium text-foreground">{t('compliance.alertLevelsTitle')}</p>
+            <p><span className="text-red-600 font-medium">{t('compliance.alertLevelExpiredLabel')}</span> — {t('compliance.alertLevelExpiredDesc')}</p>
+            <p><span className="text-orange-600 font-medium">{t('compliance.alertLevelCriticalLabel')}</span> — {t('compliance.alertLevelCriticalDesc', { days: form.critical_days || '?' })}</p>
+            <p><span className="text-yellow-600 font-medium">{t('compliance.alertLevelWarningLabel')}</span> — {t('compliance.alertLevelWarningDesc', { days: form.warning_days || '?' })}</p>
+            <p><span className="text-green-600 font-medium">{t('compliance.alertLevelValidLabel')}</span> — {t('compliance.alertLevelValidDesc', { days: form.warning_days || '?' })}</p>
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose} disabled={saving} className="flex-1">Cancel</Button>
+            <Button variant="outline" onClick={onClose} disabled={saving} className="flex-1">{t('compliance.cancel')}</Button>
             <Button onClick={handleSave} disabled={saving} className="flex-1">
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? t('compliance.saving') : t('compliance.save')}
             </Button>
           </div>
         </div>
@@ -189,6 +190,7 @@ interface ManageTypesPanelProps {
 }
 
 function ManageTypesPanel({ open, onClose, types, onSaved }: ManageTypesPanelProps) {
+  const { t } = useTranslation();
   const [list, setList] = useState<string[]>([]);
   const [newType, setNewType] = useState('');
   const [saving, setSaving] = useState(false);
@@ -201,88 +203,88 @@ function ManageTypesPanel({ open, onClose, types, onSaved }: ManageTypesPanelPro
   function addType() {
     const val = newType.trim().toLowerCase();
     if (!val) return;
-    if (list.includes(val)) { setError('Type already exists'); return; }
-    setList(l => [...l, val]);
+    if (list.includes(val)) { setError(t('compliance.typeAlreadyExists')); return; }
+    setList(prev => [...prev, val]);
     setNewType('');
     setError('');
   }
 
-  function removeType(t: string) {
-    setList(l => l.filter(x => x !== t));
+  function removeType(typeVal: string) {
+    setList(prev => prev.filter(x => x !== typeVal));
   }
 
   async function handleSave() {
-    if (list.length === 0) { setError('At least one type is required'); return; }
+    if (list.length === 0) { setError(t('compliance.atLeastOneType')); return; }
     setSaving(true); setError('');
     try {
       const { data } = await api.put<string[]>('/api/v1/compliance/settings/types', list);
       onSaved(data);
-      toast.success('Compliance types saved');
+      toast.success(t('compliance.typesSaved'));
       onClose();
     } catch {
-      setError('Failed to save types');
+      setError(t('compliance.typesSaveFailed'));
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <Sheet open={open} onOpenChange={v => !v && onClose()}>
+    <Sheet open={open} onOpenChange={prev => !prev && onClose()}>
       <SheetContent side="right" className="w-80">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <Tag className="h-4 w-4" />
-            Manage Types
+            {t('compliance.manageTypes')}
           </SheetTitle>
         </SheetHeader>
 
         <div className="mt-6 space-y-5">
           <p className="text-sm text-muted-foreground">
-            Configure which item types are available in the compliance form.
+            {t('compliance.manageTypesDesc')}
           </p>
 
           {error && <p className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
 
           {/* Existing types */}
           <div className="space-y-2">
-            {list.map(t => (
-              <div key={t} className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2">
-                <span className="text-sm font-medium capitalize">{typeLabel(t)}</span>
+            {list.map(typeVal => (
+              <div key={typeVal} className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2">
+                <span className="text-sm font-medium capitalize">{typeLabel(typeVal)}</span>
                 <button
                   type="button"
-                  onClick={() => removeType(t)}
+                  onClick={() => removeType(typeVal)}
                   className="text-muted-foreground hover:text-destructive transition-colors"
-                  title="Remove"
+                  title={t('compliance.remove')}
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
             ))}
             {list.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-2">No types. Add at least one.</p>
+              <p className="text-xs text-muted-foreground text-center py-2">{t('compliance.noTypesYet')}</p>
             )}
           </div>
 
           {/* Add new type */}
           <div className="space-y-1.5">
-            <Label className="text-xs">Add New Type</Label>
+            <Label className="text-xs">{t('compliance.addNewType')}</Label>
             <div className="flex gap-2">
               <Input
                 className="h-8 text-sm"
-                placeholder="e.g. vehicle-fitness"
+                placeholder={t('compliance.addNewTypePlaceholder')}
                 value={newType}
                 onChange={e => setNewType(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && addType()}
               />
-              <Button size="sm" variant="outline" onClick={addType} className="h-8 shrink-0">Add</Button>
+              <Button size="sm" variant="outline" onClick={addType} className="h-8 shrink-0">{t('compliance.add')}</Button>
             </div>
-            <p className="text-[11px] text-muted-foreground">Press Enter or click Add. Will be capitalised in the UI.</p>
+            <p className="text-[11px] text-muted-foreground">{t('compliance.addNewTypeHint')}</p>
           </div>
 
           <div className="flex gap-2 pt-2">
-            <Button variant="outline" onClick={onClose} disabled={saving} className="flex-1">Cancel</Button>
+            <Button variant="outline" onClick={onClose} disabled={saving} className="flex-1">{t('compliance.cancel')}</Button>
             <Button onClick={handleSave} disabled={saving} className="flex-1">
-              {saving ? 'Saving…' : 'Save Types'}
+              {saving ? t('compliance.saving') : t('compliance.saveTypes')}
             </Button>
           </div>
         </div>
@@ -302,6 +304,7 @@ interface EditDialogProps {
 }
 
 function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps) {
+  const { t } = useTranslation();
   const [form, setForm] = useState({
     item_type: '',
     name: '',
@@ -342,8 +345,8 @@ function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps
   }, [open, item, itemTypes]);
 
   async function handleSave() {
-    if (!form.name.trim()) { setError('Name is required'); return; }
-    if (!form.policy_holder.trim()) { setError('Policy Holder is required'); return; }
+    if (!form.name.trim()) { setError(t('compliance.nameRequired')); return; }
+    if (!form.policy_holder.trim()) { setError(t('compliance.policyHolderRequired')); return; }
     setSaving(true); setError('');
     try {
       const payload = {
@@ -375,7 +378,7 @@ function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps
           });
         } catch (uploadErr: unknown) {
           const detail = (uploadErr as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-          toast.error(typeof detail === 'string' ? detail : 'File upload failed');
+          toast.error(typeof detail === 'string' ? detail : t('compliance.fileUploadFailed'));
         } finally {
           setUploading(false);
         }
@@ -385,17 +388,17 @@ function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps
       onClose();
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(typeof detail === 'string' ? detail : 'Failed to save');
+      setError(typeof detail === 'string' ? detail : t('compliance.saveFailed'));
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+    <Dialog open={open} onOpenChange={prev => !prev && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{item ? 'Edit' : 'Add'} Compliance Item</DialogTitle>
+          <DialogTitle>{item ? t('compliance.editDialogTitle') : t('compliance.addDialogTitle')}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
@@ -403,54 +406,54 @@ function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label>Type <span className="text-destructive">*</span></Label>
-              <Select value={form.item_type} onValueChange={v => setForm(f => ({ ...f, item_type: v ?? itemTypes[0] }))}>
+              <Label>{t('compliance.typeLabel')} <span className="text-destructive">*</span></Label>
+              <Select value={form.item_type} onValueChange={v => setForm(prev => ({ ...prev, item_type: v ?? itemTypes[0] }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {itemTypes.map(t => <SelectItem key={t} value={t}>{typeLabel(t)}</SelectItem>)}
+                  {itemTypes.map(typeVal => <SelectItem key={typeVal} value={typeVal}>{typeLabel(typeVal)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
-              <Label>Name <span className="text-destructive">*</span></Label>
-              <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              <Label>{t('compliance.name')} <span className="text-destructive">*</span></Label>
+              <Input value={form.name} onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
                 placeholder="e.g. Vehicle Insurance – MH-12-AB-1234" />
             </div>
           </div>
 
           <div className="space-y-1">
-            <Label>Policy Holder <span className="text-destructive">*</span></Label>
-            <Input value={form.policy_holder} onChange={e => setForm(f => ({ ...f, policy_holder: e.target.value }))}
-              placeholder="e.g. ABC Stone Crusher Pvt. Ltd." />
-            <p className="text-[11px] text-muted-foreground">Name of the individual or company covered by this policy/certificate.</p>
+            <Label>{t('compliance.policyHolder')} <span className="text-destructive">*</span></Label>
+            <Input value={form.policy_holder} onChange={e => setForm(prev => ({ ...prev, policy_holder: e.target.value }))}
+              placeholder={t('compliance.policyHolderPlaceholder')} />
+            <p className="text-[11px] text-muted-foreground">{t('compliance.policyHolderHint')}</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label>Issuing Authority / Insurer</Label>
-              <Input value={form.issuer} onChange={e => setForm(f => ({ ...f, issuer: e.target.value }))}
-                placeholder="e.g. New India Assurance" />
+              <Label>{t('compliance.issuingAuthority')}</Label>
+              <Input value={form.issuer} onChange={e => setForm(prev => ({ ...prev, issuer: e.target.value }))}
+                placeholder={t('compliance.issuingAuthorityPlaceholder')} />
             </div>
             <div className="space-y-1">
-              <Label>Policy / Certificate No.</Label>
-              <Input value={form.reference_no} onChange={e => setForm(f => ({ ...f, reference_no: e.target.value }))}
-                placeholder="e.g. POL/2025/123456" />
+              <Label>{t('compliance.policyCertNo')}</Label>
+              <Input value={form.reference_no} onChange={e => setForm(prev => ({ ...prev, reference_no: e.target.value }))}
+                placeholder={t('compliance.policyCertNoPlaceholder')} />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label>Issue Date</Label>
-              <Input type="date" value={form.issue_date} onChange={e => setForm(f => ({ ...f, issue_date: e.target.value }))} />
+              <Label>{t('compliance.issueDate')}</Label>
+              <Input type="date" value={form.issue_date} onChange={e => setForm(prev => ({ ...prev, issue_date: e.target.value }))} />
             </div>
             <div className="space-y-1">
-              <Label>Expiry Date</Label>
-              <Input type="date" value={form.expiry_date} onChange={e => setForm(f => ({ ...f, expiry_date: e.target.value }))} />
+              <Label>{t('compliance.expiryDate')}</Label>
+              <Input type="date" value={form.expiry_date} onChange={e => setForm(prev => ({ ...prev, expiry_date: e.target.value }))} />
             </div>
           </div>
 
           <div className="space-y-1">
-            <Label>Upload Document</Label>
+            <Label>{t('compliance.uploadDocument')}</Label>
             <label
               className="flex items-center gap-3 rounded-lg border-2 border-dashed border-muted-foreground/25 p-3 cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors"
               onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('border-primary/60', 'bg-primary/10'); }}
@@ -474,10 +477,10 @@ function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps
                   </div>
                 ) : item?.file_path ? (
                   <p className="text-sm text-muted-foreground">
-                    Current: <span className="font-medium">{item.file_path.split('/').pop()}</span> — drop new file to replace
+                    {t('compliance.uploadCurrent')} <span className="font-medium">{item.file_path.split('/').pop()}</span> — {t('compliance.uploadReplaceHint')}
                   </p>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Click or drag file here (PDF, JPG, PNG, DOCX — max 10 MB)</p>
+                  <p className="text-sm text-muted-foreground">{t('compliance.uploadDropHint')}</p>
                 )}
               </div>
               <input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.tif,.tiff"
@@ -486,16 +489,16 @@ function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps
           </div>
 
           <div className="space-y-1">
-            <Label>Notes</Label>
-            <Input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-              placeholder="Any additional details..." />
+            <Label>{t('compliance.notes')}</Label>
+            <Input value={form.notes} onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))}
+              placeholder={t('compliance.notesPlaceholder')} />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={saving || uploading}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={saving || uploading}>{t('compliance.cancel')}</Button>
           <Button onClick={handleSave} disabled={saving || uploading}>
-            {uploading ? 'Uploading…' : saving ? 'Saving…' : (item ? 'Update' : 'Add')}
+            {uploading ? t('compliance.uploading') : saving ? t('compliance.saving') : (item ? t('compliance.update') : t('compliance.add'))}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -506,6 +509,7 @@ function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps
 // ── Main Page ───────────────────────────────────────────────────────────── //
 
 export default function CompliancePage() {
+  const { t } = useTranslation();
   const [items, setItems] = useState<ComplianceItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -534,11 +538,11 @@ export default function CompliancePage() {
       setItems(sorted);
       setTotal(data.total);
     } catch {
-      toast.error('Failed to load compliance items');
+      toast.error(t('compliance.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [typeFilter]);
+  }, [typeFilter, t]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
@@ -560,12 +564,9 @@ export default function CompliancePage() {
 
   async function openFile(item: ComplianceItem) {
     if (!item.file_path) {
-      toast.error('No file path configured for this item');
+      toast.error(t('compliance.noFilePath'));
       return;
     }
-    // Stream the file via authenticated fetch, then open as a blob URL in a new tab.
-    // This avoids Windows Session 0 isolation (the backend service cannot open files
-    // on the interactive desktop) and keeps the auth token out of the URL.
     setOpeningFile(item.id);
     try {
       const token = sessionStorage.getItem('token');
@@ -574,41 +575,40 @@ export default function CompliancePage() {
       });
       if (!resp.ok) {
         const body = await resp.json().catch(() => ({}));
-        toast.error((body as { detail?: string }).detail ?? 'File not found on server');
+        toast.error((body as { detail?: string }).detail ?? t('compliance.fileNotFound'));
         return;
       }
       const blob = await resp.blob();
       const blobUrl = URL.createObjectURL(blob);
       window.open(blobUrl, '_blank');
-      // Revoke after a short delay so the new tab has time to load
       setTimeout(() => URL.revokeObjectURL(blobUrl), 30_000);
     } catch {
-      toast.error('Failed to open file');
+      toast.error(t('compliance.fileOpenFailed'));
     } finally {
       setOpeningFile(null);
     }
   }
 
   async function deleteFile(item: ComplianceItem) {
-    if (!confirm(`Delete the file attached to "${item.name}"? This cannot be undone.`)) return;
+    if (!confirm(t('compliance.confirmDeleteFile', { name: item.name }))) return;
     try {
       const resp = await api.delete<ComplianceItem>(`/api/v1/compliance/${item.id}/file`);
       setItems(prev => prev.map(i => i.id === item.id ? resp.data : i));
-      toast.success('File deleted');
+      toast.success(t('compliance.fileDeleted'));
     } catch {
-      toast.error('Failed to delete file');
+      toast.error(t('compliance.fileDeleteFailed'));
     }
   }
 
   async function deleteItem(item: ComplianceItem) {
-    if (!confirm(`Archive "${item.name}"? It will be hidden but not permanently deleted.`)) return;
+    if (!confirm(t('compliance.confirmArchive', { name: item.name }))) return;
     try {
       await api.delete(`/api/v1/compliance/${item.id}`);
       setItems(prev => prev.filter(i => i.id !== item.id));
-      setTotal(t => t - 1);
-      toast.success('Item archived');
+      setTotal(prev => prev - 1);
+      toast.success(t('compliance.itemArchived'));
     } catch {
-      toast.error('Failed to archive item');
+      toast.error(t('compliance.itemArchiveFailed'));
     }
   }
 
@@ -622,8 +622,8 @@ export default function CompliancePage() {
       }
       return [saved, ...prev];
     });
-    if (!items.find(i => i.id === saved.id)) setTotal(t => t + 1);
-    toast.success(editItem ? 'Item updated' : 'Item added');
+    if (!items.find(i => i.id === saved.id)) setTotal(prev => prev + 1);
+    toast.success(editItem ? t('compliance.itemUpdated') : t('compliance.itemAdded'));
   }
 
   // Summary counts
@@ -643,29 +643,29 @@ export default function CompliancePage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Compliance</h1>
-          <p className="text-sm text-muted-foreground">Insurance, Certifications, Licenses & Permits</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('compliance.title')}</h1>
+          <p className="text-sm text-muted-foreground">{t('compliance.subtitle')}</p>
         </div>
         <div className="flex gap-2">
           {isAdmin && (
             <>
               <Button variant="outline" size="sm" onClick={() => setManageTypesOpen(true)}>
                 <Tag className="h-4 w-4 mr-1" />
-                Manage Types
+                {t('compliance.manageTypes')}
               </Button>
               <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
                 <Settings2 className="h-4 w-4 mr-1" />
-                Alert Settings
+                {t('compliance.configureThresholds')}
               </Button>
             </>
           )}
           <Button variant="outline" size="sm" onClick={fetchItems} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            {t('compliance.refresh')}
           </Button>
           <Button size="sm" onClick={() => { setEditItem(null); setDialogOpen(true); }}>
             <Plus className="h-4 w-4 mr-1" />
-            Add Item
+            {t('compliance.addItem')}
           </Button>
         </div>
       </div>
@@ -686,7 +686,7 @@ export default function CompliancePage() {
             <XCircle className={`h-8 w-8 shrink-0 ${expiredCount > 0 ? 'text-red-500' : 'text-gray-300'}`} />
             <div>
               <p className={`text-2xl font-bold ${expiredCount > 0 ? 'text-red-700' : 'text-gray-400'}`}>{expiredCount}</p>
-              <p className="text-xs font-medium text-red-600">Expired</p>
+              <p className="text-xs font-medium text-red-600">{t('compliance.alertLevel.expired')}</p>
             </div>
           </button>
 
@@ -703,7 +703,7 @@ export default function CompliancePage() {
             <AlertTriangle className={`h-8 w-8 shrink-0 ${criticalCount > 0 ? 'text-orange-500' : 'text-gray-300'}`} />
             <div>
               <p className={`text-2xl font-bold ${criticalCount > 0 ? 'text-orange-700' : 'text-gray-400'}`}>{criticalCount}</p>
-              <p className="text-xs font-medium text-orange-600">≤{thresholds.critical_days}d Critical</p>
+              <p className="text-xs font-medium text-orange-600">{t('compliance.criticalBadge', { days: thresholds.critical_days })}</p>
             </div>
           </button>
 
@@ -720,7 +720,7 @@ export default function CompliancePage() {
             <Clock className={`h-8 w-8 shrink-0 ${warningCount > 0 ? 'text-yellow-500' : 'text-gray-300'}`} />
             <div>
               <p className={`text-2xl font-bold ${warningCount > 0 ? 'text-yellow-700' : 'text-gray-400'}`}>{warningCount}</p>
-              <p className="text-xs font-medium text-yellow-600">≤{thresholds.warning_days}d Warning</p>
+              <p className="text-xs font-medium text-yellow-600">{t('compliance.warningBadge', { days: thresholds.warning_days })}</p>
             </div>
           </button>
 
@@ -733,7 +733,7 @@ export default function CompliancePage() {
             <CheckCircle className="h-8 w-8 shrink-0 text-green-500" />
             <div>
               <p className="text-2xl font-bold text-green-700">{okCount}</p>
-              <p className="text-xs font-medium text-green-600">All Valid</p>
+              <p className="text-xs font-medium text-green-600">{t('compliance.validItems')}</p>
             </div>
           </button>
         </div>
@@ -742,13 +742,15 @@ export default function CompliancePage() {
       {/* Active filter banner */}
       {alertFilter && (
         <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-sm">
-          <span className="text-muted-foreground">Showing:</span>
-          <span className="font-medium capitalize">{alertFilter === 'ok' ? 'Valid' : alertFilter} items</span>
-          <span className="text-muted-foreground">({displayedItems.length} of {items.length})</span>
+          <span className="text-muted-foreground">{t('compliance.showingFilter')}</span>
+          <span className="font-medium capitalize">
+            {alertFilter === 'ok' ? t('compliance.validLabel') : t(`compliance.alertLevel.${alertFilter}` as Parameters<typeof t>[0])}
+          </span>
+          <span className="text-muted-foreground">{t('compliance.showingOf', { shown: displayedItems.length, total: items.length })}</span>
           <Button
             variant="ghost" size="icon" className="h-5 w-5 ml-auto"
             onClick={() => setAlertFilter(null)}
-            title="Clear filter"
+            title={t('compliance.clearFilter')}
           >
             <X className="h-3 w-3" />
           </Button>
@@ -760,9 +762,9 @@ export default function CompliancePage() {
         <div className="flex items-center gap-2 border-b px-4 py-3">
           <Tabs value={typeFilter} onValueChange={setTypeFilter}>
             <TabsList>
-              <TabsTrigger value="all">All ({total})</TabsTrigger>
-              {itemTypes.map(t => (
-                <TabsTrigger key={t} value={t}>{typeLabel(t)}</TabsTrigger>
+              <TabsTrigger value="all">{t('compliance.allTab', { total })}</TabsTrigger>
+              {itemTypes.map(typeVal => (
+                <TabsTrigger key={typeVal} value={typeVal}>{typeLabel(typeVal)}</TabsTrigger>
               ))}
             </TabsList>
           </Tabs>
@@ -779,8 +781,8 @@ export default function CompliancePage() {
             onEdit={item => { setEditItem(item); setDialogOpen(true); }}
             onArchive={deleteItem}
             emptyMessage={alertFilter
-              ? `No ${alertFilter === 'ok' ? 'valid' : alertFilter} items found.`
-              : 'No compliance items found.'}
+              ? t('compliance.noFilteredItems', { level: alertFilter === 'ok' ? t('compliance.validLabel') : alertFilter })
+              : t('compliance.noComplianceItems')}
           />
         </div>
       </div>
@@ -797,7 +799,7 @@ export default function CompliancePage() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         thresholds={thresholds}
-        onSaved={t => { setThresholds(t); fetchItems(); }}
+        onSaved={saved => { setThresholds(saved); fetchItems(); }}
       />
 
       <ManageTypesPanel
@@ -826,26 +828,27 @@ function ComplianceTable({
   onArchive: (item: ComplianceItem) => void;
   emptyMessage: string;
 }) {
+  const { t } = useTranslation();
   const columns = useMemo<ColumnDef<ComplianceItem>[]>(() => [
-    { key: 'name', label: 'Name', accessor: i => i.name, className: 'font-medium' },
+    { key: 'name', label: t('compliance.colName'), accessor: i => i.name, className: 'font-medium' },
     {
-      key: 'item_type', label: 'Type', type: 'enum',
+      key: 'item_type', label: t('compliance.colType'), type: 'enum',
       enumOptions: itemTypes,
       accessor: i => i.item_type,
       format: v => <Badge variant="outline" className="text-[10px]">{typeLabel(String(v))}</Badge>,
     },
-    { key: 'policy_holder', label: 'Policy Holder', accessor: i => i.policy_holder ?? '', className: 'text-muted-foreground' },
-    { key: 'issuer', label: 'Issuer', accessor: i => i.issuer ?? '', className: 'text-muted-foreground' },
-    { key: 'reference_no', label: 'Reference No.', accessor: i => i.reference_no ?? '', className: 'font-mono text-xs' },
+    { key: 'policy_holder', label: t('compliance.colPolicyHolder'), accessor: i => i.policy_holder ?? '', className: 'text-muted-foreground' },
+    { key: 'issuer', label: t('compliance.colIssuer'), accessor: i => i.issuer ?? '', className: 'text-muted-foreground' },
+    { key: 'reference_no', label: t('compliance.colReferenceNo'), accessor: i => i.reference_no ?? '', className: 'font-mono text-xs' },
     {
-      key: 'issue_date', label: 'Issue Date', type: 'date',
+      key: 'issue_date', label: t('compliance.colIssueDate'), type: 'date',
       defaultVisible: false,
       accessor: i => i.issue_date ?? '',
       format: v => v ? new Date(String(v)).toLocaleDateString('en-IN') : '—',
       className: 'text-muted-foreground',
     },
     {
-      key: 'expiry_date', label: 'Expiry Date', type: 'date',
+      key: 'expiry_date', label: t('compliance.colExpiryDate'), type: 'date',
       accessor: i => i.expiry_date ?? '',
       format: (v, item) => v ? (
         <span className={item.alert_level === 'expired' ? 'text-red-600 font-medium' : item.alert_level === 'critical' ? 'text-orange-600' : ''}>
@@ -854,17 +857,17 @@ function ComplianceTable({
       ) : '—',
     },
     {
-      key: 'alert_level', label: 'Status', type: 'enum',
+      key: 'alert_level', label: t('compliance.colStatus'), type: 'enum',
       enumOptions: ['ok', 'warning', 'critical', 'expired'],
       accessor: i => i.alert_level,
       format: (v, item) => v === 'ok' ? (
         <span className="inline-flex items-center gap-1 text-[10px] text-green-600">
-          <CheckCircle className="h-3 w-3" /> Valid
+          <CheckCircle className="h-3 w-3" /> {t('compliance.validLabel')}
         </span>
       ) : <AlertBadge level={item.alert_level} days={item.days_to_expiry} />,
     },
-    { key: 'notes', label: 'Notes', defaultVisible: false, accessor: i => i.notes ?? '' },
-  ], [itemTypes]);
+    { key: 'notes', label: t('compliance.colNotes'), defaultVisible: false, accessor: i => i.notes ?? '' },
+  ], [itemTypes, t]);
 
   return (
     <DataTable<ComplianceItem>
@@ -881,22 +884,22 @@ function ComplianceTable({
           {item.file_path && (
             <>
               <Button size="icon" variant="ghost" className="h-7 w-7"
-                title={`Open: ${item.file_path.split('/').pop()}`}
+                title={t('compliance.openFile', { filename: item.file_path.split('/').pop() })}
                 disabled={openingFile === item.id}
                 onClick={() => onOpenFile(item)}>
                 <FolderOpen className="h-3.5 w-3.5 text-blue-600" />
               </Button>
-              <Button size="icon" variant="ghost" className="h-7 w-7" title="Delete file"
+              <Button size="icon" variant="ghost" className="h-7 w-7" title={t('compliance.deleteFile')}
                 onClick={() => onDeleteFile(item)}>
                 <Trash2 className="h-3.5 w-3.5 text-destructive" />
               </Button>
             </>
           )}
-          <Button size="icon" variant="ghost" className="h-7 w-7" title="Edit"
+          <Button size="icon" variant="ghost" className="h-7 w-7" title={t('compliance.edit')}
             onClick={() => onEdit(item)}>
             <Edit2 className="h-3.5 w-3.5" />
           </Button>
-          <Button size="icon" variant="ghost" className="h-7 w-7" title="Archive"
+          <Button size="icon" variant="ghost" className="h-7 w-7" title={t('compliance.archive')}
             onClick={() => onArchive(item)}>
             <Trash2 className="h-3.5 w-3.5 text-red-500" />
           </Button>

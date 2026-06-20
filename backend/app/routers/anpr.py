@@ -1028,11 +1028,12 @@ async def _fetch_trips(
     date_from: date, date_to: date,
     page: int = 1, page_size: int = 200,
 ) -> tuple[list[AnprTrip], int, dict]:
-    """Pull ANPR-tracked tokens between `date_from` and `date_to` inclusive,
+    """Pull all non-cancelled tokens between `date_from` and `date_to` inclusive,
     joined with their linked invoice, with summary roll-ups.
 
-    Filter: tokens.anpr_entry_at IS NOT NULL OR tokens.anpr_exit_at IS NOT NULL
-    (i.e. ANPR has been involved in either side of this trip).
+    Shows all tokens regardless of ANPR status. ANPR entry/exit timestamps are
+    shown where available (camera-detected trucks), NULL otherwise (manual tokens).
+    KPI entry/exit counts are still ANPR-specific; tonnage/revenue cover all tokens.
     """
     start_ts = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
     end_ts = datetime.combine(date_to + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
@@ -1068,12 +1069,8 @@ async def _fetch_trips(
         ) i ON TRUE
         WHERE t.company_id = :cid
           AND t.is_supplement = FALSE
-          AND (t.anpr_entry_at IS NOT NULL OR t.anpr_exit_at IS NOT NULL)
-          AND (
-              (t.anpr_entry_at >= :s AND t.anpr_entry_at < :e)
-              OR (t.anpr_exit_at  >= :s AND t.anpr_exit_at  < :e)
-              OR (t.token_date BETWEEN :df AND :dt)
-          )
+          AND t.status NOT IN ('CANCELLED')
+          AND t.token_date BETWEEN :df AND :dt
         ORDER BY COALESCE(t.anpr_entry_at, t.anpr_exit_at, t.created_at) DESC
         OFFSET :offset LIMIT :limit
     """)
@@ -1088,12 +1085,8 @@ async def _fetch_trips(
         SELECT COUNT(*) FROM tokens t
         WHERE t.company_id = :cid
           AND t.is_supplement = FALSE
-          AND (t.anpr_entry_at IS NOT NULL OR t.anpr_exit_at IS NOT NULL)
-          AND (
-              (t.anpr_entry_at >= :s AND t.anpr_entry_at < :e)
-              OR (t.anpr_exit_at  >= :s AND t.anpr_exit_at  < :e)
-              OR (t.token_date BETWEEN :df AND :dt)
-          )
+          AND t.status NOT IN ('CANCELLED')
+          AND t.token_date BETWEEN :df AND :dt
     """)
     total = int((await db.execute(total_q, {
         "cid": str(company_id), "s": start_ts, "e": end_ts,
@@ -1106,13 +1099,14 @@ async def _fetch_trips(
           COUNT(*) FILTER (WHERE anpr_entry_at >= :s AND anpr_entry_at < :e)::INT AS entries,
           COUNT(*) FILTER (WHERE anpr_exit_at  >= :s AND anpr_exit_at  < :e)::INT AS exits,
           COALESCE(SUM(net_weight) FILTER (WHERE status = 'COMPLETED'
-                       AND (anpr_entry_at >= :s AND anpr_entry_at < :e)), 0) AS total_kg
+                       AND token_date BETWEEN :df AND :dt), 0) AS total_kg
         FROM tokens
         WHERE company_id = :cid AND is_supplement = FALSE
-          AND (anpr_entry_at IS NOT NULL OR anpr_exit_at IS NOT NULL)
+          AND status NOT IN ('CANCELLED')
     """)
     ru = (await db.execute(rollup_q, {
         "cid": str(company_id), "s": start_ts, "e": end_ts,
+        "df": date_from, "dt": date_to,
     })).fetchone()
     entries_n = int(ru.entries or 0) if ru else 0
     exits_n = int(ru.exits or 0) if ru else 0
@@ -1125,7 +1119,6 @@ async def _fetch_trips(
         JOIN tokens t ON t.id = i.token_id
         WHERE t.company_id = :cid
           AND i.status = 'final'
-          AND (t.anpr_entry_at IS NOT NULL OR t.anpr_exit_at IS NOT NULL)
           AND t.token_date BETWEEN :df AND :dt
     """)
     total_revenue = float((await db.execute(rev_q, {

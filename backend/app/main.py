@@ -2,6 +2,7 @@ import asyncio
 import logging
 import socket
 from contextlib import asynccontextmanager
+# gate router loaded — touch to force reload if adding gate.py after server start
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
