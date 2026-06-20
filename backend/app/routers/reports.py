@@ -12,7 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, text
 
 from app.database import get_db
 from app.dependencies import get_current_user
@@ -1206,4 +1206,197 @@ async def sales_by_status(
             "total_amount": _f(totals["draft"] + totals["final"]),
         },
         "series": series,
+    }
+
+
+# ── Gate Pass Register ────────────────────────────────────────────────────────
+
+@router.get("/gate-pass-register")
+async def gate_pass_register(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    status: Optional[str] = Query(None),        # inside | exited | cancelled
+    purpose: Optional[str] = Query(None),        # weighbridge | delivery | …
+    vehicle_no: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    filters = [
+        "gp.company_id = :company_id",
+        "gp.pass_date >= :from_date",
+        "gp.pass_date <= :to_date",
+    ]
+    params: dict = {
+        "company_id": str(current_user.company_id),
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+    }
+    if status:
+        filters.append("gp.status = :status")
+        params["status"] = status
+    if purpose:
+        filters.append("gp.purpose = :purpose")
+        params["purpose"] = purpose
+    if vehicle_no:
+        filters.append("gp.vehicle_no ILIKE :vehicle_no")
+        params["vehicle_no"] = f"%{vehicle_no}%"
+
+    where = " AND ".join(filters)
+    sql = text(f"""
+        SELECT
+            gp.id,
+            gp.gate_pass_no,
+            gp.pass_date,
+            gp.vehicle_no,
+            gp.vehicle_name,
+            gp.vehicle_type,
+            gp.driver_name,
+            gp.driver_phone,
+            gp.material,
+            gp.purpose,
+            gp.status,
+            gp.entry_time,
+            gp.exit_time,
+            gp.notes,
+            t.token_no,
+            t.net_weight,
+            pr.name AS product_name,
+            u.username AS created_by_name
+        FROM gate_passes gp
+        LEFT JOIN tokens t ON t.id = gp.token_id
+        LEFT JOIN products pr ON pr.id = gp.product_id
+        LEFT JOIN users u ON u.id = gp.created_by
+        WHERE {where}
+        ORDER BY gp.pass_date DESC, gp.entry_time DESC
+    """)
+
+    result = await db.execute(sql, params)
+    rows = result.mappings().all()
+
+    items = []
+    for r in rows:
+        entry = r["entry_time"]
+        exit_ = r["exit_time"]
+        dwell_minutes = None
+        if entry and exit_:
+            dwell_minutes = round((exit_ - entry).total_seconds() / 60, 1)
+
+        items.append({
+            "id": str(r["id"]),
+            "gate_pass_no": r["gate_pass_no"],
+            "pass_date": r["pass_date"].isoformat() if r["pass_date"] else None,
+            "vehicle_no": r["vehicle_no"],
+            "vehicle_name": r["vehicle_name"],
+            "vehicle_type": r["vehicle_type"],
+            "driver_name": r["driver_name"],
+            "driver_phone": r["driver_phone"],
+            "material": r["material"] or r["product_name"],
+            "purpose": r["purpose"],
+            "status": r["status"],
+            "entry_time": entry.isoformat() if entry else None,
+            "exit_time": exit_.isoformat() if exit_ else None,
+            "dwell_minutes": dwell_minutes,
+            "token_no": r["token_no"],
+            "net_weight_mt": _r2(r["net_weight"] / 1000) if r["net_weight"] else None,
+            "notes": r["notes"],
+            "created_by": r["created_by_name"],
+        })
+
+    return {
+        "items": items,
+        "count": len(items),
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+        "total_vehicles": len({r["vehicle_no"] for r in rows if r["vehicle_no"]}),
+        "total_exited": sum(1 for i in items if i["status"] == "exited"),
+        "total_inside": sum(1 for i in items if i["status"] == "inside"),
+    }
+
+
+# ── Token Register (all statuses) ────────────────────────────────────────────
+
+@router.get("/token-register")
+async def token_register(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    token_type: Optional[str] = Query(None),     # sale | purchase | general
+    status: Optional[str] = Query(None),          # OPEN|COMPLETED|CANCELLED|…
+    party_id: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    q = (
+        select(Token, Party, Product, Invoice)
+        .outerjoin(Party, Token.party_id == Party.id)
+        .outerjoin(Product, Token.product_id == Product.id)
+        # left join most-recent non-cancelled invoice for this token
+        .outerjoin(
+            Invoice,
+            and_(
+                Invoice.token_id == Token.id,
+                Invoice.status != "cancelled",
+                Invoice.invoice_type == "sale",
+            ),
+        )
+        .where(
+            Token.company_id == current_user.company_id,
+            Token.token_date >= from_date,
+            Token.token_date <= to_date,
+            Token.is_supplement.is_(False),
+        )
+        .order_by(Token.token_date.desc(), Token.created_at.desc())
+    )
+    if token_type:
+        q = q.where(Token.token_type == token_type)
+    if status:
+        q = q.where(Token.status == status)
+    if party_id:
+        q = q.where(Token.party_id == party_id)
+
+    result = await db.execute(q)
+    rows = result.all()
+
+    items = []
+    total_net = Decimal(0)
+    seen_token_ids: set = set()          # deduplicate when multiple invoices match
+    for token, party, product, invoice in rows:
+        tid = str(token.id)
+        if tid in seen_token_ids:
+            continue
+        seen_token_ids.add(tid)
+
+        if token.net_weight:
+            total_net += token.net_weight
+
+        items.append({
+            "id": tid,
+            "token_no": token.token_no,
+            "token_date": token.token_date.isoformat(),
+            "token_type": token.token_type,
+            "status": token.status,
+            "source": getattr(token, "source", "manual"),
+            "vehicle_no": token.vehicle_no,
+            "vehicle_type": getattr(token, "vehicle_type", None),
+            "party_name": party.name if party else None,
+            "product_name": product.name if product else None,
+            "weight_method": token.weight_method,
+            "gross_weight_mt": _r2(token.gross_weight / 1000) if token.gross_weight else None,
+            "tare_weight_mt": _r2(token.tare_weight / 1000) if token.tare_weight else None,
+            "net_weight_mt": _r2(token.net_weight / 1000) if token.net_weight else None,
+            "volume_cft": _f(getattr(token, "volume_cft", None)),
+            "gate_pass_no": getattr(token, "gate_pass_no", None),
+            "invoice_no": invoice.invoice_no if invoice else None,
+            "invoice_status": invoice.status if invoice else None,
+            "grand_total": _r2(invoice.grand_total) if invoice else None,
+            "is_manual_weight": token.is_manual_weight,
+        })
+
+    return {
+        "items": items,
+        "count": len(items),
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+        "total_net_weight_mt": _r2(total_net / 1000),
+        "completed_count": sum(1 for i in items if i["status"] == "COMPLETED"),
+        "cancelled_count": sum(1 for i in items if i["status"] == "CANCELLED"),
     }

@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield, XCircle, PieChart, TrendingUp, ShieldAlert } from 'lucide-react';
+import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield, XCircle, PieChart, TrendingUp, ShieldAlert, DoorOpen, Ticket } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import PaymentsPage from './PaymentsPage';
 import LedgerPage from './LedgerPage';
@@ -19,8 +19,10 @@ import GstSplitReportPage from './GstSplitReportPage';
 import Gstr2bReconcilePage from './Gstr2bReconcilePage';
 import SalesStatusReportPage from './SalesStatusReportPage';
 import AnomalyReportPage from './AnomalyReportPage';
+import GatePassRegisterPage from './GatePassRegisterPage';
+import TokenRegisterPage from './TokenRegisterPage';
 
-type Tab = 'payments' | 'statement' | 'gst' | 'gstr2b' | 'gst-split' | 'sales-status' | 'reports' | 'write-offs' | 'compliance' | 'activity' | 'anomaly';
+type Tab = 'payments' | 'statement' | 'gst' | 'gstr2b' | 'gst-split' | 'sales-status' | 'reports' | 'write-offs' | 'compliance' | 'activity' | 'anomaly' | 'gate-passes' | 'token-register';
 
 export default function ReportsHubPage() {
   const { t } = useTranslation();
@@ -43,6 +45,8 @@ export default function ReportsHubPage() {
     { value: 'compliance', label: t('reports.documents'), icon: ShieldCheck },
     { value: 'activity', label: t('reports.activityLog'), icon: Shield },
     { value: 'anomaly', label: t('reports.anomaly'), icon: ShieldAlert },
+    { value: 'gate-passes', label: 'Gate Pass Register', icon: DoorOpen },
+    { value: 'token-register', label: 'Token Register', icon: Ticket },
   ];
 
   useEffect(() => {
@@ -77,6 +81,8 @@ export default function ReportsHubPage() {
         <TabsContent value="compliance" className="mt-4"><CompliancePage /></TabsContent>
         <TabsContent value="activity" className="mt-4"><AuditPage /></TabsContent>
         <TabsContent value="anomaly" className="mt-4"><AnomalyReportPage /></TabsContent>
+        <TabsContent value="gate-passes" className="mt-4"><GatePassRegisterPage /></TabsContent>
+        <TabsContent value="token-register" className="mt-4"><TokenRegisterPage /></TabsContent>
       </Tabs>
     </div>
   );
