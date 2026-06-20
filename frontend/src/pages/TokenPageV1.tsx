@@ -147,11 +147,8 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     setVolumeValue(String(TYRE_VOLUME_CFT[n] ?? 0));
   }
 
-  // Today's open gate passes — required before token creation
+  // Today's open gate passes — optional link before token creation
   const [openGatePasses, setOpenGatePasses] = useState<GatePass[]>([]);
-  const [gpDialogOpen, setGpDialogOpen] = useState(false);
-  const [quickGp, setQuickGp] = useState({ vehicle_no: '', driver_name: '', driver_phone: '' });
-  const [savingGp, setSavingGp] = useState(false);
 
   // P1: active transit/royalty passes for purchase tokens
   const [activePasses, setActivePasses] = useState<{ id: string; pass_no: string; balance_mt: number | string }[]>([]);
@@ -204,30 +201,6 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       setOpenGatePasses(data.items ?? []);
     } catch { /* silent */ }
   }, []);
-
-  async function createQuickGatePass() {
-    if (!quickGp.vehicle_no.trim()) { setError('Vehicle number is required to create a gate pass'); return; }
-    setSavingGp(true);
-    try {
-      const { data } = await api.post<GatePass>('/api/v1/gate/passes', {
-        vehicle_no: quickGp.vehicle_no.trim().toUpperCase(),
-        driver_name: quickGp.driver_name.trim() || undefined,
-        driver_phone: quickGp.driver_phone.trim() || undefined,
-        purpose: 'weighbridge',
-      });
-      // Refresh list then auto-select the new pass and pre-fill vehicle no
-      await loadGatePasses();
-      setForm(f => ({ ...f, gate_pass_id: data.id, vehicle_no: f.vehicle_no || data.vehicle_no || '' }));
-      setQuickGp({ vehicle_no: '', driver_name: '', driver_phone: '' });
-      setGpDialogOpen(false);
-      toast.success(`Gate pass ${data.gate_pass_no} created`);
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } };
-      setError(err.response?.data?.detail ?? 'Failed to create gate pass');
-    } finally {
-      setSavingGp(false);
-    }
-  }
 
   useEffect(() => {
     Promise.all([
@@ -283,6 +256,16 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     }
   };
 
+  // Auto-select gate pass when vehicle number is set and exactly one open pass matches
+  useEffect(() => {
+    const vno = form.vehicle_no.trim().toUpperCase();
+    if (!vno || form.gate_pass_id) return;
+    const matches = openGatePasses.filter(gp => gp.vehicle_no?.toUpperCase() === vno);
+    if (matches.length === 1) {
+      setForm(f => ({ ...f, gate_pass_id: matches[0].id }));
+    }
+  }, [form.vehicle_no, openGatePasses]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleVehicleSelect = (vehicle: Vehicle) => {
     setSelectedVehicle(vehicle);
     setForm(f => ({
@@ -301,10 +284,6 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
   async function handleSubmit() {
     if (!form.vehicle_no.trim()) { setError('Vehicle number is required'); return; }
-    if (!form.gate_pass_id) {
-      setError('Select or create a gate pass first. Click the + button next to "Gate Pass" to register the truck at the gate.');
-      return;
-    }
 
     // ── Volume mode: skip weighbridge, single POST creates + completes token ──
     if (weightMethod === 'volume') {
@@ -382,7 +361,6 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     try {
       if (!navigator.onLine) throw new Error('offline');
       const { data } = await api.post<Token>('/api/v1/tokens', tokenPayload);
-      if (data.gate_pass_no) toast.success(`Gate Pass ${data.gate_pass_no} issued`);
       onCreated(data);
       resetForm();
     } catch (e: unknown) {
@@ -745,120 +723,74 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           </div>
         )}
 
-        {/* Gate Pass — always required */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs font-semibold">
-              Gate Pass <span className="text-destructive">*</span>
-            </Label>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                className="text-[10px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-0.5"
-                onClick={loadGatePasses}
-                title="Refresh list"
-              >
-                <RefreshCw className="h-2.5 w-2.5" />
-              </button>
-              <button
-                type="button"
-                className="flex items-center gap-0.5 rounded border border-green-400 bg-green-50 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 hover:bg-green-100 transition-colors"
-                onClick={() => { setQuickGp(q => ({ ...q, vehicle_no: form.vehicle_no })); setGpDialogOpen(true); }}
-                title="Register truck at gate"
-              >
-                <Plus className="h-2.5 w-2.5" /> TRUCK IN
-              </button>
-            </div>
-          </div>
-
-          {/* Inline TRUCK IN mini-dialog */}
-          {gpDialogOpen && (
-            <div className="rounded-lg border-2 border-green-400 bg-green-50 p-3 space-y-2">
-              <p className="text-xs font-semibold text-green-800">Register truck at gate</p>
-              <Input
-                className="h-8 text-xs font-bold tracking-widest"
-                placeholder="Vehicle number e.g. MH12AB1234"
-                value={quickGp.vehicle_no}
-                onChange={e => setQuickGp(q => ({ ...q, vehicle_no: e.target.value.toUpperCase() }))}
-                autoFocus
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <Input
-                  className="h-7 text-xs"
-                  placeholder="Driver name"
-                  value={quickGp.driver_name}
-                  onChange={e => setQuickGp(q => ({ ...q, driver_name: e.target.value }))}
-                />
-                <Input
-                  className="h-7 text-xs"
-                  placeholder="Driver phone"
-                  value={quickGp.driver_phone}
-                  onChange={e => setQuickGp(q => ({ ...q, driver_phone: e.target.value }))}
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="flex-1 h-7 text-xs"
-                  onClick={() => { setGpDialogOpen(false); setQuickGp({ vehicle_no: '', driver_name: '', driver_phone: '' }); }}
+        {/* Gate Pass — optional, created by gate guard */}
+        {(() => {
+          const vno = form.vehicle_no.trim().toUpperCase();
+          const matchingPasses = vno
+            ? openGatePasses.filter(gp => gp.vehicle_no?.toUpperCase() === vno)
+            : openGatePasses;
+          return (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold">
+                  Gate Pass <span className="text-muted-foreground font-normal">(optional)</span>
+                </Label>
+                <button
+                  type="button"
+                  className="text-[10px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-0.5"
+                  onClick={loadGatePasses}
+                  title="Refresh gate passes"
                 >
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  className="flex-1 h-7 text-xs bg-green-600 hover:bg-green-700"
-                  onClick={createQuickGatePass}
-                  disabled={savingGp}
-                >
-                  {savingGp ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                  Create & Select
-                </Button>
+                  <RefreshCw className="h-2.5 w-2.5" />
+                </button>
               </div>
-            </div>
-          )}
 
-          {!gpDialogOpen && (
-            openGatePasses.length === 0 ? (
-              <div className="rounded border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
-                No open gate passes today. Click <strong>+ TRUCK IN</strong> above to register the truck first.
-              </div>
-            ) : (
-              <Select
-                value={form.gate_pass_id || ''}
-                onValueChange={v => {
-                  const gp = openGatePasses.find(g => g.id === v);
-                  setForm(f => ({
-                    ...f,
-                    gate_pass_id: v ?? '',
-                    vehicle_no: f.vehicle_no || (gp?.vehicle_no ?? ''),
-                  }));
-                }}
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <span className="truncate">
-                    {form.gate_pass_id
-                      ? (() => {
-                          const gp = openGatePasses.find(g => g.id === form.gate_pass_id);
-                          return gp ? `${gp.gate_pass_no} — ${gp.vehicle_no}` : 'Select gate pass';
-                        })()
-                      : 'Select gate pass…'
-                    }
-                  </span>
-                </SelectTrigger>
-                <SelectContent>
-                  {openGatePasses.map(gp => (
-                    <SelectItem key={gp.id} value={gp.id} className="text-xs">
-                      <span className="font-mono font-semibold">{gp.gate_pass_no}</span>
-                      <span className="ml-2">{gp.vehicle_no}</span>
-                      {gp.driver_name && <span className="ml-1 text-muted-foreground">· {gp.driver_name}</span>}
+              {matchingPasses.length === 0 ? (
+                <div className="rounded border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+                  {vno
+                    ? <>No open gate pass for <strong>{vno}</strong>. Gate guard registers trucks at <strong>Gate Register</strong>.</>
+                    : 'Enter vehicle number to see matching gate passes.'}
+                </div>
+              ) : (
+                <Select
+                  value={form.gate_pass_id || ''}
+                  onValueChange={v => {
+                    const gp = openGatePasses.find(g => g.id === v);
+                    setForm(f => ({
+                      ...f,
+                      gate_pass_id: v ?? '',
+                      vehicle_no: f.vehicle_no || (gp?.vehicle_no ?? ''),
+                    }));
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <span className="truncate">
+                      {form.gate_pass_id
+                        ? (() => {
+                            const gp = openGatePasses.find(g => g.id === form.gate_pass_id);
+                            return gp ? `${gp.gate_pass_no} — ${gp.vehicle_no}` : 'Select gate pass';
+                          })()
+                        : `${matchingPasses.length} pass${matchingPasses.length !== 1 ? 'es' : ''} available — select…`
+                      }
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="" className="text-xs text-muted-foreground">
+                      — Skip (no gate pass) —
                     </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )
-          )}
-        </div>
+                    {matchingPasses.map(gp => (
+                      <SelectItem key={gp.id} value={gp.id} className="text-xs">
+                        <span className="font-mono font-semibold">{gp.gate_pass_no}</span>
+                        <span className="ml-2">{gp.vehicle_no}</span>
+                        {gp.driver_name && <span className="ml-1 text-muted-foreground">· {gp.driver_name}</span>}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Vehicle Rent */}
         <div className="space-y-1">

@@ -22,7 +22,6 @@ from datetime import date, datetime, timezone
 from typing import Any
 from uuid import UUID
 
-import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Header
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -104,6 +103,7 @@ async def _capture_snapshot(
     auth = (username, password) if username else None
 
     try:
+        import httpx  # lazy — mirrors cameras.py pattern so module loads without httpx in path
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.get(url, auth=auth)
             resp.raise_for_status()
@@ -187,7 +187,7 @@ async def create_gate_pass(
                  :vno, :vname, :vid,
                  :dname, :dphone, :did,
                  :mat, :pid, :purpose,
-                 :tid, COALESCE(:etime::timestamptz, NOW()), 'inside', :notes,
+                 :tid, COALESCE(CAST(:etime AS TIMESTAMPTZ), NOW()), 'inside', :notes,
                  :uid, :uid)
             RETURNING id, gate_pass_no, seq_no, entry_time
         """),
@@ -261,7 +261,8 @@ async def list_gate_passes(
 ):
     _guard_check(current_user)
     company_id = str(current_user.company_id)
-    target_date = pass_date or date.today().isoformat()
+    target_date_str = pass_date or date.today().isoformat()
+    target_date = date.fromisoformat(target_date_str)  # asyncpg needs date obj, not str
 
     filters = "AND pass_date = :d"
     params: dict = {"cid": company_id, "d": target_date, "lim": page_size, "off": (page - 1) * page_size}
@@ -294,7 +295,7 @@ async def list_gate_passes(
     )
     total = total_row.scalar() or 0
 
-    return {"items": _serialize(items), "total": total, "page": page, "page_size": page_size}
+    return {"items": _serialize(items), "total": total, "page": page, "page_size": page_size, "date": target_date_str}
 
 
 @router.get("/passes/summary")
@@ -309,7 +310,8 @@ async def daily_summary(
     """
     _guard_check(current_user)
     company_id = str(current_user.company_id)
-    target_date = pass_date or date.today().isoformat()
+    target_date_str = pass_date or date.today().isoformat()
+    target_date = date.fromisoformat(target_date_str)  # asyncpg needs date obj, not str
 
     counts = await db.execute(
         text("""
@@ -341,7 +343,7 @@ async def daily_summary(
     inside = _serialize([dict(r._mapping) for r in inside_rows.fetchall()])
 
     return {
-        "date": target_date,
+        "date": target_date_str,
         "total_entered": c.total_entered or 0,
         "total_exited": c.total_exited or 0,
         "currently_inside": c.currently_inside or 0,
@@ -467,7 +469,7 @@ async def record_exit(
     await db.execute(
         text("""
             UPDATE gate_passes SET
-                exit_time  = COALESCE(:etime::timestamptz, NOW()),
+                exit_time  = COALESCE(CAST(:etime AS TIMESTAMPTZ), NOW()),
                 token_id   = COALESCE(:tid, token_id),
                 status     = 'exited',
                 updated_by = :uid,
