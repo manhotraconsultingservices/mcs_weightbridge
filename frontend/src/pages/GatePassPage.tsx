@@ -463,7 +463,7 @@ function TruckOutDialog({ gp, open, onClose, onExited }: {
 }) {
   const [tokenInput, setTokenInput] = useState('');
   const [resolvedId, setResolvedId] = useState(gp.token_id ?? '');
-  const [resolvedNo, setResolvedNo] = useState<number | null>(gp.token_no ?? null);
+  const [resolvedNo, setResolvedNo] = useState<number | null>(gp.token_no != null ? Number(gp.token_no) : null);
   const [looking, setLooking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
