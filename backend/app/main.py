@@ -625,45 +625,45 @@ async def lifespan(app: FastAPI):
 
     # ── Helper to run all DDL on a single database ────────────────────────────
     async def _apply_all_ddl(session_factory, label: str = "default"):
-        """Execute runtime DDL + column migrations + extra tables on one DB."""
-        try:
-            async with session_factory() as db:
-                for ddl in runtime_ddl:
-                    await db.execute(_text(ddl))
-                await db.commit()
-        except Exception as e:
-            logger.warning("Could not create runtime tables [%s]: %s", label, e)
+        """Execute runtime DDL + column migrations + extra tables on one DB.
 
-        try:
+        CRITICAL: each statement runs in its OWN transaction. Previously the
+        whole list ran in a single transaction, so ONE failing statement (e.g.
+        an `ALTER TABLE production_cycles …` that lands before its `CREATE TABLE`
+        on a fresh DB) aborted the transaction and silently skipped EVERY
+        statement after it — leaving entire feature tables (gate_passes,
+        product_stock, branches, royalty_passes, anpr_events, …) uncreated.
+        Per-statement isolation means a single bad statement is logged and
+        skipped while all others still apply; idempotent (IF NOT EXISTS)
+        statements self-heal on the next startup.
+        """
+        async def _run_each(statements, kind: str):
+            applied = skipped = 0
             async with session_factory() as db:
-                await db.execute(_text(supplier_ddl_sql))
-                await db.commit()
-        except Exception as e:
-            logger.warning("Could not create inventory_item_suppliers [%s]: %s", label, e)
+                for stmt in statements:
+                    try:
+                        await db.execute(_text(stmt))
+                        await db.commit()
+                        applied += 1
+                    except Exception as e:
+                        await db.rollback()
+                        skipped += 1
+                        logger.warning("%s skipped [%s]: %s -- %s",
+                                       kind, label, e, " ".join(stmt.split())[:90])
+            if skipped:
+                logger.warning("%s [%s]: %d applied, %d skipped", kind, label, applied, skipped)
 
-        try:
-            async with session_factory() as db:
-                await db.execute(_text(supplier_master_ddl_sql))
-                await db.commit()
-        except Exception as e:
-            logger.warning("Could not create inventory_suppliers [%s]: %s", label, e)
-
-        try:
-            async with session_factory() as db:
-                await db.execute(_text(
-                    "ALTER TABLE inventory_item_suppliers ADD COLUMN IF NOT EXISTS master_supplier_id UUID REFERENCES inventory_suppliers(id)"
-                ))
-                await db.commit()
-        except Exception as e:
-            logger.warning("Could not add master_supplier_id column [%s]: %s", label, e)
-
-        try:
-            async with session_factory() as db:
-                for migration in column_migrations:
-                    await db.execute(_text(migration))
-                await db.commit()
-        except Exception as e:
-            logger.warning("Could not run column migrations [%s]: %s", label, e)
+        await _run_each(runtime_ddl, "runtime DDL")
+        await _run_each(
+            [
+                supplier_ddl_sql,
+                supplier_master_ddl_sql,
+                "ALTER TABLE inventory_item_suppliers ADD COLUMN IF NOT EXISTS "
+                "master_supplier_id UUID REFERENCES inventory_suppliers(id)",
+            ],
+            "extra DDL",
+        )
+        await _run_each(column_migrations, "column migration")
 
     # ── Apply DDL: multi-tenant iterates all tenant DBs, single-tenant uses default
     if _settings.MULTI_TENANT:

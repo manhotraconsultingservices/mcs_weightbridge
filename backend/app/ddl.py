@@ -437,7 +437,9 @@ def get_column_migrations() -> list[str]:
         # raw boulder). When a production cycle is finalised, the raw_material_id
         # gets a negative stock movement = input weight consumed.
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_raw_material BOOLEAN NOT NULL DEFAULT FALSE",
-        "ALTER TABLE production_cycles ADD COLUMN IF NOT EXISTS raw_material_id UUID REFERENCES products(id)",
+        # NOTE: raw_material_id is added AFTER the production_cycles CREATE TABLE
+        # below (see the ALTER following that CREATE). Adding it here — before the
+        # table exists on a fresh DB — was the cause of a cascading DDL failure.
         # Volume-based weighment on tokens — canonical unit is CFT (cubic feet),
         # the standard in the Indian stone-crusher trade. Old tenants migrated
         # from volume_m3 in the units_migrated_to_cft_v1 DO block below.
@@ -588,6 +590,11 @@ def get_column_migrations() -> list[str]:
             UNIQUE (company_id, cycle_date)
         )
         """,
+        # raw_material_id added here (AFTER the CREATE) so it applies in the same
+        # startup on a fresh DB. Was previously listed before the CREATE, which
+        # failed on fresh DBs and (under the old single-transaction runner)
+        # aborted every subsequent CREATE TABLE in this list.
+        "ALTER TABLE production_cycles ADD COLUMN IF NOT EXISTS raw_material_id UUID REFERENCES products(id)",
         # Per-product finished outputs at stage 4 (after wash)
         """
         CREATE TABLE IF NOT EXISTS production_cycle_outputs (

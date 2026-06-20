@@ -370,14 +370,26 @@ async def _run_tenant_ddl(slug: str):
 
     factory = await tenant_registry.get_session_factory(slug)
 
-    # Runtime tables (USB, notifications, compliance, camera, inventory, etc.)
-    try:
+    # Per-statement runner: one bad statement must never abort the rest
+    # (see app/main.py::_apply_all_ddl for the rationale).
+    async def _run_each(statements, kind: str):
+        applied = skipped = 0
         async with factory() as db:
-            for ddl in get_runtime_ddl():
-                await db.execute(text(ddl))
-            await db.commit()
-    except Exception as e:
-        logger.warning("Runtime DDL failed for %s: %s", slug, e)
+            for stmt in statements:
+                try:
+                    await db.execute(text(stmt))
+                    await db.commit()
+                    applied += 1
+                except Exception as e:
+                    await db.rollback()
+                    skipped += 1
+                    logger.warning("%s skipped for %s: %s -- %s",
+                                   kind, slug, e, " ".join(stmt.split())[:90])
+        if skipped:
+            logger.warning("%s for %s: %d applied, %d skipped", kind, slug, applied, skipped)
+
+    # Runtime tables (USB, notifications, compliance, camera, inventory, etc.)
+    await _run_each(get_runtime_ddl(), "Runtime DDL")
 
     # Supplier item-level table
     try:
@@ -406,13 +418,7 @@ async def _run_tenant_ddl(slug: str):
         logger.warning("master_supplier_id column failed for %s: %s", slug, e)
 
     # Column migrations
-    try:
-        async with factory() as db:
-            for col_mig in get_column_migrations():
-                await db.execute(text(col_mig))
-            await db.commit()
-    except Exception as e:
-        logger.warning("Column migrations failed for %s: %s", slug, e)
+    await _run_each(get_column_migrations(), "Column migration")
 
     logger.info("DDL migrations complete for tenant: %s", slug)
 
