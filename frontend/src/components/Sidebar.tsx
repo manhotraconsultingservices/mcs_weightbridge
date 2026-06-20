@@ -41,11 +41,13 @@ const HUB_CHILDREN: Record<string, string[]> = {
 };
 
 // Tenant module gating — if ALL listed modules are disabled, the hub is hidden.
+// Note: '/inventory-hub' is intentionally NOT gated — Products/Catalog/Production
+// are core features always available. The 'inventory' module gates only the
+// Store Inventory API (/api/v1/inventory) at the backend level.
 const HUB_MODULES: Record<string, string[]> = {
   '/weighbridge':   ['weighing'],
   '/sales':         ['invoicing', 'quotations'],
   '/procurement':   ['invoicing'],
-  '/inventory-hub': ['inventory'],
   '/accounts':      ['payments', 'gst_reports', 'compliance'],
   '/analytics':     ['reports'],
 };
