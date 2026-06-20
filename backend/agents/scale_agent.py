@@ -125,6 +125,48 @@ def setup_wizard():
     print()
 
 
+# ── CH340 Error 31 auto-recovery ─────────────────────────────────────────────
+
+def _try_reset_ch340(port: str) -> bool:
+    """
+    Recover a CH340 USB-Serial adapter from Windows Error 31
+    ('A device attached to the system is not functioning').
+    Cycles the device via PowerShell PnP commands without needing a human
+    to unplug the cable.  Returns True if a device was reset.
+    """
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command",
+             f"Get-PnpDevice | Where-Object {{ $_.FriendlyName -like '*({port})*' }} | "
+             "Select-Object -ExpandProperty InstanceId"],
+            capture_output=True, text=True, timeout=10,
+        )
+        instance_id = result.stdout.strip().splitlines()
+        if not instance_id:
+            log.debug("CH340 reset: no PnP device found for %s", port)
+            return False
+        instance_id = instance_id[0].strip()
+        log.warning("CH340 Error 31 on %s — cycling device %s", port, instance_id)
+        subprocess.run(
+            ["powershell", "-Command",
+             f"Disable-PnpDevice -InstanceId '{instance_id}' -Confirm:$false"],
+            capture_output=True, text=True, timeout=10,
+        )
+        time.sleep(3)
+        subprocess.run(
+            ["powershell", "-Command",
+             f"Enable-PnpDevice -InstanceId '{instance_id}' -Confirm:$false"],
+            capture_output=True, text=True, timeout=10,
+        )
+        time.sleep(2)
+        log.info("CH340 device reset complete for %s — will retry", port)
+        return True
+    except Exception as exc:
+        log.warning("CH340 auto-reset failed: %s", exc)
+        return False
+
+
 # ── Scale Reader ─────────────────────────────────────────────────────────────
 
 class ScaleReader:
@@ -308,7 +350,18 @@ class ScaleReader:
 
             except Exception as e:
                 self.connected = False
+                exc_str = str(e)
                 log.warning("Scale error on %s: %s — reconnecting in %ds", port, e, reconnect_delay)
+                # CH340 Error 31 auto-recovery: "A device attached to the system
+                # is not functioning" — happens when the USB-Serial adapter
+                # driver wedges after a power glitch or OS suspend/resume.
+                # Cycling the PnP device clears it without a human unplugging.
+                if "31" in exc_str and "functioning" in exc_str.lower():
+                    log.warning("CH340 Error 31 detected on %s — attempting device reset", port)
+                    if _try_reset_ch340(port):
+                        reconnect_delay = 5  # reset worked; retry sooner
+                        time.sleep(3)        # give driver time to re-enumerate
+                        continue
                 time.sleep(reconnect_delay)
                 reconnect_delay = min(reconnect_delay * 2, 60)
             finally:
