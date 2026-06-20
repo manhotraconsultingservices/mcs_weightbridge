@@ -84,6 +84,47 @@ async def ws_weight(websocket: WebSocket, tenant: str = Query("")):
         await manager.disconnect(websocket)
 
 
+@router.get("/api/v1/weight/ping")
+async def weight_ping(tenant: str = Query("")):
+    """Public no-auth diagnostic endpoint.
+    Returns whether the server has received any weight readings for this tenant.
+    Safe to open in a browser — no sensitive data exposed.
+    """
+    import time
+    from app.config import get_settings
+    settings = get_settings()
+
+    slug = tenant if (settings.MULTI_TENANT and tenant) else None
+    manager = _get_manager_for_tenant(slug)
+
+    if manager is None:
+        return {
+            "server": "ok",
+            "manager": "none — no weight pushes received yet for this tenant",
+            "scale_connected": False,
+            "weight_kg": None,
+            "last_received_ago_sec": None,
+        }
+
+    latest = manager.latest
+    last_ago = None
+    if hasattr(manager, "_last_received_at") and manager._last_received_at:
+        last_ago = round(time.time() - manager._last_received_at, 1)
+
+    return {
+        "server": "ok",
+        "manager": "active",
+        "scale_connected": bool(latest and latest.scale_connected),
+        "weight_kg": latest.weight_kg if latest else None,
+        "last_received_ago_sec": last_ago,
+        "hint": (
+            "Scale agent is pushing data — check WebSocket / browser console if UI still shows offline."
+            if (latest and latest.scale_connected) else
+            "No live readings yet. Check scale agent logs on the weighbridge PC."
+        ),
+    }
+
+
 @router.get("/api/v1/weight/status")
 async def weight_status(current_user: User = Depends(get_current_user)):
     from app.config import get_settings
