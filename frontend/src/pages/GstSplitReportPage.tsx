@@ -232,32 +232,29 @@ export default function GstSplitReportPage() {
       {/* Monthly table */}
       {data && data.monthly.length > 0 && (
         <Card>
-          <CardContent className="p-3">
-            <div className="text-sm font-semibold text-slate-700 mb-2">Per-Month Detail</div>
-            <table className="w-full text-sm">
-              <thead className="text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="text-left p-2">Month</th>
-                  <th className="text-right p-2 text-emerald-700">GST Count</th>
-                  <th className="text-right p-2 text-emerald-700">GST ₹</th>
-                  <th className="text-right p-2 text-amber-700">Cash Count</th>
-                  <th className="text-right p-2 text-amber-700">Cash ₹</th>
-                  <th className="text-right p-2">Total ₹</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {data.monthly.map(m => (
-                  <tr key={m.month} className="hover:bg-slate-50">
-                    <td className="p-2 font-medium">{m.label}</td>
-                    <td className="p-2 text-right">{m.gst_count}</td>
-                    <td className="p-2 text-right text-emerald-700">{INR(m.gst_amount)}</td>
-                    <td className="p-2 text-right">{m.non_gst_count}</td>
-                    <td className="p-2 text-right text-amber-700">{INR(m.non_gst_amount)}</td>
-                    <td className="p-2 text-right font-bold">{INR(Number(m.gst_amount) + Number(m.non_gst_amount))}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <CardContent className="p-0">
+            <div className="text-sm font-semibold text-slate-700 px-3 pt-3 pb-1">Per-Month Detail</div>
+            <DataTable<MonthlySplit>
+              id="gst-split.monthly"
+              data={data.monthly}
+              rowKey={r => r.month}
+              defaultSort={{ key: 'label', direction: 'asc' }}
+              exportFilename={`gst-split-monthly-${fromDate}-to-${toDate}`}
+              columns={[
+                { key: 'label',          label: 'Month',      accessor: r => r.label },
+                { key: 'gst_count',      label: 'GST Count',  accessor: r => r.gst_count,     type: 'number', align: 'right',
+                  format: v => <span className="text-emerald-700">{String(v)}</span> },
+                { key: 'gst_amount',     label: 'GST ₹',      accessor: r => r.gst_amount,     type: 'number', align: 'right',
+                  format: v => <span className="text-emerald-700">{INR(v as number)}</span>, exportValue: r => r.gst_amount },
+                { key: 'non_gst_count',  label: 'Cash Count', accessor: r => r.non_gst_count,  type: 'number', align: 'right',
+                  format: v => <span className="text-amber-700">{String(v)}</span> },
+                { key: 'non_gst_amount', label: 'Cash ₹',     accessor: r => r.non_gst_amount, type: 'number', align: 'right',
+                  format: v => <span className="text-amber-700">{INR(v as number)}</span>, exportValue: r => r.non_gst_amount },
+                { key: 'total_amount',   label: 'Total ₹',    accessor: r => Number(r.gst_amount) + Number(r.non_gst_amount), type: 'number', align: 'right',
+                  format: v => <span className="font-bold">{INR(v as number)}</span>,
+                  exportValue: r => Number(r.gst_amount) + Number(r.non_gst_amount) },
+              ]}
+            />
           </CardContent>
         </Card>
       )}

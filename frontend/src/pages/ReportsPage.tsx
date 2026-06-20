@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Download, TrendingUp, TrendingDown } from 'lucide-react';
+import { Search, TrendingUp, TrendingDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 
 const fmt = (n: number) => '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -14,7 +15,6 @@ const today = () => new Date().toISOString().slice(0, 10);
 const monthStart = () => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); };
 const yearStart = () => { const d = new Date(); return `${d.getFullYear()}-04-01`; };
 
-// Date preset helper
 type DatePreset = { label: string; from: () => string; to: () => string };
 const DATE_PRESETS: DatePreset[] = [
   { label: 'Today',      from: today,       to: today },
@@ -41,12 +41,6 @@ function DatePresetChips({ onSelect }: { onSelect: (from: string, to: string) =>
   );
 }
 
-function downloadCSV(filename: string, headers: string[], rows: (string | number | null)[][]) {
-  const lines = [headers.join(','), ...rows.map(r => r.map(c => `"${c ?? ''}"`).join(','))];
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
-}
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SalesRow { id: string; invoice_no: string; invoice_date: string; party_name: string; gstin: string | null; vehicle_no: string | null; net_weight: number | null; taxable_amount: number; cgst_amount: number; sgst_amount: number; igst_amount: number; grand_total: number; payment_status: string; }
@@ -61,6 +55,89 @@ interface PLData { period: string; summary: { total_revenue: number; total_cogs:
 
 interface StockItem { product_name: string; hsn_code: string; unit: string; rate: number; qty_purchased: number; value_purchased: number; qty_sold: number; value_sold: number; closing_qty: number; closing_value: number; }
 interface StockData { period: string; items: StockItem[]; totals: { qty_purchased_by_unit: Record<string, number>; qty_sold_by_unit: Record<string, number>; value_purchased: number; value_sold: number; closing_value: number; }; }
+
+// ── Column definitions ────────────────────────────────────────────────────────
+
+const SALES_COLS: ColumnDef<SalesRow>[] = [
+  { key: 'invoice_no',     label: 'Invoice No',    accessor: r => r.invoice_no,
+    format: v => <span className="font-mono text-xs font-medium">{String(v ?? '—')}</span> },
+  { key: 'invoice_date',   label: 'Date',          accessor: r => r.invoice_date, type: 'date' },
+  { key: 'party_name',     label: 'Party',         accessor: r => r.party_name },
+  { key: 'gstin',          label: 'GSTIN',         accessor: r => r.gstin ?? '—', defaultVisible: false },
+  { key: 'vehicle_no',     label: 'Vehicle',       accessor: r => r.vehicle_no ?? '—' },
+  { key: 'net_weight',     label: 'Net Wt (MT)',   accessor: r => r.net_weight, type: 'number', align: 'right',
+    format: v => fmtWt(v as number | null), exportValue: r => r.net_weight ?? '' },
+  { key: 'taxable_amount', label: 'Taxable',       accessor: r => r.taxable_amount, type: 'number', align: 'right',
+    format: v => fmt(v as number), exportValue: r => r.taxable_amount },
+  { key: 'cgst_amount',    label: 'CGST',          accessor: r => r.cgst_amount, type: 'number', align: 'right',
+    format: v => fmt(v as number), defaultVisible: false, exportValue: r => r.cgst_amount },
+  { key: 'sgst_amount',    label: 'SGST',          accessor: r => r.sgst_amount, type: 'number', align: 'right',
+    format: v => fmt(v as number), defaultVisible: false, exportValue: r => r.sgst_amount },
+  { key: 'igst_amount',    label: 'IGST',          accessor: r => r.igst_amount, type: 'number', align: 'right',
+    format: v => fmt(v as number), defaultVisible: false, exportValue: r => r.igst_amount },
+  { key: 'gst_total',      label: 'GST',           accessor: r => r.cgst_amount + r.sgst_amount + r.igst_amount, type: 'number', align: 'right',
+    format: v => fmt(v as number), exportValue: r => r.cgst_amount + r.sgst_amount + r.igst_amount },
+  { key: 'grand_total',    label: 'Total',         accessor: r => r.grand_total, type: 'number', align: 'right',
+    format: v => <span className="font-semibold">{fmt(v as number)}</span>, exportValue: r => r.grand_total },
+  { key: 'payment_status', label: 'Status',        accessor: r => r.payment_status, type: 'enum',
+    enumOptions: ['paid', 'partial', 'unpaid'],
+    format: v => {
+      const s = String(v);
+      return <span className={`text-[10px] px-1.5 py-0.5 rounded capitalize ${s === 'paid' ? 'bg-green-100 text-green-800' : s === 'partial' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>{s}</span>;
+    } },
+];
+
+const WEIGHT_COLS: ColumnDef<WeightRow>[] = [
+  { key: 'token_no',      label: 'Token No',   accessor: r => r.token_no,   type: 'number',
+    format: v => <span className="font-medium">#{String(v ?? '')}</span> },
+  { key: 'token_date',    label: 'Date',       accessor: r => r.token_date, type: 'date' },
+  { key: 'token_type',    label: 'Type',       accessor: r => r.token_type, type: 'enum',
+    enumOptions: ['sale', 'purchase', 'general'] },
+  { key: 'vehicle_no',    label: 'Vehicle',    accessor: r => r.vehicle_no ?? '—' },
+  { key: 'party_name',    label: 'Party',      accessor: r => r.party_name ?? '—' },
+  { key: 'product_name',  label: 'Product',    accessor: r => r.product_name ?? '—', defaultVisible: false },
+  { key: 'gross_weight',  label: 'Gross (MT)', accessor: r => r.gross_weight, type: 'number', align: 'right',
+    format: v => fmtWt(v as number | null), exportValue: r => r.gross_weight ?? '' },
+  { key: 'tare_weight',   label: 'Tare (MT)',  accessor: r => r.tare_weight,  type: 'number', align: 'right',
+    format: v => fmtWt(v as number | null), exportValue: r => r.tare_weight ?? '' },
+  { key: 'net_weight',    label: 'Net (MT)',   accessor: r => r.net_weight,   type: 'number', align: 'right',
+    format: v => <span className="font-semibold">{fmtWt(v as number | null)}</span>, exportValue: r => r.net_weight ?? '' },
+  { key: 'is_manual',     label: 'Manual',     accessor: r => r.is_manual_weight ? 'Yes' : 'No', defaultVisible: false },
+];
+
+const PL_COLS: ColumnDef<PLMonth>[] = [
+  { key: 'label',          label: 'Month',       accessor: r => r.label },
+  { key: 'revenue',        label: 'Revenue',     accessor: r => r.revenue, type: 'number', align: 'right',
+    format: v => <span className="text-green-700 font-medium">{fmt(v as number)}</span>, exportValue: r => r.revenue },
+  { key: 'cogs',           label: 'Purchases',   accessor: r => r.cogs,    type: 'number', align: 'right',
+    format: v => <span className="text-red-600">{fmt(v as number)}</span>, exportValue: r => r.cogs },
+  { key: 'gross_profit',   label: 'Gross Profit', accessor: r => r.gross_profit, type: 'number', align: 'right',
+    format: v => <span className={`font-semibold ${(v as number) >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(v as number)}</span>, exportValue: r => r.gross_profit },
+  { key: 'margin_pct',     label: 'Margin %',    accessor: r => r.margin_pct, type: 'number', align: 'right',
+    format: v => <span className={(v as number) >= 0 ? 'text-green-700' : 'text-red-600'}>{(v as number).toFixed(1)}%</span>, exportValue: r => r.margin_pct },
+  { key: 'sale_count',     label: 'Sales #',     accessor: r => r.sale_count, type: 'number', align: 'right', defaultVisible: false },
+  { key: 'purchase_count', label: 'Purchases #', accessor: r => r.purchase_count, type: 'number', align: 'right', defaultVisible: false },
+];
+
+const STOCK_COLS: ColumnDef<StockItem>[] = [
+  { key: 'product_name',    label: 'Product',         accessor: r => r.product_name },
+  { key: 'hsn_code',        label: 'HSN',             accessor: r => r.hsn_code, defaultVisible: false },
+  { key: 'unit',            label: 'Unit',            accessor: r => r.unit, defaultVisible: false },
+  { key: 'qty_purchased',   label: 'Qty Purchased',   accessor: r => r.qty_purchased, type: 'number', align: 'right',
+    format: v => (v as number).toLocaleString('en-IN', { maximumFractionDigits: 3 }) },
+  { key: 'value_purchased', label: 'Value Purchased', accessor: r => r.value_purchased, type: 'number', align: 'right',
+    format: v => fmt(v as number), exportValue: r => r.value_purchased },
+  { key: 'qty_sold',        label: 'Qty Sold',        accessor: r => r.qty_sold, type: 'number', align: 'right',
+    format: v => (v as number).toLocaleString('en-IN', { maximumFractionDigits: 3 }) },
+  { key: 'value_sold',      label: 'Value Sold',      accessor: r => r.value_sold, type: 'number', align: 'right',
+    format: v => fmt(v as number), exportValue: r => r.value_sold },
+  { key: 'closing_qty',     label: 'Closing Qty',     accessor: r => r.closing_qty, type: 'number', align: 'right',
+    format: v => <span className={`font-semibold ${(v as number) < 0 ? 'text-red-600' : ''}`}>{(v as number).toLocaleString('en-IN', { maximumFractionDigits: 3 })}</span>,
+    exportValue: r => r.closing_qty },
+  { key: 'closing_value',   label: 'Closing Value',   accessor: r => r.closing_value, type: 'number', align: 'right',
+    format: v => <span className={`font-semibold ${(v as number) < 0 ? 'text-red-600' : ''}`}>{fmt(v as number)}</span>,
+    exportValue: r => r.closing_value },
+];
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
@@ -126,14 +203,14 @@ export default function ReportsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Reports</h1>
-        <p className="text-muted-foreground">Sales register · Weight register · P&L · Stock summary</p>
+        <p className="text-muted-foreground">Sales register · Weight register · P&amp;L · Stock summary</p>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="sales">Sales / Purchase Register</TabsTrigger>
           <TabsTrigger value="weight">Weight Register</TabsTrigger>
-          <TabsTrigger value="pl">Profit & Loss</TabsTrigger>
+          <TabsTrigger value="pl">Profit &amp; Loss</TabsTrigger>
           <TabsTrigger value="stock">Stock Summary</TabsTrigger>
         </TabsList>
 
@@ -151,49 +228,28 @@ export default function ReportsPage() {
               </Select>
             </div>
             <Button onClick={fetchSales} disabled={salesLoading}><Search className="mr-2 h-4 w-4" />{salesLoading ? 'Loading…' : 'Generate'}</Button>
-            {salesData && salesData.items.length > 0 && (
-              <Button variant="outline" onClick={() => downloadCSV(`sales-register-${salesFrom}-${salesTo}.csv`, ['Invoice No', 'Date', 'Party', 'GSTIN', 'Vehicle', 'Net Wt (MT)', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total', 'Status'], salesData.items.map(r => [r.invoice_no, r.invoice_date, r.party_name, r.gstin, r.vehicle_no, r.net_weight, r.taxable_amount, r.cgst_amount, r.sgst_amount, r.igst_amount, r.grand_total, r.payment_status]))}>
-                <Download className="mr-2 h-4 w-4" /> CSV
-              </Button>
-            )}
           </div>
           {salesData && (
-            <Card><CardContent className="p-0">
-              <table className="w-full text-sm">
-                <thead><tr className="border-b bg-muted/50">
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Invoice</th>
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Party</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Net Wt (MT)</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Taxable</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">GST</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Total</th>
-                  <th className="px-3 py-2 text-center font-medium text-muted-foreground">Status</th>
-                </tr></thead>
-                <tbody>
-                  {salesData.items.map(r => (
-                    <tr key={r.id} className="border-b hover:bg-muted/20">
-                      <td className="px-3 py-2"><p className="font-mono text-xs font-medium">{r.invoice_no}</p><p className="text-xs text-muted-foreground">{r.invoice_date}</p></td>
-                      <td className="px-3 py-2"><p className="text-sm">{r.party_name}</p>{r.gstin && <p className="text-xs text-muted-foreground font-mono">{r.gstin}</p>}</td>
-                      <td className="px-3 py-2 text-right text-muted-foreground">{fmtWt(r.net_weight)}</td>
-                      <td className="px-3 py-2 text-right">{fmt(r.taxable_amount)}</td>
-                      <td className="px-3 py-2 text-right text-muted-foreground">{fmt(r.cgst_amount + r.sgst_amount + r.igst_amount)}</td>
-                      <td className="px-3 py-2 text-right font-semibold">{fmt(r.grand_total)}</td>
-                      <td className="px-3 py-2 text-center"><span className={`text-[10px] px-1.5 py-0.5 rounded capitalize ${r.payment_status === 'paid' ? 'bg-green-100 text-green-800' : r.payment_status === 'partial' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>{r.payment_status}</span></td>
-                    </tr>
-                  ))}
-                  {salesData.items.length > 0 && (
-                    <tr className="bg-muted/30 font-semibold">
-                      <td colSpan={3} className="px-3 py-2">Total ({salesData.count} invoices)</td>
-                      <td className="px-3 py-2 text-right">{fmt(salesData.totals.taxable_amount)}</td>
-                      <td className="px-3 py-2 text-right">{fmt(salesData.totals.cgst + salesData.totals.sgst + salesData.totals.igst)}</td>
-                      <td className="px-3 py-2 text-right">{fmt(salesData.totals.grand_total)}</td>
-                      <td />
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-              {salesData.items.length === 0 && <div className="py-12 text-center text-muted-foreground text-sm">No records found.</div>}
-            </CardContent></Card>
+            <div className="space-y-3">
+              <DataTable<SalesRow>
+                id="reports.sales"
+                columns={SALES_COLS}
+                data={salesData.items}
+                loading={salesLoading}
+                rowKey={r => r.id}
+                exportFilename={`sales-register-${salesFrom}-${salesTo}`}
+                defaultSort={{ key: 'invoice_date', direction: 'desc' }}
+                emptyMessage="No records found."
+              />
+              {salesData.items.length > 0 && (
+                <div className="flex flex-wrap gap-4 rounded-md border bg-muted/30 px-4 py-2 text-sm">
+                  <span className="text-muted-foreground">{salesData.count} invoices</span>
+                  <span>Taxable: <strong>{fmt(salesData.totals.taxable_amount)}</strong></span>
+                  <span>GST: <strong>{fmt(salesData.totals.cgst + salesData.totals.sgst + salesData.totals.igst)}</strong></span>
+                  <span>Total: <strong>{fmt(salesData.totals.grand_total)}</strong></span>
+                </div>
+              )}
+            </div>
           )}
         </TabsContent>
 
@@ -211,44 +267,25 @@ export default function ReportsPage() {
               </Select>
             </div>
             <Button onClick={fetchWeight} disabled={wtLoading}><Search className="mr-2 h-4 w-4" />{wtLoading ? 'Loading…' : 'Generate'}</Button>
-            {wtData && wtData.items.length > 0 && (
-              <Button variant="outline" onClick={() => downloadCSV(`weight-register-${wtFrom}-${wtTo}.csv`, ['Token No', 'Date', 'Type', 'Vehicle', 'Party', 'Product', 'Gross (MT)', 'Tare (MT)', 'Net (MT)', 'Manual'], wtData.items.map(r => [r.token_no, r.token_date, r.token_type, r.vehicle_no, r.party_name, r.product_name, r.gross_weight, r.tare_weight, r.net_weight, r.is_manual_weight ? 'Yes' : 'No']))}>
-                <Download className="mr-2 h-4 w-4" /> CSV
-              </Button>
-            )}
           </div>
           {wtData && (
-            <Card><CardContent className="p-0">
-              <table className="w-full text-sm">
-                <thead><tr className="border-b bg-muted/50">
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Token</th>
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Vehicle</th>
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Party / Product</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Gross (MT)</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Tare (MT)</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Net (MT)</th>
-                </tr></thead>
-                <tbody>
-                  {wtData.items.map(r => (
-                    <tr key={r.id} className="border-b hover:bg-muted/20">
-                      <td className="px-3 py-2"><p className="font-medium">#{r.token_no}</p><p className="text-xs text-muted-foreground">{r.token_date} · {r.token_type}</p></td>
-                      <td className="px-3 py-2 font-mono text-xs">{r.vehicle_no || '—'}</td>
-                      <td className="px-3 py-2"><p className="text-sm">{r.party_name || '—'}</p>{r.product_name && <p className="text-xs text-muted-foreground">{r.product_name}</p>}</td>
-                      <td className="px-3 py-2 text-right">{fmtWt(r.gross_weight)}</td>
-                      <td className="px-3 py-2 text-right">{fmtWt(r.tare_weight)}</td>
-                      <td className="px-3 py-2 text-right font-semibold">{fmtWt(r.net_weight)}</td>
-                    </tr>
-                  ))}
-                  {wtData.items.length > 0 && (
-                    <tr className="bg-muted/30 font-semibold">
-                      <td colSpan={5} className="px-3 py-2">Total ({wtData.count} tokens)</td>
-                      <td className="px-3 py-2 text-right">{fmtWt(wtData.total_net_weight)}</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-              {wtData.items.length === 0 && <div className="py-12 text-center text-muted-foreground text-sm">No completed tokens found.</div>}
-            </CardContent></Card>
+            <div className="space-y-3">
+              <DataTable<WeightRow>
+                id="reports.weight"
+                columns={WEIGHT_COLS}
+                data={wtData.items}
+                loading={wtLoading}
+                rowKey={r => r.id}
+                exportFilename={`weight-register-${wtFrom}-${wtTo}`}
+                emptyMessage="No completed tokens found."
+              />
+              {wtData.items.length > 0 && (
+                <div className="flex flex-wrap gap-4 rounded-md border bg-muted/30 px-4 py-2 text-sm">
+                  <span className="text-muted-foreground">{wtData.count} tokens</span>
+                  <span>Total Net Weight: <strong>{fmtWt(wtData.total_net_weight)} MT</strong></span>
+                </div>
+              )}
+            </div>
           )}
         </TabsContent>
 
@@ -259,16 +296,10 @@ export default function ReportsPage() {
             <div className="space-y-1"><Label className="text-xs">From</Label><Input type="date" className="w-36" value={plFrom} onChange={e => setPlFrom(e.target.value)} /></div>
             <div className="space-y-1"><Label className="text-xs">To</Label><Input type="date" className="w-36" value={plTo} onChange={e => setPlTo(e.target.value)} /></div>
             <Button onClick={fetchPL} disabled={plLoading}><Search className="mr-2 h-4 w-4" />{plLoading ? 'Loading…' : 'Generate'}</Button>
-            {plData && plData.monthly.length > 0 && (
-              <Button variant="outline" onClick={() => downloadCSV(`pl-report-${plFrom}-${plTo}.csv`, ['Month', 'Revenue', 'Purchases (COGS)', 'Gross Profit', 'Margin %', 'Sale Invoices', 'Purchase Invoices'], plData.monthly.map(r => [r.label, r.revenue, r.cogs, r.gross_profit, r.margin_pct, r.sale_count, r.purchase_count]))}>
-                <Download className="mr-2 h-4 w-4" /> CSV
-              </Button>
-            )}
           </div>
 
           {plData && (
             <div className="space-y-4">
-              {/* Summary cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <Card>
                   <CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-green-600" /> Total Revenue</CardTitle></CardHeader>
@@ -288,41 +319,17 @@ export default function ReportsPage() {
                 </Card>
               </div>
 
-              {/* Monthly breakdown */}
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Monthly Breakdown</CardTitle></CardHeader>
                 <CardContent className="p-0">
-                  <table className="w-full text-sm">
-                    <thead><tr className="border-b bg-muted/50">
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">Month</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">Revenue</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">Purchases</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">Gross Profit</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">Margin</th>
-                      <th className="px-3 py-2 text-center font-medium text-muted-foreground">Invoices</th>
-                    </tr></thead>
-                    <tbody>
-                      {plData.monthly.map((r, i) => (
-                        <tr key={i} className="border-b hover:bg-muted/20">
-                          <td className="px-3 py-2 font-medium">{r.label}</td>
-                          <td className="px-3 py-2 text-right text-green-700 font-medium">{fmt(r.revenue)}</td>
-                          <td className="px-3 py-2 text-right text-red-600">{fmt(r.cogs)}</td>
-                          <td className={`px-3 py-2 text-right font-semibold ${r.gross_profit >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(r.gross_profit)}</td>
-                          <td className={`px-3 py-2 text-right text-sm ${r.margin_pct >= 0 ? 'text-green-700' : 'text-red-600'}`}>{r.margin_pct.toFixed(1)}%</td>
-                          <td className="px-3 py-2 text-center text-xs text-muted-foreground">{r.sale_count}S / {r.purchase_count}P</td>
-                        </tr>
-                      ))}
-                      <tr className="bg-muted/30 font-bold border-t-2">
-                        <td className="px-3 py-2">Total</td>
-                        <td className="px-3 py-2 text-right text-green-700">{fmt(plData.summary.total_revenue)}</td>
-                        <td className="px-3 py-2 text-right text-red-600">{fmt(plData.summary.total_cogs)}</td>
-                        <td className={`px-3 py-2 text-right ${plData.summary.gross_profit >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(plData.summary.gross_profit)}</td>
-                        <td className={`px-3 py-2 text-right ${plData.summary.margin_pct >= 0 ? 'text-green-700' : 'text-red-600'}`}>{plData.summary.margin_pct.toFixed(1)}%</td>
-                        <td />
-                      </tr>
-                    </tbody>
-                  </table>
-                  {plData.monthly.length === 0 && <div className="py-12 text-center text-muted-foreground text-sm">No finalized invoices in this period.</div>}
+                  <DataTable<PLMonth>
+                    id="reports.pl"
+                    columns={PL_COLS}
+                    data={plData.monthly}
+                    rowKey={(_, i) => String(i)}
+                    exportFilename={`pl-report-${plFrom}-${plTo}`}
+                    emptyMessage="No finalized invoices in this period."
+                  />
                 </CardContent>
               </Card>
             </div>
@@ -336,60 +343,42 @@ export default function ReportsPage() {
             <div className="space-y-1"><Label className="text-xs">From</Label><Input type="date" className="w-36" value={stFrom} onChange={e => setStFrom(e.target.value)} /></div>
             <div className="space-y-1"><Label className="text-xs">To</Label><Input type="date" className="w-36" value={stTo} onChange={e => setStTo(e.target.value)} /></div>
             <Button onClick={fetchStock} disabled={stLoading}><Search className="mr-2 h-4 w-4" />{stLoading ? 'Loading…' : 'Generate'}</Button>
-            {stData && stData.items.length > 0 && (
-              <Button variant="outline" onClick={() => downloadCSV(`stock-summary-${stFrom}-${stTo}.csv`, ['Product', 'HSN', 'Unit', 'Rate', 'Qty Purchased', 'Value Purchased', 'Qty Sold', 'Value Sold', 'Closing Qty', 'Closing Value'], stData.items.map(r => [r.product_name, r.hsn_code, r.unit, r.rate, r.qty_purchased, r.value_purchased, r.qty_sold, r.value_sold, r.closing_qty, r.closing_value]))}>
-                <Download className="mr-2 h-4 w-4" /> CSV
-              </Button>
-            )}
           </div>
 
           {stData && (
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-4">
-                <Card><CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Total Purchase Value</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{fmt(stData.totals.value_purchased)}</p><p className="text-xs text-muted-foreground">{Object.entries(stData.totals.qty_purchased_by_unit).map(([u, q]) => `${q.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${u}`).join(' · ') || '—'}</p></CardContent></Card>
-                <Card><CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Total Sales Value</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{fmt(stData.totals.value_sold)}</p><p className="text-xs text-muted-foreground">{Object.entries(stData.totals.qty_sold_by_unit).map(([u, q]) => `${q.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${u}`).join(' · ') || '—'}</p></CardContent></Card>
-                <Card><CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Closing Stock Value</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{fmt(stData.totals.closing_value)}</p></CardContent></Card>
+                <Card>
+                  <CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Total Purchase Value</CardTitle></CardHeader>
+                  <CardContent>
+                    <p className="text-2xl font-bold">{fmt(stData.totals.value_purchased)}</p>
+                    <p className="text-xs text-muted-foreground">{Object.entries(stData.totals.qty_purchased_by_unit).map(([u, q]) => `${q.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${u}`).join(' · ') || '—'}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Total Sales Value</CardTitle></CardHeader>
+                  <CardContent>
+                    <p className="text-2xl font-bold">{fmt(stData.totals.value_sold)}</p>
+                    <p className="text-xs text-muted-foreground">{Object.entries(stData.totals.qty_sold_by_unit).map(([u, q]) => `${q.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${u}`).join(' · ') || '—'}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Closing Stock Value</CardTitle></CardHeader>
+                  <CardContent><p className="text-2xl font-bold">{fmt(stData.totals.closing_value)}</p></CardContent>
+                </Card>
               </div>
 
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Product-wise Stock</CardTitle></CardHeader>
                 <CardContent className="p-0">
-                  <table className="w-full text-sm">
-                    <thead><tr className="border-b bg-muted/50">
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">Product</th>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">HSN / Unit</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">Purchased</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">Sold</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">Closing Qty</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">Closing Value</th>
-                    </tr></thead>
-                    <tbody>
-                      {stData.items.map((r, i) => (
-                        <tr key={i} className="border-b hover:bg-muted/20">
-                          <td className="px-3 py-2 font-medium">{r.product_name}</td>
-                          <td className="px-3 py-2 text-muted-foreground text-xs"><p className="font-mono">{r.hsn_code}</p><p>{r.unit}</p></td>
-                          <td className="px-3 py-2 text-right">
-                            <p>{r.qty_purchased.toLocaleString('en-IN', { maximumFractionDigits: 3 })}</p>
-                            <p className="text-xs text-muted-foreground">{fmt(r.value_purchased)}</p>
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <p>{r.qty_sold.toLocaleString('en-IN', { maximumFractionDigits: 3 })}</p>
-                            <p className="text-xs text-muted-foreground">{fmt(r.value_sold)}</p>
-                          </td>
-                          <td className={`px-3 py-2 text-right font-semibold ${r.closing_qty < 0 ? 'text-red-600' : ''}`}>{r.closing_qty.toLocaleString('en-IN', { maximumFractionDigits: 3 })}</td>
-                          <td className={`px-3 py-2 text-right font-semibold ${r.closing_value < 0 ? 'text-red-600' : ''}`}>{fmt(r.closing_value)}</td>
-                        </tr>
-                      ))}
-                      {stData.items.length > 0 && (
-                        <tr className="bg-muted/30 font-bold border-t-2">
-                          <td colSpan={4} className="px-3 py-2">Total ({stData.items.length} products)</td>
-                          <td className="px-3 py-2 text-right">{fmt(stData.totals.value_purchased)} in / {fmt(stData.totals.value_sold)} out</td>
-                          <td className="px-3 py-2 text-right">{fmt(stData.totals.closing_value)}</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                  {stData.items.length === 0 && <div className="py-12 text-center text-muted-foreground text-sm">No stock movements found. Add products to invoices to track stock.</div>}
+                  <DataTable<StockItem>
+                    id="reports.stock"
+                    columns={STOCK_COLS}
+                    data={stData.items}
+                    rowKey={(_, i) => String(i)}
+                    exportFilename={`stock-summary-${stFrom}-${stTo}`}
+                    emptyMessage="No stock movements found. Add products to invoices to track stock."
+                  />
                 </CardContent>
               </Card>
             </div>
