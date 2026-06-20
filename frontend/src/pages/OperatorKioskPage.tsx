@@ -379,7 +379,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
           tyre_count: draft.tyre_count,
         });
         speak(
-          `Volume token created. ${draft.product.name}, ${cft} cubic feet, for ${draft.party.name}. Bill will print.`,
+          `Volume token created. ${draft.product.name}, ${m3} cubic metres, for ${draft.party.name}. Bill will print.`,
         );
         onProceed(data);
         return;
