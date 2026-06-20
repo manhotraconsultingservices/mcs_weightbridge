@@ -196,9 +196,10 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const loadGatePasses = useCallback(async () => {
     try {
       const { data } = await api.get<{ items: GatePass[] }>('/api/v1/gate/passes', {
-        params: { status: 'inside', unlinked: true, page_size: 200 },
+        params: { unlinked: true, page_size: 200 },
       });
-      setOpenGatePasses(data.items ?? []);
+      // Show inside + exited passes (both need a token linked); skip cancelled
+      setOpenGatePasses((data.items ?? []).filter(gp => gp.status !== 'cancelled'));
     } catch { /* silent */ }
   }, []);
 
@@ -782,6 +783,9 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
                       <SelectItem key={gp.id} value={gp.id} className="text-xs">
                         <span className="font-mono font-semibold">{gp.gate_pass_no}</span>
                         <span className="ml-2">{gp.vehicle_no}</span>
+                        {gp.status === 'exited' && (
+                          <span className="ml-1.5 rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-500">exited</span>
+                        )}
                         {gp.driver_name && <span className="ml-1 text-muted-foreground">· {gp.driver_name}</span>}
                       </SelectItem>
                     ))}
