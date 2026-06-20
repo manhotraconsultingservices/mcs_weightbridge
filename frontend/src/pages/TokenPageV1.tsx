@@ -9,7 +9,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Search, Scale, CheckCircle2, XCircle, Loader2,
   Truck, Package, User, Wifi, WifiOff, ArrowRight,
-  AlertCircle, RefreshCw, Camera, Download, Plus,
+  AlertCircle, RefreshCw, Camera, Download, Plus, Settings2,
 } from 'lucide-react';
 import { PrintButton } from '@/components/PrintButton';
 import { downloadCsv } from '@/components/DataTable';
@@ -46,6 +46,21 @@ const STATUS_CONFIG = {
   COMPLETED:     { label: 'Completed',         color: 'bg-green-100 text-green-700 border-green-200',  dot: 'bg-green-500'  },
   CANCELLED:     { label: 'Cancelled',         color: 'bg-red-100 text-red-700 border-red-200',        dot: 'bg-red-400'    },
 } as const;
+
+const TOKEN_COL_DEFS = [
+  { key: 'token_no', label: '#',           width: '48px',                 alwaysVisible: true  },
+  { key: 'vehicle',  label: 'Vehicle',     width: '110px',                alwaysVisible: true  },
+  { key: 'party',    label: 'Party',       width: 'minmax(140px, 1.4fr)', alwaysVisible: false },
+  { key: 'product',  label: 'Material',    width: 'minmax(110px, 1fr)',   alwaysVisible: false },
+  { key: 'gross',    label: 'Gross (MT)',  width: '80px',                 alwaysVisible: false },
+  { key: 'tare',     label: 'Tare (MT)',   width: '80px',                 alwaysVisible: false },
+  { key: 'net',      label: 'Net (MT)',    width: '160px',                alwaysVisible: true  },
+  { key: 'actions',  label: 'Actions',     width: '60px',                 alwaysVisible: true  },
+] as const;
+
+type TokenColKey = typeof TOKEN_COL_DEFS[number]['key'];
+const DEFAULT_TOKEN_COLS: TokenColKey[] = ['token_no', 'vehicle', 'party', 'product', 'gross', 'tare', 'net', 'actions'];
+const TOKEN_COLS_LS = 'dt.tokens-v1.visible';
 
 
 // Weight values are stored in kg in the DB. UI displays MT.
@@ -1480,6 +1495,38 @@ export default function TokenPageV1() {
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState(today());
   const [dateTo, setDateTo] = useState(today());
+
+  // Column visibility — persisted to localStorage
+  const [visibleCols, setVisibleCols] = useState<TokenColKey[]>(() => {
+    try {
+      const s = localStorage.getItem(TOKEN_COLS_LS);
+      if (s) return JSON.parse(s) as TokenColKey[];
+    } catch { /* ignore */ }
+    return DEFAULT_TOKEN_COLS;
+  });
+  const [colPickerOpen, setColPickerOpen] = useState(false);
+  const colPickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!colPickerOpen) return;
+    function onDown(e: MouseEvent) {
+      if (colPickerRef.current && !colPickerRef.current.contains(e.target as Node)) setColPickerOpen(false);
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [colPickerOpen]);
+
+  function toggleCol(key: TokenColKey) {
+    setVisibleCols(prev => {
+      const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
+      localStorage.setItem(TOKEN_COLS_LS, JSON.stringify(next));
+      return next;
+    });
+  }
+  function resetCols() {
+    setVisibleCols(DEFAULT_TOKEN_COLS);
+    localStorage.setItem(TOKEN_COLS_LS, JSON.stringify(DEFAULT_TOKEN_COLS));
+  }
   const [selectedStatuses, setSelectedStatuses] = useState<Set<TokenStatus>>(
     new Set(DEFAULT_VISIBLE_STATUSES)
   );
@@ -1572,7 +1619,7 @@ export default function TokenPageV1() {
   // split the 1fr columns shrink to zero and `break-words` falls back to
   // character-level wrapping (e.g. "T o u r N o i d a" rendered vertically).
   // Weight columns widened slightly so "10.000 MT / 235 CFT" fits on one line.
-  const COLS = '48px 110px minmax(140px, 1.4fr) minmax(110px, 1fr) 80px 80px 160px 60px';
+  const COLS = TOKEN_COL_DEFS.filter(c => visibleCols.includes(c.key)).map(c => c.width).join(' ');
 
   return (
     <div className="h-[calc(100vh-7rem)] overflow-hidden">
@@ -1699,6 +1746,42 @@ export default function TokenPageV1() {
               <Download className="h-3 w-3" />
               CSV
             </Button>
+
+            {/* Column picker */}
+            <div className="relative shrink-0" ref={colPickerRef}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground h-7 gap-1 text-xs"
+                onClick={() => setColPickerOpen(o => !o)}
+                title="Show/hide columns"
+              >
+                <Settings2 className="h-3.5 w-3.5" />
+              </Button>
+              {colPickerOpen && (
+                <div className="absolute right-0 mt-1 z-50 w-52 rounded-md border bg-popover p-2 shadow-md">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-medium text-muted-foreground">Show columns</p>
+                    <button type="button" className="text-[11px] text-muted-foreground hover:text-foreground px-1 underline underline-offset-2" onClick={resetCols}>
+                      Reset
+                    </button>
+                  </div>
+                  <div className="space-y-1">
+                    {TOKEN_COL_DEFS.filter(c => !c.alwaysVisible).map(c => (
+                      <label key={c.key} className="flex items-center gap-2 rounded px-2 py-1 text-xs hover:bg-muted cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={visibleCols.includes(c.key)}
+                          onChange={() => toggleCol(c.key)}
+                          className="h-3.5 w-3.5"
+                        />
+                        <span>{c.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Status filter pills */}
@@ -1743,14 +1826,14 @@ export default function TokenPageV1() {
             className="grid gap-x-1 px-3 py-1.5 border-b bg-muted/20 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground shrink-0"
             style={{ gridTemplateColumns: COLS }}
           >
-            <div>#</div>
-            <div>{t('token.vehicle')}</div>
-            <div>{t('token.party')}</div>
-            <div>{t('token.product')}</div>
-            <div className="text-right">{t('token.grossWeight')} (MT)</div>
-            <div className="text-right">{t('token.tareWeight')} (MT)</div>
-            <div className="text-right">{t('token.netWeight')} (MT)</div>
-            <div className="text-center">Act</div>
+            {visibleCols.includes('token_no') && <div>#</div>}
+            {visibleCols.includes('vehicle')  && <div>{t('token.vehicle')}</div>}
+            {visibleCols.includes('party')    && <div>{t('token.party')}</div>}
+            {visibleCols.includes('product')  && <div>{t('token.product')}</div>}
+            {visibleCols.includes('gross')    && <div className="text-right">{t('token.grossWeight')} (MT)</div>}
+            {visibleCols.includes('tare')     && <div className="text-right">{t('token.tareWeight')} (MT)</div>}
+            {visibleCols.includes('net')      && <div className="text-right">{t('token.netWeight')} (MT)</div>}
+            {visibleCols.includes('actions')  && <div className="text-center">Act</div>}
           </div>
 
           {/* Table body */}
@@ -1785,6 +1868,7 @@ export default function TokenPageV1() {
                     onClick={() => setTokenModalId(token.id)}
                   >
                     {/* Token # + gate pass */}
+                    {visibleCols.includes('token_no') && (
                     <div className="min-w-0">
                       <p className="font-bold text-primary text-xs whitespace-nowrap">
                         {token.token_no != null ? `#${token.token_no}` : <span className="text-muted-foreground italic">—</span>}
@@ -1796,8 +1880,10 @@ export default function TokenPageV1() {
                         </p>
                       )}
                     </div>
+                    )}
 
                     {/* Vehicle — Indian plates: MH12AB1234 (10 chars), no break */}
+                    {visibleCols.includes('vehicle') && (
                     <div className="min-w-0">
                       <div className="flex items-center gap-1">
                         <p className="font-mono font-semibold text-xs tracking-wide whitespace-nowrap overflow-hidden text-ellipsis" title={token.vehicle_no}>
@@ -1818,34 +1904,46 @@ export default function TokenPageV1() {
                         </p>
                       )}
                     </div>
+                    )}
 
                     {/* Party — single line with ellipsis; full name on hover. */}
+                    {visibleCols.includes('party') && (
                     <div className="min-w-0">
                       {token.party
                         ? <p className="text-xs truncate" title={token.party.name}>{token.party.name}</p>
                         : <p className="text-muted-foreground text-xs">—</p>
                       }
                     </div>
+                    )}
 
                     {/* Material — single line with ellipsis; full name on hover. */}
+                    {visibleCols.includes('product') && (
                     <div className="min-w-0">
                       {token.product
                         ? <p className="text-xs truncate text-muted-foreground" title={token.product.name}>{token.product.name}</p>
                         : <p className="text-muted-foreground text-xs">—</p>
                       }
                     </div>
+                    )}
 
                     {/* Weights in MT — never wrap */}
+                    {visibleCols.includes('gross') && (
                     <div className="text-right font-mono text-xs text-muted-foreground whitespace-nowrap">{mtFmt(token.gross_weight)}</div>
+                    )}
+                    {visibleCols.includes('tare') && (
                     <div className="text-right font-mono text-xs text-muted-foreground whitespace-nowrap">{mtFmt(token.tare_weight)}</div>
+                    )}
+                    {visibleCols.includes('net') && (
                     <div className="text-right font-mono text-xs font-bold whitespace-nowrap" title={dualFmt(token.net_weight, token.product?.bulk_density)}>
                       {token.net_weight != null
                         ? <span className="text-primary">{dualFmt(token.net_weight, token.product?.bulk_density)}</span>
                         : <span className="text-muted-foreground">—</span>
                       }
                     </div>
+                    )}
 
                     {/* Actions — centered, stop row click */}
+                    {visibleCols.includes('actions') && (
                     <div className="flex items-center justify-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
                       {active && (
                         <Button
@@ -1876,6 +1974,7 @@ export default function TokenPageV1() {
                         </Button>
                       )}
                     </div>
+                    )}
                   </div>
                   );
                 })}
