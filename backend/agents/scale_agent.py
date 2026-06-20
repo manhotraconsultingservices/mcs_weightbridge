@@ -233,11 +233,27 @@ class ScaleReader:
                 except _queue.Empty:
                     continue
                 try:
-                    requests.post(api_url, json=payload, timeout=5)
-                    self.push_count += 1
-                    if not self.cloud_online:
-                        log.info("Cloud reachable again — weight streaming resumed")
-                    self.cloud_online = True
+                    resp = requests.post(api_url, json=payload, timeout=5)
+                    if resp.status_code == 403:
+                        # Agent key rejected — log every time so operator notices.
+                        self.error_count += 1
+                        self.cloud_online = False
+                        log.error(
+                            "AGENT KEY REJECTED (403) — check agent_key in scale_config.json. "
+                            "Tenant: %s  URL: %s",
+                            payload.get("tenant"), api_url,
+                        )
+                    elif not resp.ok:
+                        self.error_count += 1
+                        self.cloud_online = False
+                        if self.error_count % 20 == 1:
+                            log.warning("Server error %d on push (count=%d): %s",
+                                        resp.status_code, self.error_count, resp.text[:200])
+                    else:
+                        self.push_count += 1
+                        if not self.cloud_online:
+                            log.info("Cloud reachable again — weight streaming resumed")
+                        self.cloud_online = True
                 except requests.RequestException as e:
                     self.error_count += 1
                     self.cloud_online = False
