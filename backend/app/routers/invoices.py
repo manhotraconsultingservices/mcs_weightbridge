@@ -34,7 +34,7 @@ from app.schemas.invoice import (
     CreateRevisionRequest, InvoiceRevisionChain, InvoiceCompare,
     WriteOffRequest,
 )
-from app.services.gst_service import calculate_invoice_totals, is_intra_state
+from app.services.gst_service import calculate_invoice_totals, is_intra_state, party_place_of_supply
 from app.utils.pdf_generator import generate_pdf, invoice_context, render_html
 
 router = APIRouter(prefix="/api/v1/invoices", tags=["Invoices"])
@@ -162,7 +162,7 @@ async def create_invoice(
         if not party:
             raise HTTPException(404, "Party not found")
 
-    intra = is_intra_state(co.state_code, party.billing_state_code if party else co.state_code)
+    intra = is_intra_state(co.state_code, party_place_of_supply(party) if party else co.state_code)
 
     # Payment mode deterministically drives the tax type for a party:
     #   default_payment_mode == 'cash'   → non-GST (Bill of Supply), no GST
@@ -347,7 +347,7 @@ async def issue_note(
     co, fy = await _get_company_fy(db)
     inv_type = "credit_note" if note_type == "credit" else "debit_note"
 
-    intra = is_intra_state(co.state_code, src.party.billing_state_code if src.party else co.state_code)
+    intra = is_intra_state(co.state_code, party_place_of_supply(src.party) if src.party else co.state_code)
     items_data = [{
         "product_id": it.product_id, "description": it.description, "hsn_code": it.hsn_code,
         "quantity": float(it.quantity), "unit": it.unit, "rate": float(it.rate),
@@ -608,7 +608,7 @@ async def update_invoice(
 
         co, _ = await _get_company_fy(db)
         party = (await db.execute(select(Party).where(Party.id == inv.party_id))).scalar_one_or_none()
-        intra = is_intra_state(co.state_code, party.billing_state_code if party else None)
+        intra = is_intra_state(co.state_code, party_place_of_supply(party) if party else None)
 
         items_data = [i.model_dump() for i in payload.items]
         totals = calculate_invoice_totals(
@@ -705,6 +705,13 @@ async def finalise_invoice(
     if is_revision:
         await _finalize_revision_diff(db, inv)
 
+    # Finalising creates a receivable/payable (or a note adjustment) → recompute
+    # the party's stored balance from source. Covers sale/purchase + credit/debit
+    # notes (all finalise through here).
+    if inv.party_id:
+        from app.services.balances import recompute_party_balance
+        await recompute_party_balance(db, inv.party_id)
+
     from app.routers.audit import log_action
     await log_action(db, co.id, current_user.id, "finalize", "invoice",
                      entity_id=str(invoice_id),
@@ -772,7 +779,7 @@ async def convert_invoice_to_gst(
     # Determine intra-state for CGST+SGST vs IGST split
     intra = is_intra_state(
         co.state_code,
-        inv.party.billing_state_code if inv.party else None,
+        party_place_of_supply(inv.party) if inv.party else None,
     )
 
     # Recalculate totals with GST enabled
@@ -1576,6 +1583,11 @@ async def cancel_invoice(
             import logging
             logging.getLogger(__name__).warning("Stock reversal failed for cancelled invoice %s: %s", inv.id, e)
 
+    # Cancelling a finalised invoice removes its receivable/payable → recompute.
+    if was_finalised and inv.party_id:
+        from app.services.balances import recompute_party_balance
+        await recompute_party_balance(db, inv.party_id)
+
     from app.routers.audit import log_action
     if co:
         await log_action(db, co.id, current_user.id, "cancel", "invoice",
@@ -1626,22 +1638,11 @@ async def write_off_invoice(
     elif Decimal(str(inv.amount_paid or 0)) > 0:
         inv.payment_status = "partial"
 
-    # ── Accounting: write-off is a credit to the customer's account ─────
-    # A sale write-off means the customer no longer owes us this amount
-    # → reduce party.current_balance (which tracks net receivable).
-    # For purchase write-off (rare — supplier credit gone), it's the inverse.
-    if inv.party_id:
-        party_obj = (await db.execute(
-            select(Party).where(Party.id == inv.party_id)
-        )).scalar_one_or_none()
-        if party_obj:
-            current = Decimal(str(party_obj.current_balance or 0))
-            if inv.invoice_type == "sale":
-                # Customer owes less now
-                party_obj.current_balance = (current - requested).quantize(Decimal("0.01"))
-            else:
-                # Supplier credit forgiven
-                party_obj.current_balance = (current + requested).quantize(Decimal("0.01"))
+    # ── Accounting: recompute the party's net balance from source ─────────────
+    # (write-off now reduces the still-collectable amount via write_off_amount,
+    # which recompute_party_balance accounts for — no manual ± drift.)
+    from app.services.balances import recompute_party_balance
+    await recompute_party_balance(db, inv.party_id)
 
     co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
     from app.routers.audit import log_action
@@ -1728,10 +1729,9 @@ async def write_off_bulk(
         inv.amount_due = Decimal("0")
         inv.payment_status = "paid"
 
-        # Track party balance delta. Sale → reduce; purchase → increase.
+        # Note the affected party so we recompute its balance once afterwards.
         if inv.party_id:
-            delta = balance if inv.invoice_type == "sale" else -balance
-            party_deltas[inv.party_id] = party_deltas.get(inv.party_id, Decimal("0")) + delta
+            party_deltas[inv.party_id] = Decimal("0")
 
         await log_action(
             db, co.id, current_user.id, "write_off", "invoice",
@@ -1744,12 +1744,10 @@ async def write_off_bulk(
         written += 1
         total_amount += balance
 
-    # Apply accumulated party balance changes
-    for pid, delta in party_deltas.items():
-        party_obj = (await db.execute(select(Party).where(Party.id == pid))).scalar_one_or_none()
-        if party_obj:
-            cur = Decimal(str(party_obj.current_balance or 0))
-            party_obj.current_balance = (cur - delta).quantize(Decimal("0.01"))
+    # Recompute each affected party's balance from source (idempotent, no drift).
+    from app.services.balances import recompute_party_balance
+    for pid in party_deltas:
+        await recompute_party_balance(db, pid)
 
     await db.commit()
     return {

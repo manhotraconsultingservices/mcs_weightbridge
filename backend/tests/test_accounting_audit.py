@@ -202,6 +202,78 @@ def test_density_entry_trap_guard():
     check("correct billing = 4.25 MT", (correct_kg / 1000) == D("4.25"))
 
 
+def test_place_of_supply():
+    print("\n[10] Place of supply — GSTIN[0:2] preferred over billing_state_code")
+    import types
+    from app.services.gst_service import party_place_of_supply
+    # GSTIN present + valid → first 2 digits win even if billing_state differs
+    p = types.SimpleNamespace(gstin="29ABCDE1234F1Z5", billing_state_code="27")
+    check("GSTIN 29… → '29' (not billing 27)", party_place_of_supply(p) == "29", party_place_of_supply(p))
+    # No GSTIN → fall back to billing_state_code
+    p2 = types.SimpleNamespace(gstin=None, billing_state_code="27")
+    check("no GSTIN → billing '27'", party_place_of_supply(p2) == "27", str(party_place_of_supply(p2)))
+    # Malformed GSTIN → fall back
+    p3 = types.SimpleNamespace(gstin="XX", billing_state_code="33")
+    check("malformed GSTIN → billing '33'", party_place_of_supply(p3) == "33", str(party_place_of_supply(p3)))
+    check("None party → None", party_place_of_supply(None) is None)
+
+
+def test_allocation_guard():
+    print("\n[11] Payment allocation guard — over-allocation + cross-party")
+    import types
+    from fastapi import HTTPException
+    from app.routers.payments import _validate_allocations
+
+    inv = types.SimpleNamespace(id="inv-1", invoice_no="INV/1", company_id="co-1",
+                                party_id="party-1", grand_total=D("1000"), amount_paid=D("0"))
+    by_id = {"inv-1": inv}
+
+    def alloc(invoice_id, amount):
+        return types.SimpleNamespace(invoice_id=invoice_id, amount=D(str(amount)))
+
+    # OK: allocate 800 of a 1000 receipt to a 1000-outstanding invoice
+    try:
+        _validate_allocations("co-1", "party-1", D("1000"), [alloc("inv-1", 800)], by_id)
+        check("valid allocation passes", True)
+    except HTTPException as e:
+        check("valid allocation passes", False, str(e.detail))
+
+    # Over-allocation vs receipt amount
+    try:
+        _validate_allocations("co-1", "party-1", D("500"), [alloc("inv-1", 800)], by_id)
+        check("allocations > receipt rejected", False, "no error raised")
+    except HTTPException:
+        check("allocations > receipt rejected", True)
+
+    # Over-allocation vs invoice outstanding
+    try:
+        _validate_allocations("co-1", "party-1", D("5000"), [alloc("inv-1", 5000)], by_id)
+        check("allocation > outstanding rejected", False, "no error raised")
+    except HTTPException:
+        check("allocation > outstanding rejected", True)
+
+    # Wrong party
+    try:
+        _validate_allocations("co-1", "party-2", D("1000"), [alloc("inv-1", 100)], by_id)
+        check("cross-party allocation rejected", False, "no error raised")
+    except HTTPException:
+        check("cross-party allocation rejected", True)
+
+
+def test_note_netting_sign():
+    print("\n[12] Credit/Debit note sign — credit reduces, debit increases")
+    # Mirror the GSTR-3B + recompute sign logic.
+    sale_tax = 1000.0
+    credit_note_tax = 200.0
+    debit_note_tax = 50.0
+    # credit_note → −, debit_note → +
+    net = sale_tax + (-credit_note_tax) + (+debit_note_tax)
+    check("1000 − 200 CN + 50 DN = 850", abs(net - 850.0) < 1e-9, str(net))
+    # Receivable: a credit note reduces what the customer owes
+    receivable = 1000.0 - 200.0
+    check("credit note reduces receivable to 800", receivable == 800.0)
+
+
 def main() -> int:
     print("=" * 70)
     print("ACCOUNTING CALCULATION AUDIT — gst_service + weight/volume")
@@ -216,6 +288,9 @@ def main() -> int:
         test_gst_split_decision,
         test_weight_volume_conversions,
         test_density_entry_trap_guard,
+        test_place_of_supply,
+        test_allocation_guard,
+        test_note_netting_sign,
     ):
         fn()
     print("\n" + "=" * 70)

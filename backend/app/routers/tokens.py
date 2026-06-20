@@ -296,10 +296,10 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
     gst_rate = product.gst_rate or Decimal("0")
 
     # GST calculation (intra-state assumed; will be recalculated if party state differs)
-    from app.services.gst_service import calculate_invoice_totals, is_intra_state
+    from app.services.gst_service import calculate_invoice_totals, is_intra_state, party_place_of_supply
     from app.models.party import Party as PartyModel
     party = (await db.execute(select(PartyModel).where(PartyModel.id == token.party_id))).scalar_one_or_none()
-    intra = is_intra_state(company.state_code, party.billing_state_code if party else company.state_code)
+    intra = is_intra_state(company.state_code, party_place_of_supply(party) if party else company.state_code)
 
     # Payment-mode drives the tax type (mirrors the manual invoice-create path):
     #   party.default_payment_mode == 'cash'  → non-GST Bill of Supply (no GST)

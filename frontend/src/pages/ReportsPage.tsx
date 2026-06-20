@@ -60,7 +60,7 @@ interface PLMonth { month: string; label: string; revenue: number; cogs: number;
 interface PLData { period: string; summary: { total_revenue: number; total_cogs: number; gross_profit: number; margin_pct: number; }; monthly: PLMonth[]; }
 
 interface StockItem { product_name: string; hsn_code: string; unit: string; rate: number; qty_purchased: number; value_purchased: number; qty_sold: number; value_sold: number; closing_qty: number; closing_value: number; }
-interface StockData { period: string; items: StockItem[]; totals: { qty_purchased: number; qty_sold: number; closing_value: number; }; }
+interface StockData { period: string; items: StockItem[]; totals: { qty_purchased_by_unit: Record<string, number>; qty_sold_by_unit: Record<string, number>; value_purchased: number; value_sold: number; closing_value: number; }; }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
@@ -346,8 +346,8 @@ export default function ReportsPage() {
           {stData && (
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-4">
-                <Card><CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Total Purchased</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{stData.totals.qty_purchased.toLocaleString('en-IN', { maximumFractionDigits: 3 })}</p><p className="text-xs text-muted-foreground">units</p></CardContent></Card>
-                <Card><CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Total Sold</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{stData.totals.qty_sold.toLocaleString('en-IN', { maximumFractionDigits: 3 })}</p><p className="text-xs text-muted-foreground">units</p></CardContent></Card>
+                <Card><CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Total Purchase Value</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{fmt(stData.totals.value_purchased)}</p><p className="text-xs text-muted-foreground">{Object.entries(stData.totals.qty_purchased_by_unit).map(([u, q]) => `${q.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${u}`).join(' · ') || '—'}</p></CardContent></Card>
+                <Card><CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Total Sales Value</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{fmt(stData.totals.value_sold)}</p><p className="text-xs text-muted-foreground">{Object.entries(stData.totals.qty_sold_by_unit).map(([u, q]) => `${q.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${u}`).join(' · ') || '—'}</p></CardContent></Card>
                 <Card><CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Closing Stock Value</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{fmt(stData.totals.closing_value)}</p></CardContent></Card>
               </div>
 
@@ -383,7 +383,7 @@ export default function ReportsPage() {
                       {stData.items.length > 0 && (
                         <tr className="bg-muted/30 font-bold border-t-2">
                           <td colSpan={4} className="px-3 py-2">Total ({stData.items.length} products)</td>
-                          <td className="px-3 py-2 text-right">{stData.totals.qty_purchased.toLocaleString('en-IN', { maximumFractionDigits: 3 })} in / {stData.totals.qty_sold.toLocaleString('en-IN', { maximumFractionDigits: 3 })} out</td>
+                          <td className="px-3 py-2 text-right">{fmt(stData.totals.value_purchased)} in / {fmt(stData.totals.value_sold)} out</td>
                           <td className="px-3 py-2 text-right">{fmt(stData.totals.closing_value)}</td>
                         </tr>
                       )}

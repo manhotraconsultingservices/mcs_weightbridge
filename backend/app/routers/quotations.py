@@ -22,7 +22,7 @@ from app.schemas.quotation import (
     QuotationCreate, QuotationUpdate, QuotationResponse, QuotationListResponse
 )
 from app.schemas.invoice import InvoiceResponse
-from app.services.gst_service import calculate_invoice_totals, is_intra_state
+from app.services.gst_service import calculate_invoice_totals, is_intra_state, party_place_of_supply
 from app.utils.pdf_generator import generate_pdf, invoice_context, quotation_context
 
 router = APIRouter(prefix="/api/v1/quotations", tags=["Quotations"])
@@ -100,7 +100,7 @@ async def create_quotation(
         raise HTTPException(404, "Party not found")
 
     qno = await _next_seq_no(db, co.id, fy.id, "quotation", co.quotation_prefix, fy.label)
-    intra = is_intra_state(co.state_code, party.billing_state_code)
+    intra = is_intra_state(co.state_code, party_place_of_supply(party))
     items_data = [i.model_dump() for i in payload.items]
     totals = _compute_quotation_totals(items_data, payload.discount_type, payload.discount_value, intra, payload.tax_type)
 
@@ -198,7 +198,7 @@ async def update_quotation(
         await db.flush()
         co, _ = await _get_company_fy(db)
         party = (await db.execute(select(Party).where(Party.id == q.party_id))).scalar_one_or_none()
-        intra = is_intra_state(co.state_code, party.billing_state_code if party else None)
+        intra = is_intra_state(co.state_code, party_place_of_supply(party) if party else None)
         items_data = [i.model_dump() for i in payload.items]
         totals = _compute_quotation_totals(items_data, q.discount_type, q.discount_value, intra)
         for k, v in totals.items():
@@ -243,7 +243,7 @@ async def convert_to_invoice(
 
     invoice_no = await _next_invoice_no(db, co.id, fy.id, "sale", co.invoice_prefix)
     party = (await db.execute(select(Party).where(Party.id == q.party_id))).scalar_one_or_none()
-    intra = is_intra_state(co.state_code, party.billing_state_code if party else None)
+    intra = is_intra_state(co.state_code, party_place_of_supply(party) if party else None)
 
     items_data = [
         {

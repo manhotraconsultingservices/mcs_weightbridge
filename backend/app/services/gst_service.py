@@ -20,6 +20,21 @@ def is_intra_state(company_state_code: str | None, party_state_code: str | None)
     return company_state_code.strip() == party_state_code.strip()
 
 
+def party_place_of_supply(party) -> str | None:
+    """Resolve a party's place-of-supply state code for the CGST/SGST-vs-IGST
+    decision. The GSTIN's first two digits are the registered-state code and are
+    AUTHORITATIVE for GST; fall back to billing_state_code only when the GSTIN is
+    absent or malformed. This prevents a mis-keyed billing_state_code from
+    putting the wrong tax heads on a B2B invoice / GSTR-1.
+    """
+    if party is None:
+        return None
+    gstin = (getattr(party, "gstin", None) or "").strip()
+    if len(gstin) >= 2 and gstin[:2].isdigit():
+        return gstin[:2]
+    return getattr(party, "billing_state_code", None)
+
+
 def calculate_item_gst(
     amount: Decimal,
     gst_rate: Decimal,

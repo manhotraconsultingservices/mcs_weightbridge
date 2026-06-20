@@ -394,6 +394,63 @@ async def gstr1_json_export(
         for idx, r in enumerate(hsn_result.all(), 1)
     ]
 
+    # ── CDNR: Credit/Debit notes issued to REGISTERED persons ─────────────────
+    # (Was missing from the portal JSON → credit notes that should reduce the
+    # liability never reached GSTN.) CDNUR — notes to unregistered persons — is
+    # out of scope for v1; only registered-recipient notes are emitted.
+    cdn_rows = (await db.execute(
+        select(Invoice, Party)
+        .join(Party, Invoice.party_id == Party.id)
+        .where(Invoice.invoice_type.in_(("credit_note", "debit_note")),
+               Invoice.status == "final", Invoice.tax_type == "gst",
+               Party.gstin.isnot(None),
+               Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
+        .order_by(Invoice.invoice_date)
+    )).all()
+    cdn_items_map: dict[str, list] = {}
+    if cdn_rows:
+        cdn_item_rows = (await db.execute(
+            select(InvoiceItem).where(InvoiceItem.invoice_id.in_([n.id for n, _ in cdn_rows]))
+        )).scalars().all()
+        for it in cdn_item_rows:
+            cdn_items_map.setdefault(str(it.invoice_id), []).append(it)
+
+    cdnr_map: dict[str, list] = {}
+    for note, party in cdn_rows:
+        note_items = cdn_items_map.get(str(note.id), [])
+        itms = [
+            {
+                "num": idx,
+                "itm_det": {
+                    "txval": _r2(item.amount),
+                    "rt": float(item.gst_rate or 0),
+                    "camt": _r2(item.cgst_amount),
+                    "samt": _r2(item.sgst_amount),
+                    "iamt": _r2(item.igst_amount),
+                    "csamt": 0,
+                },
+            }
+            for idx, item in enumerate(note_items, 1)
+        ]
+        if not itms:
+            gst_total = _f(note.cgst_amount) + _f(note.sgst_amount) + _f(note.igst_amount)
+            taxable = _f(note.taxable_amount)
+            rate = round((gst_total / taxable * 100) if taxable > 0 else 0)
+            itms = [{"num": 1, "itm_det": {
+                "txval": _r2(note.taxable_amount), "rt": rate,
+                "camt": _r2(note.cgst_amount), "samt": _r2(note.sgst_amount),
+                "iamt": _r2(note.igst_amount), "csamt": 0}}]
+        cdnr_map.setdefault(party.gstin, []).append({
+            "ntty": "C" if note.invoice_type == "credit_note" else "D",
+            "nt_num": note.invoice_no,
+            "nt_dt": note.invoice_date.strftime("%d-%m-%Y"),
+            "val": _r2(note.grand_total),
+            "pos": party.billing_state_code or company_state_code,
+            "rchrg": "N",
+            "inv_typ": "R",
+            "itms": itms,
+        })
+
     payload = {
         "gstin": company_gstin,
         "fp": fp,
@@ -401,6 +458,7 @@ async def gstr1_json_export(
         "cur_gt": _r2(total_turnover),
         "b2b": [{"ctin": gstin, "inv": invs} for gstin, invs in b2b_map.items()],
         "b2cs": list(b2cs_map.values()),
+        "cdnr": [{"ctin": g, "nt": nts} for g, nts in cdnr_map.items()],
         "hsn": {"data": hsn_data},
     }
 
@@ -475,10 +533,34 @@ async def gstr3b(
     )
     purch_row = purchase_result.one()
 
-    outward_cgst = _r2(sale_row.cgst)
-    outward_sgst = _r2(sale_row.sgst)
-    outward_igst = _r2(sale_row.igst)
-    outward_tax = outward_cgst + outward_sgst + outward_igst
+    # Credit/Debit notes against outward (sale) supplies — net them into 3.1(a).
+    # A credit note REDUCES output tax liability; a debit note increases it.
+    note_result = await db.execute(
+        select(
+            Invoice.invoice_type.label("itype"),
+            func.sum(Invoice.taxable_amount).label("taxable"),
+            func.sum(Invoice.cgst_amount).label("cgst"),
+            func.sum(Invoice.sgst_amount).label("sgst"),
+            func.sum(Invoice.igst_amount).label("igst"),
+        )
+        .where(Invoice.invoice_type.in_(("credit_note", "debit_note")),
+               Invoice.status == "final", Invoice.tax_type == "gst",
+               Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
+        .group_by(Invoice.invoice_type)
+    )
+    note_taxable = note_cgst = note_sgst = note_igst = 0.0
+    for r in note_result.all():
+        sign = 1.0 if r.itype == "debit_note" else -1.0
+        note_taxable += sign * _f(r.taxable)
+        note_cgst += sign * _f(r.cgst)
+        note_sgst += sign * _f(r.sgst)
+        note_igst += sign * _f(r.igst)
+
+    outward_taxable = _r2(_f(sale_row.taxable) + note_taxable)
+    outward_cgst = _r2(_f(sale_row.cgst) + note_cgst)
+    outward_sgst = _r2(_f(sale_row.sgst) + note_sgst)
+    outward_igst = _r2(_f(sale_row.igst) + note_igst)
+    outward_tax = _r2(outward_cgst + outward_sgst + outward_igst)
 
     itc_cgst = _r2(purch_row.cgst)
     itc_sgst = _r2(purch_row.sgst)
@@ -494,14 +576,20 @@ async def gstr3b(
         "period": f"{from_date.strftime('%b %Y')} – {to_date.strftime('%b %Y')}",
         "section_3_1": {
             "a_taxable_outward": {
-                "description": "Outward taxable supplies (other than zero rated, nil and exempted)",
+                "description": "Outward taxable supplies (other than zero rated, nil and exempted) — net of credit/debit notes",
                 "invoice_count": int(sale_row.count or 0),
-                "taxable_value": _r2(sale_row.taxable),
+                "taxable_value": outward_taxable,
                 "igst": outward_igst,
                 "cgst": outward_cgst,
                 "sgst": outward_sgst,
                 "cess": 0.0,
                 "total_tax": outward_tax,
+                "credit_debit_note_adjustment": {
+                    "taxable": _r2(note_taxable),
+                    "cgst": _r2(note_cgst),
+                    "sgst": _r2(note_sgst),
+                    "igst": _r2(note_igst),
+                },
             },
             "b_zero_rated": {
                 "description": "Outward taxable supplies (zero rated)",
@@ -778,7 +866,9 @@ async def stock_summary(
 
     all_ids = sorted(set(list(purch_map.keys()) + list(sale_map.keys())))
     items = []
-    total_purchased = total_sold = total_closing_value = 0.0
+    total_value_purchased = total_value_sold = total_closing_value = 0.0
+    qty_purchased_by_unit: dict[str, float] = {}
+    qty_sold_by_unit: dict[str, float] = {}
     for pid in all_ids:
         p = purch_map.get(pid, {})
         s = sale_map.get(pid, {})
@@ -790,8 +880,11 @@ async def stock_summary(
         qty_out = s.get("qty_sold", 0.0)
         closing_qty = _r2(qty_in - qty_out)
         closing_value = _r2(closing_qty * rate)
-        total_purchased += qty_in
-        total_sold += qty_out
+        u = unit or "—"
+        qty_purchased_by_unit[u] = _r2(qty_purchased_by_unit.get(u, 0.0) + qty_in)
+        qty_sold_by_unit[u] = _r2(qty_sold_by_unit.get(u, 0.0) + qty_out)
+        total_value_purchased += p.get("value_purchased", 0.0)
+        total_value_sold += s.get("value_sold", 0.0)
         total_closing_value += closing_value
         items.append({
             "product_name": name, "hsn_code": hsn, "unit": unit, "rate": rate,
@@ -807,8 +900,12 @@ async def stock_summary(
         "period": f"{from_date.isoformat()} to {to_date.isoformat()}",
         "items": items,
         "totals": {
-            "qty_purchased": _r2(total_purchased),
-            "qty_sold": _r2(total_sold),
+            # Quantities are summed PER UNIT — MT / CFT / bag are not addable
+            # into a single scalar. Value (₹) is unit-agnostic and summable.
+            "qty_purchased_by_unit": qty_purchased_by_unit,
+            "qty_sold_by_unit": qty_sold_by_unit,
+            "value_purchased": _r2(total_value_purchased),
+            "value_sold": _r2(total_value_sold),
             "closing_value": _r2(total_closing_value),
         },
     }

@@ -59,6 +59,43 @@ async def _next_seq(db, company_id, fy_id, seq_type, prefix, fy_label) -> str:
     return f"{prefix}/{short_fy}/{seq.last_number:04d}"
 
 
+from app.services.balances import recompute_party_balance
+
+
+def _validate_allocations(co_id, party_id, payment_amount, allocations, invoices_by_id):
+    """Guard against over-allocation and cross-party/company allocation.
+
+    Raises HTTPException(400/404) on any violation. `invoices_by_id` maps
+    str(invoice_id) -> Invoice (already fetched by the caller).
+    """
+    alloc_total = Decimal("0")
+    for a in allocations:
+        amt = Decimal(str(a.amount or 0))
+        if amt <= 0:
+            continue
+        alloc_total += amt
+        inv = invoices_by_id.get(str(a.invoice_id))
+        if inv is None:
+            raise HTTPException(404, f"Invoice {a.invoice_id} not found")
+        if inv.company_id != co_id:
+            raise HTTPException(400, "Invoice does not belong to this company")
+        if inv.party_id != party_id:
+            raise HTTPException(400, f"Invoice {inv.invoice_no or inv.id} belongs to a different party")
+        outstanding = (inv.grand_total or Decimal("0")) - (inv.amount_paid or Decimal("0"))
+        if amt > outstanding + Decimal("0.01"):
+            raise HTTPException(
+                400,
+                f"Allocation ₹{amt} exceeds the ₹{outstanding} outstanding on "
+                f"invoice {inv.invoice_no or inv.id}.",
+            )
+    pay_amt = Decimal(str(payment_amount or 0))
+    if alloc_total > pay_amt + Decimal("0.01"):
+        raise HTTPException(
+            400,
+            f"Allocations total ₹{alloc_total} but the payment is only ₹{pay_amt}.",
+        )
+
+
 def _settle_invoice(inv: Invoice, amount: Decimal):
     inv.amount_paid = (inv.amount_paid or Decimal("0")) + amount
     if inv.amount_paid >= inv.grand_total:
@@ -99,15 +136,25 @@ async def create_receipt(
         notes=payload.notes,
         created_by=current_user.id,
     )
+    # Fetch + validate all allocations BEFORE persisting anything.
+    inv_ids = [a.invoice_id for a in payload.allocations if a.amount and Decimal(str(a.amount)) > 0]
+    invoices_by_id = {}
+    if inv_ids:
+        for inv in (await db.execute(select(Invoice).where(Invoice.id.in_(inv_ids)))).scalars().all():
+            invoices_by_id[str(inv.id)] = inv
+    _validate_allocations(co.id, payload.party_id, payload.amount, payload.allocations, invoices_by_id)
+
     db.add(rec)
     await db.flush()
 
     for alloc in payload.allocations:
-        inv = (await db.execute(select(Invoice).where(Invoice.id == alloc.invoice_id))).scalar_one_or_none()
-        if inv:
-            db.add(InvoicePayment(invoice_id=inv.id, receipt_id=rec.id, amount=alloc.amount))
-            _settle_invoice(inv, alloc.amount)
+        if not alloc.amount or Decimal(str(alloc.amount)) <= 0:
+            continue
+        inv = invoices_by_id[str(alloc.invoice_id)]
+        db.add(InvoicePayment(invoice_id=inv.id, receipt_id=rec.id, amount=alloc.amount))
+        _settle_invoice(inv, alloc.amount)
 
+    await recompute_party_balance(db, payload.party_id)
     await db.commit()
     await db.refresh(rec)
 
@@ -225,15 +272,25 @@ async def create_voucher(
         notes=payload.notes,
         created_by=current_user.id,
     )
+    # Fetch + validate all allocations BEFORE persisting anything.
+    inv_ids = [a.invoice_id for a in payload.allocations if a.amount and Decimal(str(a.amount)) > 0]
+    invoices_by_id = {}
+    if inv_ids:
+        for inv in (await db.execute(select(Invoice).where(Invoice.id.in_(inv_ids)))).scalars().all():
+            invoices_by_id[str(inv.id)] = inv
+    _validate_allocations(co.id, payload.party_id, payload.amount, payload.allocations, invoices_by_id)
+
     db.add(vch)
     await db.flush()
 
     for alloc in payload.allocations:
-        inv = (await db.execute(select(Invoice).where(Invoice.id == alloc.invoice_id))).scalar_one_or_none()
-        if inv:
-            db.add(InvoicePayment(invoice_id=inv.id, voucher_id=vch.id, amount=alloc.amount))
-            _settle_invoice(inv, alloc.amount)
+        if not alloc.amount or Decimal(str(alloc.amount)) <= 0:
+            continue
+        inv = invoices_by_id[str(alloc.invoice_id)]
+        db.add(InvoicePayment(invoice_id=inv.id, voucher_id=vch.id, amount=alloc.amount))
+        _settle_invoice(inv, alloc.amount)
 
+    await recompute_party_balance(db, payload.party_id)
     await db.commit()
     await db.refresh(vch)
     return PaymentVoucherResponse(
