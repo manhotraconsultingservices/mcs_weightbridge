@@ -440,11 +440,10 @@ def get_column_migrations() -> list[str]:
         # NOTE: raw_material_id is added AFTER the production_cycles CREATE TABLE
         # below (see the ALTER following that CREATE). Adding it here — before the
         # table exists on a fresh DB — was the cause of a cascading DDL failure.
-        # Volume-based weighment on tokens — canonical unit is CFT (cubic feet),
-        # the standard in the Indian stone-crusher trade. Old tenants migrated
-        # from volume_m3 in the units_migrated_to_cft_v1 DO block below.
+        # Volume-based weighment on tokens — canonical unit is m³ (cubic metres).
+        # Old tenants migrated from volume_cft in the units_migrated_to_m3_v2 block.
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS weight_method VARCHAR(20) NOT NULL DEFAULT 'weighbridge'",
-        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS volume_cft NUMERIC(10,3)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS volume_m3 NUMERIC(10,5)",
         # ── ONE-SHOT unit migration: m³ → CFT  +  t/m³ → kg/CFT ───────────────
         # Guarded by an app_settings marker so it runs EXACTLY ONCE per DB.
         # Without the marker the UPDATE statements would multiply values on
@@ -530,6 +529,46 @@ def get_column_migrations() -> list[str]:
                 -- Mark complete regardless (prevents re-running on next startup)
                 INSERT INTO app_settings (key, value, updated_at)
                 VALUES ('units_migrated_to_cft_v2', 'true', NOW())
+                ON CONFLICT (key) DO NOTHING;
+            END IF;
+        END $$
+        """,
+        # ── ONE-SHOT migration: CFT+kg/CFT → m³+MT/m³ ────────────────────────
+        # Canonical units changed to m³ (volume) and MT/m³ (density).
+        # Conversion: m³ = CFT ÷ 35.3147 ; MT/m³ = kg/CFT × 35.3147 ÷ 1000
+        # Guard: bulk_density > 10 identifies kg/CFT values (MT/m³ values are 1–3).
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM app_settings WHERE key = 'units_migrated_to_m3_v2'
+            ) THEN
+                -- Step 1: rename volume_cft → volume_m3 and convert (if old col exists)
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='tokens' AND column_name='volume_cft'
+                ) THEN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name='tokens' AND column_name='volume_m3'
+                    ) THEN
+                        ALTER TABLE tokens ADD COLUMN volume_m3 NUMERIC(10,5);
+                    END IF;
+                    UPDATE tokens
+                    SET volume_m3 = ROUND((volume_cft / 35.3147)::NUMERIC, 5)
+                    WHERE volume_cft IS NOT NULL;
+                    ALTER TABLE tokens DROP COLUMN volume_cft;
+                END IF;
+
+                -- Step 2: convert bulk_density from kg/CFT to MT/m³ (only if values look like kg/CFT)
+                IF EXISTS (SELECT 1 FROM products WHERE bulk_density IS NOT NULL AND bulk_density > 10) THEN
+                    UPDATE products
+                    SET bulk_density = ROUND((bulk_density * 35.3147 / 1000.0)::NUMERIC, 4)
+                    WHERE bulk_density IS NOT NULL;
+                END IF;
+
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES ('units_migrated_to_m3_v2', 'true', NOW())
                 ON CONFLICT (key) DO NOTHING;
             END IF;
         END $$

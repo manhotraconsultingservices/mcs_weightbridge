@@ -84,7 +84,7 @@ export interface Product {
   unit: string;
   default_rate: number;
   gst_rate: number;
-  bulk_density: number | null;   // kg/m³ — enables volume → weight conversion in tokens
+  bulk_density: number | null;   // MT/m³ — enables volume → weight conversion in tokens
   is_raw_material: boolean;       // marks raw inputs to production (e.g., raw boulder)
   description: string | null;
   is_active: boolean;
@@ -202,7 +202,7 @@ export interface Token {
   is_manual_weight: boolean;
   is_supplement: boolean;
   weight_method: 'weighbridge' | 'volume';   // measurement method
-  volume_cft: number | null;                  // cubic feet — populated only when weight_method === 'volume'
+  volume_m3: number | null;                   // cubic metres — populated only when weight_method === 'volume'
   gate_pass: string | null;                   // legacy free-text gate-pass note
   gate_pass_no: string | null;                // auto-allocated GP/25-26/0001
   source: 'manual' | 'anpr' | 'kiosk' | string;

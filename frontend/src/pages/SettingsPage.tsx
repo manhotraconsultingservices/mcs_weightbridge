@@ -2869,7 +2869,7 @@ function VolumeUnitSettingsTab() {
             />
             <div>
               <p className="text-sm font-medium">Cubic Metres (m³) <span className="text-muted-foreground font-normal">— SI unit, default</span></p>
-              <p className="text-xs text-muted-foreground">Volumes entered and shown as m³. Bulk density set as kg/m³.</p>
+              <p className="text-xs text-muted-foreground">Volumes entered and shown as m³. Bulk density set as MT/m³.</p>
             </div>
           </label>
 
@@ -2884,14 +2884,14 @@ function VolumeUnitSettingsTab() {
             />
             <div>
               <p className="text-sm font-medium">Cubic Feet (CFT) <span className="text-muted-foreground font-normal">— traditional Indian unit</span></p>
-              <p className="text-xs text-muted-foreground">Operators enter volumes in CFT; the system converts to m³ before saving. Bulk density shown as kg/CFT.</p>
+              <p className="text-xs text-muted-foreground">Operators enter volumes in CFT; the system converts to m³ before saving. Bulk density always in MT/m³.</p>
             </div>
           </label>
         </div>
 
         <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
           <p><strong>Conversion:</strong> 1 m³ = 35.3147 CFT</p>
-          <p><strong>Typical bulk densities:</strong> Aggregate 1,500 kg/m³ (42.5 kg/CFT) · Sand 1,700 kg/m³ (48.2 kg/CFT) · GSB 1,900 kg/m³ (53.8 kg/CFT) · Stone dust 1,550 kg/m³ (43.9 kg/CFT)</p>
+          <p><strong>Typical bulk densities (MT/m³):</strong> Aggregate 1.5 · Sand 1.71 · GSB 1.91 · Stone dust 1.56. (Old kg/CFT ÷ 28.32 = MT/m³)</p>
         </div>
 
         <div className="flex items-center gap-3">

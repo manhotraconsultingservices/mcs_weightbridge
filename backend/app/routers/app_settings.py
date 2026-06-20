@@ -801,3 +801,39 @@ async def test_gate_camera(
             return {"ok": True, "message": f"{position.title()} camera responded ({len(resp.content)} bytes)", "size": len(resp.content)}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+# ── Volume Unit Preference ────────────────────────────────────────────────────
+# Controls how operators enter volumes on the Token page and Kiosk.
+# 'm3' = cubic metres (input directly); 'cft' = cubic feet (frontend converts
+# CFT → m³ before posting volume_m3 to the API). Density is always MT/m³.
+
+VOLUME_UNIT_KEY = "volume_unit"
+
+
+class VolumeUnitConfig(BaseModel):
+    volume_unit: str = "m3"   # "m3" or "cft"
+
+
+@router.get("/volume-unit", response_model=VolumeUnitConfig)
+async def get_volume_unit(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    raw = await _get_raw(db, VOLUME_UNIT_KEY)
+    unit = (raw or "m3").strip('"')
+    if unit not in ("m3", "cft"):
+        unit = "m3"
+    return VolumeUnitConfig(volume_unit=unit)
+
+
+@router.put("/volume-unit", response_model=VolumeUnitConfig)
+async def update_volume_unit(
+    payload: VolumeUnitConfig,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    if payload.volume_unit not in ("m3", "cft"):
+        raise HTTPException(400, "volume_unit must be 'm3' or 'cft'")
+    await _upsert(db, VOLUME_UNIT_KEY, payload.volume_unit)
+    return payload
