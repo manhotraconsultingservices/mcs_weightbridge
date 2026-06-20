@@ -512,14 +512,14 @@ function TruckOutDialog({ gp, open, onClose, onExited }: {
                 <Link2 className="h-3 w-3" />
                 {gp.token_id
                   ? <span className="text-green-600 font-semibold">✓ Token linked ({gp.token_no ?? gp.token_id})</span>
-                  : <span className="text-destructive font-semibold">* Paste token ID (from Trips page)</span>
+                  : <span className="text-destructive font-semibold">* Enter token number (from weighbridge slip)</span>
                 }
               </label>
               {!gp.token_id && (
                 <Input
                   value={tokenId}
                   onChange={e => setTokenId(e.target.value)}
-                  placeholder="Paste token ID here"
+                  placeholder="e.g. 8686"
                   className="h-10"
                 />
               )}

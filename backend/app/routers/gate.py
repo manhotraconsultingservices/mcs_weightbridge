@@ -68,6 +68,12 @@ async def _get_gate_cam_cfg(db: AsyncSession) -> dict:
         return {"entry": {"enabled": False}, "exit": {"enabled": False}}
 
 
+def _is_uuid(value: str) -> bool:
+    """Return True if value looks like a UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)."""
+    import re
+    return bool(re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", value.lower()))
+
+
 async def _next_gate_pass_no(db: AsyncSession, company_id: str) -> tuple[str, int]:
     """Atomic daily sequence counter — gap-free, no separate lock needed."""
     today = date.today()
@@ -461,11 +467,23 @@ async def record_exit(
 
     # Mandatory token link for weighbridge purpose
     token_id = body.get("token_id") or gp.token_id
+
+    # Accept token_no (e.g. "8686") in addition to a UUID
+    if token_id and not _is_uuid(str(token_id)):
+        resolved = await db.execute(
+            text("SELECT id FROM tokens WHERE token_no = :no AND company_id = :cid"),
+            {"no": str(token_id).strip(), "cid": company_id},
+        )
+        resolved_id = resolved.scalar()
+        if not resolved_id:
+            raise HTTPException(400, f"Token #{token_id} not found. Check the token number on the slip.")
+        token_id = str(resolved_id)
+
     if gp.purpose == "weighbridge" and not token_id:
         raise HTTPException(
             400,
             "Token must be linked before closing a weighbridge gate pass. "
-            "Go to Trips, find the completed token for this vehicle, and link it.",
+            "Enter the token number from the weighbridge slip.",
         )
 
     await db.execute(
