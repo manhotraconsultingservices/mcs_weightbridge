@@ -1869,26 +1869,30 @@ export default function TokenPageV1() {
                     style={{ gridTemplateColumns: COLS }}
                     onClick={() => setTokenModalId(token.id)}
                   >
-                    {/* Token # + gate pass */}
+                    {/* Token # + gate pass.
+                        overflow-hidden is REQUIRED on the cell wrapper: whitespace-nowrap text
+                        (gate pass = "GP/2026-06-20/001", ~18 chars @ 9px mono ≈ 99px) will
+                        visually bleed into the VEHICLE column without it. */}
                     {visibleCols.includes('token_no') && (
-                    <div className="min-w-0">
-                      <p className="font-bold text-primary text-xs whitespace-nowrap">
+                    <div className="min-w-0 overflow-hidden">
+                      <p className="font-bold text-primary text-xs truncate">
                         {token.token_no != null ? `#${token.token_no}` : <span className="text-muted-foreground italic">—</span>}
                       </p>
-                      <p className="text-[10px] text-muted-foreground capitalize">{token.token_type}</p>
+                      <p className="text-[10px] text-muted-foreground capitalize truncate">{token.token_type}</p>
                       {token.gate_pass_no && (
-                        <p className="text-[9px] font-mono text-emerald-700 whitespace-nowrap leading-tight" title={`Gate pass ${token.gate_pass_no}`}>
-                          {token.gate_pass_no}
+                        /* Show compact "GP NNN" so it fits in the 48px column; full value on hover */
+                        <p className="text-[9px] font-mono text-emerald-700 truncate leading-tight" title={token.gate_pass_no}>
+                          GP {token.gate_pass_no.split('/').pop()}
                         </p>
                       )}
                     </div>
                     )}
 
-                    {/* Vehicle — Indian plates: MH12AB1234 (10 chars), no break */}
+                    {/* Vehicle — Indian plates: MH12AB1234 (10 chars) */}
                     {visibleCols.includes('vehicle') && (
-                    <div className="min-w-0">
+                    <div className="min-w-0 overflow-hidden">
                       <div className="flex items-center gap-1">
-                        <p className="font-mono font-semibold text-xs tracking-wide whitespace-nowrap overflow-hidden text-ellipsis" title={token.vehicle_no}>
+                        <p className="font-mono font-semibold text-xs tracking-wide truncate" title={token.vehicle_no}>
                           {token.vehicle_no}
                         </p>
                         {token.weight_method === 'volume' && (
@@ -1901,7 +1905,7 @@ export default function TokenPageV1() {
                         )}
                       </div>
                       {token.vehicle_type && (
-                        <p className="text-[10px] capitalize text-muted-foreground leading-tight">
+                        <p className="text-[10px] capitalize text-muted-foreground truncate leading-tight">
                           {token.vehicle_type.replace(/_/g, ' ')}
                         </p>
                       )}
@@ -1910,7 +1914,7 @@ export default function TokenPageV1() {
 
                     {/* Party — single line with ellipsis; full name on hover. */}
                     {visibleCols.includes('party') && (
-                    <div className="min-w-0">
+                    <div className="min-w-0 overflow-hidden">
                       {token.party
                         ? <p className="text-xs truncate" title={token.party.name}>{token.party.name}</p>
                         : <p className="text-muted-foreground text-xs">—</p>
@@ -1920,7 +1924,7 @@ export default function TokenPageV1() {
 
                     {/* Material — single line with ellipsis; full name on hover. */}
                     {visibleCols.includes('product') && (
-                    <div className="min-w-0">
+                    <div className="min-w-0 overflow-hidden">
                       {token.product
                         ? <p className="text-xs truncate text-muted-foreground" title={token.product.name}>{token.product.name}</p>
                         : <p className="text-muted-foreground text-xs">—</p>
@@ -1928,15 +1932,15 @@ export default function TokenPageV1() {
                     </div>
                     )}
 
-                    {/* Weights in MT — never wrap */}
+                    {/* Weights in MT — clipped to cell width */}
                     {visibleCols.includes('gross') && (
-                    <div className="text-right font-mono text-xs text-muted-foreground whitespace-nowrap">{mtFmt(token.gross_weight)}</div>
+                    <div className="min-w-0 overflow-hidden text-right font-mono text-xs text-muted-foreground whitespace-nowrap">{mtFmt(token.gross_weight)}</div>
                     )}
                     {visibleCols.includes('tare') && (
-                    <div className="text-right font-mono text-xs text-muted-foreground whitespace-nowrap">{mtFmt(token.tare_weight)}</div>
+                    <div className="min-w-0 overflow-hidden text-right font-mono text-xs text-muted-foreground whitespace-nowrap">{mtFmt(token.tare_weight)}</div>
                     )}
                     {visibleCols.includes('net') && (
-                    <div className="text-right font-mono text-xs font-bold whitespace-nowrap" title={dualFmt(token.net_weight, token.product?.bulk_density)}>
+                    <div className="min-w-0 overflow-hidden text-right font-mono text-xs font-bold whitespace-nowrap" title={dualFmt(token.net_weight, token.product?.bulk_density)}>
                       {token.net_weight != null
                         ? <span className="text-primary">{dualFmt(token.net_weight, token.product?.bulk_density)}</span>
                         : <span className="text-muted-foreground">—</span>
