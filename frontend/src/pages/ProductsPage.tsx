@@ -260,12 +260,14 @@ export default function ProductsPage() {
   const [productTotal, setProductTotal] = useState(0);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const params = new URLSearchParams({ page: '1', page_size: String(PRODUCT_FETCH_SIZE) });
       if (search) params.set('search', search);
@@ -281,6 +283,9 @@ export default function ProductsPage() {
         setProductTotal(pRes.data.total ?? 0);
       }
       setCategories(Array.isArray(cRes.data) ? cRes.data : []);
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } }; message?: string };
+      setLoadError(err.response?.data?.detail ?? err.message ?? 'Failed to load products');
     } finally {
       setLoading(false);
     }
@@ -313,6 +318,13 @@ export default function ProductsPage() {
           <Plus className="mr-2 h-4 w-4" /> {t('product.addProduct')}
         </Button>
       </div>
+
+      {/* API error banner */}
+      {loadError && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+          Failed to load products: {loadError}
+        </div>
+      )}
 
       {/* Search */}
       <div className="relative max-w-sm">

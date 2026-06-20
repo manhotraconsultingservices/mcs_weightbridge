@@ -576,7 +576,7 @@ async def create_volume_token(
         from app.routers.audit import log_action
         await log_action(db, company.id, current_user.id, "completed", "token",
                          str(token.id), {"token_no": token.token_no, "vehicle_no": token.vehicle_no,
-                                         "method": "volume", "volume_cft": float(payload.volume_cft),
+                                         "method": "volume", "volume_m3": float(payload.volume_m3),
                                          "net_kg": float(net_kg)})
     except Exception:
         pass
