@@ -299,6 +299,19 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     }
   }, [form.vehicle_no, openGatePasses]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // When the operator types a vehicle number, re-fetch gate passes from the server
+  // (debounced 600 ms). Without this, passes created by the gate guard AFTER the operator
+  // opened this form would only appear after the 30-second polling interval — too late.
+  // The existing auto-select effect above fires automatically once openGatePasses updates.
+  const _gpRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const vno = form.vehicle_no.trim();
+    if (!vno || form.gate_pass_id) return;
+    if (_gpRefreshTimer.current) clearTimeout(_gpRefreshTimer.current);
+    _gpRefreshTimer.current = setTimeout(loadGatePasses, 600);
+    return () => { if (_gpRefreshTimer.current) clearTimeout(_gpRefreshTimer.current); };
+  }, [form.vehicle_no, form.gate_pass_id, loadGatePasses]);
+
   // Auto-refresh gate passes every 30 s while no gate pass is selected, so a gate pass
   // created by the guard AFTER the operator opened this page becomes visible automatically.
   useEffect(() => {
@@ -812,9 +825,15 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
                 </div>
               ) : (
                 <>
-                  {vno && !hasExactMatch && (
+                  {vno && !hasExactMatch && !form.gate_pass_id && (
                     <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
                       No exact match for <strong>{vno}</strong> — select the correct pass below.
+                    </div>
+                  )}
+                  {form.gate_pass_id && exactMatches.some(gp => gp.id === form.gate_pass_id) && (
+                    <div className="rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] text-emerald-700 flex items-center gap-1.5">
+                      <CheckCircle2 className="h-3 w-3 shrink-0" />
+                      Gate pass auto-linked: <strong className="font-mono">{exactMatches.find(gp => gp.id === form.gate_pass_id)?.gate_pass_no}</strong>
                     </div>
                   )}
                   <Select
