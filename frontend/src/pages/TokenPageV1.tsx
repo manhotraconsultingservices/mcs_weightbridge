@@ -177,6 +177,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
   // Today's open gate passes — optional link before token creation
   const [openGatePasses, setOpenGatePasses] = useState<GatePass[]>([]);
+  const [gpLoadError, setGpLoadError] = useState<string | null>(null);
 
   // P1: active transit/royalty passes for purchase tokens
   const [activePasses, setActivePasses] = useState<{ id: string; pass_no: string; balance_mt: number | string }[]>([]);
@@ -222,12 +223,18 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   }
 
   const loadGatePasses = useCallback(async () => {
+    setGpLoadError(null);
     try {
-      const { data } = await api.get<{ items: GatePass[] }>('/api/v1/gate/passes', {
+      const { data } = await api.get<{ items: GatePass[]; total: number }>('/api/v1/gate/passes', {
         params: { unlinked: true, status: 'inside', page_size: 200 },
       });
       setOpenGatePasses(data.items ?? []);
-    } catch { /* silent */ }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string }; status?: number }; message?: string };
+      const detail = e?.response?.data?.detail ?? e?.message ?? 'Network error';
+      setGpLoadError(`[${e?.response?.status ?? 'ERR'}] ${detail}`);
+      setOpenGatePasses([]);
+    }
   }, []);
 
   useEffect(() => {
@@ -819,19 +826,23 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
               </div>
 
               {openGatePasses.length === 0 ? (
-                // No open passes found
+                // No open passes found — or API error
                 <div className={cn(
                   'rounded border px-3 py-2 text-[11px]',
-                  vno
-                    ? 'border-amber-300 bg-amber-50 text-amber-800'
-                    : 'border-dashed border-slate-200 bg-slate-50 text-slate-500'
+                  gpLoadError
+                    ? 'border-red-300 bg-red-50 text-red-800'
+                    : vno
+                      ? 'border-amber-300 bg-amber-50 text-amber-800'
+                      : 'border-dashed border-slate-200 bg-slate-50 text-slate-500'
                 )}>
-                  {vno
-                    ? <>
-                        <strong>No gate pass found for {form.vehicle_no}.</strong>
-                        {' '}Ask the guard to create one in Gate Register, then click Refresh above.
-                      </>
-                    : 'Enter vehicle number to check for an existing gate pass.'}
+                  {gpLoadError
+                    ? <><strong>Error loading gate passes:</strong> {gpLoadError}</>
+                    : vno
+                      ? <>
+                          <strong>No open gate pass found for {form.vehicle_no}.</strong>
+                          {' '}Check Gate Register — the pass must be status <em>Inside</em> and not yet linked to a token. Then click Refresh above.
+                        </>
+                      : 'Enter vehicle number to check for an existing gate pass.'}
                 </div>
               ) : (
                 <>
