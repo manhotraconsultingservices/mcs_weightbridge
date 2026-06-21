@@ -310,18 +310,18 @@ async def list_gate_passes(
     # explicit pass_date) look back 3 days so overnight trucks (entry yesterday, weighing
     # today) are not invisible.  Every other caller gets the usual single-day filter.
     if pass_date:
-        filters = "AND pass_date = :d"
+        filters = "AND gp.pass_date = :d"
         params["d"] = target_date
     elif status == "inside" and unlinked:
         from datetime import timedelta
-        filters = "AND pass_date >= :d_from"
+        filters = "AND gp.pass_date >= :d_from"
         params["d_from"] = target_date - timedelta(days=3)
     else:
-        filters = "AND pass_date = :d"
+        filters = "AND gp.pass_date = :d"
         params["d"] = target_date
 
     if status:
-        filters += " AND status = :status"
+        filters += " AND gp.status = :status"
         params["status"] = status
     if vehicle_no:
         filters += " AND vehicle_no ILIKE :vno"
