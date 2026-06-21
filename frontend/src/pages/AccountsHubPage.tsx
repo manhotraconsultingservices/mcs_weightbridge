@@ -11,6 +11,16 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { CreditCard, BookOpen, FileBarChart, FileBarChart2, ShieldCheck, Shield } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
+
+const MOBILE_TABS = [
+  { value: 'payments',   label: 'Payments' },
+  { value: 'statement',  label: 'Account Statement' },
+  { value: 'gst',        label: 'GST Returns' },
+  { value: 'gstr2b',     label: 'GSTR-2B (ITC)' },
+  { value: 'compliance', label: 'Compliance Docs' },
+  { value: 'activity',   label: 'Activity Log' },
+];
 import PaymentsPage from './PaymentsPage';
 import LedgerPage from './LedgerPage';
 import GstReportsPage from './GstReportsPage';
@@ -38,7 +48,8 @@ export default function AccountsHubPage() {
   return (
     <div className="space-y-3">
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList className="flex-wrap h-auto">
+        <MobileTabSelect value={tab} onValueChange={(v) => setTab(v as Tab)} options={MOBILE_TABS} />
+        <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
           <TabsTrigger value="payments" className="gap-1.5"><CreditCard className="h-3.5 w-3.5" /> Payments</TabsTrigger>
           <TabsTrigger value="statement" className="gap-1.5"><BookOpen className="h-3.5 w-3.5" /> Account Statement</TabsTrigger>
           <TabsTrigger value="gst" className="gap-1.5"><FileBarChart className="h-3.5 w-3.5" /> GST Returns</TabsTrigger>

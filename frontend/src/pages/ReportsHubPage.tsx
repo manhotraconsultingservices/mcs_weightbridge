@@ -8,6 +8,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield, XCircle, PieChart, TrendingUp, ShieldAlert, DoorOpen, Ticket } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
 import PaymentsPage from './PaymentsPage';
 import LedgerPage from './LedgerPage';
 import GstReportsPage from './GstReportsPage';
@@ -60,7 +61,8 @@ export default function ReportsHubPage() {
   return (
     <div className="space-y-3">
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList className="flex-wrap h-auto">
+        <MobileTabSelect value={tab} onValueChange={(v) => setTab(v as Tab)} options={TABS.map(tab => ({ value: tab.value, label: tab.label }))} />
+        <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
           {TABS.map(t => {
             const Icon = t.icon;
             return (

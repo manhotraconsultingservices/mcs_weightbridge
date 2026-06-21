@@ -11,6 +11,17 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { TrendingUp, ShieldAlert, XCircle, BarChart3, PieChart, DoorOpen, Ticket } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
+
+const MOBILE_TABS = [
+  { value: 'pl',             label: 'P&L & Sales' },
+  { value: 'anomaly',        label: 'Anomaly Detection' },
+  { value: 'write-offs',     label: 'Write-offs' },
+  { value: 'sales-status',   label: 'Sales by Status' },
+  { value: 'gst-split',      label: 'GST vs Cash' },
+  { value: 'gate-passes',    label: 'Gate Pass Register' },
+  { value: 'token-register', label: 'Token Register' },
+];
 import ReportsPage from './ReportsPage';
 import AnomalyReportPage from './AnomalyReportPage';
 import WriteOffsReportPage from './WriteOffsReportPage';
@@ -39,7 +50,8 @@ export default function AnalyticsHubPage() {
   return (
     <div className="space-y-3">
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList className="flex-wrap h-auto">
+        <MobileTabSelect value={tab} onValueChange={(v) => setTab(v as Tab)} options={MOBILE_TABS} />
+        <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
           <TabsTrigger value="pl" className="gap-1.5"><TrendingUp className="h-3.5 w-3.5" /> P&amp;L &amp; Sales</TabsTrigger>
           <TabsTrigger value="anomaly" className="gap-1.5"><ShieldAlert className="h-3.5 w-3.5" /> Anomaly Detection</TabsTrigger>
           <TabsTrigger value="write-offs" className="gap-1.5"><XCircle className="h-3.5 w-3.5" /> Write-offs</TabsTrigger>

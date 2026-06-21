@@ -9,6 +9,15 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Users, FileText, Receipt, Truck, FileMinus } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
+
+const MOBILE_TABS = [
+  { value: 'customers', label: 'Customers' },
+  { value: 'bills',     label: 'Bills' },
+  { value: 'estimates', label: 'Estimates' },
+  { value: 'challans',  label: 'Challans' },
+  { value: 'notes',     label: 'Notes' },
+];
 import CustomerPickerPage from './CustomerPickerPage';
 import InvoicesPage from './InvoicesPage';
 import QuotationsPage from './QuotationsPage';
@@ -35,7 +44,8 @@ export default function SalesHubPage() {
   return (
     <div className="space-y-3">
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList className="flex-wrap h-auto">
+        <MobileTabSelect value={tab} onValueChange={(v) => setTab(v as Tab)} options={MOBILE_TABS} />
+        <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
           <TabsTrigger value="customers" className="gap-1.5"><Users className="h-3.5 w-3.5" /> Customers</TabsTrigger>
           <TabsTrigger value="bills" className="gap-1.5"><FileText className="h-3.5 w-3.5" /> Bills</TabsTrigger>
           <TabsTrigger value="estimates" className="gap-1.5"><Receipt className="h-3.5 w-3.5" /> Estimates</TabsTrigger>

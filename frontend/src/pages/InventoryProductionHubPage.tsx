@@ -9,6 +9,17 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Boxes, Factory, Activity, Warehouse, Package, IndianRupee, Settings } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
+
+const MOBILE_TABS = [
+  { value: 'stock',          label: 'Finished Goods' },
+  { value: 'production',     label: 'Production' },
+  { value: 'production-dash',label: 'Prod. Dashboard' },
+  { value: 'store',          label: 'Store Inventory' },
+  { value: 'catalog',        label: 'Products Catalog' },
+  { value: 'rates',          label: 'Customer Rates' },
+  { value: 'prod-settings',  label: 'Prod. Settings' },
+];
 import ProductInventoryPage from './ProductInventoryPage';
 import ProductionPage from './ProductionPage';
 import ProductionDashboardPage from './ProductionDashboardPage';
@@ -37,7 +48,8 @@ export default function InventoryProductionHubPage() {
   return (
     <div className="space-y-3">
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList className="flex-wrap h-auto">
+        <MobileTabSelect value={tab} onValueChange={(v) => setTab(v as Tab)} options={MOBILE_TABS} />
+        <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
           <TabsTrigger value="stock" className="gap-1.5"><Boxes className="h-3.5 w-3.5" /> Finished Goods</TabsTrigger>
           <TabsTrigger value="production" className="gap-1.5"><Factory className="h-3.5 w-3.5" /> Production</TabsTrigger>
           <TabsTrigger value="production-dash" className="gap-1.5"><Activity className="h-3.5 w-3.5" /> Prod. Dashboard</TabsTrigger>

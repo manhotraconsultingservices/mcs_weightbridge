@@ -9,6 +9,17 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { DoorOpen, Scale, BarChart3, Camera, ScanSearch, MonitorPlay, AlertTriangle } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
+
+const MOBILE_TABS = [
+  { value: 'gate',      label: 'Gate Register' },
+  { value: 'tickets',   label: 'Weigh Tickets' },
+  { value: 'movement',  label: 'Movement Report' },
+  { value: 'cameras',   label: 'Camera & Scale' },
+  { value: 'snapshots', label: 'Snapshots' },
+  { value: 'anpr',      label: 'Gate Cameras' },
+  { value: 'review',    label: 'Plate Review' },
+];
 import GatePassPage from './GatePassPage';
 import TokenPageV1 from './TokenPageV1';
 import AnprTripsPage from './AnprTripsPage';
@@ -37,7 +48,8 @@ export default function WeighbridgeHubPage() {
   return (
     <div className="space-y-3">
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList className="flex-wrap h-auto">
+        <MobileTabSelect value={tab} onValueChange={(v) => setTab(v as Tab)} options={MOBILE_TABS} />
+        <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
           <TabsTrigger value="gate" className="gap-1.5"><DoorOpen className="h-3.5 w-3.5" /> Gate Register</TabsTrigger>
           <TabsTrigger value="tickets" className="gap-1.5"><Scale className="h-3.5 w-3.5" /> Weigh Tickets</TabsTrigger>
           <TabsTrigger value="movement" className="gap-1.5"><BarChart3 className="h-3.5 w-3.5" /> Movement Report</TabsTrigger>

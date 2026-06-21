@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Package, IndianRupee, Boxes, Factory, Activity, Settings, Mountain } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
 import ProductsPage from './ProductsPage';
 import PricingMatrixPage from './PricingMatrixPage';
 import ProductInventoryPage from './ProductInventoryPage';
@@ -45,7 +46,8 @@ export default function MaterialsHubPage() {
   return (
     <div className="space-y-3">
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList className="flex-wrap h-auto">
+        <MobileTabSelect value={tab} onValueChange={(v) => setTab(v as Tab)} options={TABS.map(t => ({ value: t.value, label: t.label }))} />
+        <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
           {TABS.map(t => {
             const Icon = t.icon;
             return (
