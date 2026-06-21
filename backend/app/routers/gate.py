@@ -237,14 +237,43 @@ async def create_gate_pass(
     }
 
 
+async def _stamp_agent_frame(company_id: str, gate_pass_id: str, position: str) -> str | None:
+    """Copy the latest agent-pushed frame to a gate-pass-specific path.
+
+    Returns the relative ``uploads/...`` path on success, None if no frame is available
+    (agent not running or never pushed for this position).
+    """
+    import shutil
+    uploads_base = _uploads_base()
+    src = os.path.join(uploads_base, "gate", "latest", f"{position}.jpg")
+    if not os.path.exists(src):
+        return None
+    today_str = date.today().strftime("%Y%m%d")
+    save_dir = os.path.join(uploads_base, "gate", today_str)
+    os.makedirs(save_dir, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%H%M%S")
+    filename = f"{position}_{gate_pass_id}_{ts}.jpg"
+    dest = os.path.join(save_dir, filename)
+    shutil.copy2(src, dest)
+    rel = os.path.relpath(dest, uploads_base)
+    return f"uploads/{rel.replace(os.sep, '/')}"
+
+
 async def _bg_capture_entry_photo(company_id: str, gate_pass_id: str):
-    """Background task: capture entry photo and update the gate pass row."""
+    """Background task: capture entry photo and update the gate pass row.
+
+    Cloud deployment: copies the latest frame pushed by gate_camera_agent (no direct camera
+    access from server). On-premise fallback: tries direct HTTP capture if no agent frame exists.
+    """
     from app.database import async_session_factory
     async with async_session_factory() as db:
         try:
-            photo_path = await _do_capture_and_store(
-                db, company_id, gate_pass_id, "entry", "manual", None
-            )
+            photo_path = await _stamp_agent_frame(company_id, gate_pass_id, "entry")
+            if photo_path is None:
+                # On-premise fallback: direct HTTP capture
+                photo_path = await _do_capture_and_store(
+                    db, company_id, gate_pass_id, "entry", "manual", None
+                )
             if photo_path:
                 await db.execute(
                     text("UPDATE gate_passes SET entry_photo_path = :p, updated_at = NOW() WHERE id = :id"),
@@ -535,12 +564,15 @@ async def record_exit(
 
 
 async def _bg_capture_exit_photo(company_id: str, gate_pass_id: str):
+    """Background task: capture exit photo. Mirrors entry logic — agent frame first."""
     from app.database import async_session_factory
     async with async_session_factory() as db:
         try:
-            photo_path = await _do_capture_and_store(
-                db, company_id, gate_pass_id, "exit", "manual", None
-            )
+            photo_path = await _stamp_agent_frame(company_id, gate_pass_id, "exit")
+            if photo_path is None:
+                photo_path = await _do_capture_and_store(
+                    db, company_id, gate_pass_id, "exit", "manual", None
+                )
             if photo_path:
                 await db.execute(
                     text("UPDATE gate_passes SET exit_photo_path = :p, updated_at = NOW() WHERE id = :id"),
