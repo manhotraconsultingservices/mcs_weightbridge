@@ -399,6 +399,31 @@ async def create_token(
     branch_id=Depends(get_current_branch_id),
 ):
     company, fy = await _get_company_and_fy(db)
+
+    # Block if this vehicle already has an active (in-progress) weighbridge token.
+    # Prevents 2 trucks with the same plate from being processed simultaneously.
+    vno_upper = (payload.vehicle_no or "").upper().strip()
+    if vno_upper:
+        active_row = await db.execute(
+            text("""
+                SELECT id, token_no, status FROM tokens
+                WHERE UPPER(vehicle_no) = :vno
+                AND status NOT IN ('COMPLETED', 'CANCELLED')
+                LIMIT 1
+            """),
+            {"vno": vno_upper},
+        )
+        active = active_row.fetchone()
+        if active:
+            label = active.token_no or f"(ID …{str(active.id)[-6:]})"
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Vehicle {vno_upper} already has an active token {label} "
+                    f"(status: {active.status}). Complete or cancel it before creating a new one."
+                ),
+            )
+
     # Determine gate_pass_no:
     # If a gate_pass_id is supplied (guard pre-created a pass), use that record's GP
     # number and link back. Otherwise auto-generate from number_sequences — this is the
@@ -498,6 +523,29 @@ async def create_volume_token(
         raise HTTPException(400, "volume_m3 must be greater than zero")
 
     company, fy = await _get_company_and_fy(db)
+
+    # Block if this vehicle already has an active (in-progress) token.
+    vno_upper_v = (payload.vehicle_no or "").upper().strip()
+    if vno_upper_v:
+        active_row_v = await db.execute(
+            text("""
+                SELECT id, token_no, status FROM tokens
+                WHERE UPPER(vehicle_no) = :vno
+                AND status NOT IN ('COMPLETED', 'CANCELLED')
+                LIMIT 1
+            """),
+            {"vno": vno_upper_v},
+        )
+        active_v = active_row_v.fetchone()
+        if active_v:
+            label_v = active_v.token_no or f"(ID …{str(active_v.id)[-6:]})"
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Vehicle {vno_upper_v} already has an active token {label_v} "
+                    f"(status: {active_v.status}). Complete or cancel it before creating a new one."
+                ),
+            )
 
     product = (await db.execute(
         select(Product).where(Product.id == payload.product_id)

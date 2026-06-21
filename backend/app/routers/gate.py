@@ -177,6 +177,26 @@ async def create_gate_pass(
     _guard_check(current_user)
     company_id = str(current_user.company_id)
 
+    # Prevent duplicate open gate passes for the same vehicle
+    vehicle_no_raw = (body.get("vehicle_no") or "").strip().upper()
+    if vehicle_no_raw:
+        dup = await db.execute(
+            text("""
+                SELECT gate_pass_no FROM gate_passes
+                WHERE UPPER(vehicle_no) = :vno AND status = 'inside'
+                LIMIT 1
+            """),
+            {"vno": vehicle_no_raw},
+        )
+        dup_row = dup.fetchone()
+        if dup_row:
+            raise HTTPException(
+                409,
+                f"Vehicle {vehicle_no_raw} already has an open gate pass "
+                f"({dup_row.gate_pass_no}) that is still inside the plant. "
+                f"Record exit for that pass before creating a new one.",
+            )
+
     gate_pass_no, seq_no = await _next_gate_pass_no(db, company_id)
 
     row = await db.execute(
