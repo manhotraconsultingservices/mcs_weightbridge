@@ -270,8 +270,22 @@ async def list_gate_passes(
     target_date_str = pass_date or date.today().isoformat()
     target_date = date.fromisoformat(target_date_str)  # asyncpg needs date obj, not str
 
-    filters = "AND pass_date = :d"
-    params: dict = {"cid": company_id, "d": target_date, "lim": page_size, "off": (page - 1) * page_size}
+    params: dict = {"cid": company_id, "lim": page_size, "off": (page - 1) * page_size}
+
+    # When loading open/unlinked passes for the token form (status=inside + unlinked, no
+    # explicit pass_date) look back 3 days so overnight trucks (entry yesterday, weighing
+    # today) are not invisible.  Every other caller gets the usual single-day filter.
+    if pass_date:
+        filters = "AND pass_date = :d"
+        params["d"] = target_date
+    elif status == "inside" and unlinked:
+        from datetime import timedelta
+        filters = "AND pass_date >= :d_from"
+        params["d_from"] = target_date - timedelta(days=3)
+    else:
+        filters = "AND pass_date = :d"
+        params["d"] = target_date
+
     if status:
         filters += " AND status = :status"
         params["status"] = status

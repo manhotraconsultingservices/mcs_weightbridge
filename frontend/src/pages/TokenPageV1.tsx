@@ -285,15 +285,27 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     }
   };
 
+  // Normalize a vehicle number for fuzzy matching: strip spaces, dashes, dots → uppercase.
+  // Handles variants like "HP-38-G-1671" vs "HP38G1671" vs "HP 38G1671".
+  const normalizeVno = (s: string) => s.toUpperCase().replace(/[\s\-./]/g, '');
+
   // Auto-select gate pass when vehicle number is set and exactly one open pass matches
   useEffect(() => {
-    const vno = form.vehicle_no.trim().toUpperCase();
+    const vno = normalizeVno(form.vehicle_no.trim());
     if (!vno || form.gate_pass_id) return;
-    const matches = openGatePasses.filter(gp => gp.vehicle_no?.toUpperCase() === vno);
+    const matches = openGatePasses.filter(gp => normalizeVno(gp.vehicle_no ?? '') === vno);
     if (matches.length === 1) {
       setForm(f => ({ ...f, gate_pass_id: matches[0].id }));
     }
   }, [form.vehicle_no, openGatePasses]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh gate passes every 30 s while no gate pass is selected, so a gate pass
+  // created by the guard AFTER the operator opened this page becomes visible automatically.
+  useEffect(() => {
+    if (form.gate_pass_id) return;
+    const id = setInterval(loadGatePasses, 30_000);
+    return () => clearInterval(id);
+  }, [form.gate_pass_id, loadGatePasses]);
 
   const handleVehicleSelect = (vehicle: Vehicle) => {
     setSelectedVehicle(vehicle);
@@ -764,9 +776,9 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
         {/* Gate Pass — required, created by gate guard */}
         {(() => {
-          const vno = form.vehicle_no.trim().toUpperCase();
+          const vno = normalizeVno(form.vehicle_no.trim());
           const matchingPasses = vno
-            ? openGatePasses.filter(gp => gp.vehicle_no?.toUpperCase() === vno)
+            ? openGatePasses.filter(gp => normalizeVno(gp.vehicle_no ?? '') === vno)
             : openGatePasses;
           return (
             <div className="space-y-1">
@@ -776,11 +788,12 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
                 </Label>
                 <button
                   type="button"
-                  className="text-[10px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-0.5"
+                  className="text-[11px] text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1 font-medium"
                   onClick={loadGatePasses}
-                  title="Refresh gate passes"
+                  title="Refresh gate passes from server"
                 >
-                  <RefreshCw className="h-2.5 w-2.5" />
+                  <RefreshCw className="h-3 w-3" />
+                  Refresh
                 </button>
               </div>
 
