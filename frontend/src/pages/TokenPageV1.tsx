@@ -777,9 +777,16 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
         {/* Gate Pass — required, created by gate guard */}
         {(() => {
           const vno = normalizeVno(form.vehicle_no.trim());
-          const matchingPasses = vno
+          // Passes whose vehicle_no exactly matches the entered number (after normalization)
+          const exactMatches = vno
             ? openGatePasses.filter(gp => normalizeVno(gp.vehicle_no ?? '') === vno)
             : openGatePasses;
+          const hasExactMatch = exactMatches.length > 0;
+          // Always show all open passes in the dropdown — exact matches appear first.
+          // This lets the operator manually select a pass even when vehicle numbers
+          // differ by a typo (e.g. HP38G1671 vs HP38G1671G).
+          const otherPasses = openGatePasses.filter(gp => !exactMatches.includes(gp));
+          const allPassesInOrder = [...exactMatches, ...otherPasses];
           return (
             <div className="space-y-1">
               <div className="flex items-center justify-between">
@@ -797,51 +804,61 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
                 </button>
               </div>
 
-              {matchingPasses.length === 0 ? (
+              {openGatePasses.length === 0 ? (
+                // No open passes at all — guard hasn't registered any truck
                 <div className="rounded border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
                   {vno
-                    ? <>No open gate pass for <strong>{vno}</strong>. Gate guard registers trucks at <strong>Gate Register</strong>.</>
+                    ? <>No open gate pass found. Gate guard registers trucks at <strong>Gate Register</strong>.</>
                     : 'Enter vehicle number to see matching gate passes.'}
                 </div>
               ) : (
-                <Select
-                  value={form.gate_pass_id || ''}
-                  onValueChange={v => {
-                    const gp = openGatePasses.find(g => g.id === v);
-                    setForm(f => ({
-                      ...f,
-                      gate_pass_id: v ?? '',
-                      vehicle_no: f.vehicle_no || (gp?.vehicle_no ?? ''),
-                    }));
-                  }}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <span className="truncate">
-                      {form.gate_pass_id
-                        ? (() => {
-                            const gp = openGatePasses.find(g => g.id === form.gate_pass_id);
-                            return gp ? `${gp.gate_pass_no} — ${gp.vehicle_no}` : 'Select gate pass';
-                          })()
-                        : `${matchingPasses.length} pass${matchingPasses.length !== 1 ? 'es' : ''} available — select…`
-                      }
-                    </span>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="" className="text-xs text-muted-foreground">
-                      — Skip (no gate pass) —
-                    </SelectItem>
-                    {matchingPasses.map(gp => (
-                      <SelectItem key={gp.id} value={gp.id} className="text-xs">
-                        <span className="font-mono font-semibold">{gp.gate_pass_no}</span>
-                        <span className="ml-2">{gp.vehicle_no}</span>
-                        {gp.status === 'exited' && (
-                          <span className="ml-1.5 rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-500">exited</span>
-                        )}
-                        {gp.driver_name && <span className="ml-1 text-muted-foreground">· {gp.driver_name}</span>}
+                <>
+                  {vno && !hasExactMatch && (
+                    <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
+                      No exact match for <strong>{vno}</strong> — select the correct pass below.
+                    </div>
+                  )}
+                  <Select
+                    value={form.gate_pass_id || ''}
+                    onValueChange={v => {
+                      const gp = openGatePasses.find(g => g.id === v);
+                      setForm(f => ({
+                        ...f,
+                        gate_pass_id: v ?? '',
+                        vehicle_no: f.vehicle_no || (gp?.vehicle_no ?? ''),
+                      }));
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <span className="truncate">
+                        {form.gate_pass_id
+                          ? (() => {
+                              const gp = openGatePasses.find(g => g.id === form.gate_pass_id);
+                              return gp ? `${gp.gate_pass_no} — ${gp.vehicle_no}` : 'Select gate pass';
+                            })()
+                          : hasExactMatch
+                            ? `${exactMatches.length} pass${exactMatches.length !== 1 ? 'es' : ''} available — select…`
+                            : `${openGatePasses.length} open pass${openGatePasses.length !== 1 ? 'es' : ''} — select…`
+                        }
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="" className="text-xs text-muted-foreground">
+                        — Skip (no gate pass) —
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                      {allPassesInOrder.map(gp => (
+                        <SelectItem key={gp.id} value={gp.id} className="text-xs">
+                          <span className="font-mono font-semibold">{gp.gate_pass_no}</span>
+                          <span className="ml-2">{gp.vehicle_no}</span>
+                          {gp.status === 'exited' && (
+                            <span className="ml-1.5 rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-500">exited</span>
+                          )}
+                          {gp.driver_name && <span className="ml-1 text-muted-foreground">· {gp.driver_name}</span>}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
               )}
             </div>
           );
