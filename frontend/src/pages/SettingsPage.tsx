@@ -2780,9 +2780,8 @@ function GateCameraSettingsTab() {
             <p>password = your_camera_password</p>
           </div>
           <p className="text-xs text-muted-foreground">
-            Download <code className="bg-muted px-1 rounded">gate_camera_agent.py</code> from
-            the <code className="bg-muted px-1 rounded">backend/</code> folder of the source code.
-            Run: <code className="bg-muted px-1 rounded">pip install requests</code> then
+            Files are in <code className="bg-muted px-1 rounded">backend/agents/</code> in the source code.
+            Run: <code className="bg-muted px-1 rounded">pip install -r requirements.txt</code> then
             <code className="bg-muted px-1 rounded"> python gate_camera_agent.py</code>
           </p>
         </CardContent>
