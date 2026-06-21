@@ -56,6 +56,7 @@ function AddEditDialog({ open, user, onClose, onSaved }: AddEditDialogProps) {
 
   const ROLES = useMemo(() => [
     { value: 'admin',              label: t('users.roles.admin') },
+    { value: 'gate_guard',         label: t('users.roles.gate_guard') },
     { value: 'store_manager',      label: t('users.roles.store_manager') },
     { value: 'operator',           label: t('users.roles.operator') },
     { value: 'sales_executive',    label: t('users.roles.sales_executive') },
