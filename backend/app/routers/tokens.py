@@ -407,8 +407,8 @@ async def create_token(
         resolved_gate_pass_no = await next_gate_pass_no(db, company.id, fy.id, branch_id)
     else:
         gp_row = await db.execute(
-            text("SELECT gate_pass_no, token_id, status FROM gate_passes WHERE id = :id AND company_id = :cid"),
-            {"id": str(payload.gate_pass_id), "cid": str(company.id)},
+            text("SELECT gate_pass_no, token_id, status FROM gate_passes WHERE id = :id"),
+            {"id": str(payload.gate_pass_id)},
         )
         gp = gp_row.fetchone()
         if not gp:
@@ -424,8 +424,8 @@ async def create_token(
             linked = linked_row.fetchone()
             if linked and linked.status == "CANCELLED":
                 await db.execute(
-                    text("UPDATE gate_passes SET token_id = NULL, updated_at = NOW() WHERE id = :id AND company_id = :cid"),
-                    {"id": str(payload.gate_pass_id), "cid": str(company.id)},
+                    text("UPDATE gate_passes SET token_id = NULL, updated_at = NOW() WHERE id = :id"),
+                    {"id": str(payload.gate_pass_id)},
                 )
             else:
                 raise HTTPException(status_code=409, detail="Gate pass already linked to another token. Select a different gate pass.")
@@ -461,8 +461,8 @@ async def create_token(
     # If linked to a gate pass record, stamp token_id on it in the same transaction
     if payload.gate_pass_id:
         await db.execute(
-            text("UPDATE gate_passes SET token_id = :tid, updated_at = NOW() WHERE id = :id AND company_id = :cid"),
-            {"tid": str(token.id), "id": str(payload.gate_pass_id), "cid": str(company.id)},
+            text("UPDATE gate_passes SET token_id = :tid, updated_at = NOW() WHERE id = :id"),
+            {"tid": str(token.id), "id": str(payload.gate_pass_id)},
         )
 
     await db.commit()

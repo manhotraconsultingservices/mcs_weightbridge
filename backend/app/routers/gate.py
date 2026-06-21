@@ -295,11 +295,16 @@ async def list_gate_passes(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    company_id = str(current_user.company_id)
+    # NOTE: do NOT filter by current_user.company_id here.  In multi-tenant mode the DB
+    # is already isolated per-tenant (wb_<slug>), so every row belongs to the same business.
+    # Filtering by current_user.company_id causes the operator to miss gate passes created
+    # by the gate guard / admin when those users have different company_id values in the
+    # users table — the exact bug that caused "No gate pass found" in the token form.
     target_date_str = pass_date or date.today().isoformat()
     target_date = date.fromisoformat(target_date_str)  # asyncpg needs date obj, not str
 
-    params: dict = {"cid": company_id, "lim": page_size, "off": (page - 1) * page_size}
+    params: dict = {"lim": page_size, "off": (page - 1) * page_size}
+    filters = ""
 
     # When loading open/unlinked passes for the token form (status=inside + unlinked, no
     # explicit pass_date) look back 3 days so overnight trucks (entry yesterday, weighing
@@ -334,7 +339,7 @@ async def list_gate_passes(
                    t.token_no, t.net_weight
             FROM gate_passes gp
             LEFT JOIN tokens t ON t.id = gp.token_id
-            WHERE gp.company_id = :cid {filters}
+            WHERE 1=1 {filters}
             ORDER BY gp.entry_time DESC
             LIMIT :lim OFFSET :off
         """),
@@ -343,7 +348,7 @@ async def list_gate_passes(
     items = [dict(r._mapping) for r in rows.fetchall()]
 
     total_row = await db.execute(
-        text(f"SELECT COUNT(*) FROM gate_passes gp WHERE gp.company_id = :cid {filters}"),
+        text(f"SELECT COUNT(*) FROM gate_passes gp WHERE 1=1 {filters}"),
         {k: v for k, v in params.items() if k not in ("lim", "off")},
     )
     total = total_row.scalar() or 0
@@ -377,9 +382,9 @@ async def daily_summary(
                                    AND token_id IS NULL
                                    AND status != 'cancelled')       AS unlinked_weighbridge
             FROM gate_passes
-            WHERE company_id = :cid AND pass_date = :d
+            WHERE pass_date = :d
         """),
-        {"cid": company_id, "d": target_date},
+        {"d": target_date},
     )
     c = counts.fetchone()
 
@@ -388,10 +393,10 @@ async def daily_summary(
             SELECT id, gate_pass_no, vehicle_no, vehicle_name, driver_name,
                    material, purpose, entry_time, token_id
             FROM gate_passes
-            WHERE company_id = :cid AND pass_date = :d AND status = 'inside'
+            WHERE pass_date = :d AND status = 'inside'
             ORDER BY entry_time
         """),
-        {"cid": company_id, "d": target_date},
+        {"d": target_date},
     )
     inside = _serialize([dict(r._mapping) for r in inside_rows.fetchall()])
 
@@ -424,9 +429,9 @@ async def get_gate_pass(
             LEFT JOIN vehicles v ON v.id = gp.vehicle_id
             LEFT JOIN tokens t ON t.id = gp.token_id
             LEFT JOIN users u ON u.id = gp.created_by
-            WHERE gp.id = :id AND gp.company_id = :cid
+            WHERE gp.id = :id
         """),
-        {"id": gp_id, "cid": str(current_user.company_id)},
+        {"id": gp_id},
     )
     gp = row.fetchone()
     if not gp:
@@ -461,7 +466,7 @@ async def update_gate_pass(
                 notes        = COALESCE(:notes, notes),
                 updated_by   = :uid,
                 updated_at   = NOW()
-            WHERE id = :id AND company_id = :cid
+            WHERE id = :id
         """),
         {
             "vno": body.get("vehicle_no"),
@@ -477,7 +482,6 @@ async def update_gate_pass(
             "notes": body.get("notes"),
             "uid": str(current_user.id),
             "id": gp_id,
-            "cid": company_id,
         },
     )
     await db.commit()
@@ -501,8 +505,8 @@ async def record_exit(
 
     # Fetch current state
     existing = await db.execute(
-        text("SELECT purpose, token_id, status FROM gate_passes WHERE id = :id AND company_id = :cid"),
-        {"id": gp_id, "cid": company_id},
+        text("SELECT purpose, token_id, status FROM gate_passes WHERE id = :id"),
+        {"id": gp_id},
     )
     gp = existing.fetchone()
     if not gp:
@@ -545,14 +549,13 @@ async def record_exit(
                 status     = 'exited',
                 updated_by = :uid,
                 updated_at = NOW()
-            WHERE id = :id AND company_id = :cid
+            WHERE id = :id
         """),
         {
             "etime": body.get("exit_time"),
             "tid": token_id,
             "uid": str(current_user.id),
             "id": gp_id,
-            "cid": company_id,
         },
     )
     await db.commit()
@@ -596,13 +599,12 @@ async def cancel_gate_pass(
             UPDATE gate_passes SET
                 status = 'cancelled', notes = COALESCE(:reason, notes),
                 updated_by = :uid, updated_at = NOW()
-            WHERE id = :id AND company_id = :cid AND status = 'inside'
+            WHERE id = :id AND status = 'inside'
         """),
         {
             "reason": body.get("reason"),
             "uid": str(current_user.id),
             "id": gp_id,
-            "cid": str(current_user.company_id),
         },
     )
     await db.commit()
@@ -666,8 +668,8 @@ async def capture_photo(
     if gate_pass_id:
         col = "entry_photo_path" if position == "entry" else "exit_photo_path"
         await db.execute(
-            text(f"UPDATE gate_passes SET {col} = :p, updated_at = NOW() WHERE id = :id AND company_id = :cid"),
-            {"p": photo_path, "id": gate_pass_id, "cid": company_id},
+            text(f"UPDATE gate_passes SET {col} = :p, updated_at = NOW() WHERE id = :id"),
+            {"p": photo_path, "id": gate_pass_id},
         )
 
     await db.commit()
