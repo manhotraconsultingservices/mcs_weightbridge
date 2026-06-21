@@ -9,6 +9,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { FileBarChart, FileBarChart2, ShieldCheck } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
+import { usePermissions } from '@/contexts/PermissionsContext';
 import GstReportsPage from './GstReportsPage';
 import Gstr2bReconcilePage from './Gstr2bReconcilePage';
 import CompliancePage from './CompliancePage';
@@ -24,7 +25,10 @@ const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
 export default function GstComplianceHubPage() {
   const nav = useNavigate();
   const loc = useLocation();
-  const initial = (new URLSearchParams(loc.search).get('tab') as Tab) || 'gst';
+  const { isTabAllowed } = usePermissions();
+  const visibleTabs = TABS.filter(t => isTabAllowed('/gst-compliance', t.value));
+  const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'gst';
+  const initial = (visibleTabs.find(t => t.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'gst') as Tab;
   const [tab, setTab] = useState<Tab>(initial);
 
   useEffect(() => {
@@ -38,9 +42,9 @@ export default function GstComplianceHubPage() {
   return (
     <div className="space-y-3">
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <MobileTabSelect value={tab} onValueChange={(v) => setTab(v as Tab)} options={TABS.map(t => ({ value: t.value, label: t.label }))} />
+        <MobileTabSelect value={tab} onValueChange={(v) => setTab(v as Tab)} options={visibleTabs.map(t => ({ value: t.value, label: t.label }))} />
         <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
-          {TABS.map(t => {
+          {visibleTabs.map(t => {
             const Icon = t.icon;
             return (
               <TabsTrigger key={t.value} value={t.value} className="gap-1.5">

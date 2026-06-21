@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '@/services/api';
+import type { RoleTabPermissions } from '@/contexts/PermissionsContext';
 
 // ── Default permissions (fallback if API unreachable) ─────────────────────── //
 
@@ -61,6 +62,7 @@ export interface AppSettings {
   wallpaperUrl: string | null;
   loading: boolean;
   refresh: () => void;
+  roleTabPerms: RoleTabPermissions; // { role → { hubPath → allowedTabValues[] } }
 }
 
 export function useAppSettings(userRole: string): AppSettings {
@@ -70,12 +72,14 @@ export function useAppSettings(userRole: string): AppSettings {
   );
   const [wallpaperUrl, setWallpaperUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [roleTabPerms, setRoleTabPerms] = useState<RoleTabPermissions>({});
 
   const fetchSettings = useCallback(async () => {
     try {
-      const [permsRes, wallRes] = await Promise.all([
+      const [permsRes, wallRes, tabRes] = await Promise.all([
         api.get<Record<string, string[]>>('/api/v1/app-settings/role-permissions'),
         api.get<{ url: string | null }>('/api/v1/app-settings/wallpaper/info'),
+        api.get<RoleTabPermissions>('/api/v1/app-settings/role-tab-permissions').catch(() => ({ data: {} as RoleTabPermissions })),
       ]);
 
       const map = permsRes.data ?? {};
@@ -86,6 +90,7 @@ export function useAppSettings(userRole: string): AppSettings {
 
       setPermissions(rolePerms);
       setWallpaperUrl(wallRes.data?.url ?? null);
+      setRoleTabPerms(tabRes.data ?? {});
     } catch {
       // Network error or unauthenticated — fall back to defaults silently
       setPermissions(userRole === 'admin' ? ['*'] : (DEFAULT_PERMISSIONS[userRole] ?? []));
@@ -103,5 +108,5 @@ export function useAppSettings(userRole: string): AppSettings {
     return () => window.removeEventListener('appsettings:updated', handler);
   }, [fetchSettings]);
 
-  return { permissions, wallpaperUrl, loading, refresh: fetchSettings };
+  return { permissions, wallpaperUrl, loading, refresh: fetchSettings, roleTabPerms };
 }

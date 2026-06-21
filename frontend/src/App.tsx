@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
 import { useAppSettings } from '@/hooks/useAppSettings';
+import { PermissionsContext, buildPermissionsCtx } from '@/contexts/PermissionsContext';
 import LoginPage from '@/pages/LoginPage';
 import LandingPage from '@/pages/LandingPage';
 import LicenseExpiredPage from '@/pages/LicenseExpiredPage';
@@ -126,7 +127,11 @@ function AmcBanner() {
 // Inner layout — only rendered when user is authenticated, so hooks are safe here.
 function AppLayout({ user, logout }: { user: User; logout: () => void }) {
   const { authorized: usbAuthorized } = useUsbGuard();
-  const { permissions, wallpaperUrl } = useAppSettings(user.role);
+  const { permissions, wallpaperUrl, roleTabPerms } = useAppSettings(user.role);
+  const permissionsCtx = useMemo(
+    () => buildPermissionsCtx(user.role, permissions, roleTabPerms),
+    [user.role, permissions, roleTabPerms],
+  );
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // PWA install prompt (Android Chrome "Add to Home Screen")
@@ -198,6 +203,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
           }
         >
           <div className={wallpaperUrl ? 'min-h-full bg-background/80 backdrop-blur-sm rounded-lg p-4' : ''}>
+            <PermissionsContext.Provider value={permissionsCtx}>
             <ErrorBoundary>
             <Routes>
             <Route path="/" element={<HomeRedirect permissions={permissions} role={user.role} />} />
@@ -266,6 +272,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
               <Route path="*" element={<HomeRedirect permissions={permissions} role={user.role} />} />
             </Routes>
             </ErrorBoundary>
+            </PermissionsContext.Provider>
           </div>
         </main>
         {/* Mobile bottom navigation bar — hidden on md+ */}

@@ -162,6 +162,37 @@ async def update_role_permissions(
     return payload
 
 
+# ── Tab-level Permissions ─────────────────────────────────────────────────────
+
+TAB_PERMISSIONS_KEY = "role_tab_permissions"
+
+
+@router.get("/role-tab-permissions")
+async def get_role_tab_permissions(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Return role→{hubPath→[allowedTabs]} map. Any authenticated user (needed by hub pages on load)."""
+    raw = await _get_raw(db, TAB_PERMISSIONS_KEY)
+    if raw:
+        try:
+            return json.loads(raw)
+        except Exception:
+            pass
+    return {}
+
+
+@router.put("/role-tab-permissions")
+async def update_role_tab_permissions(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Save role→tab map. Admin only. Empty list for a hub means all tabs allowed."""
+    await _upsert(db, TAB_PERMISSIONS_KEY, json.dumps(payload))
+    return payload
+
+
 # ── Invoice Action Permissions ────────────────────────────────────────────────
 
 INVOICE_ACTIONS_KEY = "invoice_action_permissions"

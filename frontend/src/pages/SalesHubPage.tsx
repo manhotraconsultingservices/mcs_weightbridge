@@ -10,14 +10,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Users, FileText, Receipt, Truck, FileMinus } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
-
-const MOBILE_TABS = [
-  { value: 'customers', label: 'Customers' },
-  { value: 'bills',     label: 'Bills' },
-  { value: 'estimates', label: 'Estimates' },
-  { value: 'challans',  label: 'Challans' },
-  { value: 'notes',     label: 'Notes' },
-];
+import { usePermissions } from '@/contexts/PermissionsContext';
 import CustomerPickerPage from './CustomerPickerPage';
 import InvoicesPage from './InvoicesPage';
 import QuotationsPage from './QuotationsPage';
@@ -26,10 +19,21 @@ import CreditDebitNotesPage from './CreditDebitNotesPage';
 
 type Tab = 'customers' | 'bills' | 'estimates' | 'challans' | 'notes';
 
+const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
+  { value: 'customers', label: 'Customers', icon: Users },
+  { value: 'bills',     label: 'Bills',     icon: FileText },
+  { value: 'estimates', label: 'Estimates', icon: Receipt },
+  { value: 'challans',  label: 'Challans',  icon: Truck },
+  { value: 'notes',     label: 'Notes',     icon: FileMinus },
+];
+
 export default function SalesHubPage() {
   const nav = useNavigate();
   const loc = useLocation();
-  const initial = (new URLSearchParams(loc.search).get('tab') as Tab) || 'customers';
+  const { isTabAllowed } = usePermissions();
+  const visibleTabs = TABS.filter(t => isTabAllowed('/sales', t.value));
+  const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'customers';
+  const initial = (visibleTabs.find(t => t.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'customers') as Tab;
   const [tab, setTab] = useState<Tab>(initial);
 
   // Keep URL in sync so refresh / share preserves the active tab
@@ -44,13 +48,16 @@ export default function SalesHubPage() {
   return (
     <div className="space-y-3">
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <MobileTabSelect value={tab} onValueChange={(v) => setTab(v as Tab)} options={MOBILE_TABS} />
+        <MobileTabSelect value={tab} onValueChange={(v) => setTab(v as Tab)} options={visibleTabs.map(t => ({ value: t.value, label: t.label }))} />
         <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
-          <TabsTrigger value="customers" className="gap-1.5"><Users className="h-3.5 w-3.5" /> Customers</TabsTrigger>
-          <TabsTrigger value="bills" className="gap-1.5"><FileText className="h-3.5 w-3.5" /> Bills</TabsTrigger>
-          <TabsTrigger value="estimates" className="gap-1.5"><Receipt className="h-3.5 w-3.5" /> Estimates</TabsTrigger>
-          <TabsTrigger value="challans" className="gap-1.5"><Truck className="h-3.5 w-3.5" /> Challans</TabsTrigger>
-          <TabsTrigger value="notes" className="gap-1.5"><FileMinus className="h-3.5 w-3.5" /> Notes</TabsTrigger>
+          {visibleTabs.map(t => {
+            const Icon = t.icon;
+            return (
+              <TabsTrigger key={t.value} value={t.value} className="gap-1.5">
+                <Icon className="h-3.5 w-3.5" /> {t.label}
+              </TabsTrigger>
+            );
+          })}
         </TabsList>
         <TabsContent value="customers" className="mt-4">
           <CustomerPickerPage />
