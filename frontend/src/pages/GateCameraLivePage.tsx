@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Camera, DoorOpen, RefreshCw, WifiOff } from 'lucide-react';
+import { AlertTriangle, Camera, RefreshCw, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/services/api';
 
@@ -66,7 +66,6 @@ function CameraPanel({ position, label, refreshInterval = 5000 }: CameraPanelPro
     };
   }, [capture, refreshInterval]);
 
-  const Icon = position === 'entry' ? DoorOpen : DoorOpen;
   const bgColor = position === 'entry' ? 'bg-emerald-500' : 'bg-rose-500';
   const labelColor = position === 'entry' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200';
 
