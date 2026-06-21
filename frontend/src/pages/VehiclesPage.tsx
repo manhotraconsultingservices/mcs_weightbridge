@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { Plus, Search, Pencil, Loader2, Truck, Settings2, X, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -426,7 +427,8 @@ export default function VehiclesPage() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
+        <MobileTabSelect value={tab} onValueChange={setTab} options={[{ value: 'vehicles', label: `${t('vehicle.tabVehicles')} (${vehicleTotal})` }, { value: 'drivers', label: `${t('vehicle.tabDrivers')} (${driverTotal})` }, { value: 'transporters', label: `${t('vehicle.tabTransporters')} (${transporterTotal})` }]} />
+        <TabsList className="hidden sm:inline-flex">
           <TabsTrigger value="vehicles">{t('vehicle.tabVehicles')} ({vehicleTotal})</TabsTrigger>
           <TabsTrigger value="drivers">{t('vehicle.tabDrivers')} ({driverTotal})</TabsTrigger>
           <TabsTrigger value="transporters">{t('vehicle.tabTransporters')} ({transporterTotal})</TabsTrigger>

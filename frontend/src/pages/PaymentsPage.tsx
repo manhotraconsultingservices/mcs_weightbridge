@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Plus, Search, ArrowUpCircle } from 'lucide-react';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { useTranslation } from 'react-i18next';
 import { PrintButton } from '@/components/PrintButton';
 import { Button } from '@/components/ui/button';
@@ -411,7 +412,8 @@ export default function PaymentsPage() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
+        <MobileTabSelect value={tab} onValueChange={setTab} options={[{ value: 'receipts', label: t('payment.receiptsTab') }, { value: 'vouchers', label: t('payment.vouchersTab') }]} />
+        <TabsList className="hidden sm:inline-flex">
           <TabsTrigger value="receipts">{t('payment.receiptsTab')}</TabsTrigger>
           <TabsTrigger value="vouchers">{t('payment.vouchersTab')}</TabsTrigger>
         </TabsList>

@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { BookOpen, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -138,7 +139,8 @@ export default function LedgerPage() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
+        <MobileTabSelect value={tab} onValueChange={setTab} options={[{ value: 'ledger', label: t('ledger.partyLedger') }, { value: 'outstanding', label: t('ledger.outstanding') }]} />
+        <TabsList className="hidden sm:inline-flex">
           <TabsTrigger value="ledger">{t('ledger.partyLedger')}</TabsTrigger>
           <TabsTrigger value="outstanding">{t('ledger.outstanding')}</TabsTrigger>
         </TabsList>

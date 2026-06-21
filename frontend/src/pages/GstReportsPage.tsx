@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import api from '@/services/api';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
 
 const fmt = (n: number) => '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const today = () => new Date().toISOString().slice(0, 10);
@@ -347,7 +348,8 @@ export default function GstReportsPage() {
       </div>
 
       <Tabs value={mainTab} onValueChange={setMainTab}>
-        <TabsList className="flex-wrap h-auto">
+        <MobileTabSelect value={mainTab} onValueChange={setMainTab} options={[{ value: 'gstr1', label: t('reports.gstr1') }, { value: 'gstr3b', label: t('reports.gstr3b') }]} />
+        <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
           <TabsTrigger value="gstr1">{t('reports.gstr1')}</TabsTrigger>
           <TabsTrigger value="gstr3b">{t('reports.gstr3b')}</TabsTrigger>
         </TabsList>
@@ -374,7 +376,8 @@ export default function GstReportsPage() {
               </div>
 
               <Tabs value={gstr1Tab} onValueChange={setGstr1Tab}>
-                <TabsList className="flex-wrap h-auto">
+                <MobileTabSelect value={gstr1Tab} onValueChange={setGstr1Tab} options={[{ value: 'b2b', label: `${t('gst.b2bTab')} (${gstr1Data.b2b.length})` }, { value: 'b2c', label: `${t('gst.b2cTab')} (${gstr1Data.b2c.length})` }, { value: 'hsn', label: t('gst.hsnSummary') }]} />
+                <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
                   <TabsTrigger value="b2b">{t('gst.b2bTab')} ({gstr1Data.b2b.length})</TabsTrigger>
                   <TabsTrigger value="b2c">{t('gst.b2cTab')} ({gstr1Data.b2c.length})</TabsTrigger>
                   <TabsTrigger value="hsn">{t('gst.hsnSummary')}</TabsTrigger>

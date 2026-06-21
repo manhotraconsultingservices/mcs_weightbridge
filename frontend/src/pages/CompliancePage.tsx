@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { toast } from 'sonner';
 import {
   Plus, FolderOpen, Edit2, Trash2, Upload,
@@ -761,7 +762,8 @@ export default function CompliancePage() {
       <div className="rounded-lg border bg-card">
         <div className="flex items-center gap-2 border-b px-4 py-3">
           <Tabs value={typeFilter} onValueChange={setTypeFilter}>
-            <TabsList>
+            <MobileTabSelect value={typeFilter} onValueChange={setTypeFilter} options={[{ value: 'all', label: t('compliance.allTab', { total }) }, ...itemTypes.map(v => ({ value: v, label: typeLabel(v) }))]} />
+            <TabsList className="hidden sm:inline-flex">
               <TabsTrigger value="all">{t('compliance.allTab', { total })}</TabsTrigger>
               {itemTypes.map(typeVal => (
                 <TabsTrigger key={typeVal} value={typeVal}>{typeLabel(typeVal)}</TabsTrigger>

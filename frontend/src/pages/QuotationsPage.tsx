@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { toast } from 'sonner';
 import { Plus, Search, Send, XCircle, ArrowRight, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -381,7 +382,8 @@ export default function QuotationsPage() {
         </div>
 
         <Tabs value={statusFilter} onValueChange={setStatusFilter}>
-          <TabsList>
+          <MobileTabSelect value={statusFilter} onValueChange={setStatusFilter} options={[{ value: 'all', label: t('common.all') }, { value: 'draft', label: t('quotation.status.draft') }, { value: 'sent', label: t('quotation.status.sent') }, { value: 'accepted', label: t('quotation.status.accepted') }, { value: 'converted', label: t('quotation.status.converted') }]} />
+          <TabsList className="hidden sm:inline-flex">
             <TabsTrigger value="all">{t('common.all')}</TabsTrigger>
             <TabsTrigger value="draft">{t('quotation.status.draft')}</TabsTrigger>
             <TabsTrigger value="sent">{t('quotation.status.sent')}</TabsTrigger>

@@ -26,6 +26,7 @@ import {
 import api from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
 import PortalAccessDialog from '@/components/PortalAccessDialog';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
 import type { Party360Response } from '@/types';
 
@@ -139,6 +140,7 @@ export default function CustomerProfilePage() {
 
   // Mass write-off selection (per-invoice checkbox)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [profileTab, setProfileTab] = useState('invoices');
   const [bulkBusy, setBulkBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -437,8 +439,9 @@ export default function CustomerProfilePage() {
       </Card>
 
       {/* ── Tabs: invoices / payments / pricing ───────────────────────── */}
-      <Tabs defaultValue="invoices" className="w-full">
-        <TabsList>
+      <Tabs value={profileTab} onValueChange={setProfileTab} className="w-full">
+        <MobileTabSelect value={profileTab} onValueChange={setProfileTab} options={[{ value: 'invoices', label: `Invoices (${recent_invoices.length})` }, { value: 'payments', label: `Payments (${recent_payments.length})` }, { value: 'pricing', label: `Pricing (${custom_rates.length})` }]} />
+        <TabsList className="hidden sm:inline-flex">
           <TabsTrigger value="invoices">
             <FileText className="mr-1.5 h-3.5 w-3.5" /> Invoices ({recent_invoices.length})
           </TabsTrigger>

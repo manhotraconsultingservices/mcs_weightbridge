@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { Search, TrendingUp, TrendingDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -207,7 +208,8 @@ export default function ReportsPage() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
+        <MobileTabSelect value={tab} onValueChange={setTab} options={[{ value: 'sales', label: 'Sales / Purchase Register' }, { value: 'weight', label: 'Weight Register' }, { value: 'pl', label: 'Profit & Loss' }, { value: 'stock', label: 'Stock Summary' }]} />
+        <TabsList className="hidden sm:inline-flex">
           <TabsTrigger value="sales">Sales / Purchase Register</TabsTrigger>
           <TabsTrigger value="weight">Weight Register</TabsTrigger>
           <TabsTrigger value="pl">Profit &amp; Loss</TabsTrigger>

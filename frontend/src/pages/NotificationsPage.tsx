@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { Bell, Send, Plus, Edit2, Trash2, Mail, MessageSquare, Phone, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -295,7 +296,8 @@ export default function NotificationsPage() {
       </div>
 
       <Tabs value={tab} onValueChange={v => setTab(v ?? 'templates')}>
-        <TabsList>
+        <MobileTabSelect value={tab} onValueChange={v => setTab(v ?? 'templates')} options={[{ value: 'templates', label: 'Templates' }, { value: 'recipients', label: 'Recipients' }, { value: 'log', label: 'Delivery Log' }]} />
+        <TabsList className="hidden sm:inline-flex">
           <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="recipients"><Users className="mr-1 h-3.5 w-3.5" />Recipients</TabsTrigger>
           <TabsTrigger value="log">Delivery Log</TabsTrigger>

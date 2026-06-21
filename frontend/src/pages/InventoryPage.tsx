@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { toast } from 'sonner';
 import {
   Package, Plus, ShoppingCart, History, Settings,
@@ -2343,7 +2344,8 @@ export default function InventoryPage() {
       )}
 
       <Tabs value={activeTab} onValueChange={v => setActiveTab(v as any)}>
-        <TabsList className="flex-wrap h-auto">
+        <MobileTabSelect value={activeTab} onValueChange={v => setActiveTab(v as any)} options={[{ value: 'stock', label: '📦 Stock' }, { value: 'orders', label: `📋 Orders${pendingCount > 0 ? ` (${pendingCount})` : ''}` }, { value: 'history', label: '📊 History' }, { value: 'analytics', label: '📈 Analytics' }, ...(isAdmin ? [{ value: 'settings', label: '⚙️ Settings' }] : [])]} />
+        <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
           <TabsTrigger value="stock">📦 Stock</TabsTrigger>
           <TabsTrigger value="orders" className="relative">
             📋 Orders
