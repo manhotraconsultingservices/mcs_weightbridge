@@ -293,7 +293,11 @@ async def list_gate_passes(
         filters += " AND vehicle_no ILIKE :vno"
         params["vno"] = f"%{vehicle_no}%"
     if unlinked:
-        filters += " AND gp.token_id IS NULL"
+        # Include passes with token_id IS NULL (never linked) OR linked to a CANCELLED token
+        filters += (
+            " AND (gp.token_id IS NULL"
+            " OR EXISTS (SELECT 1 FROM tokens t2 WHERE t2.id = gp.token_id AND t2.status = 'CANCELLED'))"
+        )
 
     rows = await db.execute(
         text(f"""

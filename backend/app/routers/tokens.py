@@ -418,7 +418,19 @@ async def create_token(
     if gp.status == "cancelled":
         raise HTTPException(status_code=409, detail="Gate pass is cancelled. Create a new gate pass for this truck.")
     if gp.token_id:
-        raise HTTPException(status_code=409, detail="Gate pass already linked to another token. Select a different gate pass.")
+        # If the linked token was cancelled, auto-unlink so this gate pass can be reused
+        linked_row = await db.execute(
+            text("SELECT status FROM tokens WHERE id = :tid"),
+            {"tid": str(gp.token_id)},
+        )
+        linked = linked_row.fetchone()
+        if linked and linked.status == "CANCELLED":
+            await db.execute(
+                text("UPDATE gate_passes SET token_id = NULL, updated_at = NOW() WHERE id = :id AND company_id = :cid"),
+                {"id": str(payload.gate_pass_id), "cid": str(company.id)},
+            )
+        else:
+            raise HTTPException(status_code=409, detail="Gate pass already linked to another token. Select a different gate pass.")
     resolved_gate_pass_no = gp.gate_pass_no
 
     token = Token(
@@ -520,7 +532,18 @@ async def create_volume_token(
     if vgp.status == "cancelled":
         raise HTTPException(status_code=409, detail="Gate pass is cancelled. Create a new gate pass for this truck.")
     if vgp.token_id:
-        raise HTTPException(status_code=409, detail="Gate pass already linked to another token. Select a different gate pass.")
+        linked_row2 = await db.execute(
+            text("SELECT status FROM tokens WHERE id = :tid"),
+            {"tid": str(vgp.token_id)},
+        )
+        linked2 = linked_row2.fetchone()
+        if linked2 and linked2.status == "CANCELLED":
+            await db.execute(
+                text("UPDATE gate_passes SET token_id = NULL, updated_at = NOW() WHERE id = :id AND company_id = :cid"),
+                {"id": str(payload.gate_pass_id), "cid": str(company.id)},
+            )
+        else:
+            raise HTTPException(status_code=409, detail="Gate pass already linked to another token. Select a different gate pass.")
     resolved_vol_gate_pass_no = vgp.gate_pass_no
 
     token = Token(
@@ -937,6 +960,11 @@ async def cancel_token(
     if token.status == "COMPLETED":
         raise HTTPException(400, "Cannot cancel a completed token. Create a credit note instead.")
     token.status = "CANCELLED"
+    # Unlink any gate pass linked to this token so it becomes available for a new token
+    await db.execute(
+        text("UPDATE gate_passes SET token_id = NULL, updated_at = NOW() WHERE token_id = :tid"),
+        {"tid": str(token_id)},
+    )
     await db.commit()
 
     # Audit log
