@@ -37,7 +37,7 @@ export default function InventoryProductionHubPage() {
   return (
     <div className="space-y-3">
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList>
+        <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="stock" className="gap-1.5"><Boxes className="h-3.5 w-3.5" /> Finished Goods</TabsTrigger>
           <TabsTrigger value="production" className="gap-1.5"><Factory className="h-3.5 w-3.5" /> Production</TabsTrigger>
           <TabsTrigger value="production-dash" className="gap-1.5"><Activity className="h-3.5 w-3.5" /> Prod. Dashboard</TabsTrigger>

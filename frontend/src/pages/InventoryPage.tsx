@@ -2343,7 +2343,7 @@ export default function InventoryPage() {
       )}
 
       <Tabs value={activeTab} onValueChange={v => setActiveTab(v as any)}>
-        <TabsList>
+        <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="stock">📦 Stock</TabsTrigger>
           <TabsTrigger value="orders" className="relative">
             📋 Orders

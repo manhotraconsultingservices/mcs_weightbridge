@@ -37,7 +37,7 @@ export default function WeighbridgeHubPage() {
   return (
     <div className="space-y-3">
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList>
+        <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="gate" className="gap-1.5"><DoorOpen className="h-3.5 w-3.5" /> Gate Register</TabsTrigger>
           <TabsTrigger value="tickets" className="gap-1.5"><Scale className="h-3.5 w-3.5" /> Weigh Tickets</TabsTrigger>
           <TabsTrigger value="movement" className="gap-1.5"><BarChart3 className="h-3.5 w-3.5" /> Movement Report</TabsTrigger>

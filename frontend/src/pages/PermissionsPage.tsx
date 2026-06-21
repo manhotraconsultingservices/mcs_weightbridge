@@ -295,7 +295,7 @@ export default function PermissionsPage() {
 
       <div className="rounded-lg border bg-card p-4">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="mb-4">
+          <TabsList className="flex-wrap h-auto mb-4">
             {ROLE_TABS.map(r => (
               <TabsTrigger key={r.value} value={r.value} className={`data-[state=active]:${r.color}`}>
                 {r.label}
