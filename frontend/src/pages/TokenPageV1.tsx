@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/select';
 import { useWeight } from '@/hooks/useWeight';
 import { useAuth } from '@/hooks/useAuth';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import api from '@/services/api';
 import type { Token, TokenListResponse, Party, Product, Vehicle, GatePass, SnapshotResult, TokenSnapshotsResponse } from '@/types';
 import { cn } from '@/lib/utils';
@@ -1509,6 +1510,7 @@ export default function TokenPageV1() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const isMobile = useIsMobile();
 
   const [tokens, setTokens] = useState<Token[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1642,6 +1644,80 @@ export default function TokenPageV1() {
   // character-level wrapping (e.g. "T o u r N o i d a" rendered vertically).
   // Weight columns widened slightly so "10.000 MT / 235 CFT" fits on one line.
   const COLS = TOKEN_COL_DEFS.filter(c => visibleCols.includes(c.key)).map(c => c.width).join(' ');
+
+  // ── Mobile layout: stacked sections instead of resizable split ──────── //
+  if (isMobile) {
+    return (
+      <div className="flex flex-col gap-3 pb-20">
+        <ScaleStatus />
+        <CreateTokenForm onCreated={handleTokenCreated} />
+        <div className="grid grid-cols-2 gap-2 h-36">
+          <CameraPanel cameraId="front" label={t('token.frontCamera')} />
+          <CameraPanel cameraId="top" label={t('token.topCamera')} />
+        </div>
+        {/* Compact token list */}
+        <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+          <div className="px-3 py-2 border-b bg-muted/30 flex items-center justify-between shrink-0">
+            <div>
+              <p className="text-sm font-semibold">{dateFrom === today() && dateTo === today() ? t('token.todayTokens') : t('token.tokenList')}</p>
+              <p className="text-[10px] text-muted-foreground">{filtered.length} tokens · {tokens.filter(canWeigh).length} {t('token.activeCount')}</p>
+            </div>
+            <Button size="sm" variant="ghost" onClick={fetchTokens} disabled={loading}>
+              <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="px-3 py-8 text-center text-sm text-muted-foreground">No tokens yet today</div>
+          ) : (
+            <div className="divide-y">
+              {filtered.map(token => {
+                const sc = STATUS_CONFIG[token.status as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG.OPEN;
+                return (
+                  <div key={token.id} className="px-3 py-2.5 flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-mono font-bold text-primary">
+                          {token.token_no ? `#${token.token_no}` : `GP/${token.gate_pass_no || '...'}`}
+                        </span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${sc.color}`}>{sc.label}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">
+                        {token.vehicle_no} · {token.net_weight ? wFmt(token.net_weight) : token.gross_weight ? wFmt(token.gross_weight) + ' (gross)' : '—'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {canWeigh(token) && (
+                        <Button size="sm" variant="outline" className="h-9 w-9 p-0"
+                          onClick={() => { setWeightToken(token); setWeightStage(token.status === 'OPEN' ? 'first' : 'second'); setWeightOpen(true); }}>
+                          <Scale className="h-4 w-4" />
+                        </Button>
+                      )}
+                      <Button size="sm" variant="ghost" className="h-9 w-9 p-0"
+                        onClick={() => setTokenModalId(token.id)}>
+                        <ArrowRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <WeightCaptureDialog
+          token={weightToken}
+          weightStage={weightStage}
+          open={weightOpen}
+          onClose={() => { setWeightOpen(false); fetchTokens(); }}
+          onDone={handleWeightDone}
+        />
+        <TokenDetailModal tokenId={tokenModalId} onClose={() => setTokenModalId(null)} />
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-7rem)] overflow-hidden">

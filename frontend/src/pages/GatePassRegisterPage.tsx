@@ -1,10 +1,12 @@
 import { useState, useCallback, useEffect } from 'react';
-import { DoorOpen, RefreshCw } from 'lucide-react';
+import { DoorOpen, RefreshCw, Camera, ImageOff, X, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
+import { TokenDetailModal } from '@/components/TokenDetailModal';
 import api from '@/services/api';
 
 interface GatePassRow {
@@ -23,7 +25,10 @@ interface GatePassRow {
   exit_time: string | null;
   dwell_minutes: number | null;
   token_no: number | null;
+  token_id: string | null;
   net_weight_mt: number | null;
+  entry_photo_path: string | null;
+  exit_photo_path: string | null;
   notes: string | null;
   created_by: string | null;
 }
@@ -59,43 +64,151 @@ function daysAgo(n: number) {
   return d.toISOString().split('T')[0];
 }
 
-const COLUMNS: ColumnDef<GatePassRow>[] = [
-  { key: 'gate_pass_no', label: 'Gate Pass No', accessor: r => r.gate_pass_no,
-    format: v => <span className="font-mono font-semibold">{String(v)}</span> },
-  { key: 'pass_date', label: 'Date', type: 'date', accessor: r => r.pass_date,
-    format: v => new Date(String(v)).toLocaleDateString('en-IN') },
-  { key: 'vehicle_no', label: 'Vehicle', accessor: r => r.vehicle_no ?? '—' },
-  { key: 'driver_name', label: 'Driver', accessor: r => r.driver_name ?? '—' },
-  { key: 'material', label: 'Material', accessor: r => r.material ?? '—' },
-  { key: 'purpose', label: 'Purpose', type: 'enum',
-    enumOptions: ['weighbridge', 'delivery', 'pickup', 'own_use', 'other'],
-    accessor: r => r.purpose,
-    format: v => <span className="capitalize">{String(v).replace('_', ' ')}</span> },
-  { key: 'status', label: 'Status', type: 'enum',
-    enumOptions: ['inside', 'exited', 'cancelled'],
-    accessor: r => r.status,
-    format: v => (
-      <Badge className={`text-xs ${STATUS_COLORS[String(v)] ?? ''}`}>
-        {String(v).charAt(0).toUpperCase() + String(v).slice(1)}
-      </Badge>
-    ),
-    exportValue: r => r.status },
-  { key: 'entry_time', label: 'Entry (IST)', accessor: r => r.entry_time ?? '',
-    format: v => fmtIST(v as string | null) },
-  { key: 'exit_time', label: 'Exit (IST)', accessor: r => r.exit_time ?? '',
-    format: v => fmtIST(v as string | null) },
-  { key: 'dwell_minutes', label: 'Dwell (min)', type: 'number', align: 'right',
-    accessor: r => r.dwell_minutes ?? '',
-    format: v => v !== '' ? `${v} min` : '—' },
-  { key: 'token_no', label: 'Token #', type: 'number', accessor: r => r.token_no ?? '',
-    format: v => v !== '' ? `#${v}` : '—' },
-  { key: 'net_weight_mt', label: 'Net (MT)', type: 'number', align: 'right',
-    accessor: r => r.net_weight_mt ?? '',
-    format: v => v !== '' ? `${Number(v).toFixed(3)} MT` : '—' },
-  { key: 'created_by', label: 'Created By', defaultVisible: false, accessor: r => r.created_by ?? '—' },
-  { key: 'notes', label: 'Notes', defaultVisible: false, accessor: r => r.notes ?? '' },
-];
+// ── Gate Pass Detail Dialog ───────────────────────────────────────────────────
+function GatePassDetailDialog({
+  pass,
+  onClose,
+  onViewToken,
+}: {
+  pass: GatePassRow | null;
+  onClose: () => void;
+  onViewToken: (tokenId: string) => void;
+}) {
+  const [lightbox, setLightbox] = useState<{ src: string; label: string } | null>(null);
 
+  if (!pass) return null;
+
+  const photoUrl = (path: string | null) =>
+    path ? `/${path.replace(/^\//, '')}` : null;
+
+  const entryUrl = photoUrl(pass.entry_photo_path);
+  const exitUrl = photoUrl(pass.exit_photo_path);
+
+  return (
+    <>
+      <Dialog open={!!pass} onOpenChange={v => !v && onClose()}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DoorOpen className="h-4 w-4 text-primary" />
+              Gate Pass
+              <span className="font-mono text-primary">{pass.gate_pass_no}</span>
+              <Badge className={`ml-2 text-xs ${STATUS_COLORS[pass.status] ?? ''}`}>
+                {pass.status.charAt(0).toUpperCase() + pass.status.slice(1)}
+              </Badge>
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 text-sm">
+            {/* Info grid */}
+            <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted/40 p-3">
+              {[
+                { label: 'Vehicle', value: pass.vehicle_no ?? '—' },
+                { label: 'Vehicle Name', value: pass.vehicle_name ?? '—' },
+                { label: 'Driver', value: pass.driver_name ?? '—' },
+                { label: 'Driver Phone', value: pass.driver_phone ?? '—' },
+                { label: 'Material', value: pass.material ?? '—' },
+                { label: 'Purpose', value: pass.purpose.replace('_', ' ') },
+                { label: 'Date', value: new Date(pass.pass_date).toLocaleDateString('en-IN') },
+                { label: 'Dwell', value: pass.dwell_minutes != null ? `${pass.dwell_minutes} min` : '—' },
+                { label: 'Entry (IST)', value: fmtIST(pass.entry_time) },
+                { label: 'Exit (IST)', value: fmtIST(pass.exit_time) },
+                { label: 'Net Weight', value: pass.net_weight_mt != null ? `${Number(pass.net_weight_mt).toFixed(3)} MT` : '—' },
+                { label: 'Created By', value: pass.created_by ?? '—' },
+              ].map(({ label, value }) => (
+                <div key={label}>
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="font-medium capitalize">{value}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Notes */}
+            {pass.notes && (
+              <div className="rounded-lg border px-3 py-2 text-muted-foreground italic text-xs">
+                {pass.notes}
+              </div>
+            )}
+
+            {/* Photos */}
+            {(entryUrl || exitUrl) && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+                  <Camera className="h-3.5 w-3.5" /> Gate Photos
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  {(['entry', 'exit'] as const).map(pos => {
+                    const url = pos === 'entry' ? entryUrl : exitUrl;
+                    return (
+                      <div key={pos}>
+                        <p className="text-xs text-muted-foreground capitalize mb-1">{pos} Photo</p>
+                        {url ? (
+                          <img
+                            src={url}
+                            alt={`${pos} photo`}
+                            className="w-full rounded border object-cover cursor-zoom-in"
+                            style={{ maxHeight: 160 }}
+                            onClick={() => setLightbox({ src: url, label: `${pass.gate_pass_no} — ${pos} photo` })}
+                          />
+                        ) : (
+                          <div className="flex items-center justify-center h-32 rounded border bg-muted text-muted-foreground gap-1">
+                            <ImageOff className="h-4 w-4" />
+                            <span className="text-xs">No photo</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* View Token */}
+            {pass.token_id && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-2"
+                onClick={() => { onClose(); onViewToken(pass.token_id!); }}
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                View Token #{pass.token_no}
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/85 backdrop-blur-sm"
+          onClick={() => setLightbox(null)}
+        >
+          <div className="relative max-w-4xl w-full mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-2 px-1">
+              <span className="text-white text-sm font-medium">{lightbox.label}</span>
+              <button
+                onClick={() => setLightbox(null)}
+                className="text-white/60 hover:text-white text-xs border border-white/20 rounded px-2 py-0.5 flex items-center gap-1"
+              >
+                <X className="h-3 w-3" /> Close
+              </button>
+            </div>
+            <img
+              src={lightbox.src}
+              alt={lightbox.label}
+              className="w-full rounded-lg shadow-2xl"
+              style={{ maxHeight: '80vh', objectFit: 'contain' }}
+            />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function GatePassRegisterPage() {
   const [fromDate, setFromDate] = useState(daysAgo(6));
   const [toDate, setToDate] = useState(today());
@@ -105,6 +218,8 @@ export default function GatePassRegisterPage() {
   const [data, setData] = useState<GatePassRegister | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
+  const [selectedPass, setSelectedPass] = useState<GatePassRow | null>(null);
+  const [tokenModalId, setTokenModalId] = useState<string | null>(null);
 
   const fetch = useCallback(() => {
     setLoading(true);
@@ -123,6 +238,59 @@ export default function GatePassRegisterPage() {
   }, [fromDate, toDate, status, purpose, vehicleNo]);
 
   useEffect(() => { fetch(); }, [fetch]);
+
+  const COLUMNS: ColumnDef<GatePassRow>[] = [
+    { key: 'gate_pass_no', label: 'Gate Pass No', accessor: r => r.gate_pass_no,
+      format: (v, row) => (
+        <button
+          className="font-mono font-semibold text-primary underline hover:opacity-75 text-left"
+          onClick={() => setSelectedPass(row)}
+        >
+          {String(v)}
+        </button>
+      ),
+      exportValue: r => r.gate_pass_no },
+    { key: 'pass_date', label: 'Date', type: 'date', accessor: r => r.pass_date,
+      format: v => new Date(String(v)).toLocaleDateString('en-IN') },
+    { key: 'vehicle_no', label: 'Vehicle', accessor: r => r.vehicle_no ?? '—' },
+    { key: 'driver_name', label: 'Driver', accessor: r => r.driver_name ?? '—' },
+    { key: 'material', label: 'Material', accessor: r => r.material ?? '—' },
+    { key: 'purpose', label: 'Purpose', type: 'enum',
+      enumOptions: ['weighbridge', 'delivery', 'pickup', 'own_use', 'other'],
+      accessor: r => r.purpose,
+      format: v => <span className="capitalize">{String(v).replace('_', ' ')}</span> },
+    { key: 'status', label: 'Status', type: 'enum',
+      enumOptions: ['inside', 'exited', 'cancelled'],
+      accessor: r => r.status,
+      format: v => (
+        <Badge className={`text-xs ${STATUS_COLORS[String(v)] ?? ''}`}>
+          {String(v).charAt(0).toUpperCase() + String(v).slice(1)}
+        </Badge>
+      ),
+      exportValue: r => r.status },
+    { key: 'entry_time', label: 'Entry (IST)', accessor: r => r.entry_time ?? '',
+      format: v => fmtIST(v as string | null) },
+    { key: 'exit_time', label: 'Exit (IST)', accessor: r => r.exit_time ?? '',
+      format: v => fmtIST(v as string | null) },
+    { key: 'dwell_minutes', label: 'Dwell (min)', type: 'number', align: 'right',
+      accessor: r => r.dwell_minutes ?? '',
+      format: v => v !== '' ? `${v} min` : '—' },
+    { key: 'token_no', label: 'Token #', type: 'number', accessor: r => r.token_no ?? '',
+      format: (v, row) => v !== '' ? (
+        <button
+          className="text-primary underline hover:opacity-75 font-mono"
+          onClick={() => row.token_id && setTokenModalId(row.token_id)}
+        >
+          #{String(v)}
+        </button>
+      ) : <span className="text-muted-foreground">—</span>,
+      exportValue: r => r.token_no ?? '' },
+    { key: 'net_weight_mt', label: 'Net (MT)', type: 'number', align: 'right',
+      accessor: r => r.net_weight_mt ?? '',
+      format: v => v !== '' ? `${Number(v).toFixed(3)} MT` : '—' },
+    { key: 'created_by', label: 'Created By', defaultVisible: false, accessor: r => r.created_by ?? '—' },
+    { key: 'notes', label: 'Notes', defaultVisible: false, accessor: r => r.notes ?? '' },
+  ];
 
   const items = data?.items ?? [];
 
@@ -182,7 +350,6 @@ export default function GatePassRegisterPage() {
           {loading ? 'Loading…' : 'Refresh'}
         </Button>
 
-        {/* Quick date presets */}
         <div className="flex gap-1">
           {[
             { label: 'Today', from: today(), to: today() },
@@ -222,6 +389,19 @@ export default function GatePassRegisterPage() {
         exportFilename={`gate-pass-register-${fromDate}-to-${toDate}`}
         defaultSort={{ key: 'pass_date', direction: 'desc' }}
         emptyMessage="No gate passes found for the selected period."
+      />
+
+      {/* Gate pass detail dialog */}
+      <GatePassDetailDialog
+        pass={selectedPass}
+        onClose={() => setSelectedPass(null)}
+        onViewToken={id => setTokenModalId(id)}
+      />
+
+      {/* Token detail modal (opened from gate pass dialog or token # link) */}
+      <TokenDetailModal
+        tokenId={tokenModalId}
+        onClose={() => setTokenModalId(null)}
       />
     </div>
   );

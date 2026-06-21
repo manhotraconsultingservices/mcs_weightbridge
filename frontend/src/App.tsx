@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
@@ -69,6 +69,7 @@ import TokenPageV1 from '@/pages/TokenPageV1';
 import PlatformLoginPage from '@/pages/PlatformLoginPage';
 import PlatformDashboard from '@/pages/PlatformDashboard';
 import Sidebar from '@/components/Sidebar';
+import MobileBottomNav from '@/components/MobileBottomNav';
 import { usePlatformAuth } from '@/hooks/usePlatformAuth';
 import type { User } from '@/types';
 
@@ -124,6 +125,26 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
   const { permissions, wallpaperUrl } = useAppSettings(user.role);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
+  // PWA install prompt (Android Chrome "Add to Home Screen")
+  const deferredInstallPrompt = useRef<Event & { prompt: () => void } | null>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  useEffect(() => {
+    if (localStorage.getItem('pwa_install_dismissed')) return;
+    const handler = (e: Event) => {
+      e.preventDefault();
+      deferredInstallPrompt.current = e as Event & { prompt: () => void };
+      setShowInstallBanner(true);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  function handleInstall() {
+    deferredInstallPrompt.current?.prompt();
+    setShowInstallBanner(false);
+    localStorage.setItem('pwa_install_dismissed', '1');
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar
@@ -136,22 +157,31 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
       />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <AmcBanner />
+        {/* Top-right: branch picker + offline indicator + PWA install chip */}
         <div className="fixed top-2 right-3 z-50 flex items-center gap-2">
+          {showInstallBanner && (
+            <div className="flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 px-3 py-1 text-xs font-medium text-primary">
+              <span>Install App</span>
+              <button onClick={handleInstall} className="underline hover:no-underline">Install</button>
+              <button onClick={() => { setShowInstallBanner(false); localStorage.setItem('pwa_install_dismissed', '1'); }} className="ml-1 text-muted-foreground hover:text-foreground">✕</button>
+            </div>
+          )}
           <BranchPicker role={user.role} />
           <OfflineIndicator />
         </div>
-        {/* Mobile hamburger button — only visible below md breakpoint */}
+        {/* Mobile hamburger — only visible below md, larger tap target (44px) */}
         <button
           onClick={() => setMobileSidebarOpen(true)}
-          className="md:hidden fixed top-3 left-3 z-40 flex h-8 w-8 items-center justify-center rounded-md bg-background border border-border shadow-sm text-foreground"
+          className="md:hidden fixed top-3 left-3 z-40 flex h-10 w-10 items-center justify-center rounded-md bg-background border border-border shadow-sm text-foreground"
+          style={{ marginTop: 'env(safe-area-inset-top)' }}
           aria-label="Open navigation"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
         <main
-          className="flex-1 overflow-y-auto bg-background p-6"
+          className="flex-1 overflow-y-auto bg-background px-3 py-3 pt-14 md:p-6 md:pt-6 pb-16 md:pb-6"
           style={
             wallpaperUrl
               ? {
@@ -230,6 +260,8 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             </ErrorBoundary>
           </div>
         </main>
+        {/* Mobile bottom navigation bar — hidden on md+ */}
+        <MobileBottomNav onOpenSidebar={() => setMobileSidebarOpen(true)} />
       </div>
     </div>
   );

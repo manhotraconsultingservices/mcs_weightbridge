@@ -5,16 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
+import { TokenDetailModal } from '@/components/TokenDetailModal';
 import api from '@/services/api';
-
-function fmtIST(iso: string | null) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: true,
-  });
-}
 
 interface TokenRow {
   id: string;
@@ -65,6 +57,15 @@ const TYPE_COLORS: Record<string, string> = {
   general: 'bg-slate-100 text-slate-800',
 };
 
+function fmtIST(iso: string | null) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  });
+}
+
 function today() { return new Date().toISOString().split('T')[0]; }
 function daysAgo(n: number) {
   const d = new Date(); d.setDate(d.getDate() - n);
@@ -74,61 +75,6 @@ function daysAgo(n: number) {
 const INR = (v: number | null) =>
   v != null ? '₹' + Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—';
 
-const COLUMNS: ColumnDef<TokenRow>[] = [
-  { key: 'token_no', label: 'Token #', type: 'number', accessor: r => r.token_no ?? '',
-    format: v => v !== '' ? <span className="font-mono font-semibold">#{String(v)}</span> : <span className="text-muted-foreground text-xs">—</span> },
-  { key: 'token_date', label: 'Date', type: 'date', accessor: r => r.token_date,
-    format: v => new Date(String(v)).toLocaleDateString('en-IN') },
-  { key: 'created_at', label: 'Time (IST)', accessor: r => r.created_at ?? '',
-    format: v => fmtIST(v as string | null) },
-  { key: 'token_type', label: 'Type', type: 'enum',
-    enumOptions: ['sale', 'purchase', 'general'],
-    accessor: r => r.token_type,
-    format: v => <Badge className={`text-xs ${TYPE_COLORS[String(v)] ?? ''}`}>{String(v)}</Badge>,
-    exportValue: r => r.token_type },
-  { key: 'status', label: 'Status', type: 'enum',
-    enumOptions: ['OPEN', 'FIRST_WEIGHT', 'LOADING', 'SECOND_WEIGHT', 'COMPLETED', 'CANCELLED'],
-    accessor: r => r.status,
-    format: v => (
-      <Badge className={`text-xs ${STATUS_COLORS[String(v)] ?? ''}`}>
-        {String(v).replace('_', ' ')}
-      </Badge>
-    ),
-    exportValue: r => r.status },
-  { key: 'vehicle_no', label: 'Vehicle', accessor: r => r.vehicle_no ?? '—' },
-  { key: 'party_name', label: 'Party', accessor: r => r.party_name ?? '—' },
-  { key: 'product_name', label: 'Material', accessor: r => r.product_name ?? '—' },
-  { key: 'net_weight_mt', label: 'Net (MT)', type: 'number', align: 'right',
-    accessor: r => r.net_weight_mt ?? '',
-    format: v => v !== '' ? `${Number(v).toFixed(3)} MT` : '—' },
-  { key: 'gross_weight_mt', label: 'Gross (MT)', type: 'number', align: 'right',
-    defaultVisible: false,
-    accessor: r => r.gross_weight_mt ?? '',
-    format: v => v !== '' ? `${Number(v).toFixed(3)} MT` : '—' },
-  { key: 'tare_weight_mt', label: 'Tare (MT)', type: 'number', align: 'right',
-    defaultVisible: false,
-    accessor: r => r.tare_weight_mt ?? '',
-    format: v => v !== '' ? `${Number(v).toFixed(3)} MT` : '—' },
-  { key: 'volume_cft', label: 'Volume (CFT)', type: 'number', align: 'right',
-    defaultVisible: false,
-    accessor: r => r.volume_cft ?? '',
-    format: v => v !== '' && Number(v) > 0 ? `${Number(v).toFixed(2)} CFT` : '—' },
-  { key: 'gate_pass_no', label: 'Gate Pass', accessor: r => r.gate_pass_no ?? '—',
-    format: v => v !== '—' ? <span className="font-mono text-xs">{String(v)}</span> : <span className="text-muted-foreground">—</span> },
-  { key: 'invoice_no', label: 'Invoice', accessor: r => r.invoice_no ?? '—' },
-  { key: 'grand_total', label: 'Invoice Amt', type: 'number', align: 'right',
-    accessor: r => r.grand_total ?? '',
-    format: v => INR(v !== '' ? Number(v) : null),
-    exportValue: r => r.grand_total ?? '' },
-  { key: 'source', label: 'Source', type: 'enum',
-    enumOptions: ['manual', 'anpr', 'kiosk'],
-    defaultVisible: false,
-    accessor: r => r.source,
-    format: v => <span className="capitalize text-xs">{String(v)}</span> },
-  { key: 'is_manual_weight', label: 'Manual Wt?', defaultVisible: false,
-    accessor: r => r.is_manual_weight ? 'Yes' : 'No' },
-];
-
 export default function TokenRegisterPage() {
   const [fromDate, setFromDate] = useState(daysAgo(6));
   const [toDate, setToDate] = useState(today());
@@ -137,6 +83,7 @@ export default function TokenRegisterPage() {
   const [data, setData] = useState<TokenRegister | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
+  const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
 
   const fetch = useCallback(() => {
     setLoading(true);
@@ -154,6 +101,69 @@ export default function TokenRegisterPage() {
   }, [fromDate, toDate, tokenType, status]);
 
   useEffect(() => { fetch(); }, [fetch]);
+
+  const COLUMNS: ColumnDef<TokenRow>[] = [
+    { key: 'token_no', label: 'Token #', type: 'number', accessor: r => r.token_no ?? '',
+      format: (v, row) => v !== '' ? (
+        <button
+          className="font-mono font-semibold text-primary underline hover:opacity-75"
+          onClick={() => setSelectedTokenId(row.id)}
+        >
+          #{String(v)}
+        </button>
+      ) : <span className="text-muted-foreground text-xs">—</span>,
+      exportValue: r => r.token_no ?? '' },
+    { key: 'token_date', label: 'Date', type: 'date', accessor: r => r.token_date,
+      format: v => new Date(String(v)).toLocaleDateString('en-IN') },
+    { key: 'created_at', label: 'Time (IST)', accessor: r => r.created_at ?? '',
+      format: v => fmtIST(v as string | null) },
+    { key: 'token_type', label: 'Type', type: 'enum',
+      enumOptions: ['sale', 'purchase', 'general'],
+      accessor: r => r.token_type,
+      format: v => <Badge className={`text-xs ${TYPE_COLORS[String(v)] ?? ''}`}>{String(v)}</Badge>,
+      exportValue: r => r.token_type },
+    { key: 'status', label: 'Status', type: 'enum',
+      enumOptions: ['OPEN', 'FIRST_WEIGHT', 'LOADING', 'SECOND_WEIGHT', 'COMPLETED', 'CANCELLED'],
+      accessor: r => r.status,
+      format: v => (
+        <Badge className={`text-xs ${STATUS_COLORS[String(v)] ?? ''}`}>
+          {String(v).replace('_', ' ')}
+        </Badge>
+      ),
+      exportValue: r => r.status },
+    { key: 'vehicle_no', label: 'Vehicle', accessor: r => r.vehicle_no ?? '—' },
+    { key: 'party_name', label: 'Party', accessor: r => r.party_name ?? '—' },
+    { key: 'product_name', label: 'Material', accessor: r => r.product_name ?? '—' },
+    { key: 'net_weight_mt', label: 'Net (MT)', type: 'number', align: 'right',
+      accessor: r => r.net_weight_mt ?? '',
+      format: v => v !== '' ? `${Number(v).toFixed(3)} MT` : '—' },
+    { key: 'gross_weight_mt', label: 'Gross (MT)', type: 'number', align: 'right',
+      defaultVisible: false,
+      accessor: r => r.gross_weight_mt ?? '',
+      format: v => v !== '' ? `${Number(v).toFixed(3)} MT` : '—' },
+    { key: 'tare_weight_mt', label: 'Tare (MT)', type: 'number', align: 'right',
+      defaultVisible: false,
+      accessor: r => r.tare_weight_mt ?? '',
+      format: v => v !== '' ? `${Number(v).toFixed(3)} MT` : '—' },
+    { key: 'volume_cft', label: 'Volume (CFT)', type: 'number', align: 'right',
+      defaultVisible: false,
+      accessor: r => r.volume_cft ?? '',
+      format: v => v !== '' && Number(v) > 0 ? `${Number(v).toFixed(2)} CFT` : '—' },
+    { key: 'gate_pass_no', label: 'Gate Pass', accessor: r => r.gate_pass_no ?? '—',
+      format: v => v !== '—' ? <span className="font-mono text-xs">{String(v)}</span> : <span className="text-muted-foreground">—</span> },
+    { key: 'invoice_no', label: 'Invoice', accessor: r => r.invoice_no ?? '—' },
+    { key: 'grand_total', label: 'Invoice Amt', type: 'number', align: 'right',
+      accessor: r => r.grand_total ?? '',
+      format: v => INR(v !== '' ? Number(v) : null),
+      exportValue: r => r.grand_total ?? '' },
+    { key: 'source', label: 'Source', type: 'enum',
+      enumOptions: ['manual', 'anpr', 'kiosk'],
+      defaultVisible: false,
+      accessor: r => r.source,
+      format: v => <span className="capitalize text-xs">{String(v)}</span> },
+    { key: 'is_manual_weight', label: 'Manual Wt?', defaultVisible: false,
+      accessor: r => r.is_manual_weight ? 'Yes' : 'No' },
+  ];
 
   const items = data?.items ?? [];
 
@@ -247,6 +257,12 @@ export default function TokenRegisterPage() {
         exportFilename={`token-register-${fromDate}-to-${toDate}`}
         defaultSort={{ key: 'token_date', direction: 'desc' }}
         emptyMessage="No tokens found for the selected period."
+      />
+
+      {/* Token detail modal */}
+      <TokenDetailModal
+        tokenId={selectedTokenId}
+        onClose={() => setSelectedTokenId(null)}
       />
     </div>
   );

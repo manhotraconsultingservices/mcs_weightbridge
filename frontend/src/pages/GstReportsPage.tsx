@@ -347,7 +347,7 @@ export default function GstReportsPage() {
       </div>
 
       <Tabs value={mainTab} onValueChange={setMainTab}>
-        <TabsList>
+        <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="gstr1">{t('reports.gstr1')}</TabsTrigger>
           <TabsTrigger value="gstr3b">{t('reports.gstr3b')}</TabsTrigger>
         </TabsList>
@@ -374,7 +374,7 @@ export default function GstReportsPage() {
               </div>
 
               <Tabs value={gstr1Tab} onValueChange={setGstr1Tab}>
-                <TabsList>
+                <TabsList className="flex-wrap h-auto">
                   <TabsTrigger value="b2b">{t('gst.b2bTab')} ({gstr1Data.b2b.length})</TabsTrigger>
                   <TabsTrigger value="b2c">{t('gst.b2cTab')} ({gstr1Data.b2c.length})</TabsTrigger>
                   <TabsTrigger value="hsn">{t('gst.hsnSummary')}</TabsTrigger>

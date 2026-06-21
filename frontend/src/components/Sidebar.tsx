@@ -287,7 +287,7 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
         {isAdmin && adminOpen && (
           <div
             ref={adminMenuRef}
-            className="absolute right-3 bottom-16 z-40 w-52 rounded-lg border border-sidebar-border bg-sidebar shadow-xl overflow-hidden"
+            className="absolute right-3 bottom-16 z-40 w-52 max-w-[calc(100vw-1.5rem)] rounded-lg border border-sidebar-border bg-sidebar shadow-xl overflow-hidden"
           >
             <div className="px-3 py-2 border-b border-sidebar-border">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">{t('sidebar.administration')}</p>

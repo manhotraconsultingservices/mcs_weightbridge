@@ -353,19 +353,19 @@ export function DataTable<T>({
 
       {/* Table */}
       <div className="overflow-x-auto rounded-lg border bg-card">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-max text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
-              {visibleColumns.map(c => {
+              {visibleColumns.map((c, ci) => {
                 const sorted_ = sort?.key === c.key;
                 return (
                   <th
                     key={c.key}
                     aria-sort={ariaSortFor(c.key)}
                     onClick={() => c.sortable !== false && toggleSort(c.key)}
-                    className={`p-2 font-medium text-${c.align ?? 'left'} ${
+                    className={`p-2 font-medium whitespace-nowrap text-${c.align ?? 'left'} ${
                       c.sortable !== false ? 'cursor-pointer select-none hover:bg-muted/80' : ''
-                    }`}
+                    } ${ci === 0 ? 'sticky left-0 z-10 bg-muted/50' : ''}`}
                   >
                     <span className="inline-flex items-center gap-1">
                       {c.label}
@@ -429,16 +429,16 @@ export function DataTable<T>({
             ) : (
               sorted.map((row, idx) => (
                 <tr key={rowKey ? rowKey(row, idx) : idx} className="border-b hover:bg-muted/20 transition-colors">
-                  {visibleColumns.map(c => {
+                  {visibleColumns.map((c, ci) => {
                     const v = c.accessor(row);
                     return (
-                      <td key={c.key} className={`p-2 text-${c.align ?? 'left'} ${c.className ?? ''}`}>
+                      <td key={c.key} className={`p-2 whitespace-nowrap text-${c.align ?? 'left'} ${c.className ?? ''} ${ci === 0 ? 'sticky left-0 z-10 bg-card' : ''}`}>
                         {c.format ? c.format(v, row) : (v == null || v === '' ? '—' : String(v))}
                       </td>
                     );
                   })}
                   {rowActions && (
-                    <td className="p-2 text-right">
+                    <td className="p-2 text-right whitespace-nowrap">
                       {rowActions(row)}
                     </td>
                   )}
