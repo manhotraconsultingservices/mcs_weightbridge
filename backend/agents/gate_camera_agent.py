@@ -351,7 +351,8 @@ class GatePassListener:
             try:
                 resp = requests.get(
                     poll_url,
-                    params={"tenant_slug": tenant_slug, "agent_key": agent_key},
+                    params={"tenant_slug": tenant_slug},
+                    headers={"X-Gate-Agent-Key": agent_key},
                     timeout=10,
                 )
                 if resp.status_code == 200:
@@ -400,8 +401,8 @@ class GatePassListener:
                     "gate_pass_id": gate_pass_id,
                     "position": position,
                     "tenant_slug": tenant_slug,
-                    "agent_key": agent_key,
                 },
+                headers={"X-Gate-Agent-Key": agent_key},
                 files={"file": (f"gate_{position}.jpg", image_data, "image/jpeg")},
                 timeout=timeout_sec + 5,
             )
@@ -414,6 +415,127 @@ class GatePassListener:
                 log.warning("Gate upload HTTP %d: %s", resp.status_code, resp.text[:120])
         except Exception as exc:
             log.warning("Gate upload error gp=%s: %s", gate_pass_id, exc)
+
+
+# ── Token photo listener (polls cameras/agent-pending) ───────────────────────
+
+
+class TokenPhotoListener:
+    """Polls cloud API for tokens needing camera photos and uploads them.
+
+    Handles issue 1: token images not captured.
+    Uses the same cameras as the gate agent (entry=front, exit=top).
+    Auth via X-Gate-Agent-Key header — same key as gate agent.
+    """
+
+    def __init__(self, cfg: dict) -> None:
+        self.cfg = cfg
+        self.running = False
+        self._thread: threading.Thread | None = None
+        self._seen: set[str] = set()
+
+    def start(self) -> None:
+        self.running = True
+        self._thread = threading.Thread(target=self._poll_loop, daemon=True, name="TokenPhotoListener")
+        self._thread.start()
+        log.info("Token photo listener started (polls /cameras/agent-pending every 5 s)")
+
+    def stop(self) -> None:
+        self.running = False
+        if self._thread:
+            self._thread.join(timeout=5)
+
+    def _poll_loop(self) -> None:
+        cloud = self.cfg["cloud_url"].rstrip("/")
+        poll_url = f"{cloud}/api/v1/cameras/agent-pending"
+        upload_url = f"{cloud}/api/v1/cameras/agent-upload"
+        timeout_sec = self.cfg.get("timeout_sec", 8)
+        tenant_slug = self.cfg.get("tenant_slug", "")
+        agent_key = self.cfg.get("agent_key", "")
+
+        cameras_cfg = self.cfg.get("cameras", {})
+        # Map gate camera positions to token camera IDs:
+        # entry camera captures the "front" view, exit camera captures the "top" view.
+        cam_map: dict[str, dict] = {}
+        entry = cameras_cfg.get("entry")
+        ex = cameras_cfg.get("exit")
+        if entry and entry.get("enabled") and entry.get("url"):
+            cam_map["front"] = entry
+        if ex and ex.get("enabled") and ex.get("url"):
+            cam_map["top"] = ex
+
+        if not cam_map:
+            log.info("Token photo listener: no cameras configured — skipping")
+            return
+
+        while self.running:
+            try:
+                resp = requests.get(
+                    poll_url,
+                    params={"tenant_slug": tenant_slug},
+                    headers={"X-Gate-Agent-Key": agent_key},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    for evt in resp.json().get("events", []):
+                        token_id = evt.get("token_id")
+                        weight_stage = evt.get("weight_stage", "second_weight")
+                        if not token_id:
+                            continue
+                        key = f"{token_id}:{weight_stage}"
+                        if key in self._seen:
+                            continue
+                        self._seen.add(key)
+                        for camera_id, cam in cam_map.items():
+                            self._capture_and_upload(
+                                token_id, camera_id, weight_stage,
+                                cam, upload_url, agent_key, tenant_slug, timeout_sec,
+                            )
+                elif resp.status_code == 403:
+                    log.warning("Token poll: 403 Forbidden — check agent_key in config")
+                elif resp.status_code not in (404,):
+                    log.debug("token agent-pending HTTP %d", resp.status_code)
+            except Exception as exc:
+                log.debug("Token photo poll error: %s", exc)
+            time.sleep(5)
+
+    def _capture_and_upload(
+        self,
+        token_id: str,
+        camera_id: str,
+        weight_stage: str,
+        cam: dict,
+        upload_url: str,
+        agent_key: str,
+        tenant_slug: str,
+        timeout_sec: int,
+    ) -> None:
+        image_data = capture_snapshot(cam, f"token_{camera_id}", timeout_sec)
+        if image_data is None:
+            log.warning("Token snapshot failed: token=%s cam=%s", token_id, camera_id)
+            return
+        try:
+            resp = requests.post(
+                upload_url,
+                data={
+                    "token_id": token_id,
+                    "camera_id": camera_id,
+                    "weight_stage": weight_stage,
+                    "tenant_slug": tenant_slug,
+                },
+                headers={"X-Gate-Agent-Key": agent_key},
+                files={"file": (f"{camera_id}_{weight_stage}.jpg", image_data, "image/jpeg")},
+                timeout=timeout_sec + 5,
+            )
+            if resp.status_code == 200:
+                log.info(
+                    "Token photo uploaded: token=%s cam=%s stage=%s (%d bytes)",
+                    token_id, camera_id, weight_stage, len(image_data),
+                )
+            else:
+                log.warning("Token upload HTTP %d: %s", resp.status_code, resp.text[:120])
+        except Exception as exc:
+            log.warning("Token upload error token=%s cam=%s: %s", token_id, camera_id, exc)
 
 
 # ── NSSM service management ───────────────────────────────────────────────────
@@ -579,10 +701,15 @@ def main() -> None:
     gate_listener = GatePassListener(cfg)
     gate_listener.start()
 
+    # Listen for pending token photo events (same cameras, entry=front, exit=top)
+    token_listener = TokenPhotoListener(cfg)
+    token_listener.start()
+
     def _shutdown(sig, frame):
         log.info("Shutting down...")
         agent.stop()
         gate_listener.stop()
+        token_listener.stop()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, _shutdown)

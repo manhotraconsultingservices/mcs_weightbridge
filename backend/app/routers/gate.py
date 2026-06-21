@@ -902,6 +902,7 @@ async def list_camera_events(
 async def gate_agent_pending(
     tenant_slug: str = Query(""),
     agent_key: str = Query(""),
+    x_gate_agent_key: str | None = Header(None, alias="X-Gate-Agent-Key"),
 ):
     """
     Return gate passes needing entry or exit photos for the client-side agent to capture.
@@ -910,17 +911,31 @@ async def gate_agent_pending(
     - status='inside' passes with no entry_photo_path, created in the last 5 minutes
     - status='exited' passes with no exit_photo_path, exited in the last 5 minutes
 
-    Auth via tenant_slug + agent_key (same pattern as /api/v1/cameras/agent-pending).
+    Auth (multi-tenant): accepts EITHER:
+    - X-Gate-Agent-Key header matching gate_camera_config.agent_key in app_settings, OR
+    - agent_key query param matching the tenant registry API key.
     """
     from app.config import get_settings
     settings = get_settings()
 
     if settings.MULTI_TENANT:
-        if not tenant_slug or not agent_key:
+        if not tenant_slug:
+            raise HTTPException(400, "tenant_slug required")
+        if x_gate_agent_key:
+            # Validate against gate_camera_config.agent_key stored in app_settings
+            from app.database import get_tenant_session
+            _cfg_cm = await get_tenant_session(tenant_slug)
+            async with _cfg_cm as _db:
+                cfg = await _get_gate_cam_cfg(_db)
+            stored_key = cfg.get("agent_key", "")
+            if not stored_key or x_gate_agent_key != stored_key:
+                raise HTTPException(403, "Invalid gate agent key")
+        elif agent_key:
+            from app.multitenancy.registry import tenant_registry
+            if not await tenant_registry.validate_agent_key(tenant_slug, agent_key):
+                raise HTTPException(403, "Invalid agent key")
+        else:
             raise HTTPException(400, "tenant_slug and agent_key required")
-        from app.multitenancy.registry import tenant_registry
-        if not await tenant_registry.validate_agent_key(tenant_slug, agent_key):
-            raise HTTPException(403, "Invalid agent key")
 
     from app.database import get_tenant_session
     _session_cm = await get_tenant_session(tenant_slug if settings.MULTI_TENANT else None)
@@ -964,13 +979,17 @@ async def gate_agent_upload(
     tenant_slug: str = Form(""),
     agent_key: str = Form(""),
     file: UploadFile = File(...),
+    x_gate_agent_key: str | None = Header(None, alias="X-Gate-Agent-Key"),
 ):
     """
     Accept a gate pass photo uploaded by the client-side camera agent.
     Updates entry_photo_path or exit_photo_path on the gate_passes row.
 
     position: 'entry' or 'exit'
-    Auth via tenant_slug + agent_key (same as /api/v1/cameras/agent-upload).
+
+    Auth (multi-tenant): accepts EITHER:
+    - X-Gate-Agent-Key header matching gate_camera_config.agent_key in app_settings, OR
+    - agent_key form field matching the tenant registry API key.
     """
     import io
     from PIL import Image
@@ -978,11 +997,22 @@ async def gate_agent_upload(
     settings = get_settings()
 
     if settings.MULTI_TENANT:
-        if not tenant_slug or not agent_key:
+        if not tenant_slug:
+            raise HTTPException(400, "tenant_slug required")
+        if x_gate_agent_key:
+            from app.database import get_tenant_session
+            _cfg_cm = await get_tenant_session(tenant_slug)
+            async with _cfg_cm as _db:
+                cfg = await _get_gate_cam_cfg(_db)
+            stored_key = cfg.get("agent_key", "")
+            if not stored_key or x_gate_agent_key != stored_key:
+                raise HTTPException(403, "Invalid gate agent key")
+        elif agent_key:
+            from app.multitenancy.registry import tenant_registry
+            if not await tenant_registry.validate_agent_key(tenant_slug, agent_key):
+                raise HTTPException(403, "Invalid agent key for tenant")
+        else:
             raise HTTPException(400, "tenant_slug and agent_key required")
-        from app.multitenancy.registry import tenant_registry
-        if not await tenant_registry.validate_agent_key(tenant_slug, agent_key):
-            raise HTTPException(403, "Invalid agent key for tenant")
 
     if position not in ("entry", "exit"):
         raise HTTPException(400, "position must be 'entry' or 'exit'")

@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Form, File, UploadFile
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Form, File, UploadFile
 from fastapi.responses import StreamingResponse
 from jose import jwt
 
@@ -142,15 +142,17 @@ async def agent_upload_snapshot(
     tenant_slug: str = Form(""),
     agent_key: str = Form(""),
     file: UploadFile = File(...),
+    x_gate_agent_key: str | None = Header(None, alias="X-Gate-Agent-Key"),
 ):
     """
     Accept camera snapshot uploaded by the client-side agent.
 
     The agent runs on the client PC, captures snapshots from local IP cameras,
-    and uploads them to the cloud server. Auth via tenant_slug + agent_key.
+    and uploads them to the cloud server.
 
-    This replaces the backend-initiated capture flow for cloud deployments
-    where the server cannot reach the client's local cameras.
+    Auth (multi-tenant): accepts EITHER:
+    - X-Gate-Agent-Key header matching gate_camera_config.agent_key in app_settings, OR
+    - agent_key form field matching the tenant registry API key.
     """
     from app.config import get_settings
     from pathlib import Path
@@ -160,11 +162,29 @@ async def agent_upload_snapshot(
 
     # ── Auth: validate agent key ──
     if settings.MULTI_TENANT:
-        if not tenant_slug or not agent_key:
-            raise HTTPException(400, "tenant_slug and agent_key required")
-        from app.multitenancy.registry import tenant_registry
-        if not await tenant_registry.validate_agent_key(tenant_slug, agent_key):
-            raise HTTPException(403, "Invalid agent key for tenant")
+        if not tenant_slug:
+            raise HTTPException(400, "tenant_slug required")
+        if x_gate_agent_key:
+            # Validate against gate_camera_config.agent_key stored in app_settings
+            from app.database import get_tenant_session
+            _cfg_cm = await get_tenant_session(tenant_slug)
+            async with _cfg_cm as _db:
+                _row = await _db.execute(text("SELECT value FROM app_settings WHERE key = 'gate_camera_config'"))
+                _val = _row.scalar()
+                _stored_key = ""
+                if _val:
+                    try:
+                        _stored_key = json.loads(_val).get("agent_key", "")
+                    except Exception:
+                        pass
+            if not _stored_key or x_gate_agent_key != _stored_key:
+                raise HTTPException(403, "Invalid agent key")
+        elif agent_key:
+            from app.multitenancy.registry import tenant_registry
+            if not await tenant_registry.validate_agent_key(tenant_slug, agent_key):
+                raise HTTPException(403, "Invalid agent key for tenant")
+        else:
+            raise HTTPException(400, "Authentication required: X-Gate-Agent-Key header or agent_key")
     else:
         # Single-tenant: require agent_key from settings (or allow localhost only)
         import ipaddress
@@ -246,23 +266,44 @@ async def agent_upload_snapshot(
 async def agent_pending_events(
     tenant_slug: str = Query(""),
     agent_key: str = Query(""),
+    x_gate_agent_key: str | None = Header(None, alias="X-Gate-Agent-Key"),
 ):
     """
     Return pending camera capture events for the client agent to process.
 
     The agent polls this endpoint every 5 seconds. Returns tokens that had
     a weight recorded in the last 5 minutes but don't yet have snapshots.
-    Auth via tenant_slug + agent_key (same as external-reading).
+
+    Auth (multi-tenant): accepts EITHER:
+    - X-Gate-Agent-Key header matching gate_camera_config.agent_key in app_settings, OR
+    - agent_key query param matching the tenant registry API key.
     """
     from app.config import get_settings
     settings = get_settings()
 
     if settings.MULTI_TENANT:
-        if not tenant_slug or not agent_key:
+        if not tenant_slug:
+            raise HTTPException(400, "tenant_slug required")
+        if x_gate_agent_key:
+            from app.database import get_tenant_session
+            _cfg_cm = await get_tenant_session(tenant_slug)
+            async with _cfg_cm as _db:
+                _row = await _db.execute(text("SELECT value FROM app_settings WHERE key = 'gate_camera_config'"))
+                _val = _row.scalar()
+                _stored_key = ""
+                if _val:
+                    try:
+                        _stored_key = json.loads(_val).get("agent_key", "")
+                    except Exception:
+                        pass
+            if not _stored_key or x_gate_agent_key != _stored_key:
+                raise HTTPException(403, "Invalid agent key")
+        elif agent_key:
+            from app.multitenancy.registry import tenant_registry
+            if not await tenant_registry.validate_agent_key(tenant_slug, agent_key):
+                raise HTTPException(403, "Invalid agent key")
+        else:
             raise HTTPException(400, "tenant_slug and agent_key required")
-        from app.multitenancy.registry import tenant_registry
-        if not await tenant_registry.validate_agent_key(tenant_slug, agent_key):
-            raise HTTPException(403, "Invalid agent key")
 
     from app.database import get_tenant_session
     _session_cm = await get_tenant_session(tenant_slug if settings.MULTI_TENANT else None)
