@@ -312,13 +312,15 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     return () => { if (_gpRefreshTimer.current) clearTimeout(_gpRefreshTimer.current); };
   }, [form.vehicle_no, form.gate_pass_id, loadGatePasses]);
 
-  // Auto-refresh gate passes every 30 s while no gate pass is selected, so a gate pass
-  // created by the guard AFTER the operator opened this page becomes visible automatically.
+  // Poll every 5 s while a vehicle number is entered (no gate pass selected yet), so a pass
+  // the guard creates AFTER the operator opens the form appears within seconds. Falls back to
+  // 30 s when vehicle_no is empty (the operator is still filling in other fields).
   useEffect(() => {
     if (form.gate_pass_id) return;
-    const id = setInterval(loadGatePasses, 30_000);
+    const hasVno = form.vehicle_no.trim().length > 0;
+    const id = setInterval(loadGatePasses, hasVno ? 5_000 : 30_000);
     return () => clearInterval(id);
-  }, [form.gate_pass_id, loadGatePasses]);
+  }, [form.gate_pass_id, form.vehicle_no, loadGatePasses]);
 
   const handleVehicleSelect = (vehicle: Vehicle) => {
     setSelectedVehicle(vehicle);
@@ -674,7 +676,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           <div className="grid grid-cols-2 gap-2">
             {[
               { value: 'weighbridge', label: t('token.weighbridge'), sub: 'Gross + Tare' },
-              { value: 'volume',      label: t('token.volume'),      sub: 'm³ × density' },
+              { value: 'volume',      label: t('token.volume'),      sub: 'CFT × density' },
             ].map(opt => (
               <button
                 key={opt.value}
@@ -803,7 +805,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-semibold">
-                  Gate Pass <span className="text-muted-foreground font-normal text-xs">(optional)</span>
+                  Gate Pass
                 </Label>
                 <button
                   type="button"
@@ -817,11 +819,19 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
               </div>
 
               {openGatePasses.length === 0 ? (
-                // No open passes — gate pass will be auto-generated on token creation
-                <div className="rounded border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+                // No open passes found
+                <div className={cn(
+                  'rounded border px-3 py-2 text-[11px]',
+                  vno
+                    ? 'border-amber-300 bg-amber-50 text-amber-800'
+                    : 'border-dashed border-slate-200 bg-slate-50 text-slate-500'
+                )}>
                   {vno
-                    ? <>No open gate pass. A gate pass will be auto-assigned when you create the token.</>
-                    : 'Enter vehicle number to see matching gate passes.'}
+                    ? <>
+                        <strong>No gate pass found for {form.vehicle_no}.</strong>
+                        {' '}Ask the guard to create one in Gate Register, then click Refresh above.
+                      </>
+                    : 'Enter vehicle number to check for an existing gate pass.'}
                 </div>
               ) : (
                 <>
