@@ -76,12 +76,16 @@
     "sectionResources": "संसाधन",
     "sectionFinance": "वित्त और विश्लेषण",
     "weighbridge": "वेब्रिज",
+    "camerasAnpr": "कैमरा & ANPR",
     "salesCrm": "बिक्री और CRM",
     "procurement": "क्रय प्रबंधन",
     "catalog": "आइटम कैटालॉग",
-    "inventoryProduction": "सूची और उत्पादन",
+    "inventoryProduction": "सूची",
+    "productionHub": "उत्पादन",
     "accounts": "खाते",
-    "analytics": "विश्लेषण"
+    "gstCompliance": "GST & अनुपालन",
+    "analytics": "विश्लेषण",
+    "fraudRegisters": "धोखाधड़ी & रजिस्टर"
   },
   "token": {
     "title": "ट्रिप / गेट रजिस्टर",

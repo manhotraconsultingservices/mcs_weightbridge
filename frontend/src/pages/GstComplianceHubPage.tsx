@@ -1,30 +1,30 @@
 /**
- * Weighbridge hub — Gate Register · Weigh Tickets · Movement Report
+ * GST & Compliance hub — GST Returns · GSTR-2B (ITC) · Compliance Docs
  *
- * Camera & Scale / Snapshots / ANPR moved to CamerasAnprHubPage (/cameras-anpr).
- * URL sync: ?tab=gate | ?tab=tickets | ?tab=movement. Default = gate.
+ * Split from AccountsHubPage to keep each hub under 4 tabs on mobile.
+ * URL sync: ?tab=gst | ?tab=gstr2b | ?tab=compliance. Default = gst.
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { DoorOpen, Scale, BarChart3 } from 'lucide-react';
+import { FileBarChart, FileBarChart2, ShieldCheck } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
-import GatePassPage from './GatePassPage';
-import TokenPageV1 from './TokenPageV1';
-import AnprTripsPage from './AnprTripsPage';
+import GstReportsPage from './GstReportsPage';
+import Gstr2bReconcilePage from './Gstr2bReconcilePage';
+import CompliancePage from './CompliancePage';
 
-type Tab = 'gate' | 'tickets' | 'movement';
+type Tab = 'gst' | 'gstr2b' | 'compliance';
 
 const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-  { value: 'gate',     label: 'Gate Register',    icon: DoorOpen },
-  { value: 'tickets',  label: 'Weigh Tickets',    icon: Scale },
-  { value: 'movement', label: 'Movement Report',  icon: BarChart3 },
+  { value: 'gst',        label: 'GST Returns',    icon: FileBarChart },
+  { value: 'gstr2b',     label: 'GSTR-2B (ITC)',  icon: FileBarChart2 },
+  { value: 'compliance', label: 'Compliance Docs', icon: ShieldCheck },
 ];
 
-export default function WeighbridgeHubPage() {
+export default function GstComplianceHubPage() {
   const nav = useNavigate();
   const loc = useLocation();
-  const initial = (new URLSearchParams(loc.search).get('tab') as Tab) || 'gate';
+  const initial = (new URLSearchParams(loc.search).get('tab') as Tab) || 'gst';
   const [tab, setTab] = useState<Tab>(initial);
 
   useEffect(() => {
@@ -49,9 +49,9 @@ export default function WeighbridgeHubPage() {
             );
           })}
         </TabsList>
-        <TabsContent value="gate"     className="mt-4"><GatePassPage /></TabsContent>
-        <TabsContent value="tickets"  className="mt-4"><TokenPageV1 /></TabsContent>
-        <TabsContent value="movement" className="mt-4"><AnprTripsPage /></TabsContent>
+        <TabsContent value="gst"        className="mt-4"><GstReportsPage /></TabsContent>
+        <TabsContent value="gstr2b"     className="mt-4"><Gstr2bReconcilePage /></TabsContent>
+        <TabsContent value="compliance" className="mt-4"><CompliancePage /></TabsContent>
       </Tabs>
     </div>
   );

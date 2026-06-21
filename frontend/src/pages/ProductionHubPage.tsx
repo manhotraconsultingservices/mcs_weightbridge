@@ -1,30 +1,30 @@
 /**
- * Weighbridge hub — Gate Register · Weigh Tickets · Movement Report
+ * Production hub — Daily Production · Dashboard · Settings
  *
- * Camera & Scale / Snapshots / ANPR moved to CamerasAnprHubPage (/cameras-anpr).
- * URL sync: ?tab=gate | ?tab=tickets | ?tab=movement. Default = gate.
+ * Split from InventoryProductionHubPage to keep each hub under 4 tabs on mobile.
+ * URL sync: ?tab=production | ?tab=dashboard | ?tab=settings. Default = production.
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { DoorOpen, Scale, BarChart3 } from 'lucide-react';
+import { Factory, Activity, Settings } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
-import GatePassPage from './GatePassPage';
-import TokenPageV1 from './TokenPageV1';
-import AnprTripsPage from './AnprTripsPage';
+import ProductionPage from './ProductionPage';
+import ProductionDashboardPage from './ProductionDashboardPage';
+import ProductionSettingsPage from './ProductionSettingsPage';
 
-type Tab = 'gate' | 'tickets' | 'movement';
+type Tab = 'production' | 'dashboard' | 'settings';
 
 const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-  { value: 'gate',     label: 'Gate Register',    icon: DoorOpen },
-  { value: 'tickets',  label: 'Weigh Tickets',    icon: Scale },
-  { value: 'movement', label: 'Movement Report',  icon: BarChart3 },
+  { value: 'production', label: 'Daily Production', icon: Factory },
+  { value: 'dashboard',  label: 'Dashboard',        icon: Activity },
+  { value: 'settings',   label: 'Settings',         icon: Settings },
 ];
 
-export default function WeighbridgeHubPage() {
+export default function ProductionHubPage() {
   const nav = useNavigate();
   const loc = useLocation();
-  const initial = (new URLSearchParams(loc.search).get('tab') as Tab) || 'gate';
+  const initial = (new URLSearchParams(loc.search).get('tab') as Tab) || 'production';
   const [tab, setTab] = useState<Tab>(initial);
 
   useEffect(() => {
@@ -49,9 +49,9 @@ export default function WeighbridgeHubPage() {
             );
           })}
         </TabsList>
-        <TabsContent value="gate"     className="mt-4"><GatePassPage /></TabsContent>
-        <TabsContent value="tickets"  className="mt-4"><TokenPageV1 /></TabsContent>
-        <TabsContent value="movement" className="mt-4"><AnprTripsPage /></TabsContent>
+        <TabsContent value="production" className="mt-4"><ProductionPage /></TabsContent>
+        <TabsContent value="dashboard"  className="mt-4"><ProductionDashboardPage /></TabsContent>
+        <TabsContent value="settings"   className="mt-4"><ProductionSettingsPage /></TabsContent>
       </Tabs>
     </div>
   );

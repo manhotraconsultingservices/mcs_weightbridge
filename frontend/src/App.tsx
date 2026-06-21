@@ -23,10 +23,14 @@ import OperationsHubPage from '@/pages/OperationsHubPage';
 import ReportsHubPage from '@/pages/ReportsHubPage';
 // BCG navigation — 4-section grouped hubs
 import WeighbridgeHubPage from '@/pages/WeighbridgeHubPage';
+import CamerasAnprHubPage from '@/pages/CamerasAnprHubPage';
 import ProcurementHubPage from '@/pages/ProcurementHubPage';
 import InventoryProductionHubPage from '@/pages/InventoryProductionHubPage';
+import ProductionHubPage from '@/pages/ProductionHubPage';
 import AccountsHubPage from '@/pages/AccountsHubPage';
+import GstComplianceHubPage from '@/pages/GstComplianceHubPage';
 import AnalyticsHubPage from '@/pages/AnalyticsHubPage';
+import FraudRegistersHubPage from '@/pages/FraudRegistersHubPage';
 import VehiclesPage from '@/pages/VehiclesPage';
 import InvoicesPage from '@/pages/InvoicesPage';
 import QuotationsPage from '@/pages/QuotationsPage';
@@ -213,11 +217,15 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/materials" element={<MaterialsHubPage />} />
             <Route path="/operations" element={<OperationsHubPage />} />
             {/* BCG navigation — 4-section grouped hubs */}
-            <Route path="/weighbridge" element={<WeighbridgeHubPage />} />
-            <Route path="/procurement" element={<ProcurementHubPage />} />
-            <Route path="/inventory-hub" element={<InventoryProductionHubPage />} />
-            <Route path="/accounts" element={<AccountsHubPage />} />
-            <Route path="/analytics" element={<AnalyticsHubPage />} />
+            <Route path="/weighbridge"    element={<WeighbridgeHubPage />} />
+            <Route path="/cameras-anpr"   element={<CamerasAnprHubPage />} />
+            <Route path="/procurement"    element={<ProcurementHubPage />} />
+            <Route path="/inventory-hub"  element={<InventoryProductionHubPage />} />
+            <Route path="/production-hub" element={<ProductionHubPage />} />
+            <Route path="/accounts"       element={<AccountsHubPage />} />
+            <Route path="/gst-compliance" element={<GstComplianceHubPage />} />
+            <Route path="/analytics"      element={<AnalyticsHubPage />} />
+            <Route path="/fraud-registers" element={<FraudRegistersHubPage />} />
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/pricing-matrix" element={<PricingMatrixPage />} />
             <Route path="/parties" element={<PartiesPage />} />

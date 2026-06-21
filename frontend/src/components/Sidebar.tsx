@@ -20,6 +20,7 @@ import {
   BookOpen, TrendingUp, Package,
   LogOut, Usb, Settings,
   Bell, HardDrive, Upload, UserCog, Lock, ImageIcon, Building2,
+  Camera, Cog, FileBarChart, ShieldAlert,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getTenantModules } from '@/hooks/useAuth';
@@ -32,12 +33,16 @@ import type { User } from '@/types';
 // Old permissions (e.g. '/gate', '/purchase-invoices') automatically expand to
 // show the hub that wraps them — no permission-store migration needed.
 const HUB_CHILDREN: Record<string, string[]> = {
-  '/weighbridge':    ['/gate', '/tokens-v1', '/tokens', '/anpr/events', '/anpr/live', '/anpr/review', '/anpr/trips', '/camera-scale', '/snapshot-search'],
-  '/sales':          ['/invoices', '/quotations', '/delivery-challans', '/credit-debit-notes', '/customers', '/parties'],
-  '/procurement':    ['/purchase-invoices', '/royalty'],
-  '/inventory-hub':  ['/products', '/pricing-matrix', '/product-inventory', '/production', '/production/dashboard', '/production/settings', '/inventory'],
-  '/accounts':       ['/payments', '/ledger', '/gst-reports', '/compliance', '/audit'],
-  '/analytics':      ['/reports', '/reports-classic'],
+  '/weighbridge':      ['/gate', '/tokens-v1', '/tokens', '/anpr/trips'],
+  '/cameras-anpr':     ['/camera-scale', '/snapshot-search', '/anpr/events', '/anpr/live', '/anpr/review', '/anpr/trips'],
+  '/sales':            ['/invoices', '/quotations', '/delivery-challans', '/credit-debit-notes', '/customers', '/parties'],
+  '/procurement':      ['/purchase-invoices', '/royalty'],
+  '/inventory-hub':    ['/products', '/pricing-matrix', '/product-inventory', '/inventory'],
+  '/production-hub':   ['/production', '/production/dashboard', '/production/settings'],
+  '/accounts':         ['/payments', '/ledger', '/audit'],
+  '/gst-compliance':   ['/gst-reports', '/compliance'],
+  '/analytics':        ['/reports', '/reports-classic'],
+  '/fraud-registers':  ['/reports', '/reports-classic'],
 };
 
 // Tenant module gating — if ALL listed modules are disabled, the hub is hidden.
@@ -75,7 +80,8 @@ const NAV_SECTIONS: NavSection[] = [
   {
     headerKey: 'sidebar.sectionOperations',
     items: [
-      { to: '/weighbridge', icon: Scale, labelKey: 'sidebar.weighbridge' },
+      { to: '/weighbridge',  icon: Scale,  labelKey: 'sidebar.weighbridge' },
+      { to: '/cameras-anpr', icon: Camera, labelKey: 'sidebar.camerasAnpr' },
     ],
   },
   {
@@ -83,20 +89,23 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/sales',       icon: FileText,     labelKey: 'sidebar.salesCrm' },
       { to: '/procurement', icon: ShoppingCart, labelKey: 'sidebar.procurement' },
-      { to: '/products',    icon: Package,       labelKey: 'sidebar.catalog' },
+      { to: '/products',    icon: Package,      labelKey: 'sidebar.catalog' },
     ],
   },
   {
     headerKey: 'sidebar.sectionResources',
     items: [
-      { to: '/inventory-hub', icon: Factory, labelKey: 'sidebar.inventoryProduction' },
+      { to: '/inventory-hub',  icon: Factory, labelKey: 'sidebar.inventoryProduction' },
+      { to: '/production-hub', icon: Cog,     labelKey: 'sidebar.productionHub' },
     ],
   },
   {
     headerKey: 'sidebar.sectionFinance',
     items: [
-      { to: '/accounts',  icon: BookOpen,   labelKey: 'sidebar.accounts' },
-      { to: '/analytics', icon: TrendingUp, labelKey: 'sidebar.analytics' },
+      { to: '/accounts',        icon: BookOpen,    labelKey: 'sidebar.accounts' },
+      { to: '/gst-compliance',  icon: FileBarChart, labelKey: 'sidebar.gstCompliance' },
+      { to: '/analytics',       icon: TrendingUp,  labelKey: 'sidebar.analytics' },
+      { to: '/fraud-registers', icon: ShieldAlert, labelKey: 'sidebar.fraudRegisters' },
     ],
   },
 ];

@@ -1,34 +1,25 @@
 /**
- * Accounts hub — Payments · Account Statement · GST Returns · GSTR-2B (ITC) ·
- * Compliance Docs · Activity Log in tabs.
+ * Accounts hub — Payments · Account Statement · Activity Log
  *
- * URL sync: ?tab=payments | ?tab=statement | ?tab=gst | ?tab=gstr2b |
- *           ?tab=compliance | ?tab=activity. Default = payments.
- * Existing routes (/payments, /ledger, /gst-reports, etc.) still work
- * standalone for deep-links from emails or bookmarks.
+ * GST Returns / GSTR-2B / Compliance moved to GstComplianceHubPage (/gst-compliance).
+ * URL sync: ?tab=payments | ?tab=statement | ?tab=activity. Default = payments.
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { CreditCard, BookOpen, FileBarChart, FileBarChart2, ShieldCheck, Shield } from 'lucide-react';
+import { CreditCard, BookOpen, Shield } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
-
-const MOBILE_TABS = [
-  { value: 'payments',   label: 'Payments' },
-  { value: 'statement',  label: 'Account Statement' },
-  { value: 'gst',        label: 'GST Returns' },
-  { value: 'gstr2b',     label: 'GSTR-2B (ITC)' },
-  { value: 'compliance', label: 'Compliance Docs' },
-  { value: 'activity',   label: 'Activity Log' },
-];
 import PaymentsPage from './PaymentsPage';
 import LedgerPage from './LedgerPage';
-import GstReportsPage from './GstReportsPage';
-import Gstr2bReconcilePage from './Gstr2bReconcilePage';
-import CompliancePage from './CompliancePage';
 import AuditPage from './AuditPage';
 
-type Tab = 'payments' | 'statement' | 'gst' | 'gstr2b' | 'compliance' | 'activity';
+type Tab = 'payments' | 'statement' | 'activity';
+
+const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
+  { value: 'payments',  label: 'Payments',          icon: CreditCard },
+  { value: 'statement', label: 'Account Statement', icon: BookOpen },
+  { value: 'activity',  label: 'Activity Log',      icon: Shield },
+];
 
 export default function AccountsHubPage() {
   const nav = useNavigate();
@@ -36,7 +27,6 @@ export default function AccountsHubPage() {
   const initial = (new URLSearchParams(loc.search).get('tab') as Tab) || 'payments';
   const [tab, setTab] = useState<Tab>(initial);
 
-  // Keep URL in sync so refresh / share preserves the active tab
   useEffect(() => {
     const params = new URLSearchParams(loc.search);
     if (params.get('tab') !== tab) {
@@ -48,33 +38,20 @@ export default function AccountsHubPage() {
   return (
     <div className="space-y-3">
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <MobileTabSelect value={tab} onValueChange={(v) => setTab(v as Tab)} options={MOBILE_TABS} />
+        <MobileTabSelect value={tab} onValueChange={(v) => setTab(v as Tab)} options={TABS.map(t => ({ value: t.value, label: t.label }))} />
         <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
-          <TabsTrigger value="payments" className="gap-1.5"><CreditCard className="h-3.5 w-3.5" /> Payments</TabsTrigger>
-          <TabsTrigger value="statement" className="gap-1.5"><BookOpen className="h-3.5 w-3.5" /> Account Statement</TabsTrigger>
-          <TabsTrigger value="gst" className="gap-1.5"><FileBarChart className="h-3.5 w-3.5" /> GST Returns</TabsTrigger>
-          <TabsTrigger value="gstr2b" className="gap-1.5"><FileBarChart2 className="h-3.5 w-3.5" /> GSTR-2B (ITC)</TabsTrigger>
-          <TabsTrigger value="compliance" className="gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> Compliance Docs</TabsTrigger>
-          <TabsTrigger value="activity" className="gap-1.5"><Shield className="h-3.5 w-3.5" /> Activity Log</TabsTrigger>
+          {TABS.map(t => {
+            const Icon = t.icon;
+            return (
+              <TabsTrigger key={t.value} value={t.value} className="gap-1.5">
+                <Icon className="h-3.5 w-3.5" /> {t.label}
+              </TabsTrigger>
+            );
+          })}
         </TabsList>
-        <TabsContent value="payments" className="mt-4">
-          <PaymentsPage />
-        </TabsContent>
-        <TabsContent value="statement" className="mt-4">
-          <LedgerPage />
-        </TabsContent>
-        <TabsContent value="gst" className="mt-4">
-          <GstReportsPage />
-        </TabsContent>
-        <TabsContent value="gstr2b" className="mt-4">
-          <Gstr2bReconcilePage />
-        </TabsContent>
-        <TabsContent value="compliance" className="mt-4">
-          <CompliancePage />
-        </TabsContent>
-        <TabsContent value="activity" className="mt-4">
-          <AuditPage />
-        </TabsContent>
+        <TabsContent value="payments"  className="mt-4"><PaymentsPage /></TabsContent>
+        <TabsContent value="statement" className="mt-4"><LedgerPage /></TabsContent>
+        <TabsContent value="activity"  className="mt-4"><AuditPage /></TabsContent>
       </Tabs>
     </div>
   );

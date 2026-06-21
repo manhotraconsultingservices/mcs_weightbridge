@@ -76,12 +76,16 @@
     "sectionResources": "Resources",
     "sectionFinance": "Finance & Intelligence",
     "weighbridge": "Weighbridge",
+    "camerasAnpr": "Cameras & ANPR",
     "salesCrm": "Sales & CRM",
     "procurement": "Procurement",
     "catalog": "Item Catalog",
-    "inventoryProduction": "Inventory & Production",
+    "inventoryProduction": "Inventory",
+    "productionHub": "Production",
     "accounts": "Accounts",
-    "analytics": "Analytics"
+    "gstCompliance": "GST & Compliance",
+    "analytics": "Analytics",
+    "fraudRegisters": "Fraud & Registers"
   },
   "token": {
     "title": "Trips / Gate Register",
