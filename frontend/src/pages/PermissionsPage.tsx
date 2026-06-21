@@ -8,74 +8,96 @@ import { useAuth } from '@/hooks/useAuth';
 import { DEFAULT_PERMISSIONS } from '@/hooks/useAppSettings';
 import api from '@/services/api';
 
-// ── Page catalogue (mirrors Sidebar HUB_CHILDREN) ─────────────────────────── //
-// Each path here must match an entry in Sidebar.tsx HUB_CHILDREN so that
-// checking it shows the correct hub in the sidebar for that role.
+// ── Page catalogue — mirrors the sidebar sections exactly ─────────────────── //
+//
+// DESIGN: permissions are granted at the HUB level (same names the user sees
+// in the sidebar), not at individual leaf pages.  Sidebar.tsx isVisible()
+// supports both direct hub paths AND legacy leaf paths via HUB_CHILDREN, so
+// old stored permissions continue to work.
+//
+// Granting a hub gives access to ALL tabs inside it.  More granular control
+// is not needed for the current role set.
 
 const PAGE_GROUPS = [
   {
     group: 'General',
     pages: [
-      { path: '/', label: 'Dashboard' },
+      { path: '/',  label: 'Dashboard', hint: 'Exception-first owner overview' },
     ],
   },
   {
-    group: 'Weighbridge & ANPR',
+    group: 'Operations',  // sidebar section header: OPERATIONS
     pages: [
-      { path: '/gate',            label: 'Gate Register' },
-      { path: '/tokens-v1',       label: 'Weigh Tickets' },
-      { path: '/anpr/trips',      label: 'Movement Report' },
-      { path: '/camera-scale',    label: 'Camera & Scale' },
-      { path: '/snapshot-search', label: 'Snapshot Search' },
-      { path: '/anpr/events',     label: 'Gate Cameras (ANPR Events)' },
-      { path: '/anpr/review',     label: 'Plate Review Queue' },
+      {
+        path: '/weighbridge',
+        label: 'Weighbridge',
+        hint: 'Gate Register · Weigh Tickets · Movement Report',
+      },
+      {
+        path: '/cameras-anpr',
+        label: 'Cameras & ANPR',
+        hint: 'Camera & Scale · Snapshot Search · ANPR Events · Plate Review',
+      },
     ],
   },
   {
-    group: 'Sales',
+    group: 'Commercial',  // sidebar section header: COMMERCIAL
     pages: [
-      { path: '/invoices',           label: 'Sales Invoices / Bills' },
-      { path: '/quotations',         label: 'Quotations / Estimates' },
-      { path: '/delivery-challans',  label: 'Delivery Challans' },
-      { path: '/credit-debit-notes', label: 'Credit / Debit Notes' },
-      { path: '/customers',          label: 'Customers (360 view)' },
+      {
+        path: '/sales',
+        label: 'Sales & CRM',
+        hint: 'Bills · Estimates · Challans · Credit/Debit Notes · Customers 360',
+      },
+      {
+        path: '/procurement',
+        label: 'Procurement',
+        hint: 'Purchase Invoices · Royalty / Transit Passes',
+      },
+      {
+        path: '/products',
+        label: 'Item Catalog',
+        hint: 'Products master (direct sidebar item)',
+      },
     ],
   },
   {
-    group: 'Procurement',
+    group: 'Resources',   // sidebar section header: RESOURCES
     pages: [
-      { path: '/purchase-invoices', label: 'Purchase Invoices' },
-      { path: '/royalty',           label: 'Royalty / Transit Passes' },
+      {
+        path: '/inventory-hub',
+        label: 'Inventory',
+        hint: 'Finished Goods · Store Inventory · Products Catalog · Customer Rates',
+      },
+      {
+        path: '/production-hub',
+        label: 'Production',
+        hint: 'Daily Production Cycles · Production Dashboard · Settings',
+      },
     ],
   },
   {
-    group: 'Inventory & Production',
+    group: 'Finance & Intelligence',  // sidebar section header: FINANCE & INTELLIGENCE
     pages: [
-      { path: '/product-inventory',    label: 'Finished Goods Stock' },
-      { path: '/inventory',            label: 'Store Inventory' },
-      { path: '/products',             label: 'Products Catalog' },
-      { path: '/pricing-matrix',       label: 'Customer Rates Matrix' },
-      { path: '/production',           label: 'Daily Production Cycles' },
-      { path: '/production/dashboard', label: 'Production Dashboard' },
-      { path: '/production/settings',  label: 'Production Settings' },
-    ],
-  },
-  {
-    group: 'Finance & Reports',
-    pages: [
-      { path: '/payments',    label: 'Payments' },
-      { path: '/ledger',      label: 'Account Statement' },
-      { path: '/gst-reports', label: 'GST Returns (GSTR-1, 3B)' },
-      { path: '/compliance',  label: 'Compliance Documents' },
-      { path: '/reports',     label: 'Analytics & Reports (P&L, Anomaly, Registers)' },
-      { path: '/audit',       label: 'Activity Log' },
-    ],
-  },
-  {
-    group: 'Masters',
-    pages: [
-      { path: '/parties',  label: 'Parties (Customers / Suppliers)' },
-      { path: '/vehicles', label: 'Vehicles, Drivers, Transporters' },
+      {
+        path: '/accounts',
+        label: 'Accounts',
+        hint: 'Payments · Account Statement · Activity Log',
+      },
+      {
+        path: '/gst-compliance',
+        label: 'GST & Compliance',
+        hint: 'GST Returns (GSTR-1 / 3B / 2B) · Compliance Documents',
+      },
+      {
+        path: '/analytics',
+        label: 'Analytics',
+        hint: 'P&L · Sales by Status · GST Split · Write-offs Report',
+      },
+      {
+        path: '/fraud-registers',
+        label: 'Fraud & Registers',
+        hint: 'Anomaly Detection · Gate Pass Register · Token Register',
+      },
     ],
   },
 ];
@@ -154,7 +176,7 @@ function RoleTab({ allowed, onChange, invoiceActions, onInvoiceActionsChange }: 
               return (
                 <label
                   key={page.path}
-                  className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm cursor-pointer transition-colors ${
+                  className={`flex items-start gap-2 rounded-md border px-3 py-2 text-sm cursor-pointer transition-colors ${
                     isChecked
                       ? 'border-primary/30 bg-primary/5'
                       : 'border-transparent bg-muted/40 hover:bg-muted/70'
@@ -164,9 +186,14 @@ function RoleTab({ allowed, onChange, invoiceActions, onInvoiceActionsChange }: 
                     type="checkbox"
                     checked={isChecked}
                     onChange={() => toggle(page.path)}
-                    className="accent-primary"
+                    className="accent-primary mt-0.5 shrink-0"
                   />
-                  <span>{page.label}</span>
+                  <div className="min-w-0">
+                    <div className="font-medium leading-tight">{page.label}</div>
+                    {'hint' in page && page.hint && (
+                      <div className="text-[11px] text-muted-foreground mt-0.5 leading-tight">{page.hint}</div>
+                    )}
+                  </div>
                 </label>
               );
             })}

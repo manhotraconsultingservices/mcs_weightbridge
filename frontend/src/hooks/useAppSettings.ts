@@ -3,75 +3,56 @@ import api from '@/services/api';
 
 // ── Default permissions (fallback if API unreachable) ─────────────────────── //
 
+// Permissions use HUB paths (matching the sidebar items the user sees).
+// Sidebar.tsx isVisible() grants a hub when permissions includes the hub path
+// directly (permissions.includes('/analytics')) OR when it includes any child
+// path via HUB_CHILDREN — so old leaf-path DB values continue to work.
 export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
   admin: ['*'],
 
   // Gate guard — gate register only; auto-redirected to /gate on login
   gate_guard: [
-    '/gate',
+    '/weighbridge',  // sidebar: Weighbridge (Gate Register tab only in practice)
   ],
 
-  // Operator — weighing operations + camera monitoring; auto-redirected to /operator kiosk
+  // Operator — weighing + camera; auto-redirected to /operator kiosk
   operator: [
-    '/gate',            // Weighbridge: Gate Register
-    '/tokens-v1',       // Weighbridge: Weigh Tickets
-    '/anpr/trips',      // Weighbridge: Movement Report
-    '/camera-scale',    // Cameras & ANPR: Camera & Scale
-    '/snapshot-search', // Cameras & ANPR: Snapshots
+    '/weighbridge',   // Gate Register · Weigh Tickets · Movement Report
+    '/cameras-anpr',  // Camera & Scale · Snapshots · ANPR Events
   ],
 
-  // Store manager — all inventory and production; no financial/sales access
+  // Store manager — full inventory and production visibility
   store_manager: [
-    '/product-inventory',     // Inventory: Finished Goods
-    '/inventory',             // Inventory: Store Inventory
-    '/products',              // Inventory: Products Catalog
-    '/pricing-matrix',        // Inventory: Customer Rates
-    '/production',            // Production: Daily Production
-    '/production/dashboard',  // Production: Dashboard
-    '/production/settings',   // Production: Settings
+    '/inventory-hub',  // Finished Goods · Store · Products Catalog · Customer Rates
+    '/production-hub', // Daily Cycles · Production Dashboard · Settings
   ],
 
-  // Sales executive — full sales cycle (bills, estimates, challans, notes, customers)
+  // Sales executive — full sales cycle
   sales_executive: [
-    '/invoices',           // Sales: Bills
-    '/quotations',         // Sales: Estimates
-    '/delivery-challans',  // Sales: Challans
-    '/credit-debit-notes', // Sales: Notes
-    '/customers',          // Sales: Customers (360 view)
-    '/parties',            // Masters: Parties
-    '/vehicles',           // Masters: Vehicles
-    '/products',           // Masters: Products
-    '/pricing-matrix',     // Inventory: Customer Rates
+    '/sales',    // Bills · Estimates · Challans · Notes · Customers 360
+    '/products', // Item Catalog (sidebar direct item)
   ],
 
-  // Purchase executive — procurement + royalty passes
+  // Purchase executive — procurement only
   purchase_executive: [
-    '/purchase-invoices', // Procurement: Purchase Invoices
-    '/royalty',           // Procurement: Royalty Passes
-    '/parties',           // Masters: Parties
-    '/products',          // Masters: Products
-    '/pricing-matrix',    // Inventory: Customer Rates
+    '/procurement', // Purchase Invoices · Royalty / Transit Passes
+    '/products',    // Item Catalog
   ],
 
-  // Accountant — full financial access (accounts, GST, compliance, analytics, reports)
+  // Accountant — full financial + reporting access incl. sales for write-offs
   accountant: [
-    '/payments',          // Accounts: Payments
-    '/ledger',            // Accounts: Account Statement
-    '/audit',             // Accounts: Activity Log
-    '/gst-reports',       // GST & Compliance: GST Returns
-    '/compliance',        // GST & Compliance: Compliance Docs
-    '/reports',           // Analytics: P&L + Fraud & Registers
-    '/invoices',          // Sales: Bills (for write-offs, review)
-    '/parties',           // Masters: Parties
-    '/pricing-matrix',    // Customer Rates
+    '/sales',            // Bills (write-offs, revision review)
+    '/accounts',         // Payments · Account Statement · Activity Log
+    '/gst-compliance',   // GST Returns · Compliance Docs
+    '/analytics',        // P&L · Sales Status · GST Split · Write-offs
+    '/fraud-registers',  // Anomaly Detection · Gate Pass Register · Token Register
   ],
 
-  // Viewer — read-only dashboards and reports
+  // Viewer — read-only reports and compliance
   viewer: [
-    '/reports',     // Analytics + Fraud & Registers (read-only)
-    '/gst-reports', // GST & Compliance: GST Returns
-    '/ledger',      // Accounts: Account Statement
-    '/compliance',  // GST & Compliance: Compliance Docs
+    '/analytics',       // P&L · Sales Status · Write-offs (read-only)
+    '/gst-compliance',  // GST Returns · Compliance Docs
+    '/accounts',        // Account Statement (read-only)
   ],
 };
 
