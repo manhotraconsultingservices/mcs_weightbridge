@@ -753,6 +753,7 @@ _GATE_CAM_DEFAULT: dict = {
     "entry": {"enabled": False, "label": "Entry Gate Camera", "snapshot_url": "", "username": "admin", "password": ""},
     "exit":  {"enabled": False, "label": "Exit Gate Camera",  "snapshot_url": "", "username": "admin", "password": ""},
     "webhook_secret": "",
+    "agent_key": "",
     "eod_alert_time": "20:00",
     "eod_alert_enabled": True,
 }
@@ -766,6 +767,8 @@ def _mask_gate_cam(cfg: dict) -> dict:
             out[pos]["password"] = "***"
     if out.get("webhook_secret"):
         out["webhook_secret"] = "***"
+    if out.get("agent_key"):
+        out["agent_key"] = "***"
     return out
 
 
@@ -797,6 +800,8 @@ async def update_gate_camera_config(
             merged[pos] = {**existing, **incoming}
     if "webhook_secret" in payload and payload["webhook_secret"] != "***":
         merged["webhook_secret"] = payload["webhook_secret"]
+    if "agent_key" in payload and payload["agent_key"] != "***":
+        merged["agent_key"] = payload["agent_key"]
     for k in ("eod_alert_time", "eod_alert_enabled"):
         if k in payload:
             merged[k] = payload[k]

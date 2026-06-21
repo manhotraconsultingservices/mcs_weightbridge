@@ -1,19 +1,26 @@
 /**
  * GateCameraLivePage — Live view of entry and exit gate cameras.
  *
- * Polls POST /api/v1/gate/capture/{position} every 5 s.
- * Each call triggers an HTTP snapshot from the configured CP Plus camera,
- * saves to uploads/gate/, and returns the URL.
+ * Cloud deployment: polls GET /api/v1/gate/latest-snapshot/{position} every 3 s.
+ * Snapshots are pushed by gate_camera_agent.py running on-site.
+ * Shows "Agent offline" when no push received in the last 30 seconds.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Camera, RefreshCw, WifiOff } from 'lucide-react';
+import { AlertTriangle, Camera, RefreshCw, WifiOff, Radio } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/services/api';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type CamStatus = 'idle' | 'loading' | 'live' | 'off' | 'error';
+type CamStatus = 'idle' | 'loading' | 'live' | 'stale' | 'off' | 'error';
+
+interface LatestSnapshotResponse {
+  configured: boolean;
+  url: string | null;
+  last_updated_at: string | null;
+  is_stale: boolean;
+}
 
 interface PanelState {
   status: CamStatus;
@@ -27,44 +34,60 @@ interface PanelState {
 interface CameraPanelProps {
   position: 'entry' | 'exit';
   label: string;
-  refreshInterval?: number; // ms, default 5000
+  refreshInterval?: number; // ms, default 3000
 }
 
-function CameraPanel({ position, label, refreshInterval = 5000 }: CameraPanelProps) {
+function CameraPanel({ position, label, refreshInterval = 3000 }: CameraPanelProps) {
   const [state, setState] = useState<PanelState>({
     status: 'idle', url: null, lastCapture: null, error: null,
   });
   const mountedRef = useRef(true);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const capture = useCallback(async () => {
+  const poll = useCallback(async () => {
     if (!mountedRef.current) return;
-    setState(s => ({ ...s, status: 'loading' }));
+    setState(s => ({ ...s, status: s.url ? s.status : 'loading' }));
     try {
-      const { data } = await api.post<{ url: string }>(`/api/v1/gate/capture/${position}`, {});
+      const { data } = await api.get<LatestSnapshotResponse>(
+        `/api/v1/gate/latest-snapshot/${position}`
+      );
       if (!mountedRef.current) return;
-      // Bust the browser image cache with a timestamp query param
-      setState({ status: 'live', url: `${data.url}?t=${Date.now()}`, lastCapture: new Date(), error: null });
+      if (!data.configured) {
+        setState(s => ({ ...s, status: 'off', error: null }));
+        return;
+      }
+      if (data.is_stale) {
+        // Show last frame (if any) but mark as stale
+        setState(s => ({
+          ...s,
+          status: 'stale',
+          url: data.url ? `${data.url}?t=${Date.now()}` : s.url,
+          error: null,
+        }));
+        return;
+      }
+      setState({
+        status: 'live',
+        url: `${data.url}?t=${Date.now()}`,
+        lastCapture: data.last_updated_at ? new Date(data.last_updated_at) : new Date(),
+        error: null,
+      });
     } catch (e: unknown) {
       if (!mountedRef.current) return;
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '';
-      if (detail.includes('not configured') || detail.includes('disabled')) {
-        setState(s => ({ ...s, status: 'off', error: null }));
-      } else {
-        setState(s => ({ ...s, status: 'error', error: detail || 'Camera offline' }));
-      }
+      setState(s => ({ ...s, status: 'error', error: detail || 'Fetch error' }));
     }
   }, [position]);
 
   useEffect(() => {
     mountedRef.current = true;
-    capture();
-    intervalRef.current = setInterval(capture, refreshInterval);
+    poll();
+    intervalRef.current = setInterval(poll, refreshInterval);
     return () => {
       mountedRef.current = false;
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [capture, refreshInterval]);
+  }, [poll, refreshInterval]);
 
   const bgColor = position === 'entry' ? 'bg-emerald-500' : 'bg-rose-500';
   const labelColor = position === 'entry' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200';
@@ -81,6 +104,9 @@ function CameraPanel({ position, label, refreshInterval = 5000 }: CameraPanelPro
           {state.status === 'live' && (
             <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
           )}
+          {state.status === 'stale' && (
+            <span className="flex h-2 w-2 rounded-full bg-amber-400" title="Agent offline — showing last frame" />
+          )}
           {state.status === 'error' && (
             <span className="flex h-2 w-2 rounded-full bg-red-500" />
           )}
@@ -93,14 +119,15 @@ function CameraPanel({ position, label, refreshInterval = 5000 }: CameraPanelPro
             <span className="text-[11px] text-muted-foreground tabular-nums">
               {state.lastCapture.toLocaleTimeString('en-IN', {
                 hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+                timeZone: 'Asia/Kolkata',
               })}
             </span>
           )}
           <Button
             variant="ghost" size="icon" className="h-7 w-7"
-            onClick={() => { capture(); }}
+            onClick={() => { poll(); }}
             disabled={state.status === 'loading'}
-            title="Capture now"
+            title="Refresh"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${state.status === 'loading' ? 'animate-spin' : ''}`} />
           </Button>
@@ -109,35 +136,49 @@ function CameraPanel({ position, label, refreshInterval = 5000 }: CameraPanelPro
 
       {/* Camera view area — 16:9 aspect ratio */}
       <div className="relative bg-gray-950 aspect-video flex items-center justify-center">
-        {state.url && state.status !== 'off' ? (
-          <img
-            key={state.url}
-            src={state.url}
-            alt={label}
-            className="w-full h-full object-contain"
-            onError={() => {
-              if (mountedRef.current) {
-                setState(s => ({ ...s, status: 'error', error: 'Failed to load snapshot' }));
-              }
-            }}
-          />
+        {state.url ? (
+          <>
+            <img
+              key={state.url}
+              src={state.url}
+              alt={label}
+              className="w-full h-full object-contain"
+              onError={() => {
+                if (mountedRef.current) {
+                  setState(s => ({ ...s, status: 'error', error: 'Failed to load snapshot' }));
+                }
+              }}
+            />
+            {/* Stale overlay — keep showing last frame but warn */}
+            {state.status === 'stale' && (
+              <div className="absolute inset-0 flex items-end justify-center pb-4 bg-black/30">
+                <div className="flex items-center gap-1.5 bg-amber-500/90 text-white rounded px-3 py-1.5 text-xs font-semibold">
+                  <Radio className="h-3 w-3" />
+                  Agent offline — showing last frame
+                </div>
+              </div>
+            )}
+          </>
         ) : state.status === 'off' ? (
           <div className="text-center px-6">
             <WifiOff className="h-12 w-12 mx-auto mb-3 text-gray-600" />
-            <p className="text-sm text-gray-400 font-medium">Camera not configured</p>
-            <p className="text-xs text-gray-600 mt-1">
-              Go to Settings → Gate Cameras to set up the {position} camera URL.
+            <p className="text-sm text-gray-400 font-medium">Agent not started</p>
+            <p className="text-xs text-gray-500 mt-1 max-w-xs">
+              Run <code className="bg-gray-800 px-1 rounded">gate_camera_agent.py</code> on
+              the on-site PC to start pushing snapshots.
+            </p>
+            <p className="text-xs text-gray-600 mt-2">
+              Get the agent key from Settings → Gate Cameras.
             </p>
           </div>
         ) : state.status === 'error' ? (
           <div className="text-center px-6">
             <AlertTriangle className="h-12 w-12 mx-auto mb-3 text-red-400/70" />
-            <p className="text-sm text-gray-300 font-medium">{state.error ?? 'Camera offline'}</p>
-            <p className="text-xs text-gray-600 mt-1 mb-3">Check camera power and network connectivity.</p>
+            <p className="text-sm text-gray-300 font-medium">{state.error ?? 'Fetch error'}</p>
             <Button
               variant="outline" size="sm"
-              className="border-gray-700 text-gray-300 hover:bg-gray-800"
-              onClick={() => { capture(); }}
+              className="mt-3 border-gray-700 text-gray-300 hover:bg-gray-800"
+              onClick={() => { poll(); }}
             >
               <RefreshCw className="h-3 w-3 mr-1.5" /> Retry
             </Button>
@@ -145,11 +186,11 @@ function CameraPanel({ position, label, refreshInterval = 5000 }: CameraPanelPro
         ) : (
           <div className="text-center px-6">
             <Camera className="h-12 w-12 mx-auto mb-3 text-gray-600" />
-            <p className="text-sm text-gray-500">Connecting to camera…</p>
+            <p className="text-sm text-gray-500">Waiting for agent…</p>
           </div>
         )}
 
-        {/* Live badge overlay */}
+        {/* Live badge */}
         {state.status === 'live' && (
           <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/60 rounded px-2 py-0.5">
             <span className={`h-1.5 w-1.5 rounded-full ${bgColor} animate-pulse`} />
@@ -170,7 +211,7 @@ export default function GateCameraLivePage() {
         <div>
           <h2 className="text-lg font-semibold">Gate Camera Live Feed</h2>
           <p className="text-sm text-muted-foreground">
-            Entry and exit cameras — auto-refreshes every 5 seconds. Snapshots are saved to the gate event log.
+            Snapshots pushed by the on-site camera agent every 3 seconds.
           </p>
         </div>
       </div>
@@ -181,11 +222,12 @@ export default function GateCameraLivePage() {
       </div>
 
       <p className="text-xs text-center text-muted-foreground">
-        Configure cameras in{' '}
+        Run <code className="bg-muted px-1 rounded">gate_camera_agent.py</code> on the on-site PC.
+        Get setup instructions and agent key in{' '}
         <a href="/settings?tab=gate-cameras" className="underline hover:text-foreground">
           Settings → Gate Cameras
         </a>
-        . Each refresh captures a still image from the camera and saves it to the gate log.
+        .
       </p>
     </div>
   );

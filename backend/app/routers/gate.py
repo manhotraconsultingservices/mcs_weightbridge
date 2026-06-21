@@ -642,6 +642,93 @@ async def capture_photo(
     return {"photo_path": photo_path, "url": f"/{photo_path}"}
 
 
+# ── Camera push agent endpoints (cloud deployment) ────────────────────────────
+
+@router.post("/push-snapshot/{position}")
+async def agent_push_snapshot(
+    position: str,
+    image: UploadFile = File(...),
+    x_gate_agent_key: str | None = Header(None, alias="X-Gate-Agent-Key"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Called by gate_camera_agent.py running on-site.
+    Accepts JPEG from local CP Plus camera, stores as the latest live frame.
+    No user JWT — authenticates via X-Gate-Agent-Key header.
+    """
+    if position not in ("entry", "exit"):
+        raise HTTPException(400, "position must be 'entry' or 'exit'")
+
+    cfg = await _get_gate_cam_cfg(db)
+    stored_key = cfg.get("agent_key", "")
+    if not stored_key:
+        raise HTTPException(403, "Agent key not configured. Go to Settings → Gate Cameras to generate one.")
+    if x_gate_agent_key != stored_key:
+        raise HTTPException(403, "Invalid agent key")
+
+    content_type = image.content_type or ""
+    if "image" not in content_type:
+        raise HTTPException(400, "Expected an image file (JPEG)")
+
+    img_bytes = await image.read()
+
+    # Always overwrite the "latest" frame for this position
+    latest_dir = os.path.join(_uploads_base(), "gate", "latest")
+    os.makedirs(latest_dir, exist_ok=True)
+    with open(os.path.join(latest_dir, f"{position}.jpg"), "wb") as f:
+        f.write(img_bytes)
+
+    # Update metadata (timestamp used for stale detection)
+    import json as _json
+    with open(os.path.join(latest_dir, f"{position}_meta.json"), "w") as f:
+        _json.dump({"last_updated_at": datetime.now(timezone.utc).isoformat()}, f)
+
+    return {"ok": True}
+
+
+@router.get("/latest-snapshot/{position}")
+async def get_latest_snapshot(
+    position: str,
+    current_user=Depends(get_current_user),
+):
+    """
+    Returns metadata for the latest frame pushed by the on-site gate_camera_agent.
+    Used by GateCameraLivePage to display the live feed.
+    is_stale=True when no push received in the last 30 seconds.
+    """
+    if position not in ("entry", "exit"):
+        raise HTTPException(400, "position must be 'entry' or 'exit'")
+
+    latest_dir = os.path.join(_uploads_base(), "gate", "latest")
+    img_file = os.path.join(latest_dir, f"{position}.jpg")
+    meta_file = os.path.join(latest_dir, f"{position}_meta.json")
+
+    if not os.path.exists(img_file):
+        return {"configured": False, "url": None, "last_updated_at": None, "is_stale": True}
+
+    last_updated_at = None
+    is_stale = True
+    if os.path.exists(meta_file):
+        try:
+            import json as _json
+            from datetime import timedelta
+            with open(meta_file) as f:
+                meta = _json.load(f)
+            last_updated_at = meta.get("last_updated_at")
+            if last_updated_at:
+                ts = datetime.fromisoformat(last_updated_at)
+                is_stale = (datetime.now(timezone.utc) - ts) > timedelta(seconds=30)
+        except Exception:
+            pass
+
+    return {
+        "configured": True,
+        "url": f"/uploads/gate/latest/{position}.jpg",
+        "last_updated_at": last_updated_at,
+        "is_stale": is_stale,
+    }
+
+
 # ── CP Plus vehicle-detection webhook ─────────────────────────────────────────
 
 @router.post("/webhook/cpplus")

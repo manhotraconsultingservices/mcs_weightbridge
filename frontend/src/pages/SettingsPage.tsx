@@ -2614,6 +2614,7 @@ interface GateCameraCfg {
   entry: GateCamSlot;
   exit: GateCamSlot;
   webhook_secret: string;
+  agent_key: string;
   eod_alert_time: string;
   eod_alert_enabled: boolean;
 }
@@ -2621,6 +2622,7 @@ const GATE_CAM_DEFAULT: GateCameraCfg = {
   entry: { enabled: false, label: 'Entry Gate Camera', snapshot_url: '', username: 'admin', password: '' },
   exit:  { enabled: false, label: 'Exit Gate Camera',  snapshot_url: '', username: 'admin', password: '' },
   webhook_secret: '',
+  agent_key: '',
   eod_alert_time: '20:00',
   eod_alert_enabled: true,
 };
@@ -2655,11 +2657,14 @@ function GateCameraSlotEditor({
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
-          <label className="text-xs text-muted-foreground">Snapshot URL</label>
+          <label className="text-xs text-muted-foreground">Snapshot URL (CP Plus ONVIF)</label>
           <input className="w-full mt-0.5 rounded border px-2 py-1 text-sm font-mono"
             value={slot.snapshot_url}
-            placeholder="http://192.168.1.64/ISAPI/Streaming/channels/1/picture"
+            placeholder="http://192.168.1.64/onvif-http/snapshot?Profile_1"
             onChange={e => onChange({ ...slot, snapshot_url: e.target.value })} />
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            For CP Plus cameras: <code className="bg-muted px-1 rounded">http://&lt;IP&gt;/onvif-http/snapshot?Profile_1</code>
+          </p>
         </div>
         <div>
           <label className="text-xs text-muted-foreground">Username</label>
@@ -2722,6 +2727,66 @@ function GateCameraSettingsTab() {
         <GateCameraSlotEditor pos="exit" slot={cfg.exit}
           onChange={s => setCfg(c => ({ ...c, exit: s }))} />
       </div>
+
+      {/* Agent key card — required for cloud deployment */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Camera Push Agent (Cloud Deployment)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Since the server is on the cloud, cameras cannot be reached directly.
+            Run <code className="bg-muted px-1 rounded">gate_camera_agent.py</code> on the on-site Windows PC — it captures
+            CP Plus ONVIF snapshots locally and pushes them to the cloud.
+            Generate a key below and paste it into <code className="bg-muted px-1 rounded">gate_camera_agent.ini</code>.
+          </p>
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label className="text-xs text-muted-foreground">Agent Key</label>
+              <input
+                className="w-full mt-0.5 rounded border px-2 py-1 text-sm font-mono"
+                value={cfg.agent_key}
+                onChange={e => setCfg(c => ({ ...c, agent_key: e.target.value }))}
+                placeholder="Click Generate to create a key"
+              />
+            </div>
+            <Button
+              type="button" size="sm" variant="outline"
+              onClick={() => {
+                const key = Array.from(crypto.getRandomValues(new Uint8Array(24)))
+                  .map(b => b.toString(16).padStart(2, '0')).join('');
+                setCfg(c => ({ ...c, agent_key: key }));
+              }}
+            >
+              Generate
+            </Button>
+            <Button
+              type="button" size="sm" variant="outline"
+              onClick={() => { if (cfg.agent_key) navigator.clipboard.writeText(cfg.agent_key); }}
+              disabled={!cfg.agent_key || cfg.agent_key === '***'}
+            >
+              Copy
+            </Button>
+          </div>
+          <div className="rounded-md bg-muted p-3 text-xs font-mono space-y-0.5 text-muted-foreground">
+            <p className="font-semibold text-foreground mb-1">gate_camera_agent.ini (on-site PC)</p>
+            <p>[server]</p>
+            <p>url = https://weighbridgesetu.com</p>
+            <p>agent_key = {cfg.agent_key && cfg.agent_key !== '***' ? cfg.agent_key : 'PASTE_KEY_HERE'}</p>
+            <p className="mt-1">[entry]</p>
+            <p>enabled = true</p>
+            <p>snapshot_url = http://192.168.1.64/onvif-http/snapshot?Profile_1</p>
+            <p>username = admin</p>
+            <p>password = your_camera_password</p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Download <code className="bg-muted px-1 rounded">gate_camera_agent.py</code> from
+            the <code className="bg-muted px-1 rounded">backend/</code> folder of the source code.
+            Run: <code className="bg-muted px-1 rounded">pip install requests</code> then
+            <code className="bg-muted px-1 rounded"> python gate_camera_agent.py</code>
+          </p>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader><CardTitle className="text-base">CP Plus Webhook (Vehicle Detection)</CardTitle></CardHeader>
