@@ -6,21 +6,23 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { MonitorPlay, ScanSearch, Camera, AlertTriangle } from 'lucide-react';
+import { MonitorPlay, ScanSearch, Camera, AlertTriangle, Video } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import CameraScalePage from './CameraScalePage';
 import SnapshotSearchPage from './SnapshotSearchPage';
 import AnprEventsPage from './AnprEventsPage';
 import AnprReviewPage from './AnprReviewPage';
+import GateCameraLivePage from './GateCameraLivePage';
 
-type Tab = 'cameras' | 'snapshots' | 'anpr' | 'review';
+type Tab = 'cameras' | 'snapshots' | 'gate-live' | 'anpr' | 'review';
 
 const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-  { value: 'cameras',   label: 'Camera & Scale',  icon: MonitorPlay },
-  { value: 'snapshots', label: 'Snapshots',        icon: ScanSearch },
-  { value: 'anpr',      label: 'Gate Cameras',     icon: Camera },
-  { value: 'review',    label: 'Plate Review',     icon: AlertTriangle },
+  { value: 'cameras',    label: 'Camera & Scale',  icon: MonitorPlay },
+  { value: 'snapshots',  label: 'Snapshots',        icon: ScanSearch },
+  { value: 'gate-live',  label: 'Gate Live Feed',   icon: Video },
+  { value: 'anpr',       label: 'ANPR Events',      icon: Camera },
+  { value: 'review',     label: 'Plate Review',     icon: AlertTriangle },
 ];
 
 export default function CamerasAnprHubPage() {
@@ -53,6 +55,7 @@ export default function CamerasAnprHubPage() {
         </TabsList>
         <TabsContent value="cameras"   className="mt-4"><CameraScalePage /></TabsContent>
         <TabsContent value="snapshots" className="mt-4"><SnapshotSearchPage /></TabsContent>
+        <TabsContent value="gate-live" className="mt-4"><GateCameraLivePage /></TabsContent>
         <TabsContent value="anpr"      className="mt-4"><AnprEventsPage /></TabsContent>
         <TabsContent value="review"    className="mt-4"><AnprReviewPage /></TabsContent>
       </Tabs>
