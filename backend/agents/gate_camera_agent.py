@@ -304,6 +304,118 @@ class StatusServer:
         log.info("Status API: http://127.0.0.1:%d", self.port)
 
 
+# ── Gate pass photo listener ─────────────────────────────────────────────────
+
+class GatePassListener:
+    """Polls cloud API for gate passes needing entry/exit photos and uploads captures.
+
+    When a gate pass is created or exited, the backend marks it as needing a photo
+    (entry_photo_path / exit_photo_path IS NULL). This listener polls every 5 s,
+    captures a fresh JPEG from the correct camera, and uploads it.
+
+    GET  /api/v1/gate/agent-pending  → list of {gate_pass_id, position} needing photos
+    POST /api/v1/gate/agent-upload   → multipart upload that sets the photo column
+
+    In single-tenant mode the server skips auth. In multi-tenant mode pass
+    tenant_slug + agent_key from the config.
+    """
+
+    def __init__(self, cfg: dict) -> None:
+        self.cfg = cfg
+        self.running = False
+        self._thread: threading.Thread | None = None
+        self._seen: set[str] = set()   # gate_pass_id:position pairs already handled
+
+    def start(self) -> None:
+        self.running = True
+        self._thread = threading.Thread(
+            target=self._poll_loop, daemon=True, name="GatePassListener"
+        )
+        self._thread.start()
+        log.info("Gate pass listener started (polls every 5 s for pending photos)")
+
+    def stop(self) -> None:
+        self.running = False
+        if self._thread:
+            self._thread.join(timeout=5)
+
+    def _poll_loop(self) -> None:
+        cloud = self.cfg["cloud_url"].rstrip("/")
+        poll_url = f"{cloud}/api/v1/gate/agent-pending"
+        upload_url = f"{cloud}/api/v1/gate/agent-upload"
+        timeout_sec = self.cfg.get("timeout_sec", 8)
+        tenant_slug = self.cfg.get("tenant_slug", "")
+        agent_key = self.cfg.get("agent_key", "")
+
+        while self.running:
+            try:
+                resp = requests.get(
+                    poll_url,
+                    params={"tenant_slug": tenant_slug, "agent_key": agent_key},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    for evt in resp.json().get("events", []):
+                        gp_id = evt.get("gate_pass_id")
+                        position = evt.get("position")   # "entry" or "exit"
+                        if not gp_id or position not in ("entry", "exit"):
+                            continue
+                        key = f"{gp_id}:{position}"
+                        if key in self._seen:
+                            continue
+                        self._seen.add(key)
+                        self._capture_and_upload(
+                            gp_id, position, upload_url,
+                            agent_key, tenant_slug, timeout_sec,
+                        )
+                elif resp.status_code not in (403, 404):
+                    log.debug("agent-pending HTTP %d", resp.status_code)
+            except Exception as exc:
+                log.debug("Gate pass poll error: %s", exc)
+            time.sleep(5)
+
+    def _capture_and_upload(
+        self,
+        gate_pass_id: str,
+        position: str,
+        upload_url: str,
+        agent_key: str,
+        tenant_slug: str,
+        timeout_sec: int,
+    ) -> None:
+        cam = self.cfg.get("cameras", {}).get(position, {})
+        if not cam.get("enabled") or not cam.get("url"):
+            log.debug("No %s camera configured — skipping gate pass %s photo", position, gate_pass_id)
+            return
+
+        image_data = capture_snapshot(cam, f"gate_{position}", timeout_sec)
+        if image_data is None:
+            log.warning("Snapshot failed for gate pass %s position=%s", gate_pass_id, position)
+            return
+
+        try:
+            resp = requests.post(
+                upload_url,
+                data={
+                    "gate_pass_id": gate_pass_id,
+                    "position": position,
+                    "tenant_slug": tenant_slug,
+                    "agent_key": agent_key,
+                },
+                files={"file": (f"gate_{position}.jpg", image_data, "image/jpeg")},
+                timeout=timeout_sec + 5,
+            )
+            if resp.status_code == 200:
+                log.info(
+                    "Gate photo linked: gp=%s pos=%s (%d bytes)",
+                    gate_pass_id, position, len(image_data),
+                )
+            else:
+                log.warning("Gate upload HTTP %d: %s", resp.status_code, resp.text[:120])
+        except Exception as exc:
+            log.warning("Gate upload error gp=%s: %s", gate_pass_id, exc)
+
+
 # ── NSSM service management ───────────────────────────────────────────────────
 
 SERVICE_NAME = "WeighbridgeGateCameraAgent"
@@ -463,9 +575,14 @@ def main() -> None:
     agent = GateCameraAgent(cfg)
     StatusServer(agent, port=9005).start()
 
+    # Listen for pending gate pass photo events and upload captures
+    gate_listener = GatePassListener(cfg)
+    gate_listener.start()
+
     def _shutdown(sig, frame):
         log.info("Shutting down...")
         agent.stop()
+        gate_listener.stop()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, _shutdown)

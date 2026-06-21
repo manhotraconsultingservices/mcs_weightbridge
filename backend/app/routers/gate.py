@@ -934,10 +934,10 @@ async def gate_agent_pending(
             FROM gate_passes
             WHERE (
                 (status = 'inside' AND entry_photo_path IS NULL
-                    AND entry_time > NOW() - INTERVAL '5 minutes')
+                    AND entry_time > NOW() - INTERVAL '10 minutes')
                 OR
                 (status = 'exited' AND exit_photo_path IS NULL
-                    AND exit_time > NOW() - INTERVAL '5 minutes')
+                    AND exit_time > NOW() - INTERVAL '10 minutes')
             )
             ORDER BY entry_time DESC
             LIMIT 20
