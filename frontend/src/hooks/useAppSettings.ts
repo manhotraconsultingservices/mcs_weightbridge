@@ -5,13 +5,74 @@ import api from '@/services/api';
 
 export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
   admin: ['*'],
-  store_manager: ['/inventory', '/product-inventory', '/production', '/production/dashboard', '/products'],
-  operator: ['/tokens-v1', '/tokens', '/snapshot-search', '/gate'],
-  gate_guard: ['/gate'],
-  sales_executive: ['/invoices', '/quotations', '/parties', '/vehicles', '/pricing-matrix', '/products'],
-  purchase_executive: ['/invoices', '/parties', '/products'],
-  accountant: ['/payments', '/ledger', '/gst-reports', '/reports', '/parties', '/pricing-matrix', '/products'],
-  viewer: ['/reports', '/gst-reports', '/ledger'],
+
+  // Gate guard — gate register only; auto-redirected to /gate on login
+  gate_guard: [
+    '/gate',
+  ],
+
+  // Operator — weighing operations + camera monitoring; auto-redirected to /operator kiosk
+  operator: [
+    '/gate',            // Weighbridge: Gate Register
+    '/tokens-v1',       // Weighbridge: Weigh Tickets
+    '/anpr/trips',      // Weighbridge: Movement Report
+    '/camera-scale',    // Cameras & ANPR: Camera & Scale
+    '/snapshot-search', // Cameras & ANPR: Snapshots
+  ],
+
+  // Store manager — all inventory and production; no financial/sales access
+  store_manager: [
+    '/product-inventory',     // Inventory: Finished Goods
+    '/inventory',             // Inventory: Store Inventory
+    '/products',              // Inventory: Products Catalog
+    '/pricing-matrix',        // Inventory: Customer Rates
+    '/production',            // Production: Daily Production
+    '/production/dashboard',  // Production: Dashboard
+    '/production/settings',   // Production: Settings
+  ],
+
+  // Sales executive — full sales cycle (bills, estimates, challans, notes, customers)
+  sales_executive: [
+    '/invoices',           // Sales: Bills
+    '/quotations',         // Sales: Estimates
+    '/delivery-challans',  // Sales: Challans
+    '/credit-debit-notes', // Sales: Notes
+    '/customers',          // Sales: Customers (360 view)
+    '/parties',            // Masters: Parties
+    '/vehicles',           // Masters: Vehicles
+    '/products',           // Masters: Products
+    '/pricing-matrix',     // Inventory: Customer Rates
+  ],
+
+  // Purchase executive — procurement + royalty passes
+  purchase_executive: [
+    '/purchase-invoices', // Procurement: Purchase Invoices
+    '/royalty',           // Procurement: Royalty Passes
+    '/parties',           // Masters: Parties
+    '/products',          // Masters: Products
+    '/pricing-matrix',    // Inventory: Customer Rates
+  ],
+
+  // Accountant — full financial access (accounts, GST, compliance, analytics, reports)
+  accountant: [
+    '/payments',          // Accounts: Payments
+    '/ledger',            // Accounts: Account Statement
+    '/audit',             // Accounts: Activity Log
+    '/gst-reports',       // GST & Compliance: GST Returns
+    '/compliance',        // GST & Compliance: Compliance Docs
+    '/reports',           // Analytics: P&L + Fraud & Registers
+    '/invoices',          // Sales: Bills (for write-offs, review)
+    '/parties',           // Masters: Parties
+    '/pricing-matrix',    // Customer Rates
+  ],
+
+  // Viewer — read-only dashboards and reports
+  viewer: [
+    '/reports',     // Analytics + Fraud & Registers (read-only)
+    '/gst-reports', // GST & Compliance: GST Returns
+    '/ledger',      // Accounts: Account Statement
+    '/compliance',  // GST & Compliance: Compliance Docs
+  ],
 };
 
 export interface AppSettings {

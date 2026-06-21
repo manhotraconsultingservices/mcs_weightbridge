@@ -8,7 +8,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { DEFAULT_PERMISSIONS } from '@/hooks/useAppSettings';
 import api from '@/services/api';
 
-// ── Page catalogue (mirrors Sidebar navGroups) ────────────────────────────── //
+// ── Page catalogue (mirrors Sidebar HUB_CHILDREN) ─────────────────────────── //
+// Each path here must match an entry in Sidebar.tsx HUB_CHILDREN so that
+// checking it shows the correct hub in the sidebar for that role.
 
 const PAGE_GROUPS = [
   {
@@ -18,44 +20,62 @@ const PAGE_GROUPS = [
     ],
   },
   {
-    group: 'Operations',
+    group: 'Weighbridge & ANPR',
     pages: [
       { path: '/gate',            label: 'Gate Register' },
-      { path: '/tokens-v1',       label: 'Token (Weighing)' },
-      { path: '/tokens',          label: 'Token Dashboard (Analytics)' },
+      { path: '/tokens-v1',       label: 'Weigh Tickets' },
+      { path: '/anpr/trips',      label: 'Movement Report' },
       { path: '/camera-scale',    label: 'Camera & Scale' },
       { path: '/snapshot-search', label: 'Snapshot Search' },
-      { path: '/inventory',       label: 'Store Inventory' },
-      { path: '/invoices',        label: 'Invoices (Sales & Purchase)' },
-      { path: '/quotations',      label: 'Quotations' },
+      { path: '/anpr/events',     label: 'Gate Cameras (ANPR Events)' },
+      { path: '/anpr/review',     label: 'Plate Review Queue' },
     ],
   },
   {
-    group: 'Finance',
+    group: 'Sales',
     pages: [
-      { path: '/payments',   label: 'Payments' },
-      { path: '/ledger',     label: 'Ledger' },
-      { path: '/gst-reports',label: 'GST Reports' },
-      { path: '/reports',    label: 'Reports' },
+      { path: '/invoices',           label: 'Sales Invoices / Bills' },
+      { path: '/quotations',         label: 'Quotations / Estimates' },
+      { path: '/delivery-challans',  label: 'Delivery Challans' },
+      { path: '/credit-debit-notes', label: 'Credit / Debit Notes' },
+      { path: '/customers',          label: 'Customers (360 view)' },
+    ],
+  },
+  {
+    group: 'Procurement',
+    pages: [
+      { path: '/purchase-invoices', label: 'Purchase Invoices' },
+      { path: '/royalty',           label: 'Royalty / Transit Passes' },
+    ],
+  },
+  {
+    group: 'Inventory & Production',
+    pages: [
+      { path: '/product-inventory',    label: 'Finished Goods Stock' },
+      { path: '/inventory',            label: 'Store Inventory' },
+      { path: '/products',             label: 'Products Catalog' },
+      { path: '/pricing-matrix',       label: 'Customer Rates Matrix' },
+      { path: '/production',           label: 'Daily Production Cycles' },
+      { path: '/production/dashboard', label: 'Production Dashboard' },
+      { path: '/production/settings',  label: 'Production Settings' },
+    ],
+  },
+  {
+    group: 'Finance & Reports',
+    pages: [
+      { path: '/payments',    label: 'Payments' },
+      { path: '/ledger',      label: 'Account Statement' },
+      { path: '/gst-reports', label: 'GST Returns (GSTR-1, 3B)' },
+      { path: '/compliance',  label: 'Compliance Documents' },
+      { path: '/reports',     label: 'Analytics & Reports (P&L, Anomaly, Registers)' },
+      { path: '/audit',       label: 'Activity Log' },
     ],
   },
   {
     group: 'Masters',
     pages: [
-      { path: '/parties',  label: 'Parties' },
-      { path: '/products', label: 'Products' },
-      { path: '/vehicles', label: 'Vehicles' },
-    ],
-  },
-  {
-    group: 'System',
-    pages: [
-      { path: '/compliance',   label: 'Compliance' },
-      { path: '/notifications',label: 'Notifications' },
-      { path: '/audit',        label: 'Audit Trail' },
-      { path: '/backup',       label: 'Backup' },
-      { path: '/import',       label: 'Data Import' },
-      { path: '/settings',     label: 'Settings' },
+      { path: '/parties',  label: 'Parties (Customers / Suppliers)' },
+      { path: '/vehicles', label: 'Vehicles, Drivers, Transporters' },
     ],
   },
 ];
@@ -215,13 +235,10 @@ export default function PermissionsPage() {
     if (user && user.role !== 'admin') navigate('/', { replace: true });
   }, [user, navigate]);
 
-  // Fetch current permissions
+  // Fetch current permissions — each call is independent so one 404 doesn't block the other
   const fetchPerms = useCallback(async () => {
     try {
-      const [pageRes, actionRes] = await Promise.all([
-        api.get<Record<string, string[]>>('/api/v1/app-settings/role-permissions'),
-        api.get<Record<string, string[]>>('/api/v1/app-settings/invoice-action-permissions'),
-      ]);
+      const pageRes = await api.get<Record<string, string[]>>('/api/v1/app-settings/role-permissions');
       setPermissions(prev => {
         const updated = { ...prev };
         ROLE_TABS.forEach(r => {
@@ -229,6 +246,11 @@ export default function PermissionsPage() {
         });
         return updated;
       });
+    } catch {
+      // Network error — fall back to defaults already initialised
+    }
+    try {
+      const actionRes = await api.get<Record<string, string[]>>('/api/v1/app-settings/invoice-action-permissions');
       setInvoicePerms(prev => {
         const updated = { ...prev };
         ROLE_TABS.forEach(r => {
@@ -237,7 +259,7 @@ export default function PermissionsPage() {
         return updated;
       });
     } catch {
-      // Use defaults already set
+      // Endpoint may not exist yet — use defaults (non-fatal)
     }
   }, []);
 
@@ -262,15 +284,19 @@ export default function PermissionsPage() {
   async function save() {
     setSaving(true);
     try {
-      const pagePayload = { admin: ['*'], ...permissions };
-      const actionPayload = {
-        admin: INVOICE_ACTION_ITEMS.map(a => a.key),
-        ...invoicePerms,
-      };
-      await Promise.all([
-        api.put('/api/v1/app-settings/role-permissions', pagePayload),
-        api.put('/api/v1/app-settings/invoice-action-permissions', actionPayload),
-      ]);
+      // Page permissions — the critical save
+      await api.put('/api/v1/app-settings/role-permissions', { admin: ['*'], ...permissions });
+
+      // Invoice action permissions — best-effort (endpoint may not exist on all deploys)
+      try {
+        await api.put('/api/v1/app-settings/invoice-action-permissions', {
+          admin: INVOICE_ACTION_ITEMS.map(a => a.key),
+          ...invoicePerms,
+        });
+      } catch {
+        // Non-fatal — page permissions already saved above
+      }
+
       window.dispatchEvent(new CustomEvent('appsettings:updated'));
       toast.success('Role permissions saved');
     } catch {
