@@ -400,38 +400,36 @@ async def create_token(
 ):
     company, fy = await _get_company_and_fy(db)
     # Determine gate_pass_no:
-    # If a gate_pass_id is supplied (guard created a gate pass first), use that
-    # record's GP number and link back.  Otherwise auto-generate from number_sequences
-    # (ANPR, kiosk, backward-compat).
+    # If a gate_pass_id is supplied (guard pre-created a pass), use that record's GP
+    # number and link back. Otherwise auto-generate from number_sequences — this is the
+    # backward-compatible path for deployments not using the Gate Register workflow.
     if not payload.gate_pass_id:
-        raise HTTPException(
-            status_code=422,
-            detail="Gate pass is required. Ask the gate guard to register the truck at the Gate Register first.",
+        resolved_gate_pass_no = await next_gate_pass_no(db, company.id, fy.id, branch_id)
+    else:
+        gp_row = await db.execute(
+            text("SELECT gate_pass_no, token_id, status FROM gate_passes WHERE id = :id AND company_id = :cid"),
+            {"id": str(payload.gate_pass_id), "cid": str(company.id)},
         )
-    gp_row = await db.execute(
-        text("SELECT gate_pass_no, token_id, status FROM gate_passes WHERE id = :id AND company_id = :cid"),
-        {"id": str(payload.gate_pass_id), "cid": str(company.id)},
-    )
-    gp = gp_row.fetchone()
-    if not gp:
-        raise HTTPException(status_code=404, detail="Gate pass not found. Create a gate pass first from the Gate Register.")
-    if gp.status == "cancelled":
-        raise HTTPException(status_code=409, detail="Gate pass is cancelled. Create a new gate pass for this truck.")
-    if gp.token_id:
-        # If the linked token was cancelled, auto-unlink so this gate pass can be reused
-        linked_row = await db.execute(
-            text("SELECT status FROM tokens WHERE id = :tid"),
-            {"tid": str(gp.token_id)},
-        )
-        linked = linked_row.fetchone()
-        if linked and linked.status == "CANCELLED":
-            await db.execute(
-                text("UPDATE gate_passes SET token_id = NULL, updated_at = NOW() WHERE id = :id AND company_id = :cid"),
-                {"id": str(payload.gate_pass_id), "cid": str(company.id)},
+        gp = gp_row.fetchone()
+        if not gp:
+            raise HTTPException(status_code=404, detail="Gate pass not found. Create a gate pass first from the Gate Register.")
+        if gp.status == "cancelled":
+            raise HTTPException(status_code=409, detail="Gate pass is cancelled. Create a new gate pass for this truck.")
+        if gp.token_id:
+            # If the linked token was cancelled, auto-unlink so this gate pass can be reused
+            linked_row = await db.execute(
+                text("SELECT status FROM tokens WHERE id = :tid"),
+                {"tid": str(gp.token_id)},
             )
-        else:
-            raise HTTPException(status_code=409, detail="Gate pass already linked to another token. Select a different gate pass.")
-    resolved_gate_pass_no = gp.gate_pass_no
+            linked = linked_row.fetchone()
+            if linked and linked.status == "CANCELLED":
+                await db.execute(
+                    text("UPDATE gate_passes SET token_id = NULL, updated_at = NOW() WHERE id = :id AND company_id = :cid"),
+                    {"id": str(payload.gate_pass_id), "cid": str(company.id)},
+                )
+            else:
+                raise HTTPException(status_code=409, detail="Gate pass already linked to another token. Select a different gate pass.")
+        resolved_gate_pass_no = gp.gate_pass_no
 
     token = Token(
         company_id=company.id,
@@ -516,35 +514,34 @@ async def create_volume_token(
     # weight_kg = m³ × (MT/m³) × 1000
     net_kg = (payload.volume_m3 * product.bulk_density * Decimal("1000")).quantize(Decimal("0.01"))
 
-    # Resolve gate pass number — gate_pass_id is required for manual token creation
+    # Resolve gate pass number — link to an existing guard-created pass if supplied,
+    # otherwise auto-generate from number_sequences (backward-compat / no Gate Register).
     if not payload.gate_pass_id:
-        raise HTTPException(
-            status_code=422,
-            detail="Gate pass is required. Ask the gate guard to register the truck at the Gate Register first.",
+        resolved_vol_gate_pass_no = await next_gate_pass_no(db, company.id, fy.id, branch_id)
+    else:
+        vgp_row = await db.execute(
+            text("SELECT gate_pass_no, token_id, status FROM gate_passes WHERE id = :id AND company_id = :cid"),
+            {"id": str(payload.gate_pass_id), "cid": str(company.id)},
         )
-    vgp_row = await db.execute(
-        text("SELECT gate_pass_no, token_id, status FROM gate_passes WHERE id = :id AND company_id = :cid"),
-        {"id": str(payload.gate_pass_id), "cid": str(company.id)},
-    )
-    vgp = vgp_row.fetchone()
-    if not vgp:
-        raise HTTPException(status_code=404, detail="Gate pass not found.")
-    if vgp.status == "cancelled":
-        raise HTTPException(status_code=409, detail="Gate pass is cancelled. Create a new gate pass for this truck.")
-    if vgp.token_id:
-        linked_row2 = await db.execute(
-            text("SELECT status FROM tokens WHERE id = :tid"),
-            {"tid": str(vgp.token_id)},
-        )
-        linked2 = linked_row2.fetchone()
-        if linked2 and linked2.status == "CANCELLED":
-            await db.execute(
-                text("UPDATE gate_passes SET token_id = NULL, updated_at = NOW() WHERE id = :id AND company_id = :cid"),
-                {"id": str(payload.gate_pass_id), "cid": str(company.id)},
+        vgp = vgp_row.fetchone()
+        if not vgp:
+            raise HTTPException(status_code=404, detail="Gate pass not found.")
+        if vgp.status == "cancelled":
+            raise HTTPException(status_code=409, detail="Gate pass is cancelled. Create a new gate pass for this truck.")
+        if vgp.token_id:
+            linked_row2 = await db.execute(
+                text("SELECT status FROM tokens WHERE id = :tid"),
+                {"tid": str(vgp.token_id)},
             )
-        else:
-            raise HTTPException(status_code=409, detail="Gate pass already linked to another token. Select a different gate pass.")
-    resolved_vol_gate_pass_no = vgp.gate_pass_no
+            linked2 = linked_row2.fetchone()
+            if linked2 and linked2.status == "CANCELLED":
+                await db.execute(
+                    text("UPDATE gate_passes SET token_id = NULL, updated_at = NOW() WHERE id = :id AND company_id = :cid"),
+                    {"id": str(payload.gate_pass_id), "cid": str(company.id)},
+                )
+            else:
+                raise HTTPException(status_code=409, detail="Gate pass already linked to another token. Select a different gate pass.")
+        resolved_vol_gate_pass_no = vgp.gate_pass_no
 
     token = Token(
         company_id=company.id,

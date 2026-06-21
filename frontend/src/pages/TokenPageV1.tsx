@@ -325,7 +325,6 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
   async function handleSubmit() {
     if (!form.vehicle_no.trim()) { setError('Vehicle number is required'); return; }
-    if (!form.gate_pass_id) { setError('Gate pass is required. Ask the gate guard to register this truck at the Gate Register first.'); return; }
 
     // ── Volume mode: skip weighbridge, single POST creates + completes token ──
     if (weightMethod === 'volume') {
@@ -774,7 +773,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           </div>
         )}
 
-        {/* Gate Pass — required, created by gate guard */}
+        {/* Gate Pass — optional, links to a guard-created entry from Gate Register */}
         {(() => {
           const vno = normalizeVno(form.vehicle_no.trim());
           // Passes whose vehicle_no exactly matches the entered number (after normalization)
@@ -791,7 +790,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-semibold">
-                  Gate Pass <span className="text-rose-500 font-normal text-xs">*</span>
+                  Gate Pass <span className="text-muted-foreground font-normal text-xs">(optional)</span>
                 </Label>
                 <button
                   type="button"
@@ -805,10 +804,10 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
               </div>
 
               {openGatePasses.length === 0 ? (
-                // No open passes at all — guard hasn't registered any truck
+                // No open passes — gate pass will be auto-generated on token creation
                 <div className="rounded border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
                   {vno
-                    ? <>No open gate pass found. Gate guard registers trucks at <strong>Gate Register</strong>.</>
+                    ? <>No open gate pass. A gate pass will be auto-assigned when you create the token.</>
                     : 'Enter vehicle number to see matching gate passes.'}
                 </div>
               ) : (
@@ -896,7 +895,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           className="w-full"
           size="sm"
           onClick={handleSubmit}
-          disabled={saving || !form.vehicle_no.trim() || !form.gate_pass_id}
+          disabled={saving || !form.vehicle_no.trim()}
         >
           {saving
             ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
