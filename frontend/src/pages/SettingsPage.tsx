@@ -2737,8 +2737,7 @@ function GateCameraSettingsTab() {
           <p className="text-xs text-muted-foreground">
             Since the server is on the cloud, cameras cannot be reached directly.
             Run <code className="bg-muted px-1 rounded">gate_camera_agent.py</code> on the on-site Windows PC — it captures
-            CP Plus ONVIF snapshots locally and pushes them to the cloud.
-            Generate a key below and paste it into <code className="bg-muted px-1 rounded">gate_camera_agent.ini</code>.
+            CP Plus ONVIF snapshots locally and pushes them to the cloud every 3 seconds.
           </p>
           <div className="flex items-end gap-2">
             <div className="flex-1">
@@ -2768,22 +2767,48 @@ function GateCameraSettingsTab() {
               Copy
             </Button>
           </div>
-          <div className="rounded-md bg-muted p-3 text-xs font-mono space-y-0.5 text-muted-foreground">
-            <p className="font-semibold text-foreground mb-1">gate_camera_agent.ini (on-site PC)</p>
-            <p>[server]</p>
-            <p>url = https://weighbridgesetu.com</p>
-            <p>agent_key = {cfg.agent_key && cfg.agent_key !== '***' ? cfg.agent_key : 'PASTE_KEY_HERE'}</p>
-            <p className="mt-1">[entry]</p>
-            <p>enabled = true</p>
-            <p>snapshot_url = http://192.168.1.64/onvif-http/snapshot?Profile_1</p>
-            <p>username = admin</p>
-            <p>password = your_camera_password</p>
+
+          {/* JSON config preview — replace the old .ini block */}
+          <div>
+            <p className="text-xs font-medium mb-1">gate_camera_config.json (on-site PC)</p>
+            <pre className="rounded-md bg-muted p-3 text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre">{`{
+  "cloud_url": "https://weighbridgesetu.com",
+  "tenant_slug": "",
+  "agent_key": "${cfg.agent_key && cfg.agent_key !== '***' ? cfg.agent_key : 'PASTE_KEY_HERE'}",
+  "interval_sec": 3,
+  "timeout_sec": 8,
+  "cameras": {
+    "entry": {
+      "enabled": true,
+      "label": "Gate Entry Camera",
+      "url": "http://192.168.1.64/onvif-http/snapshot?Profile_1",
+      "username": "admin",
+      "password": "your_camera_password"
+    },
+    "exit": {
+      "enabled": false,
+      "label": "Gate Exit Camera",
+      "url": "",
+      "username": "admin",
+      "password": ""
+    }
+  }
+}`}</pre>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Files are in <code className="bg-muted px-1 rounded">backend/agents/</code> in the source code.
-            Run: <code className="bg-muted px-1 rounded">pip install -r requirements.txt</code> then
-            <code className="bg-muted px-1 rounded"> python gate_camera_agent.py</code>
-          </p>
+
+          <div className="rounded-md border border-blue-100 bg-blue-50 p-3 space-y-1 text-xs text-blue-800">
+            <p className="font-semibold">Setup steps (on the on-site PC):</p>
+            <ol className="list-decimal list-inside space-y-0.5">
+              <li>Copy <code className="bg-blue-100 px-1 rounded">backend/agents/</code> folder to the PC</li>
+              <li><code className="bg-blue-100 px-1 rounded">pip install requests</code></li>
+              <li>Run <code className="bg-blue-100 px-1 rounded">python gate_camera_agent.py --setup</code> — fills in config interactively</li>
+              <li>Test: <code className="bg-blue-100 px-1 rounded">python gate_camera_agent.py --test</code></li>
+              <li>Install as Windows service: <code className="bg-blue-100 px-1 rounded">python gate_camera_agent.py --install</code></li>
+            </ol>
+            <p className="mt-1 text-blue-700">
+              Status check: <code className="bg-blue-100 px-1 rounded">Invoke-RestMethod http://localhost:9005</code>
+            </p>
+          </div>
         </CardContent>
       </Card>
 
