@@ -379,14 +379,16 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
     }));
   }
 
+  // Gate pass is informational — shown when found, but NOT a blocker.
+  // The backend auto-creates a gate pass at token creation for any truck
+  // that doesn't already have one, so we never need to block on this.
   const canProceed =
-    draft.vehicle_no.trim().length >= 4 && draft.party && draft.product && !!draft.gate_pass_id;
+    draft.vehicle_no.trim().length >= 4 && draft.party && draft.product;
 
   // What's missing? Shown below the START button so operator knows why
-  // it's disabled. Order: vehicle → gate pass → product → party.
+  // it's disabled. Order: vehicle → product → party.
   const missingItems: string[] = [];
   if (draft.vehicle_no.trim().length < 4) missingItems.push('Vehicle number');
-  if (draft.vehicle_no.trim().length >= 4 && !draft.gate_pass_id) missingItems.push('Gate Pass (ask guard)');
   if (!draft.product) missingItems.push('Material');
   if (!draft.party) missingItems.push('Customer');
 
@@ -526,13 +528,13 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
             </div>
           </div>
         ) : (
-          <div className="flex items-center gap-3 rounded-xl border-2 border-rose-400 bg-rose-50 px-4 py-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-600 text-white shrink-0">
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          <div className="flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-500 text-white shrink-0">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             </div>
             <div>
-              <div className="text-xs font-bold uppercase tracking-widest text-rose-700">No Gate Pass</div>
-              <div className="text-sm text-rose-800">Ask the guard to create a gate pass for this truck first.</div>
+              <div className="text-xs font-bold uppercase tracking-widest text-amber-700">No Gate Pass Yet</div>
+              <div className="text-sm text-amber-800">One will be auto-created. Gate guard can register separately.</div>
             </div>
           </div>
         )
