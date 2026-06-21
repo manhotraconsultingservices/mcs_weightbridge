@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { MobileTabSelect } from '@/components/MobileTabSelect';
 import api from '@/services/api';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
 
@@ -3292,33 +3293,29 @@ export default function SettingsPage() {
 
       <Tabs value={tab} onValueChange={setTab}>
         {/* Mobile: single dropdown (18+ tabs are unusable as a wrapped list on small screens) */}
-        <div className="md:hidden mb-4">
-          <Select value={tab} onValueChange={setTab}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="company">Company</SelectItem>
-              <SelectItem value="bank">Bank Details</SelectItem>
-              <SelectItem value="prefixes">Invoice Prefixes</SelectItem>
-              <SelectItem value="fy">Financial Years</SelectItem>
-              {!isSaas && <SelectItem value="usb">USB Guard</SelectItem>}
-              {!isSaas && <SelectItem value="scale">Weight Scale</SelectItem>}
-              <SelectItem value="tally">Tally</SelectItem>
-              <SelectItem value="weighbridge">Weighbridge</SelectItem>
-              <SelectItem value="notifications">Notifications</SelectItem>
-              {!isSaas && <SelectItem value="cameras">Cameras</SelectItem>}
-              <SelectItem value="einvoice">eInvoice (IRN)</SelectItem>
-              <SelectItem value="eway">E-Way Bill</SelectItem>
-              <SelectItem value="upi">UPI / Portal</SelectItem>
-              <SelectItem value="anpr">ANPR</SelectItem>
-              {!isSaas && <SelectItem value="barrier">Barrier</SelectItem>}
-              <SelectItem value="units">Units</SelectItem>
-              <SelectItem value="gate-cameras">Gate Cameras</SelectItem>
-              <SelectItem value="print">Print</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <MobileTabSelect
+          value={tab}
+          onValueChange={setTab}
+          options={[
+            { value: 'company', label: 'Company' },
+            { value: 'bank', label: 'Bank Details' },
+            { value: 'prefixes', label: 'Invoice Prefixes' },
+            { value: 'fy', label: 'Financial Years' },
+            ...(!isSaas ? [{ value: 'usb', label: 'USB Guard' }, { value: 'scale', label: 'Weight Scale' }] : []),
+            { value: 'tally', label: 'Tally' },
+            { value: 'weighbridge', label: 'Weighbridge' },
+            { value: 'notifications', label: 'Notifications' },
+            ...(!isSaas ? [{ value: 'cameras', label: 'Cameras' }] : []),
+            { value: 'einvoice', label: 'eInvoice (IRN)' },
+            { value: 'eway', label: 'E-Way Bill' },
+            { value: 'upi', label: 'UPI / Portal' },
+            { value: 'anpr', label: 'ANPR' },
+            ...(!isSaas ? [{ value: 'barrier', label: 'Barrier' }] : []),
+            { value: 'units', label: 'Units' },
+            { value: 'gate-cameras', label: 'Gate Cameras' },
+            { value: 'print', label: 'Print' },
+          ]}
+        />
 
         {/* Desktop: wrapped pill tabs */}
         <TabsList className="hidden md:flex flex-wrap h-auto gap-1 p-1">
