@@ -327,31 +327,33 @@ async def list_gate_passes(
         filters += " AND vehicle_no ILIKE :vno"
         params["vno"] = f"%{vehicle_no}%"
     if unlinked:
-        # Include passes with token_id IS NULL (never linked) OR linked to a CANCELLED token
-        filters += (
-            " AND (gp.token_id IS NULL"
-            " OR EXISTS (SELECT 1 FROM tokens t2 WHERE t2.id = gp.token_id AND t2.status = 'CANCELLED'))"
+        # Only return passes not yet linked to any active token.
+        # Simple NULL check — avoids a correlated EXISTS subquery that caused 500 on some PG versions.
+        filters += " AND gp.token_id IS NULL"
+
+    try:
+        rows = await db.execute(
+            text(f"""
+                SELECT gp.*,
+                       t.token_no, t.net_weight
+                FROM gate_passes gp
+                LEFT JOIN tokens t ON t.id = gp.token_id
+                WHERE 1=1 {filters}
+                ORDER BY gp.entry_time DESC
+                LIMIT :lim OFFSET :off
+            """),
+            params,
         )
+        items = [dict(r._mapping) for r in rows.fetchall()]
 
-    rows = await db.execute(
-        text(f"""
-            SELECT gp.*,
-                   t.token_no, t.net_weight
-            FROM gate_passes gp
-            LEFT JOIN tokens t ON t.id = gp.token_id
-            WHERE 1=1 {filters}
-            ORDER BY gp.entry_time DESC
-            LIMIT :lim OFFSET :off
-        """),
-        params,
-    )
-    items = [dict(r._mapping) for r in rows.fetchall()]
-
-    total_row = await db.execute(
-        text(f"SELECT COUNT(*) FROM gate_passes gp WHERE 1=1 {filters}"),
-        {k: v for k, v in params.items() if k not in ("lim", "off")},
-    )
-    total = total_row.scalar() or 0
+        total_row = await db.execute(
+            text(f"SELECT COUNT(*) FROM gate_passes gp WHERE 1=1 {filters}"),
+            {k: v for k, v in params.items() if k not in ("lim", "off")},
+        )
+        total = total_row.scalar() or 0
+    except Exception as exc:
+        logger.exception("list_gate_passes SQL failed: filters=%r params=%r", filters, params)
+        raise HTTPException(500, f"Gate pass query failed: {type(exc).__name__}: {exc}")
 
     return {"items": _serialize(items), "total": total, "page": page, "page_size": page_size, "date": target_date_str}
 
