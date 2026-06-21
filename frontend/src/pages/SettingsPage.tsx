@@ -193,7 +193,7 @@ function UsbGuardTab() {
           </p>
           {regError && <p className="text-sm text-destructive bg-destructive/10 rounded p-2">{regError}</p>}
           {regMsg && <p className="text-sm text-green-700 bg-green-100 rounded p-2">{regMsg}</p>}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Key UUID</Label>
               <Input value={regKeyUuid} onChange={e => setRegKeyUuid(e.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" className="font-mono text-xs" />
@@ -254,7 +254,7 @@ function UsbGuardTab() {
           </p>
           {recError && <p className="text-sm text-destructive bg-destructive/10 rounded p-2">{recError}</p>}
           {recMsg && <p className="text-sm text-green-700 bg-green-100 rounded p-2">{recMsg}</p>}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Recovery PIN (min 6 chars)</Label>
               <Input type="password" value={recPin} onChange={e => setRecPin(e.target.value)} placeholder="Enter a secure PIN" />
@@ -412,7 +412,7 @@ function NotificationsConfigTab() {
             <CardContent className="space-y-3">
               {ch === 'email' && (
                 <>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <Label>SMTP Host</Label>
                       <Input value={c.smtp_host ?? ''} onChange={e => setField(ch, 'smtp_host', e.target.value)} placeholder="smtp.gmail.com" />
@@ -422,7 +422,7 @@ function NotificationsConfigTab() {
                       <Input type="number" value={c.smtp_port ?? 587} onChange={e => setField(ch, 'smtp_port', parseInt(e.target.value))} />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <Label>Username</Label>
                       <Input value={c.smtp_user ?? ''} onChange={e => setField(ch, 'smtp_user', e.target.value)} placeholder="user@gmail.com" />
@@ -432,7 +432,7 @@ function NotificationsConfigTab() {
                       <Input type="password" value={c.smtp_password ?? ''} onChange={e => setField(ch, 'smtp_password', e.target.value)} placeholder="••••••••" />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <Label>From Email</Label>
                       <Input value={c.from_email ?? ''} onChange={e => setField(ch, 'from_email', e.target.value)} placeholder="invoices@yourcompany.com" />
@@ -445,7 +445,7 @@ function NotificationsConfigTab() {
                 </>
               )}
               {ch === 'sms' && (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label>MSG91 API Key</Label>
                     <Input type="password" value={c.sms_api_key ?? ''} onChange={e => setField(ch, 'sms_api_key', e.target.value)} placeholder="MSG91 API key" />
@@ -462,7 +462,7 @@ function NotificationsConfigTab() {
                     <Label>WATI API URL</Label>
                     <Input value={c.wa_api_url ?? ''} onChange={e => setField(ch, 'wa_api_url', e.target.value)} placeholder="https://live-server-XXXX.wati.io" />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <Label>API Key</Label>
                       <Input type="password" value={c.wa_api_key ?? ''} onChange={e => setField(ch, 'wa_api_key', e.target.value)} placeholder="••••••••" />
@@ -770,7 +770,7 @@ function WeightScaleTab() {
           </div>
 
           {/* Baud rate */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1">
               <Label>Baud Rate</Label>
               <Select value={String(cfg.baud_rate)} onValueChange={v => setCfg(c => ({ ...c, baud_rate: Number(v) }))}>
@@ -1286,7 +1286,7 @@ function TallyTab() {
           </div>
 
           {/* Connection settings */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="col-span-2 space-y-1">
               <Label>Tally Server Host</Label>
               <Input value={cfg.host} onChange={e => setCfg(c => ({ ...c, host: e.target.value }))} placeholder="localhost" />
@@ -1333,7 +1333,7 @@ function TallyTab() {
           <p className="text-xs text-muted-foreground">These names must match the ledger names in your Tally company exactly (case-sensitive).</p>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Sales Ledger</Label>
               <Input className="h-8 text-sm" value={cfg.ledger_sales} onChange={e => setCfg(c => ({ ...c, ledger_sales: e.target.value }))} placeholder="Sales" />
@@ -2283,7 +2283,7 @@ function AnprSettingsTab() {
         </div>
 
         {/* Camera */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label className="text-xs uppercase tracking-widest text-muted-foreground">Gate camera</Label>
             <select className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
@@ -2302,7 +2302,7 @@ function AnprSettingsTab() {
         </div>
 
         {/* Confidence + fuzzy */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label className="text-xs uppercase tracking-widest text-muted-foreground">
               Minimum confidence
@@ -2655,7 +2655,7 @@ function GateCameraSlotEditor({
           Enabled
         </label>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="col-span-2">
           <label className="text-xs text-muted-foreground">Snapshot URL (CP Plus ONVIF)</label>
           <input className="w-full mt-0.5 rounded border px-2 py-1 text-sm font-mono"
@@ -3120,7 +3120,7 @@ function BarrierSettingsTab() {
         </div>
 
         {/* HTTP method + open param */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label>HTTP Method</Label>
             <select
@@ -3146,7 +3146,7 @@ function BarrierSettingsTab() {
         </p>
 
         {/* Durations */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label>Open duration (seconds)</Label>
             <Input
@@ -3178,7 +3178,7 @@ function BarrierSettingsTab() {
         {/* Optional basic auth */}
         <div className="space-y-1">
           <Label className="text-xs uppercase tracking-widest text-muted-foreground">Basic auth (optional)</Label>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Username</Label>
               <Input
@@ -3291,12 +3291,41 @@ export default function SettingsPage() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="flex flex-wrap h-auto gap-1 p-1">
+        {/* Mobile: single dropdown (18+ tabs are unusable as a wrapped list on small screens) */}
+        <div className="md:hidden mb-4">
+          <Select value={tab} onValueChange={setTab}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="company">Company</SelectItem>
+              <SelectItem value="bank">Bank Details</SelectItem>
+              <SelectItem value="prefixes">Invoice Prefixes</SelectItem>
+              <SelectItem value="fy">Financial Years</SelectItem>
+              {!isSaas && <SelectItem value="usb">USB Guard</SelectItem>}
+              {!isSaas && <SelectItem value="scale">Weight Scale</SelectItem>}
+              <SelectItem value="tally">Tally</SelectItem>
+              <SelectItem value="weighbridge">Weighbridge</SelectItem>
+              <SelectItem value="notifications">Notifications</SelectItem>
+              {!isSaas && <SelectItem value="cameras">Cameras</SelectItem>}
+              <SelectItem value="einvoice">eInvoice (IRN)</SelectItem>
+              <SelectItem value="eway">E-Way Bill</SelectItem>
+              <SelectItem value="upi">UPI / Portal</SelectItem>
+              <SelectItem value="anpr">ANPR</SelectItem>
+              {!isSaas && <SelectItem value="barrier">Barrier</SelectItem>}
+              <SelectItem value="units">Units</SelectItem>
+              <SelectItem value="gate-cameras">Gate Cameras</SelectItem>
+              <SelectItem value="print">Print</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Desktop: wrapped pill tabs */}
+        <TabsList className="hidden md:flex flex-wrap h-auto gap-1 p-1">
           <TabsTrigger value="company">Company</TabsTrigger>
           <TabsTrigger value="bank">Bank Details</TabsTrigger>
           <TabsTrigger value="prefixes">Invoice Prefixes</TabsTrigger>
           <TabsTrigger value="fy">Financial Years</TabsTrigger>
-          {/* Hardware tabs — hidden in SaaS mode (handled by client-side agents) */}
           {!isSaas && <TabsTrigger value="usb">USB Guard</TabsTrigger>}
           {!isSaas && <TabsTrigger value="scale">Weight Scale</TabsTrigger>}
           <TabsTrigger value="tally">Tally</TabsTrigger>
@@ -3334,20 +3363,20 @@ export default function SettingsPage() {
           <Card>
             <CardHeader><CardTitle className="text-base">Company Information</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="Company Name *" value={company.name ?? ''} onChange={v => set('name', v)} placeholder="As on GST certificate" />
                 <Field label="Legal Name" value={company.legal_name ?? ''} onChange={v => set('legal_name', v)} />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="GSTIN" value={company.gstin ?? ''} onChange={v => set('gstin', v.toUpperCase())} placeholder="27AAAAA0000A1Z5" />
                 <Field label="PAN" value={company.pan ?? ''} onChange={v => set('pan', v.toUpperCase())} placeholder="AAAAA0000A" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="Phone" value={company.phone ?? ''} onChange={v => set('phone', v)} placeholder="9876543210" />
                 <Field label="Email" value={company.email ?? ''} onChange={v => set('email', v)} type="email" />
               </div>
               <Field label="Address" value={company.address ?? ''} onChange={v => set('address', v)} placeholder="Street, Plot no" />
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <Field label="City" value={company.city ?? ''} onChange={v => set('city', v)} />
                 <Field label="State" value={company.state ?? ''} onChange={v => set('state', v)} />
                 <Field label="Pincode" value={company.pincode ?? ''} onChange={v => set('pincode', v)} />
@@ -3361,11 +3390,11 @@ export default function SettingsPage() {
           <Card>
             <CardHeader><CardTitle className="text-base">Bank Details</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="Bank Name" value={company.bank_name ?? ''} onChange={v => set('bank_name', v)} placeholder="State Bank of India" />
                 <Field label="Account Number" value={company.bank_account_no ?? ''} onChange={v => set('bank_account_no', v)} />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="IFSC Code" value={company.bank_ifsc ?? ''} onChange={v => set('bank_ifsc', v.toUpperCase())} placeholder="SBIN0001234" />
                 <Field label="Branch" value={company.bank_branch ?? ''} onChange={v => set('bank_branch', v)} />
               </div>
@@ -3381,11 +3410,11 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground">
                 Prefixes are used when generating document numbers (e.g. INV/25-26/0001). Changes apply to new documents only.
               </p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="Sale Invoice Prefix" value={company.sale_invoice_prefix ?? ''} onChange={v => set('sale_invoice_prefix', v)} placeholder="INV" />
                 <Field label="Purchase Invoice Prefix" value={company.purchase_invoice_prefix ?? ''} onChange={v => set('purchase_invoice_prefix', v)} placeholder="PINV" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="Receipt Prefix" value={company.receipt_prefix ?? ''} onChange={v => set('receipt_prefix', v)} placeholder="REC" />
                 <Field label="Voucher Prefix" value={company.voucher_prefix ?? ''} onChange={v => set('voucher_prefix', v)} placeholder="PMT" />
               </div>
@@ -3516,7 +3545,7 @@ export default function SettingsPage() {
           <div className="space-y-3">
             {fyError && <p className="text-sm text-destructive">{fyError}</p>}
             <Field label="Label (e.g. 2025-26)" value={fyForm.label} onChange={v => setFyForm(f => ({ ...f, label: v }))} />
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Start Date" value={fyForm.start_date} onChange={v => setFyForm(f => ({ ...f, start_date: v }))} type="date" />
               <Field label="End Date" value={fyForm.end_date} onChange={v => setFyForm(f => ({ ...f, end_date: v }))} type="date" />
             </div>
