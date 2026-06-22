@@ -664,13 +664,16 @@ async def finalise_invoice(
     # Assign invoice_no NOW (gap-free: only finalised invoices consume sequence numbers)
     if not inv.invoice_no:
         if inv.revision_no and inv.revision_no > 1 and inv.original_invoice_id:
-            # Revision: keep the SAME invoice_no as the original (no /Rv suffix)
+            # Revision: append /Rv{n} to the original base number.
+            # Each revision gets a distinct invoice_no (e.g. INV/24-25/0001/Rv2),
+            # preventing the unique-constraint violation that would occur if two
+            # revisions of the same invoice were both assigned the bare base number.
             orig = (await db.execute(
                 select(Invoice).where(Invoice.id == inv.original_invoice_id)
             )).scalar_one_or_none()
             if orig and orig.invoice_no:
                 base_no = orig.invoice_no.split("/Rv")[0]
-                inv.invoice_no = base_no
+                inv.invoice_no = f"{base_no}/Rv{inv.revision_no}"
             else:
                 inv.invoice_no = await _next_invoice_no(db, co.id, fy.id, inv.invoice_type, _invoice_prefix(inv.invoice_type, inv.tax_type), branch_id=inv.branch_id)
         else:
@@ -1575,6 +1578,12 @@ async def cancel_invoice(
     inv = await _load_invoice(db, invoice_id)
     if inv.status == "cancelled":
         raise HTTPException(400, "Already cancelled")
+    if inv.invoice_type in ("credit_note", "debit_note"):
+        raise HTTPException(
+            400,
+            "Credit/debit notes cannot be cancelled directly — "
+            "issue a counter-note against the original invoice instead."
+        )
     was_finalised = inv.status == "final"
     inv.status = "cancelled"
     co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()

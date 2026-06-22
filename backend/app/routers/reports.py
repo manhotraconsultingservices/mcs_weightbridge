@@ -292,7 +292,7 @@ async def gstr1_json_export(
     total_turnover = Decimal(0)
 
     for inv, party in inv_rows:
-        total_turnover += inv.grand_total
+        total_turnover += inv.taxable_amount   # portal gt = aggregate taxable turnover, not tax-inclusive grand_total
         inv_items = items_map.get(str(inv.id), [])
 
         # Build itms list from invoice items
@@ -757,6 +757,7 @@ async def profit_loss(
         .where(
             Invoice.invoice_type.in_(("credit_note", "debit_note")),
             Invoice.status == "final",
+            Invoice.tax_type == "gst",   # exclude non-GST Bill of Supply returns — consistent with GSTR-1 treatment
             Invoice.company_id == current_user.company_id,
             Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date,
         )
@@ -972,6 +973,7 @@ async def write_off_report(
     Filter by date range (write_off_at) and optionally by party_id.
     """
     filters = [
+        Invoice.invoice_type == "sale",      # write-offs are a bad-debt concept — exclude purchase invoices
         Invoice.write_off_amount > 0,
         Invoice.write_off_at.isnot(None),
         Invoice.company_id == current_user.company_id,
