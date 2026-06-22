@@ -377,7 +377,7 @@ async def party_ledger(
     invoices = (await db.execute(
         select(Invoice)
         .where(Invoice.company_id == co.id, Invoice.party_id == party_id,
-               Invoice.status != "cancelled",
+               Invoice.status == "final",
                Invoice.invoice_date >= d_from, Invoice.invoice_date <= d_to)
         .order_by(Invoice.invoice_date, Invoice.created_at)
     )).scalars().all()

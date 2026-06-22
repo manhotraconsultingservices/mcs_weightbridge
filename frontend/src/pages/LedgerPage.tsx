@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
-import { BookOpen, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
+import { BookOpen, TrendingUp, TrendingDown, AlertCircle, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -93,10 +93,20 @@ export default function LedgerPage() {
       : 'ledger';
   const initialParty =
     typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('party') ?? '') : '';
+  const todayStr = new Date().toISOString().split('T')[0];
+  const fyStart = (() => {
+    const m = new Date().getMonth();
+    const y = new Date().getFullYear();
+    return m >= 3 ? `${y}-04-01` : `${y - 1}-04-01`;
+  })();
+
   const [tab, setTab] = useState(initialTab);
   const [parties, setParties] = useState<Party[]>([]);
   const [partyId, setPartyId] = useState(initialParty);
+  const [fromDate, setFromDate] = useState(fyStart);
+  const [toDate, setToDate] = useState(todayStr);
   const [ledger, setLedger] = useState<PartyLedger | null>(null);
+  const [ledgerError, setLedgerError] = useState<string | null>(null);
   const [outstanding, setOutstanding] = useState<OutstandingData | null>(null);
   const [loadingLedger, setLoadingLedger] = useState(false);
   const [loadingOutstanding, setLoadingOutstanding] = useState(false);
@@ -111,11 +121,19 @@ export default function LedgerPage() {
   useEffect(() => {
     if (!partyId || tab !== 'ledger') return;
     setLoadingLedger(true);
-    api.get<PartyLedger>(`/api/v1/payments/party-ledger/${partyId}`)
+    setLedgerError(null);
+    const params = new URLSearchParams();
+    if (fromDate) params.set('from_date', fromDate);
+    if (toDate) params.set('to_date', toDate);
+    api.get<PartyLedger>(`/api/v1/payments/party-ledger/${partyId}?${params}`)
       .then(r => setLedger(r.data))
-      .catch(() => setLedger(null))
+      .catch(err => {
+        setLedger(null);
+        const msg = err?.response?.data?.detail || err?.message || 'Failed to load ledger';
+        setLedgerError(String(msg));
+      })
       .finally(() => setLoadingLedger(false));
-  }, [partyId, tab]);
+  }, [partyId, tab, fromDate, toDate]);
 
   useEffect(() => {
     if (tab !== 'outstanding') return;
@@ -147,7 +165,7 @@ export default function LedgerPage() {
 
         {/* ── Party Ledger ── */}
         <TabsContent value="ledger" className="mt-4 space-y-4">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Select value={partyId || 'none'} onValueChange={v => setPartyId(v === 'none' ? '' : (v ?? ''))}>
               <SelectTrigger className="w-72">
                 <span className="truncate text-left flex-1">
@@ -163,6 +181,25 @@ export default function LedgerPage() {
                 ))}
               </SelectContent>
             </Select>
+            <input
+              type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
+              className="border rounded px-2 py-1.5 text-sm bg-background"
+            />
+            <span className="text-muted-foreground text-sm">to</span>
+            <input
+              type="date" value={toDate} onChange={e => setToDate(e.target.value)}
+              className="border rounded px-2 py-1.5 text-sm bg-background"
+            />
+            {partyId && (
+              <Button variant="outline" size="sm" onClick={() => {
+                setLedger(null);
+                setLedgerError(null);
+                setFromDate(fyStart);
+                setToDate(todayStr);
+              }}>
+                <RefreshCw className="h-3.5 w-3.5 mr-1" /> Reset
+              </Button>
+            )}
             {ledger && (
               <Button variant="outline" size="sm" onClick={() => window.print()}>{t('common.print')}</Button>
             )}
@@ -179,7 +216,17 @@ export default function LedgerPage() {
             <div className="py-8 text-center text-muted-foreground text-sm">{t('ledger.loadingLedger')}</div>
           )}
 
-          {ledger && !loadingLedger && (
+          {partyId && !loadingLedger && ledgerError && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 flex items-start gap-3">
+              <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-destructive">Could not load ledger</p>
+                <p className="text-xs text-destructive/80 mt-0.5">{ledgerError}</p>
+              </div>
+            </div>
+          )}
+
+          {ledger && !loadingLedger && !ledgerError && (
             <>
               {/* Summary cards */}
               <div className="grid grid-cols-3 gap-4">

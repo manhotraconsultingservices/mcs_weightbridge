@@ -18,7 +18,7 @@ type Tab = 'payments' | 'statement' | 'activity';
 
 const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
   { value: 'payments',  label: 'Payments',          icon: CreditCard },
-  { value: 'statement', label: 'Account Statement', icon: BookOpen },
+  { value: 'statement', label: 'Account Ledger', icon: BookOpen },
   { value: 'activity',  label: 'Activity Log',      icon: Shield },
 ];
 
