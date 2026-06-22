@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { Bell, Send, Plus, Edit2, Trash2, Mail, MessageSquare, Phone, Users } from 'lucide-react';
@@ -105,6 +106,7 @@ function contactPlaceholder(channel: string) {
 }
 
 export default function NotificationsPage() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState('templates');
   const [templates, setTemplates] = useState<Template[]>([]);
   const [recipients, setRecipients] = useState<Recipient[]>([]);
@@ -279,7 +281,7 @@ export default function NotificationsPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Notifications</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{t('settings.notifications')}</h1>
           <p className="text-muted-foreground">Email · SMS · WhatsApp · Telegram — templates, recipients, and delivery log</p>
         </div>
         <div className="flex gap-2">

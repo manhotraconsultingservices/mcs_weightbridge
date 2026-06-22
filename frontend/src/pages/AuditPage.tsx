@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Search, RefreshCw, Activity, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -171,6 +172,7 @@ function parseDetails(raw: string | null): string {
 }
 
 export default function AuditPage() {
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [stats, setStats] = useState<AuditStats | null>(null);
@@ -232,9 +234,9 @@ export default function AuditPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-          <Shield className="h-8 w-8 text-primary" /> Audit Trail
+          <Shield className="h-8 w-8 text-primary" /> {t('auditTrail.title')}
         </h1>
-        <p className="text-muted-foreground">Track all user actions and system events</p>
+        <p className="text-muted-foreground">{t('auditTrail.subtitle')}</p>
       </div>
 
       {/* Stats cards */}
@@ -277,9 +279,9 @@ export default function AuditPage() {
             <div className="w-44 space-y-1">
               <p className="text-xs font-medium text-muted-foreground">Entity</p>
               <Select value={entityType || 'all'} onValueChange={v => handleEntityChange(v === 'all' ? '' : (v ?? ''))}>
-                <SelectTrigger><SelectValue placeholder="All entities" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t('auditTrail.allTypes')} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All entities</SelectItem>
+                  <SelectItem value="all">{t('auditTrail.allTypes')}</SelectItem>
                   {Object.entries(ENTITY_LABELS).map(([key, label]) => (
                     <SelectItem key={key} value={key}>{label}</SelectItem>
                   ))}
@@ -290,9 +292,9 @@ export default function AuditPage() {
             <div className="w-40 space-y-1">
               <p className="text-xs font-medium text-muted-foreground">Action</p>
               <Select value={action || 'all'} onValueChange={v => setAction(v === 'all' ? '' : (v ?? ''))}>
-                <SelectTrigger><SelectValue placeholder="All actions" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t('auditTrail.allActions')} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All actions</SelectItem>
+                  <SelectItem value="all">{t('auditTrail.allActions')}</SelectItem>
                   {availableActions.map(a => (
                     <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
                   ))}
@@ -363,21 +365,22 @@ export default function AuditPage() {
 // Audit DataTable
 // ------------------------------------------------------------------ //
 function AuditTable({ entries, loading }: { entries: AuditEntry[]; loading: boolean }) {
+  const { t } = useTranslation();
   const columns = useMemo<ColumnDef<AuditEntry>[]>(() => [
     {
-      key: 'created_at', label: 'When', type: 'date',
+      key: 'created_at', label: t('auditTrail.colTimestamp'), type: 'date',
       accessor: e => e.created_at,
       format: v => formatDt(String(v)),
       className: 'font-mono text-xs',
     },
     {
-      key: 'action', label: 'Action', type: 'enum',
+      key: 'action', label: t('auditTrail.colAction'), type: 'enum',
       enumOptions: ['create', 'update', 'delete', 'finalize', 'cancel', 'first_weight', 'completed', 'login', 'logout'],
       accessor: e => e.action,
       format: v => <Badge className={`text-xs px-2 py-0 ${actionBadgeClass(String(v))}`}>{String(v).replace(/_/g, ' ')}</Badge>,
     },
     {
-      key: 'entity_type', label: 'Entity', type: 'enum',
+      key: 'entity_type', label: t('auditTrail.colEntity'), type: 'enum',
       enumOptions: ['token', 'invoice', 'payment', 'party', 'product', 'vehicle', 'user', 'production_cycle'],
       accessor: e => e.entity_type,
       format: v => <span className="capitalize">{(ENTITY_LABELS[String(v)] ?? String(v)).replace(/_/g, ' ')}</span>,
@@ -387,14 +390,14 @@ function AuditTable({ entries, loading }: { entries: AuditEntry[]; loading: bool
       accessor: e => e.entity_id ?? '',
       format: v => v ? <span className="font-mono text-xs text-muted-foreground">#{String(v).slice(0, 8)}</span> : '—',
     },
-    { key: 'username', label: 'User', accessor: e => e.username ?? 'System' },
+    { key: 'username', label: t('auditTrail.colUser'), accessor: e => e.username ?? 'System' },
     {
       key: 'details', label: 'Details',
       accessor: e => e.details ? parseDetails(e.details) : '',
       className: 'text-xs text-muted-foreground max-w-md truncate',
     },
     { key: 'ip_address', label: 'IP', defaultVisible: false, accessor: e => e.ip_address ?? '', className: 'font-mono text-xs' },
-  ], []);
+  ], [t]);
 
   return (
     <DataTable<AuditEntry>
@@ -405,7 +408,7 @@ function AuditTable({ entries, loading }: { entries: AuditEntry[]; loading: bool
       rowKey={e => e.id}
       exportFilename="audit-log"
       defaultSort={{ key: 'created_at', direction: 'desc' }}
-      emptyMessage="No audit entries found. Activity will appear here as actions are taken."
+      emptyMessage={t('auditTrail.noEvents')}
     />
   );
 }

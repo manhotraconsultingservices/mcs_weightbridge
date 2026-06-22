@@ -12,6 +12,7 @@
  * Once reviewed, the row drops from the queue.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Camera, Check, RefreshCw, X, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +21,7 @@ import api from '@/services/api';
 import type { AnprEvent, AnprEventListResponse, Vehicle } from '@/types';
 
 export default function AnprReviewPage() {
+  const { t } = useTranslation();
   const [events, setEvents] = useState<AnprEvent[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -49,14 +51,14 @@ export default function AnprReviewPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <AlertTriangle className="h-7 w-7 text-amber-600" /> Review Queue
+            <AlertTriangle className="h-7 w-7 text-amber-600" /> {t('anpr.reviewTitle')}
           </h1>
           <p className="text-muted-foreground text-sm">
-            Plates that didn't match the Vehicle master — operator needs to confirm or correct.
+            {t('anpr.reviewHint')}
           </p>
         </div>
         <Button variant="outline" onClick={load} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> {t('common.refresh')}
         </Button>
       </div>
 
@@ -67,12 +69,12 @@ export default function AnprReviewPage() {
       {events.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            {loading ? 'Loading…' : '🎉 Queue is empty. Every plate has been matched.'}
+            {loading ? t('common.loading') : `🎉 ${t('anpr.allClear')}`}
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
-          <div className="text-xs text-muted-foreground">{total} plate{total === 1 ? '' : 's'} awaiting review</div>
+          <div className="text-xs text-muted-foreground">{t('anpr.reviewSubtitle', { count: total })}</div>
           {events.map(ev => (
             <ReviewRow key={ev.id} event={ev} onResolved={load} />
           ))}
@@ -83,6 +85,7 @@ export default function AnprReviewPage() {
 }
 
 function ReviewRow({ event, onResolved }: { event: AnprEvent; onResolved: () => void }) {
+  const { t } = useTranslation();
   const [corrected, setCorrected] = useState(event.plate_normalized);
   const [vehicleSearch, setVehicleSearch] = useState('');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -147,7 +150,7 @@ function ReviewRow({ event, onResolved }: { event: AnprEvent; onResolved: () => 
 
             {alts.length > 0 && (
               <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
-                <span>Alternates:</span>
+                <span>Alternates:</span>  {/* No matching key — left in English */}
                 {alts.slice(0, 3).map((a, i) => (
                   <button key={i} onClick={() => setCorrected(a.plate.toUpperCase())}
                           className="font-mono px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50">
@@ -165,10 +168,10 @@ function ReviewRow({ event, onResolved }: { event: AnprEvent; onResolved: () => 
               {/* Path 1: link to existing vehicle */}
               <div className="rounded-lg border bg-slate-50 p-3 space-y-2">
                 <div className="text-xs font-semibold uppercase tracking-wider text-slate-600">
-                  Link to existing vehicle
+                  {t('anpr.linkExistingVehicle')}
                 </div>
                 <Input value={vehicleSearch} onChange={e => setVehicleSearch(e.target.value)}
-                       placeholder="Search vehicle by plate…" className="h-9 text-sm" />
+                       placeholder={t('common.search')} className="h-9 text-sm" />
                 {vehicles.length > 0 && (
                   <div className="space-y-1">
                     {vehicles.map(v => (
@@ -187,7 +190,7 @@ function ReviewRow({ event, onResolved }: { event: AnprEvent; onResolved: () => 
               {/* Path 2/3: correct + register */}
               <div className="rounded-lg border bg-amber-50/50 p-3 space-y-2">
                 <div className="text-xs font-semibold uppercase tracking-wider text-amber-800">
-                  Correct + register as new vehicle
+                  {t('anpr.correctPlateText')} + {t('anpr.registerNewVehicle')}
                 </div>
                 <Input value={corrected} onChange={e => setCorrected(e.target.value.toUpperCase())}
                        className="h-9 text-sm font-mono uppercase" />
@@ -195,16 +198,16 @@ function ReviewRow({ event, onResolved }: { event: AnprEvent; onResolved: () => 
                   <Button size="sm" onClick={() => doReassign({
                     plate_corrected: corrected, register_new_vehicle: true,
                   }, 'register')} disabled={busy !== null || !corrected.trim()}>
-                    {busy === 'register' ? 'Saving…' : 'Register'}
+                    {busy === 'register' ? t('anpr.resolving') : t('anpr.registerNewVehicle')}
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => doReassign({
                     plate_corrected: corrected,
                   }, 'correct')} disabled={busy !== null || !corrected.trim()}>
-                    {busy === 'correct' ? 'Saving…' : 'Just correct plate'}
+                    {busy === 'correct' ? t('anpr.resolving') : t('anpr.correctPlateText')}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => doReassign({ notes: 'dismissed' }, 'link')}
                           disabled={busy !== null} className="ml-auto">
-                    <X className="h-3.5 w-3.5 mr-1" /> Dismiss
+                    <X className="h-3.5 w-3.5 mr-1" /> {t('anpr.skip')}
                   </Button>
                 </div>
               </div>

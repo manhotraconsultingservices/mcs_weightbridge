@@ -1,4 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff, Building2, AlertTriangle, ExternalLink, Mail, Phone, MessageCircle, Shield, Zap, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,6 +51,7 @@ function resolveTenantFromUrl(): string | null {
 }
 
 export default function LoginPage({ onLogin }: LoginPageProps) {
+  const { t } = useTranslation();
   const [tenantSlug, setTenantSlug] = useState('');
   const [tenantInfo, setTenantInfo] = useState<TenantInfo | null>(null);
   const [username, setUsername] = useState('');
@@ -125,7 +127,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       onLogin(data.access_token, data.user, data.tenant_slug, data.tenant_modules);
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
-      setError(typeof detail === 'string' ? detail : 'Invalid username or password');
+      setError(typeof detail === 'string' ? detail : t('login.invalidCredentials'));
     } finally {
       setLoading(false);
     }
@@ -230,7 +232,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             {/* Company Code field — only shown in multi-tenant mode WITHOUT a resolved tenant */}
             {multiTenant && !resolvedSlug && (
               <div className="space-y-2">
-                <Label htmlFor="tenant_slug">Company Code</Label>
+                <Label htmlFor="tenant_slug">{t('login.companyCode')}</Label>
                 <div className="relative">
                   <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -247,7 +249,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="username">{t('login.username')}</Label>
               <Input
                 id="username"
                 value={username}
@@ -260,7 +262,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t('login.password')}</Label>
               <div className="relative">
                 <Input
                   id="password"
@@ -285,7 +287,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             </div>
 
             <Button type="submit" className="w-full" disabled={loading || isSuspended}>
-              {loading ? 'Signing in...' : 'Sign In'}
+              {loading ? t('login.signingIn') : t('login.signIn')}
             </Button>
           </form>
         </CardContent>

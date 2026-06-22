@@ -6,6 +6,7 @@
  * and CSV export out of the box.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Camera, RefreshCw, Eye, AlertCircle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -43,6 +44,7 @@ function DirectionBadge({ direction }: { direction: string }) {
 }
 
 export default function AnprEventsPage() {
+  const { t } = useTranslation();
   const [events, setEvents] = useState<AnprEvent[]>([]);
   const [total, setTotal] = useState(0);
   const [stats, setStats] = useState<AnprStats | null>(null);
@@ -92,7 +94,7 @@ export default function AnprEventsPage() {
       className: 'whitespace-nowrap',
     },
     {
-      key: 'plate', label: 'Plate',
+      key: 'plate', label: t('anpr.plate'),
       accessor: e => e.plate_normalized,
       format: (v, e) => (
         <div className="flex items-center gap-1.5">
@@ -104,7 +106,7 @@ export default function AnprEventsPage() {
       ),
     },
     {
-      key: 'direction', label: 'Direction', type: 'enum',
+      key: 'direction', label: t('anpr.direction'), type: 'enum',
       enumOptions: [...DIRECTIONS],
       accessor: e => e.direction,
       format: v => <DirectionBadge direction={String(v)} />,
@@ -133,14 +135,14 @@ export default function AnprEventsPage() {
       format: v => v ? String(v) : <span className="text-muted-foreground">—</span>,
     },
     {
-      key: 'confidence', label: 'Conf.', type: 'number', align: 'right',
+      key: 'confidence', label: t('anpr.confidence'), type: 'number', align: 'right',
       accessor: e => e.confidence,
       // Pydantic Decimal → JSON string → coerce with Number()
       format: v => v != null ? `${(Number(v) * 100).toFixed(0)}%` : '—',
       defaultVisible: false,
     },
     {
-      key: 'source', label: 'Source', type: 'enum',
+      key: 'source', label: t('anpr.source'), type: 'enum',
       enumOptions: ['local_fastalpr', 'hikvision_webhook', 'dahua_webhook', 'cloud_platerec', 'manual'],
       accessor: e => e.source,
       format: v => <span className="text-[10px] text-muted-foreground">{String(v)}</span>,
@@ -153,15 +155,15 @@ export default function AnprEventsPage() {
       defaultVisible: false,
     },
     {
-      key: 'review', label: 'Review', type: 'enum', align: 'center',
+      key: 'review', label: t('anpr.review'), type: 'enum', align: 'center',
       enumOptions: ['Pending', 'OK'],
       accessor: e => e.needs_review ? (e.reviewed_at ? 'OK' : 'Pending') : 'OK',
       format: v => v === 'Pending'
-        ? <Badge variant="outline" className="border-amber-400 text-amber-700 text-[10px]">Review</Badge>
+        ? <Badge variant="outline" className="border-amber-400 text-amber-700 text-[10px]">{t('anpr.review')}</Badge>
         : <span className="text-[10px] text-muted-foreground">—</span>,
     },
     {
-      key: 'snapshot', label: 'Image', defaultVisible: true, align: 'center',
+      key: 'snapshot', label: t('anpr.snapshot'), defaultVisible: true, align: 'center',
       accessor: e => e.snapshot_path ? 'yes' : 'no',
       format: (_v, e) => e?.snapshot_path
         ? <a href={`/${e.snapshot_path}`} target="_blank" rel="noopener noreferrer" className="inline-flex">
@@ -169,21 +171,21 @@ export default function AnprEventsPage() {
           </a>
         : <span className="text-muted-foreground">—</span>,
     },
-  ], []);
+  ], [t]);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <Camera className="h-7 w-7 text-blue-600" /> Gate Camera Events
+            <Camera className="h-7 w-7 text-blue-600" /> {t('anpr.eventsTitle')}
           </h1>
           <p className="text-muted-foreground text-sm">
-            Every plate detection from the gate camera — entries, exits, and review queue.
+            {t('anpr.eventsSubtitle')}
           </p>
         </div>
         <Button variant="outline" onClick={load} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> {t('common.refresh')}
         </Button>
       </div>
 
@@ -195,12 +197,12 @@ export default function AnprEventsPage() {
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <KpiCard title="Entries" value={stats?.entries ?? 0} color="text-emerald-700" />
-        <KpiCard title="Exits"   value={stats?.exits ?? 0} color="text-blue-700" />
-        <KpiCard title="Unique vehicles" value={stats?.unique_vehicles ?? 0} color="text-slate-800" />
-        <KpiCard title="Currently inside" value={stats?.currently_inside ?? 0} color="text-amber-700" />
-        <KpiCard title="Avg dwell"
-                 value={`${Math.round(stats?.avg_dwell_minutes ?? 0)} min`} color="text-slate-800" />
+        <KpiCard title={t('anpr.entries')} value={stats?.entries ?? 0} color="text-emerald-700" />
+        <KpiCard title={t('anpr.exits')}   value={stats?.exits ?? 0} color="text-blue-700" />
+        <KpiCard title={t('anpr.uniqueVehicles')} value={stats?.unique_vehicles ?? 0} color="text-slate-800" />
+        <KpiCard title={t('anpr.currentlyInside')} value={stats?.currently_inside ?? 0} color="text-amber-700" />
+        <KpiCard title={t('anpr.avgDwell')}
+                 value={`${Math.round(stats?.avg_dwell_minutes ?? 0)} ${t('anpr.min')}`} color="text-slate-800" />
       </div>
 
       {/* Filters */}
@@ -213,22 +215,22 @@ export default function AnprEventsPage() {
             <Field label="To">
               <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-40" />
             </Field>
-            <Field label="Direction">
+            <Field label={t('anpr.direction')}>
               <select className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                       value={direction} onChange={e => setDirection(e.target.value)}>
-                <option value="">All</option>
+                <option value="">{t('anpr.allDirections')}</option>
                 {DIRECTIONS.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
             </Field>
-            <Field label="Plate">
+            <Field label={t('anpr.plate')}>
               <Input placeholder="MH12AB1234" value={plate}
                      onChange={e => setPlate(e.target.value.toUpperCase())} className="w-44 font-mono" />
             </Field>
-            <Field label="Review status">
+            <Field label={t('common.filter')}>
               <select className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                       value={needsReview} onChange={e => setNeedsReview(e.target.value)}>
-                <option value="">All</option>
-                <option value="true">Needs review</option>
+                <option value="">{t('anpr.allDirections')}</option>
+                <option value="true">{t('anpr.needsReview')}</option>
                 <option value="false">No review needed</option>
               </select>
             </Field>
@@ -238,7 +240,7 @@ export default function AnprEventsPage() {
               </span>
               <Button variant="outline" size="sm"
                       onClick={() => { setDirection(''); setPlate(''); setNeedsReview(''); setDateFrom(daysAgo(7)); setDateTo(today()); }}>
-                <Eye className="h-3.5 w-3.5 mr-1" /> Reset
+                <Eye className="h-3.5 w-3.5 mr-1" /> {t('common.reset')}
               </Button>
             </div>
           </div>
@@ -253,7 +255,7 @@ export default function AnprEventsPage() {
         loading={loading}
         exportFilename={`anpr-events-${dateFrom}-to-${dateTo}`}
         defaultSort={{ key: 'detected_at', direction: 'desc' }}
-        emptyMessage={loading ? 'Loading…' : 'No events in this window. Try widening the date range.'}
+        emptyMessage={loading ? t('common.loading') : t('anpr.noEvents')}
       />
     </div>
   );

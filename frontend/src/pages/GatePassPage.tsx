@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ChevronDown, ChevronUp, Eye, FileText, Link2, Loader2, LogIn, LogOut,
   Pencil, RefreshCw, Search, Truck,
@@ -34,10 +35,7 @@ function errMsg(e: unknown) {
   return (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Something went wrong. Try again.';
 }
 
-const PURPOSE_LABEL: Record<string, string> = {
-  weighbridge: 'Weighbridge', delivery: 'Delivery', pickup: 'Pickup',
-  own_use: 'Own Use', other: 'Other',
-};
+const PURPOSE_KEYS = ['weighbridge', 'delivery', 'pickup', 'own_use', 'other'] as const;
 
 // ── Photo lightbox ────────────────────────────────────────────────────────────
 function PhotoThumb({ path, label, fullSize }: { path: string | null; label: string; fullSize?: boolean }) {
@@ -69,6 +67,7 @@ function PhotoThumb({ path, label, fullSize }: { path: string | null; label: str
 function GatePassDetailModal({ gp, open, onClose }: {
   gp: GatePass; open: boolean; onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const [tokenModalId, setTokenModalId] = useState<string | null>(null);
 
   if (!open) return null;
@@ -108,7 +107,7 @@ function GatePassDetailModal({ gp, open, onClose }: {
                 </p>
               )}
               <div className="flex gap-2 flex-wrap pt-1">
-                <Badge variant="outline" className="text-xs">{PURPOSE_LABEL[gp.purpose] ?? gp.purpose}</Badge>
+                <Badge variant="outline" className="text-xs">{t(`gate.purposes.${gp.purpose}`, { defaultValue: gp.purpose })}</Badge>
                 {gp.material && <Badge variant="outline" className="text-xs">{gp.material}</Badge>}
               </div>
             </div>
@@ -117,7 +116,7 @@ function GatePassDetailModal({ gp, open, onClose }: {
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm font-semibold text-green-700">
                 <LogIn className="h-4 w-4" />
-                <span>Entry — {fmtDateTime(gp.entry_time)}</span>
+                <span>{t('gate.entryTime')} — {fmtDateTime(gp.entry_time)}</span>
               </div>
               {gp.entry_photo_path ? (
                 <PhotoThumb path={gp.entry_photo_path} label="Entry photo" fullSize />
@@ -132,7 +131,7 @@ function GatePassDetailModal({ gp, open, onClose }: {
             <div className="space-y-2">
               <div className={`flex items-center gap-2 text-sm font-semibold ${gp.exit_time ? 'text-blue-700' : 'text-muted-foreground'}`}>
                 <LogOut className="h-4 w-4" />
-                <span>Exit — {fmtDateTime(gp.exit_time)}</span>
+                <span>{t('gate.exitTime')} — {fmtDateTime(gp.exit_time)}</span>
               </div>
               {gp.exit_photo_path ? (
                 <PhotoThumb path={gp.exit_photo_path} label="Exit photo" fullSize />
@@ -183,6 +182,7 @@ function GatePassDetailModal({ gp, open, onClose }: {
 function TruckInDialog({ open, onClose, onCreated }: {
   open: boolean; onClose: () => void; onCreated: () => void;
 }) {
+  const { t } = useTranslation();
   const [vehicleNo, setVehicleNo] = useState('');
   const [vehicleType, setVehicleType] = useState('');
   const [driverName, setDriverName] = useState('');
@@ -296,14 +296,14 @@ function TruckInDialog({ open, onClose, onCreated }: {
                 <Select value={purpose} onValueChange={v => setPurpose(v ?? 'weighbridge')}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(PURPOSE_LABEL).map(([k, v]) => (
-                      <SelectItem key={k} value={k}>{v}</SelectItem>
+                    {PURPOSE_KEYS.map((k) => (
+                      <SelectItem key={k} value={k}>{t(`gate.purposes.${k}`)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Notes</label>
+                <label className="text-xs font-medium text-muted-foreground">{t('gate.notes')}</label>
                 <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional remarks" />
               </div>
             </div>
@@ -332,6 +332,7 @@ function TruckInDialog({ open, onClose, onCreated }: {
 function EditDialog({ gp, open, onClose, onSaved }: {
   gp: GatePass; open: boolean; onClose: () => void; onSaved: () => void;
 }) {
+  const { t } = useTranslation();
   const [form, setForm] = useState({
     vehicle_no: gp.vehicle_no ?? '',
     vehicle_name: gp.vehicle_name ?? '',
@@ -397,7 +398,7 @@ function EditDialog({ gp, open, onClose, onSaved }: {
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Driver Name</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('gate.driverName')}</label>
               <Input
                 value={form.driver_name}
                 onChange={e => setForm(f => ({ ...f, driver_name: e.target.value }))}
@@ -405,7 +406,7 @@ function EditDialog({ gp, open, onClose, onSaved }: {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Driver Phone</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('gate.driverPhone')}</label>
               <Input
                 value={form.driver_phone}
                 onChange={e => setForm(f => ({ ...f, driver_phone: e.target.value }))}
@@ -415,7 +416,7 @@ function EditDialog({ gp, open, onClose, onSaved }: {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Material</label>
+            <label className="text-xs font-medium text-muted-foreground">{t('gate.material')}</label>
             <Input
               value={form.material}
               onChange={e => setForm(f => ({ ...f, material: e.target.value }))}
@@ -424,19 +425,19 @@ function EditDialog({ gp, open, onClose, onSaved }: {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Visit Type</label>
+            <label className="text-xs font-medium text-muted-foreground">{t('gate.purpose')}</label>
             <Select value={form.purpose} onValueChange={v => setForm(f => ({ ...f, purpose: v ?? 'weighbridge' }))}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {Object.entries(PURPOSE_LABEL).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>{v}</SelectItem>
+                {PURPOSE_KEYS.map((k) => (
+                  <SelectItem key={k} value={k}>{t(`gate.purposes.${k}`)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Notes</label>
+            <label className="text-xs font-medium text-muted-foreground">{t('gate.notes')}</label>
             <Input
               value={form.notes}
               onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
@@ -583,6 +584,7 @@ function TruckOutDialog({ gp, open, onClose, onExited }: {
 
 // ── Inside card — big, visual ─────────────────────────────────────────────────
 function InsideCard({ gp, onRefresh, isGuard }: { gp: GatePass; onRefresh: () => void; isGuard: boolean }) {
+  const { t } = useTranslation();
   const [exitOpen, setExitOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -594,7 +596,7 @@ function InsideCard({ gp, onRefresh, isGuard }: { gp: GatePass; onRefresh: () =>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <span className="text-2xl font-extrabold tracking-widest">{gp.vehicle_no ?? '—'}</span>
-              <Badge variant="outline" className="text-xs">{PURPOSE_LABEL[gp.purpose] ?? gp.purpose}</Badge>
+              <Badge variant="outline" className="text-xs">{t(`gate.purposes.${gp.purpose}`, { defaultValue: gp.purpose })}</Badge>
               {gp.vehicle_type && (
                 <Badge variant="secondary" className="text-xs capitalize">{gp.vehicle_type}</Badge>
               )}
@@ -677,6 +679,7 @@ function InsideCard({ gp, onRefresh, isGuard }: { gp: GatePass; onRefresh: () =>
 
 // ── History row (all-today compact) ──────────────────────────────────────────
 function HistoryRow({ gp, onRefresh, isGuard }: { gp: GatePass; onRefresh: () => void; isGuard: boolean }) {
+  const { t } = useTranslation();
   const [exitOpen, setExitOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -686,7 +689,7 @@ function HistoryRow({ gp, onRefresh, isGuard }: { gp: GatePass; onRefresh: () =>
     exited: 'bg-green-100 text-green-800 border-green-300',
     cancelled: 'bg-slate-100 text-slate-500 border-slate-200',
   };
-  const statusLabel: Record<string, string> = { inside: 'Inside', exited: 'Exited', cancelled: 'Cancelled' };
+  const statusLabel: Record<string, string> = { inside: t('gate.statuses.inside'), exited: t('gate.statuses.exited'), cancelled: t('gate.statuses.cancelled') };
 
   return (
     <>
@@ -765,6 +768,7 @@ function HistoryRow({ gp, onRefresh, isGuard }: { gp: GatePass; onRefresh: () =>
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function GatePassPage() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [tab, setTab] = useState<'inside' | 'all'>('inside');
   const [passes, setPasses] = useState<GatePass[]>([]);
@@ -819,15 +823,15 @@ export default function GatePassPage() {
           <div className="flex items-center gap-8 flex-wrap">
             <div className="text-center">
               <p className="text-3xl font-extrabold text-green-700">{summary.total_entered}</p>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Entered</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('gate.entered')}</p>
             </div>
             <div className="text-center">
               <p className="text-3xl font-extrabold text-blue-700">{summary.total_exited}</p>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Exited</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('gate.exited')}</p>
             </div>
             <div className="text-center">
               <p className="text-3xl font-extrabold text-amber-700">{summary.currently_inside}</p>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Still Inside</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('gate.inside')}</p>
             </div>
             {summary.unlinked_weighbridge > 0 && (
               <p className="text-sm font-semibold text-amber-700">
@@ -868,7 +872,7 @@ export default function GatePassPage() {
       <Tabs value={tab} onValueChange={v => setTab(v as 'inside' | 'all')}>
         <TabsList className="w-full">
           <TabsTrigger value="inside" className="flex-1 text-base font-semibold">
-            INSIDE NOW
+            {t('gate.insideNow')}
             {summary && summary.currently_inside > 0 && (
               <span className="ml-2 rounded-full bg-amber-500 text-white text-xs font-bold px-2 py-0.5">
                 {summary.currently_inside}
@@ -876,7 +880,7 @@ export default function GatePassPage() {
             )}
           </TabsTrigger>
           <TabsTrigger value="all" className="flex-1 text-base">
-            All Today ({passes.length})
+            {t('gate.allToday')} ({passes.length})
           </TabsTrigger>
         </TabsList>
 
@@ -888,7 +892,7 @@ export default function GatePassPage() {
           ) : filtered.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
               <LogIn className="h-12 w-12 mx-auto mb-3 opacity-20" />
-              <p className="text-lg">{search ? 'No matching vehicles' : 'No vehicles currently inside'}</p>
+              <p className="text-lg">{search ? 'No matching vehicles' : t('gate.noPassesInside')}</p>
             </div>
           ) : (
             filtered.map(gp => <InsideCard key={gp.id} gp={gp} onRefresh={load} isGuard={isGuard} />)
@@ -901,7 +905,7 @@ export default function GatePassPage() {
               <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading…
             </div>
           ) : filtered.length === 0 ? (
-            <div className="text-center py-16 text-muted-foreground">No gate passes today.</div>
+            <div className="text-center py-16 text-muted-foreground">{t('gate.noPassesToday')}</div>
           ) : (
             filtered.map(gp => <HistoryRow key={gp.id} gp={gp} onRefresh={load} isGuard={isGuard} />)
           )}

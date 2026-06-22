@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { HardDrive, Plus, Download, Trash2, RotateCcw, Loader2, RefreshCw, AlertTriangle, Cloud, CloudOff, CheckCircle2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,6 +22,7 @@ function formatDate(iso: string) {
 }
 
 export default function BackupPage() {
+  const { t } = useTranslation();
   const [backups, setBackups] = useState<BackupFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -121,7 +123,7 @@ export default function BackupPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-          <HardDrive className="h-8 w-8 text-primary" /> Backup & Restore
+          <HardDrive className="h-8 w-8 text-primary" /> {t('backup.title')}
         </h1>
         <p className="text-muted-foreground">Create PostgreSQL database backups and restore from previous snapshots</p>
       </div>
@@ -138,7 +140,7 @@ export default function BackupPage() {
                     ? <Cloud className="h-5 w-5 text-green-600" />
                     : <CloudOff className="h-5 w-5 text-red-600" />)
                 : <Cloud className="h-5 w-5 text-muted-foreground" />}
-              Cloud Backup (Cloudflare R2)
+              {t('backup.cloudStatus')} (Cloudflare R2)
               {cloudStatus.configured && (
                 <Badge className={`ml-2 text-[10px] ${cloudStatus.status === 'healthy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                   {cloudStatus.status === 'healthy' ? 'Healthy' : 'Error'}
@@ -198,8 +200,8 @@ export default function BackupPage() {
           <div className="flex items-center gap-3">
             <Button onClick={createBackup} disabled={creating}>
               {creating
-                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating backup...</>
-                : <><Plus className="mr-2 h-4 w-4" /> Create Backup Now</>
+                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t('backup.creating')}</>
+                : <><Plus className="mr-2 h-4 w-4" /> {t('backup.createBackup')}</>
               }
             </Button>
             {createMsg && (
@@ -215,7 +217,7 @@ export default function BackupPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center justify-between">
-            <span>Available Backups ({backups.length})</span>
+            <span>{t('backup.localBackups')} ({backups.length})</span>
             <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
@@ -229,7 +231,7 @@ export default function BackupPage() {
               <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
                 <HardDrive className="h-8 w-8 text-muted-foreground/40" />
               </div>
-              <h3 className="text-sm font-semibold">No backups yet</h3>
+              <h3 className="text-sm font-semibold">{t('backup.noBackups')}</h3>
               <p className="mt-1 max-w-xs text-xs text-muted-foreground">
                 Click "Create Backup" above to generate your first database backup.
               </p>
@@ -249,14 +251,14 @@ export default function BackupPage() {
                   <div className="flex items-center gap-1">
                     <Button
                       variant="ghost" size="icon" className="h-8 w-8"
-                      title="Download"
+                      title={t('backup.download')}
                       onClick={() => downloadBackup(b.filename)}
                     >
                       <Download className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-800"
-                      title="Restore from this backup"
+                      title={t('backup.restore')}
                       onClick={() => { setRestoreTarget(b); setRestoreResult(''); }}
                     >
                       <RotateCcw className="h-4 w-4" />
@@ -319,7 +321,7 @@ export default function BackupPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setRestoreTarget(null)} disabled={restoring}>Cancel</Button>
             <Button variant="destructive" onClick={restoreBackup} disabled={restoring}>
-              {restoring ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Restoring...</> : 'Yes, Restore Now'}
+              {restoring ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t('backup.restore')}...</> : t('backup.restore')}
             </Button>
           </DialogFooter>
         </DialogContent>

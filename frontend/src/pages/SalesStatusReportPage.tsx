@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -34,6 +35,7 @@ const TAX_FILTERS: { value: TaxFilter; label: string }[] = [
 ];
 
 export default function SalesStatusReportPage() {
+  const { t } = useTranslation();
   const [range, setRange] = useState({ from: monthStart(), to: today() });
   const [gran, setGran] = useState<'day' | 'week' | 'month'>('day');
   const [taxFilter, setTaxFilter] = useState<TaxFilter>('all');
@@ -74,8 +76,8 @@ export default function SalesStatusReportPage() {
     <div className="p-4 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-xl font-bold">Sales by Invoice Status</h1>
-          <p className="text-xs text-muted-foreground">Sale-invoice amounts split into Draft vs Final (Complete) over a date range.</p>
+          <h1 className="text-xl font-bold">{t('salesStatus.title')}</h1>
+          <p className="text-xs text-muted-foreground">{t('salesStatus.subtitle')}</p>
         </div>
         <Button variant="outline" size="sm" onClick={exportCsv} disabled={!res?.series.length} className="gap-1.5"><Download className="h-3.5 w-3.5" /> CSV</Button>
       </div>
@@ -96,7 +98,9 @@ export default function SalesStatusReportPage() {
         </div>
         <div className="flex gap-1 ml-auto">
           {(['day', 'week', 'month'] as const).map(g => (
-            <Button key={g} variant={gran === g ? 'default' : 'outline'} size="sm" className="h-7 text-xs capitalize" onClick={() => setGran(g)}>{g}</Button>
+            <Button key={g} variant={gran === g ? 'default' : 'outline'} size="sm" className="h-7 text-xs capitalize" onClick={() => setGran(g)}>
+              {g === 'day' ? t('salesStatus.granularityDay') : g === 'week' ? t('salesStatus.granularityWeek') : t('salesStatus.granularityMonth')}
+            </Button>
           ))}
         </div>
       </div>
@@ -108,22 +112,22 @@ export default function SalesStatusReportPage() {
           {/* KPI cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="rounded-lg border p-3 bg-amber-50 border-amber-200">
-              <p className="text-[11px] text-muted-foreground flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> Draft</p>
+              <p className="text-[11px] text-muted-foreground flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> {t('salesStatus.draftAmount')}</p>
               <p className="text-lg font-bold text-amber-700">{INR(res.summary.draft.amount)}</p>
               <p className="text-[10px] text-muted-foreground">{res.summary.draft.count} invoice(s)</p>
             </div>
             <div className="rounded-lg border p-3 bg-emerald-50 border-emerald-200">
-              <p className="text-[11px] text-muted-foreground flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Final / Complete</p>
+              <p className="text-[11px] text-muted-foreground flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> {t('salesStatus.finalAmount')}</p>
               <p className="text-lg font-bold text-emerald-700">{INR(res.summary.final.amount)}</p>
               <p className="text-[10px] text-muted-foreground">{res.summary.final.count} invoice(s)</p>
             </div>
             <div className="rounded-lg border p-3">
-              <p className="text-[11px] text-muted-foreground flex items-center gap-1"><Layers className="h-3.5 w-3.5" /> Total (draft + final)</p>
+              <p className="text-[11px] text-muted-foreground flex items-center gap-1"><Layers className="h-3.5 w-3.5" /> {t('salesStatus.totalAmount')}</p>
               <p className="text-lg font-bold">{INR(res.summary.total_amount)}</p>
               <p className="text-[10px] text-muted-foreground">{res.summary.total_count} invoice(s)</p>
             </div>
             <div className="rounded-lg border p-3">
-              <p className="text-[11px] text-muted-foreground">Draft share</p>
+              <p className="text-[11px] text-muted-foreground">{t('salesStatus.draftShare')}</p>
               <p className="text-lg font-bold">{res.summary.total_amount > 0 ? Math.round(res.summary.draft.amount / res.summary.total_amount * 100) : 0}%</p>
               <p className="text-[10px] text-muted-foreground">of total billed value</p>
             </div>

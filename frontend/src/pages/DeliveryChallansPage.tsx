@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import { toast } from 'sonner';
 import { Plus, Trash2, FileText, X, Loader2, ArrowRightLeft, FileBadge } from 'lucide-react';
@@ -35,6 +36,7 @@ const STATUS_PILL: Record<string, string> = {
 interface ItemRow { product_id: string; quantity: string; rate: string }
 
 export default function DeliveryChallansPage() {
+  const { t } = useTranslation();
   const [rows, setRows] = useState<Challan[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -152,12 +154,12 @@ export default function DeliveryChallansPage() {
 
   const CHALLAN_COLUMNS: ColumnDef<Challan>[] = [
     {
-      key: 'challan_no', label: 'Challan No', type: 'string',
+      key: 'challan_no', label: t('delivery.challanNo'), type: 'string',
       accessor: r => r.challan_no ?? '',
       format: (_v, r) => <span className="font-mono font-semibold">{r.challan_no ?? '—'}</span>,
     },
     {
-      key: 'challan_date', label: 'Date', type: 'date',
+      key: 'challan_date', label: t('delivery.challanDate'), type: 'date',
       accessor: r => r.challan_date,
       format: v => new Date(String(v)).toLocaleDateString('en-IN'),
     },
@@ -167,12 +169,12 @@ export default function DeliveryChallansPage() {
       className: 'max-w-[180px] truncate',
     },
     {
-      key: 'vehicle_no', label: 'Vehicle', type: 'string',
+      key: 'vehicle_no', label: t('delivery.vehicleNo'), type: 'string',
       accessor: r => r.vehicle_no ?? '',
       format: (_v, r) => <span className="font-mono text-xs">{r.vehicle_no ?? '—'}</span>,
     },
     {
-      key: 'total_amount', label: 'Value', type: 'number', align: 'right',
+      key: 'total_amount', label: t('delivery.totalAmount'), type: 'number', align: 'right',
       accessor: r => Number(r.total_amount ?? 0),
       format: v => INR(v as number),
       exportValue: r => Number(r.total_amount ?? 0),
@@ -205,11 +207,11 @@ export default function DeliveryChallansPage() {
     <div className="p-4 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold">Delivery Challans</h1>
+          <h1 className="text-xl font-bold">{t('delivery.title')}</h1>
           <p className="text-xs text-muted-foreground">Dispatch goods on a challan now, bill later. Converts to a GST tax invoice.</p>
         </div>
         <Button onClick={() => { resetForm(); setOpen(true); }} className="gap-1.5">
-          <Plus className="h-4 w-4" /> New Challan
+          <Plus className="h-4 w-4" /> {t('delivery.newChallan')}
         </Button>
       </div>
 
@@ -221,23 +223,23 @@ export default function DeliveryChallansPage() {
         rowKey={r => r.id}
         exportFilename="delivery-challans"
         defaultSort={{ key: 'challan_date', direction: 'desc' }}
-        emptyMessage="No delivery challans yet."
+        emptyMessage={t('delivery.noChallansFound')}
         rowActions={c => (
           <div className="flex items-center gap-1 justify-end">
             <PrintButton a4Url={`/api/v1/delivery-challans/${c.id}/pdf`} url={`/api/v1/delivery-challans/${c.id}/pdf`} iconOnly />
             {c.status === 'open' && !c.ewb_no && (
-              <button onClick={() => genEwb(c)} title="Generate E-Way Bill"
+              <button onClick={() => genEwb(c)} title={t('delivery.generateEwb')}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-blue-700">
                 <FileBadge className="h-3.5 w-3.5" />
               </button>
             )}
             {c.status === 'open' && (
               <>
-                <button onClick={() => convert(c)} title="Convert to tax invoice"
+                <button onClick={() => convert(c)} title={t('delivery.convertToInvoice')}
                   className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-emerald-700">
                   <ArrowRightLeft className="h-3.5 w-3.5" />
                 </button>
-                <button onClick={() => cancel(c)} title="Cancel challan"
+                <button onClick={() => cancel(c)} title={t('delivery.cancelChallan')}
                   className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-red-600">
                   <X className="h-3.5 w-3.5" />
                 </button>
@@ -250,7 +252,7 @@ export default function DeliveryChallansPage() {
       {/* Create dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><FileText className="h-4 w-4" /> New Delivery Challan</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><FileText className="h-4 w-4" /> {t('delivery.newChallan')}</DialogTitle></DialogHeader>
 
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-3">
@@ -324,7 +326,7 @@ export default function DeliveryChallansPage() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={submit} disabled={busy} className="gap-1.5">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Create Challan</Button>
+            <Button onClick={submit} disabled={busy} className="gap-1.5">{busy && <Loader2 className="h-4 w-4 animate-spin" />} {busy ? t('delivery.saving') : t('delivery.newChallan')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

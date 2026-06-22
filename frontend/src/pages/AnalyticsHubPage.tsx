@@ -6,6 +6,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { TrendingUp, BarChart3, PieChart, XCircle } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
@@ -17,17 +18,18 @@ import WriteOffsReportPage from './WriteOffsReportPage';
 
 type Tab = 'pl' | 'sales-status' | 'gst-split' | 'write-offs';
 
-const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-  { value: 'pl',           label: 'P&L & Sales',     icon: TrendingUp },
-  { value: 'sales-status', label: 'Sales by Status', icon: BarChart3 },
-  { value: 'gst-split',    label: 'GST vs Cash',     icon: PieChart },
-  { value: 'write-offs',   label: 'Write-offs',      icon: XCircle },
-];
-
 export default function AnalyticsHubPage() {
+  const { t } = useTranslation();
   const nav = useNavigate();
   const loc = useLocation();
   const { isTabAllowed } = usePermissions();
+
+  const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
+    { value: 'pl',           label: t('hubs.analytics.plSales'),       icon: TrendingUp },
+    { value: 'sales-status', label: t('hubs.analytics.salesByStatus'), icon: BarChart3 },
+    { value: 'gst-split',    label: t('hubs.analytics.gstVsCash'),     icon: PieChart },
+    { value: 'write-offs',   label: t('hubs.analytics.writeoffs'),     icon: XCircle },
+  ];
   const visibleTabs = TABS.filter(t => isTabAllowed('/analytics', t.value));
   const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'pl';
   const initial = (visibleTabs.find(t => t.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'pl') as Tab;

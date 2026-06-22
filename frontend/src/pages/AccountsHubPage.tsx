@@ -6,6 +6,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { CreditCard, BookOpen, Shield } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
@@ -16,16 +17,17 @@ import AuditPage from './AuditPage';
 
 type Tab = 'payments' | 'statement' | 'activity';
 
-const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-  { value: 'payments',  label: 'Payments',          icon: CreditCard },
-  { value: 'statement', label: 'Account Ledger', icon: BookOpen },
-  { value: 'activity',  label: 'Activity Log',      icon: Shield },
-];
-
 export default function AccountsHubPage() {
+  const { t } = useTranslation();
   const nav = useNavigate();
   const loc = useLocation();
   const { isTabAllowed } = usePermissions();
+
+  const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
+    { value: 'payments',  label: t('hubs.accounts.payments'),  icon: CreditCard },
+    { value: 'statement', label: t('hubs.accounts.ledger'),    icon: BookOpen },
+    { value: 'activity',  label: t('hubs.accounts.activity'),  icon: Shield },
+  ];
   const visibleTabs = TABS.filter(t => isTabAllowed('/accounts', t.value));
   const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'payments';
   const initial = (visibleTabs.find(t => t.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'payments') as Tab;

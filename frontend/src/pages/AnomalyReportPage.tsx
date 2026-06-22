@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import api from '@/services/api';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 import { Loader2, AlertTriangle, CheckCircle2, ShieldAlert, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,110 +54,24 @@ interface AnomalyResult {
 }
 
 // ─── Per-detector ColumnDef arrays ────────────────────────────────────────────
+// Built inside the page component so they can use t() for translated labels.
 
 type AnomalyRow = Record<string, unknown>;
-
-const HIGH_FREQUENCY_COLS: ColumnDef<AnomalyRow>[] = [
-  { key: 'date',       label: 'Date',     type: 'date',   accessor: r => r.date,
-    format: v => String(v ?? '—') },
-  { key: 'vehicle_no', label: 'Vehicle',  type: 'string', accessor: r => r.vehicle_no },
-  { key: 'trip_count', label: 'Trips',    type: 'number', align: 'right',
-    accessor: r => r.trip_count },
-];
-
-const WEIGHT_VARIANCE_COLS: ColumnDef<AnomalyRow>[] = [
-  { key: 'date',           label: 'Date',        type: 'date',   accessor: r => r.date,
-    format: v => String(v ?? '—') },
-  { key: 'token_no',       label: 'Token #',     type: 'string', accessor: r => r.token_no },
-  { key: 'vehicle_no',     label: 'Vehicle',     type: 'string', accessor: r => r.vehicle_no },
-  { key: 'product',        label: 'Material',    type: 'string', accessor: r => r.product },
-  { key: 'net_weight_mt',  label: 'Net (MT)',    type: 'number', align: 'right',
-    accessor: r => r.net_weight_mt },
-  { key: 'mean_mt',        label: 'Mean (MT)',   type: 'number', align: 'right',
-    accessor: r => r.mean_mt },
-  { key: 'variance_pct',   label: 'Variance %',  type: 'number', align: 'right',
-    accessor: r => r.variance_pct,
-    format: v => (
-      <span className="text-red-600 font-semibold">{String(v ?? '—')}%</span>
-    ) },
-];
-
-const TARE_DEVIATION_COLS: ColumnDef<AnomalyRow>[] = [
-  { key: 'date',           label: 'Date',               type: 'date',   accessor: r => r.date,
-    format: v => String(v ?? '—') },
-  { key: 'token_no',       label: 'Token #',            type: 'string', accessor: r => r.token_no },
-  { key: 'vehicle_no',     label: 'Vehicle',            type: 'string', accessor: r => r.vehicle_no },
-  { key: 'token_tare_kg',  label: 'Token Tare (kg)',    type: 'number', align: 'right',
-    accessor: r => r.token_tare_kg },
-  { key: 'master_tare_kg', label: 'Master Tare (kg)',   type: 'number', align: 'right',
-    accessor: r => r.master_tare_kg },
-  { key: 'diff_kg',        label: 'Diff (kg)',          type: 'number', align: 'right',
-    accessor: r => r.diff_kg },
-];
-
-const INVOICE_LEAKAGE_COLS: ColumnDef<AnomalyRow>[] = [
-  { key: 'date',        label: 'Date',       type: 'date',   accessor: r => r.date,
-    format: v => String(v ?? '—') },
-  { key: 'token_no',    label: 'Token #',    type: 'string', accessor: r => r.token_no },
-  { key: 'vehicle_no',  label: 'Vehicle',    type: 'string', accessor: r => r.vehicle_no },
-  { key: 'net_mt',      label: 'Net (MT)',   type: 'number', align: 'right',
-    accessor: r => r.net_mt },
-  { key: 'hours_since', label: 'Hours ago',  type: 'number', align: 'right',
-    accessor: r => r.hours_since },
-];
-
-const AFTER_HOURS_COLS: ColumnDef<AnomalyRow>[] = [
-  { key: 'date',       label: 'Date',      type: 'date',   accessor: r => r.date,
-    format: v => String(v ?? '—') },
-  { key: 'token_no',   label: 'Token #',   type: 'string', accessor: r => r.token_no },
-  { key: 'vehicle_no', label: 'Vehicle',   type: 'string', accessor: r => r.vehicle_no },
-  { key: 'hour_ist',   label: 'Hour (IST)',type: 'number', align: 'right',
-    accessor: r => r.hour_ist },
-  { key: 'net_mt',     label: 'Net (MT)',  type: 'number', align: 'right',
-    accessor: r => r.net_mt },
-];
-
-const ROUND_WEIGHT_COLS: ColumnDef<AnomalyRow>[] = [
-  { key: 'date',       label: 'Date',      type: 'date',   accessor: r => r.date,
-    format: v => String(v ?? '—') },
-  { key: 'token_no',   label: 'Token #',   type: 'string', accessor: r => r.token_no },
-  { key: 'vehicle_no', label: 'Vehicle',   type: 'string', accessor: r => r.vehicle_no },
-  { key: 'net_mt',     label: 'Net (MT)',  type: 'number', align: 'right',
-    accessor: r => r.net_mt },
-];
-
-const UNLINKED_PASSES_COLS: ColumnDef<AnomalyRow>[] = [
-  { key: 'date',       label: 'Date',      type: 'date',   accessor: r => r.date,
-    format: v => String(v ?? '—') },
-  { key: 'token_no',   label: 'Token #',   type: 'string', accessor: r => r.token_no },
-  { key: 'vehicle_no', label: 'Vehicle',   type: 'string', accessor: r => r.vehicle_no },
-  { key: 'supplier',   label: 'Supplier',  type: 'string', accessor: r => r.supplier },
-  { key: 'net_mt',     label: 'Net (MT)',  type: 'number', align: 'right',
-    accessor: r => r.net_mt },
-];
-
-const DETECTOR_COLUMNS: Record<string, ColumnDef<AnomalyRow>[]> = {
-  high_frequency:  HIGH_FREQUENCY_COLS,
-  weight_variance: WEIGHT_VARIANCE_COLS,
-  tare_deviation:  TARE_DEVIATION_COLS,
-  invoice_leakage: INVOICE_LEAKAGE_COLS,
-  after_hours:     AFTER_HOURS_COLS,
-  round_weight:    ROUND_WEIGHT_COLS,
-  unlinked_passes: UNLINKED_PASSES_COLS,
-};
 
 // ─── DetectorCard ─────────────────────────────────────────────────────────────
 
 function DetectorCard({
-  id, d, expanded, onToggle,
+  id, d, expanded, onToggle, detectorColumns,
 }: {
   id: string;
   d: DetectorResult;
   expanded: boolean;
   onToggle: () => void;
+  detectorColumns: Record<string, ColumnDef<AnomalyRow>[]>;
 }) {
+  const { t } = useTranslation();
   const sev = d.severity ?? 'ok';
-  const cols = DETECTOR_COLUMNS[id] ?? [];
+  const cols = detectorColumns[id] ?? [];
   return (
     <div className={`rounded-lg border p-4 ${SEV_COLOR[sev] ?? ''}`}>
       <div
@@ -167,11 +82,11 @@ function DetectorCard({
           {SEV_ICON[sev]}
           <span className="font-semibold text-sm truncate">{d.title}</span>
           <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${SEV_BADGE[sev]}`}>
-            {sev === 'ok' ? 'Clean' : sev.toUpperCase()}
+            {sev === 'ok' ? t('anomaly.clean') : sev.toUpperCase()}
           </span>
           {d.count > 0 && (
             <span className="text-xs text-muted-foreground whitespace-nowrap">
-              {d.count} flagged
+              {d.count} {t('anomaly.anomaliesDetected')}
             </span>
           )}
         </div>
@@ -190,7 +105,7 @@ function DetectorCard({
             columns={cols}
             rowKey={(_, i) => String(i)}
             exportFilename={`anomaly-${id}`}
-            emptyMessage="No anomalies detected"
+            emptyMessage={t('anomaly.noIssues')}
             defaultSort={{ key: 'date', direction: 'desc' }}
           />
           {d.items.length >= 50 && (
@@ -202,7 +117,7 @@ function DetectorCard({
       )}
 
       {expanded && d.items.length === 0 && d.severity === 'ok' && (
-        <p className="mt-2 text-xs text-emerald-700">No anomalies found in this date range.</p>
+        <p className="mt-2 text-xs text-emerald-700">{t('anomaly.noIssues')}</p>
       )}
 
       {d.error && (
@@ -215,10 +130,88 @@ function DetectorCard({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AnomalyReportPage() {
+  const { t } = useTranslation();
   const [range, setRange] = useState({ from: monthStart(), to: today() });
   const [result, setResult] = useState<AnomalyResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  // ─── Per-detector ColumnDef arrays (built here so t() is in scope) ──────────
+
+  const DETECTOR_COLUMNS = useMemo<Record<string, ColumnDef<AnomalyRow>[]>>(() => ({
+    high_frequency: [
+      { key: 'date',       label: t('anomaly.colTokenDate'), type: 'date',   accessor: r => r.date,
+        format: v => String(v ?? '—') },
+      { key: 'vehicle_no', label: t('anomaly.colVehicle'),   type: 'string', accessor: r => r.vehicle_no },
+      { key: 'trip_count', label: t('anomaly.colTripsToday'), type: 'number', align: 'right',
+        accessor: r => r.trip_count },
+    ],
+    weight_variance: [
+      { key: 'date',          label: t('anomaly.colTokenDate'),  type: 'date',   accessor: r => r.date,
+        format: v => String(v ?? '—') },
+      { key: 'token_no',      label: t('anomaly.colTokenNo'),    type: 'string', accessor: r => r.token_no },
+      { key: 'vehicle_no',    label: t('anomaly.colVehicle'),    type: 'string', accessor: r => r.vehicle_no },
+      { key: 'product',       label: t('anomaly.colProduct'),    type: 'string', accessor: r => r.product },
+      { key: 'net_weight_mt', label: t('anomaly.colNetWt'),      type: 'number', align: 'right',
+        accessor: r => r.net_weight_mt },
+      { key: 'mean_mt',       label: t('anomaly.col30DayAvg'),   type: 'number', align: 'right',
+        accessor: r => r.mean_mt },
+      { key: 'variance_pct',  label: t('anomaly.colVariancePct'), type: 'number', align: 'right',
+        accessor: r => r.variance_pct,
+        format: v => (
+          <span className="text-red-600 font-semibold">{String(v ?? '—')}%</span>
+        ) },
+    ],
+    tare_deviation: [
+      { key: 'date',           label: t('anomaly.colTokenDate'),  type: 'date',   accessor: r => r.date,
+        format: v => String(v ?? '—') },
+      { key: 'token_no',       label: t('anomaly.colTokenNo'),    type: 'string', accessor: r => r.token_no },
+      { key: 'vehicle_no',     label: t('anomaly.colVehicle'),    type: 'string', accessor: r => r.vehicle_no },
+      { key: 'token_tare_kg',  label: t('anomaly.colTareUsed'),   type: 'number', align: 'right',
+        accessor: r => r.token_tare_kg },
+      { key: 'master_tare_kg', label: t('anomaly.colMasterTare'), type: 'number', align: 'right',
+        accessor: r => r.master_tare_kg },
+      { key: 'diff_kg',        label: t('anomaly.colDeviation'),  type: 'number', align: 'right',
+        accessor: r => r.diff_kg },
+    ],
+    invoice_leakage: [
+      { key: 'date',        label: t('anomaly.colTokenDate'), type: 'date',   accessor: r => r.date,
+        format: v => String(v ?? '—') },
+      { key: 'token_no',    label: t('anomaly.colTokenNo'),   type: 'string', accessor: r => r.token_no },
+      { key: 'vehicle_no',  label: t('anomaly.colVehicle'),   type: 'string', accessor: r => r.vehicle_no },
+      { key: 'net_mt',      label: t('anomaly.colNetWt'),     type: 'number', align: 'right',
+        accessor: r => r.net_mt },
+      { key: 'hours_since', label: t('anomaly.colHoursGap'), type: 'number', align: 'right',
+        accessor: r => r.hours_since },
+    ],
+    after_hours: [
+      { key: 'date',       label: t('anomaly.colTokenDate'), type: 'date',   accessor: r => r.date,
+        format: v => String(v ?? '—') },
+      { key: 'token_no',   label: t('anomaly.colTokenNo'),   type: 'string', accessor: r => r.token_no },
+      { key: 'vehicle_no', label: t('anomaly.colVehicle'),   type: 'string', accessor: r => r.vehicle_no },
+      { key: 'hour_ist',   label: t('anomaly.colTime'),      type: 'number', align: 'right',
+        accessor: r => r.hour_ist },
+      { key: 'net_mt',     label: t('anomaly.colNetWt'),     type: 'number', align: 'right',
+        accessor: r => r.net_mt },
+    ],
+    round_weight: [
+      { key: 'date',       label: t('anomaly.colTokenDate'), type: 'date',   accessor: r => r.date,
+        format: v => String(v ?? '—') },
+      { key: 'token_no',   label: t('anomaly.colTokenNo'),   type: 'string', accessor: r => r.token_no },
+      { key: 'vehicle_no', label: t('anomaly.colVehicle'),   type: 'string', accessor: r => r.vehicle_no },
+      { key: 'net_mt',     label: t('anomaly.colWeight'),    type: 'number', align: 'right',
+        accessor: r => r.net_mt },
+    ],
+    unlinked_passes: [
+      { key: 'date',       label: t('anomaly.colTokenDate'), type: 'date',   accessor: r => r.date,
+        format: v => String(v ?? '—') },
+      { key: 'token_no',   label: t('anomaly.colTokenNo'),   type: 'string', accessor: r => r.token_no },
+      { key: 'vehicle_no', label: t('anomaly.colVehicle'),   type: 'string', accessor: r => r.vehicle_no },
+      { key: 'supplier',   label: t('anomaly.colParty'),     type: 'string', accessor: r => r.supplier },
+      { key: 'net_mt',     label: t('anomaly.colNetWt'),     type: 'number', align: 'right',
+        accessor: r => r.net_mt },
+    ],
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -269,10 +262,10 @@ export default function AnomalyReportPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2">
-            <ShieldAlert className="h-5 w-5" /> Fraud & Anomaly Report
+            <ShieldAlert className="h-5 w-5" /> {t('anomaly.title')}
           </h1>
           <p className="text-xs text-muted-foreground">
-            7 automated detectors scan for suspicious patterns in your weighbridge data.
+            {t('anomaly.subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -288,13 +281,13 @@ export default function AnomalyReportPage() {
               variant="outline" size="sm" className="h-7 text-xs"
               onClick={() => setRange({ from: daysAgo(7), to: today() })}
             >
-              7 days
+              {t('anomaly.last7')}
             </Button>
             <Button
               variant="outline" size="sm" className="h-7 text-xs"
               onClick={() => setRange({ from: daysAgo(30), to: today() })}
             >
-              30 days
+              {t('anomaly.last30')}
             </Button>
           </div>
           <Input
@@ -314,10 +307,10 @@ export default function AnomalyReportPage() {
             onClick={exportCsv}
             disabled={!result}
           >
-            <Download className="h-3.5 w-3.5" /> CSV
+            <Download className="h-3.5 w-3.5" /> {t('anomaly.exportSummary')}
           </Button>
           <Button size="sm" className="h-8" onClick={load} disabled={loading}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Run'}
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('anomaly.runDetection')}
           </Button>
         </div>
       </div>
@@ -337,9 +330,9 @@ export default function AnomalyReportPage() {
             {SEV_ICON[result.overall ?? 'ok']}
             <div>
               <p className="font-bold text-sm">
-                Overall status:{' '}
+                {t('anomaly.overall')}:{' '}
                 {(result.overall ?? 'ok') === 'ok'
-                  ? 'Clean — no anomalies detected'
+                  ? `${t('anomaly.clean')} — ${t('anomaly.noIssues')}`
                   : `${(result.overall ?? 'ok').toUpperCase()} severity anomalies found`}
               </p>
               <p className="text-xs opacity-75">{range.from} to {range.to}</p>
@@ -355,6 +348,7 @@ export default function AnomalyReportPage() {
                 d={d}
                 expanded={!!expanded[key]}
                 onToggle={() => setExpanded(e => ({ ...e, [key]: !e[key] }))}
+                detectorColumns={DETECTOR_COLUMNS}
               />
             ))}
           </div>

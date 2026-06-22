@@ -9,6 +9,7 @@
  * can see truck movement at a glance from anywhere on site.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Camera, ArrowDownToLine, ArrowUpFromLine, AlertTriangle, Users, RefreshCw } from 'lucide-react';
 import api from '@/services/api';
 import type { AnprEvent, AnprEventListResponse, AnprStats } from '@/types';
@@ -18,6 +19,7 @@ function today() {
 }
 
 export default function AnprLivePage() {
+  const { t } = useTranslation();
   const [events, setEvents] = useState<AnprEvent[]>([]);
   const [stats, setStats] = useState<AnprStats | null>(null);
   const [lastFetch, setLastFetch] = useState<Date>(new Date());
@@ -49,7 +51,7 @@ export default function AnprLivePage() {
         <div className="flex items-center gap-3">
           <Camera className="h-8 w-8 text-emerald-400" />
           <div>
-            <h1 className="text-3xl font-black tracking-tight">Gate Cameras — Live</h1>
+            <h1 className="text-3xl font-black tracking-tight">{t('anpr.liveTitle')}</h1>
             <p className="text-xs text-slate-400 uppercase tracking-widest">
               Auto-refresh every 5 s · last update {lastFetch.toLocaleTimeString('en-IN', { hour12: false })}
             </p>
@@ -57,30 +59,30 @@ export default function AnprLivePage() {
         </div>
         <button onClick={refresh}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm text-slate-200">
-          <RefreshCw className="h-4 w-4" /> Refresh
+          <RefreshCw className="h-4 w-4" /> {t('common.refresh')}
         </button>
       </header>
 
       {/* KPI tiles */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <BigKpi icon={ArrowDownToLine} label="ENTRIES TODAY" value={stats?.entries ?? 0}
+        <BigKpi icon={ArrowDownToLine} label={t('anpr.entriesToday').toUpperCase()} value={stats?.entries ?? 0}
                 color="text-emerald-400" bg="bg-emerald-500/10 border-emerald-700/40" />
-        <BigKpi icon={ArrowUpFromLine} label="EXITS TODAY" value={stats?.exits ?? 0}
+        <BigKpi icon={ArrowUpFromLine} label={t('anpr.exitsToday').toUpperCase()} value={stats?.exits ?? 0}
                 color="text-blue-400" bg="bg-blue-500/10 border-blue-700/40" />
-        <BigKpi icon={Users} label="CURRENTLY INSIDE" value={stats?.currently_inside ?? 0}
+        <BigKpi icon={Users} label={t('anpr.currentlyInside').toUpperCase()} value={stats?.currently_inside ?? 0}
                 color="text-amber-400" bg="bg-amber-500/10 border-amber-700/40" />
-        <BigKpi icon={AlertTriangle} label="UNMATCHED" value={stats?.unmatched ?? 0}
+        <BigKpi icon={AlertTriangle} label={t('anpr.unmatched').toUpperCase()} value={stats?.unmatched ?? 0}
                 color="text-rose-400" bg="bg-rose-500/10 border-rose-700/40" />
       </section>
 
       {/* Last-20 strip */}
       <section className="rounded-2xl border-2 border-slate-700/50 bg-slate-800/50 p-4">
         <h2 className="text-base font-bold uppercase tracking-widest text-slate-300 mb-3">
-          Last 20 detections
+          {t('anpr.last20Detections')}
         </h2>
         {events.length === 0 ? (
           <div className="text-center text-slate-500 py-12">
-            No detections yet. Cameras are waiting for the first truck.
+            {t('anpr.noDetectionsToday')}
           </div>
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">

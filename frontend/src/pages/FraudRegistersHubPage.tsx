@@ -6,6 +6,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ShieldAlert, DoorOpen, Ticket } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
@@ -16,16 +17,17 @@ import TokenRegisterPage from './TokenRegisterPage';
 
 type Tab = 'anomaly' | 'gate-passes' | 'token-register';
 
-const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-  { value: 'anomaly',        label: 'Anomaly Detection',  icon: ShieldAlert },
-  { value: 'gate-passes',    label: 'Gate Pass Register', icon: DoorOpen },
-  { value: 'token-register', label: 'Token Register',     icon: Ticket },
-];
-
 export default function FraudRegistersHubPage() {
+  const { t } = useTranslation();
   const nav = useNavigate();
   const loc = useLocation();
   const { isTabAllowed } = usePermissions();
+
+  const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
+    { value: 'anomaly',        label: t('hubs.fraudRegisters.anomalyDetection'), icon: ShieldAlert },
+    { value: 'gate-passes',    label: t('hubs.fraudRegisters.gatePassRegister'), icon: DoorOpen },
+    { value: 'token-register', label: t('hubs.fraudRegisters.tokenRegister'),    icon: Ticket },
+  ];
   const visibleTabs = TABS.filter(t => isTabAllowed('/fraud-registers', t.value));
   const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'anomaly';
   const initial = (visibleTabs.find(t => t.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'anomaly') as Tab;

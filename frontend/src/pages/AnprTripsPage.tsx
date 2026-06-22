@@ -12,6 +12,7 @@
  * POST /api/v1/anpr/daily-summary/send.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { RefreshCw, Send, Camera, FileText, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
@@ -36,6 +37,7 @@ function fmtINR(n: number | null) {
 }
 
 export default function AnprTripsPage() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [data, setData] = useState<AnprTripListResponse | null>(null);
@@ -85,66 +87,66 @@ export default function AnprTripsPage() {
 
   const columns = useMemo<ColumnDef<AnprTrip>[]>(() => [
     {
-      key: 'entry_time', label: 'Entry', type: 'date',
-      accessor: t => t.entry_time,
+      key: 'entry_time', label: t('anpr.entryTime'), type: 'date',
+      accessor: trip => trip.entry_time,
       format: v => fmtTime(v as string | null),
       className: 'whitespace-nowrap font-mono',
     },
     {
-      key: 'exit_time', label: 'Exit', type: 'date',
-      accessor: t => t.exit_time,
-      format: (v, t) => t?.exit_time
+      key: 'exit_time', label: t('anpr.exitTime'), type: 'date',
+      accessor: trip => trip.exit_time,
+      format: (v, trip) => trip?.exit_time
         ? <span className="font-mono">{fmtTime(v as string)}</span>
-        : <Badge variant="outline" className="border-amber-400 text-amber-700 text-[10px]">Inside</Badge>,
+        : <Badge variant="outline" className="border-amber-400 text-amber-700 text-[10px]">{t('anpr.insideNow')}</Badge>,
       className: 'whitespace-nowrap',
     },
     {
-      key: 'dwell_minutes', label: 'Dwell', type: 'number', align: 'right',
-      accessor: t => t.dwell_minutes,
-      format: v => v != null ? `${v} min` : <span className="text-muted-foreground">—</span>,
+      key: 'dwell_minutes', label: t('anpr.dwellMin'), type: 'number', align: 'right',
+      accessor: trip => trip.dwell_minutes,
+      format: v => v != null ? `${v} ${t('anpr.min')}` : <span className="text-muted-foreground">—</span>,
       className: 'whitespace-nowrap',
     },
     {
       key: 'vehicle_no', label: 'Vehicle',
-      accessor: t => t.vehicle_no,
+      accessor: trip => trip.vehicle_no,
       format: v => <span className="font-mono font-bold">{String(v)}</span>,
     },
     {
       key: 'gate_pass_no', label: 'Gate Pass',
-      accessor: t => t.gate_pass_no ?? '',
+      accessor: trip => trip.gate_pass_no ?? '',
       format: v => v ? <code className="text-[11px]">{String(v)}</code> : <span className="text-muted-foreground">—</span>,
       className: 'whitespace-nowrap',
     },
     {
       key: 'token_no', label: 'Token', type: 'number', align: 'right',
-      accessor: t => t.token_no,
+      accessor: trip => trip.token_no,
       format: v => v != null ? `#${v}` : <span className="text-muted-foreground">—</span>,
       className: 'whitespace-nowrap',
     },
     {
       key: 'party_name', label: 'Party',
-      accessor: t => t.party_name ?? '',
+      accessor: trip => trip.party_name ?? '',
       format: v => v ? String(v) : <span className="text-muted-foreground">—</span>,
     },
     {
       key: 'product_name', label: 'Material',
-      accessor: t => t.product_name ?? '',
+      accessor: trip => trip.product_name ?? '',
       format: v => v ? String(v) : <span className="text-muted-foreground">—</span>,
     },
     {
       key: 'net_weight_mt', label: 'Net (MT)', type: 'number', align: 'right',
-      accessor: t => t.net_weight_mt,
+      accessor: trip => trip.net_weight_mt,
       // Decimal → JSON string — coerce with Number() before .toFixed()
       format: v => v != null ? Number(v).toFixed(3) : <span className="text-muted-foreground">—</span>,
       className: 'whitespace-nowrap font-mono',
     },
     {
       key: 'invoice_no', label: 'Invoice',
-      accessor: t => t.invoice_no ?? '',
-      format: (v, t) => {
+      accessor: trip => trip.invoice_no ?? '',
+      format: (v, trip) => {
         if (!v) return <span className="text-muted-foreground">—</span>;
         return (
-          <Link to={`/invoices?id=${t?.invoice_id}`} className="inline-flex items-center gap-1 text-blue-600 hover:underline">
+          <Link to={`/invoices?id=${trip?.invoice_id}`} className="inline-flex items-center gap-1 text-blue-600 hover:underline">
             {String(v)} <ExternalLink className="h-3 w-3" />
           </Link>
         );
@@ -154,7 +156,7 @@ export default function AnprTripsPage() {
     {
       key: 'invoice_status', label: 'Inv Status', type: 'enum', align: 'center',
       enumOptions: ['draft', 'final', 'cancelled'],
-      accessor: t => t.invoice_status ?? '',
+      accessor: trip => trip.invoice_status ?? '',
       format: v => v
         ? <span className={`text-[10px] uppercase font-bold ${
             v === 'final' ? 'text-emerald-700' : v === 'cancelled' ? 'text-rose-700' : 'text-amber-700'
@@ -165,7 +167,7 @@ export default function AnprTripsPage() {
     {
       key: 'payment_status', label: 'Paid', type: 'enum', align: 'center',
       enumOptions: ['unpaid', 'partial', 'paid'],
-      accessor: t => t.payment_status ?? '',
+      accessor: trip => trip.payment_status ?? '',
       format: v => v
         ? <span className={`text-[10px] uppercase font-bold ${
             v === 'paid' ? 'text-emerald-700' : v === 'partial' ? 'text-amber-700' : 'text-rose-700'
@@ -175,27 +177,27 @@ export default function AnprTripsPage() {
     },
     {
       key: 'grand_total', label: 'Amount', type: 'number', align: 'right',
-      accessor: t => t.grand_total,
+      accessor: trip => trip.grand_total,
       format: v => fmtINR(v as number | null),
       className: 'whitespace-nowrap',
     },
     {
       key: 'status', label: 'Token Status', type: 'enum', align: 'center',
       enumOptions: ['OPEN', 'FIRST_WEIGHT', 'LOADING', 'SECOND_WEIGHT', 'COMPLETED', 'CANCELLED'],
-      accessor: t => t.status,
+      accessor: trip => trip.status,
       format: v => <span className="text-[10px] font-bold">{String(v)}</span>,
       defaultVisible: false,
     },
     {
-      key: 'source', label: 'Source', type: 'enum', align: 'center',
+      key: 'source', label: t('anpr.source'), type: 'enum', align: 'center',
       enumOptions: ['anpr', 'manual', 'kiosk'],
-      accessor: t => t.source,
+      accessor: trip => trip.source,
       format: v => v === 'anpr'
         ? <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-blue-700">🤖 ANPR</span>
         : <span className="text-[10px] text-muted-foreground uppercase">{String(v)}</span>,
       defaultVisible: false,
     },
-  ], []);
+  ], [t]);
 
   const trips = data?.items ?? [];
 
@@ -204,7 +206,7 @@ export default function AnprTripsPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <FileText className="h-7 w-7 text-blue-600" /> Daily Movement Report
+            <FileText className="h-7 w-7 text-blue-600" /> {t('anpr.tripsTitle')}
           </h1>
           <p className="text-muted-foreground text-sm">
             One row per vehicle visit — entry, exit, dwell time, token, and invoice in one place.
@@ -212,13 +214,13 @@ export default function AnprTripsPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Button variant="outline" onClick={load} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> Refresh
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> {t('common.refresh')}
           </Button>
           {isAdmin && (
             <Button onClick={sendDigest} disabled={sending || !trips.length}
                     title="Fire today's report via Telegram to subscribed recipients">
               <Send className={`h-4 w-4 mr-2 ${sending ? 'animate-pulse' : ''}`} />
-              {sending ? 'Sending…' : 'Send Daily Report'}
+              {sending ? 'Sending…' : t('anpr.sendDailyReport')}
             </Button>
           )}
         </div>
@@ -233,12 +235,12 @@ export default function AnprTripsPage() {
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-        <KpiCard title="Entries" value={data?.entries ?? 0} color="text-emerald-700" />
-        <KpiCard title="Exits"   value={data?.exits ?? 0} color="text-blue-700" />
-        <KpiCard title="Inside"  value={data?.currently_inside ?? 0} color="text-amber-700" />
-        <KpiCard title="Tonnage" value={`${Number(data?.total_tonnage_mt ?? 0).toFixed(2)} MT`} color="text-slate-800" />
-        <KpiCard title="Revenue" value={fmtINR(data?.total_revenue ?? 0)} color="text-violet-700" />
-        <KpiCard title="Avg Dwell" value={`${Math.round(data?.avg_dwell_minutes ?? 0)} min`} color="text-slate-800" />
+        <KpiCard title={t('anpr.entries')} value={data?.entries ?? 0} color="text-emerald-700" />
+        <KpiCard title={t('anpr.exits')}   value={data?.exits ?? 0} color="text-blue-700" />
+        <KpiCard title={t('anpr.insideNow')}  value={data?.currently_inside ?? 0} color="text-amber-700" />
+        <KpiCard title={t('anpr.totalTonnage')} value={`${Number(data?.total_tonnage_mt ?? 0).toFixed(2)} MT`} color="text-slate-800" />
+        <KpiCard title={t('anpr.totalRevenue')} value={fmtINR(data?.total_revenue ?? 0)} color="text-violet-700" />
+        <KpiCard title={t('anpr.avgDwell')} value={`${Math.round(data?.avg_dwell_minutes ?? 0)} ${t('anpr.min')}`} color="text-slate-800" />
       </div>
 
       {/* Filters */}
@@ -253,16 +255,16 @@ export default function AnprTripsPage() {
             </Field>
             <div className="ml-auto flex items-center gap-3">
               <Button variant="outline" size="sm" onClick={() => { setDateFrom(today()); setDateTo(today()); }}>
-                Today
+                {t('anpr.today')}
               </Button>
               <Button variant="outline" size="sm" onClick={() => {
                 const d = new Date(); d.setDate(d.getDate() - 7);
                 setDateFrom(d.toISOString().split('T')[0]); setDateTo(today());
-              }}>Last 7 days</Button>
+              }}>{t('anpr.last7Days')}</Button>
               <Button variant="outline" size="sm" onClick={() => {
                 const d = new Date(); d.setDate(d.getDate() - 30);
                 setDateFrom(d.toISOString().split('T')[0]); setDateTo(today());
-              }}>Last 30 days</Button>
+              }}>{t('anpr.last30Days')}</Button>
               <span className="text-xs text-muted-foreground ml-2">
                 {trips.length} of {data?.total ?? 0} trips
               </span>
@@ -280,8 +282,8 @@ export default function AnprTripsPage() {
         exportFilename={`vehicle-movement-${dateFrom}-to-${dateTo}`}
         defaultSort={{ key: 'entry_time', direction: 'desc' }}
         emptyMessage={loading
-          ? 'Loading…'
-          : 'No vehicle movements in this window. Either ANPR is not yet recording, or the date range is too narrow.'}
+          ? t('common.loading')
+          : t('anpr.noMovements')}
       />
 
       {trips.length === 0 && !loading && (

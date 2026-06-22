@@ -7,6 +7,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ShoppingCart, Mountain } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
@@ -16,15 +17,16 @@ import RoyaltyPassesPage from './RoyaltyPassesPage';
 
 type Tab = 'purchases' | 'royalty';
 
-const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-  { value: 'purchases', label: 'Purchase Invoices',      icon: ShoppingCart },
-  { value: 'royalty',   label: 'Royalty & Transit Passes', icon: Mountain },
-];
-
 export default function ProcurementHubPage() {
+  const { t } = useTranslation();
   const nav = useNavigate();
   const loc = useLocation();
   const { isTabAllowed } = usePermissions();
+
+  const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
+    { value: 'purchases', label: t('hubs.procurement.purchaseInvoices'), icon: ShoppingCart },
+    { value: 'royalty',   label: t('hubs.procurement.royaltyPasses'),    icon: Mountain },
+  ];
   const visibleTabs = TABS.filter(t => isTabAllowed('/procurement', t.value));
   const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'purchases';
   const initial = (visibleTabs.find(t => t.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'purchases') as Tab;

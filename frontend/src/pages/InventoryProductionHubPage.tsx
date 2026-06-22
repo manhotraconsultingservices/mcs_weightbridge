@@ -6,6 +6,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Boxes, Warehouse, Package, IndianRupee } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
@@ -17,17 +18,18 @@ import PricingMatrixPage from './PricingMatrixPage';
 
 type Tab = 'stock' | 'store' | 'catalog' | 'rates';
 
-const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-  { value: 'stock',   label: 'Finished Goods',  icon: Boxes },
-  { value: 'store',   label: 'Store Inventory', icon: Warehouse },
-  { value: 'catalog', label: 'Products Catalog', icon: Package },
-  { value: 'rates',   label: 'Customer Rates',  icon: IndianRupee },
-];
-
 export default function InventoryProductionHubPage() {
+  const { t } = useTranslation();
   const nav = useNavigate();
   const loc = useLocation();
   const { isTabAllowed } = usePermissions();
+
+  const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
+    { value: 'stock',   label: t('hubs.materials.stockOnHand'),          icon: Boxes },
+    { value: 'store',   label: t('hubs.inventoryProduction.storeInventory'), icon: Warehouse },
+    { value: 'catalog', label: t('hubs.materials.catalog'),               icon: Package },
+    { value: 'rates',   label: t('hubs.materials.customerRates'),         icon: IndianRupee },
+  ];
   const visibleTabs = TABS.filter(t => isTabAllowed('/inventory-hub', t.value));
   const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'stock';
   const initial = (visibleTabs.find(t => t.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'stock') as Tab;

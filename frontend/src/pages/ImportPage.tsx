@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Upload, Download, CheckCircle, XCircle, AlertCircle, Users, Package, Truck, Loader2, FileSpreadsheet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -57,6 +58,7 @@ const ENTITY_CONFIG: Record<Entity, {
 };
 
 function ImportPanel({ entity }: { entity: Entity }) {
+  const { t } = useTranslation();
   const cfg = ENTITY_CONFIG[entity];
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -140,7 +142,7 @@ function ImportPanel({ entity }: { entity: Entity }) {
               </div>
             </div>
             <Button variant="outline" size="sm" onClick={downloadTemplate}>
-              <Download className="mr-1.5 h-4 w-4" /> Template
+              <Download className="mr-1.5 h-4 w-4" /> {t('importPage.downloadTemplate')}
             </Button>
           </div>
         </CardContent>
@@ -156,7 +158,7 @@ function ImportPanel({ entity }: { entity: Entity }) {
             onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFileChange(f); }}
           >
             <FileSpreadsheet className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-sm font-medium">{file ? file.name : 'Drop Excel / CSV file here'}</p>
+            <p className="text-sm font-medium">{file ? file.name : t('importPage.dropHint')}</p>
             <p className="text-xs text-muted-foreground mt-1">
               {file ? `${(file.size / 1024).toFixed(1)} KB` : 'or click to browse (.xlsx, .xls, .csv)'}
             </p>
@@ -177,7 +179,7 @@ function ImportPanel({ entity }: { entity: Entity }) {
               onChange={e => setUpdateExisting(e.target.checked)}
               className="h-4 w-4 rounded border-gray-300"
             />
-            <span>Update existing records (if name / registration already exists)</span>
+            <span>{t('importPage.updateExisting')}</span>
           </label>
         </CardContent>
       </Card>
@@ -199,8 +201,8 @@ function ImportPanel({ entity }: { entity: Entity }) {
               <span>Preview — {preview.total_rows} rows detected</span>
               <Button onClick={doImport} disabled={importing}>
                 {importing
-                  ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Importing...</>
-                  : <><Upload className="mr-2 h-4 w-4" /> Import {preview.total_rows} Rows</>
+                  ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t('importPage.importing')}</>
+                  : <><Upload className="mr-2 h-4 w-4" /> {t('importPage.importBtn')} {preview.total_rows} Rows</>
                 }
               </Button>
             </CardTitle>
@@ -254,13 +256,13 @@ function ImportPanel({ entity }: { entity: Entity }) {
               </span>
             </div>
             <div className="flex gap-4 text-sm">
-              <span className="text-green-700 font-medium">+{result.created} created</span>
-              <span className="text-blue-700 font-medium">{result.updated} updated</span>
-              <span className="text-muted-foreground">{result.skipped} skipped</span>
+              <span className="text-green-700 font-medium">+{result.created} {t('importPage.created')}</span>
+              <span className="text-blue-700 font-medium">{result.updated} {t('importPage.updated')}</span>
+              <span className="text-muted-foreground">{result.skipped} {t('importPage.skipped')}</span>
             </div>
             {result.errors.length > 0 && (
               <div>
-                <p className="text-xs font-medium text-amber-700 mb-1">Errors ({result.errors.length}):</p>
+                <p className="text-xs font-medium text-amber-700 mb-1">{t('importPage.errors')} ({result.errors.length}):</p>
                 <ul className="text-xs text-amber-800 space-y-0.5 max-h-32 overflow-y-auto">
                   {result.errors.map((err, i) => (
                     <li key={i} className="flex gap-1">
@@ -287,15 +289,16 @@ function ImportPanel({ entity }: { entity: Entity }) {
 }
 
 export default function ImportPage() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Entity>('parties');
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-          <Upload className="h-8 w-8 text-primary" /> Data Import
+          <Upload className="h-8 w-8 text-primary" /> {t('importPage.title')}
         </h1>
-        <p className="text-muted-foreground">Bulk import parties, products, and vehicles from Excel or CSV files</p>
+        <p className="text-muted-foreground">{t('importPage.subtitle')}</p>
       </div>
 
       {/* How it works */}
@@ -320,10 +323,13 @@ export default function ImportPage() {
           {(Object.keys(ENTITY_CONFIG) as Entity[]).map(e => {
             const cfg = ENTITY_CONFIG[e];
             const Icon = cfg.icon;
+            const tabLabel = e === 'parties' ? t('importPage.importParties')
+              : e === 'products' ? t('importPage.importProducts')
+              : t('importPage.importVehicles');
             return (
               <TabsTrigger key={e} value={e}>
                 <Icon className="mr-1.5 h-4 w-4" />
-                {cfg.label}
+                {tabLabel}
               </TabsTrigger>
             );
           })}

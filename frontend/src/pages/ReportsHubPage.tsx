@@ -46,8 +46,8 @@ export default function ReportsHubPage() {
     { value: 'compliance', label: t('reports.documents'), icon: ShieldCheck },
     { value: 'activity', label: t('reports.activityLog'), icon: Shield },
     { value: 'anomaly', label: t('reports.anomaly'), icon: ShieldAlert },
-    { value: 'gate-passes', label: 'Gate Pass Register', icon: DoorOpen },
-    { value: 'token-register', label: 'Token Register', icon: Ticket },
+    { value: 'gate-passes', label: t('hubs.reports.gatePassRegister'), icon: DoorOpen },
+    { value: 'token-register', label: t('hubs.reports.tokenRegister'), icon: Ticket },
   ];
 
   useEffect(() => {

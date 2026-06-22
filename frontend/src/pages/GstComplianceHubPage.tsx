@@ -6,6 +6,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { FileBarChart, FileBarChart2, ShieldCheck } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
@@ -16,16 +17,17 @@ import CompliancePage from './CompliancePage';
 
 type Tab = 'gst' | 'gstr2b' | 'compliance';
 
-const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-  { value: 'gst',        label: 'GST Returns',    icon: FileBarChart },
-  { value: 'gstr2b',     label: 'GSTR-2B (ITC)',  icon: FileBarChart2 },
-  { value: 'compliance', label: 'Compliance Docs', icon: ShieldCheck },
-];
-
 export default function GstComplianceHubPage() {
+  const { t } = useTranslation();
   const nav = useNavigate();
   const loc = useLocation();
   const { isTabAllowed } = usePermissions();
+
+  const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
+    { value: 'gst',        label: t('hubs.gstCompliance.gstReturns'),    icon: FileBarChart },
+    { value: 'gstr2b',     label: t('hubs.gstCompliance.gstr2b'),        icon: FileBarChart2 },
+    { value: 'compliance', label: t('hubs.gstCompliance.complianceDocs'), icon: ShieldCheck },
+  ];
   const visibleTabs = TABS.filter(t => isTabAllowed('/gst-compliance', t.value));
   const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'gst';
   const initial = (visibleTabs.find(t => t.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'gst') as Tab;

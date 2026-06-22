@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { toast } from 'sonner';
 import {
@@ -909,6 +910,7 @@ interface StockCardProps {
 }
 
 function StockCard({ item, isAdmin, onUse, onEdit, onAdjust, onManageSuppliers }: StockCardProps) {
+  const { t } = useTranslation();
   const icon = CATEGORY_ICONS[item.category] ?? '📦';
   const preferred = item.suppliers?.find(s => s.is_preferred) ?? item.suppliers?.[0] ?? null;
   return (
@@ -973,7 +975,7 @@ function StockCard({ item, isAdmin, onUse, onEdit, onAdjust, onManageSuppliers }
           disabled={item.stock_status === 'out'}
           onClick={() => onUse(item)}
         >
-          {item.stock_status === 'out' ? 'Out of Stock' : 'Use Stock'}
+          {item.stock_status === 'out' ? t('inventory.statusOut') : t('inventory.issueStock')}
         </Button>
       </CardContent>
     </Card>
@@ -1533,6 +1535,7 @@ interface SettingsTabProps {
 }
 
 function SettingsTab({ isAdmin }: SettingsTabProps) {
+  const { t } = useTranslation();
   const [tg, setTg] = useState<TelegramSettings>({ bot_token: '', chat_id: '', report_time: '20:00', enabled: false });
   const [loadingTg, setLoadingTg] = useState(true);
   const [savingTg, setSavingTg] = useState(false);
@@ -1706,7 +1709,7 @@ function SettingsTab({ isAdmin }: SettingsTabProps) {
 
           <div className="flex gap-2 pt-2">
             <Button onClick={saveTg} disabled={savingTg} className="flex-1">
-              {savingTg ? 'Saving…' : 'Save Settings'}
+              {savingTg ? t('inventory.saving') : 'Save Settings'}
             </Button>
             <Button variant="outline" onClick={testTg} disabled={testingTg}>
               {testingTg ? 'Sending…' : 'Test'}
@@ -1789,7 +1792,7 @@ function SettingsTab({ isAdmin }: SettingsTabProps) {
             </Button>
           </div>
           <Button onClick={saveCategories} disabled={savingCats} size="sm" className="w-full">
-            {savingCats ? 'Saving…' : 'Save Categories'}
+            {savingCats ? t('inventory.saving') : 'Save Categories'}
           </Button>
         </CardContent>
       </Card>
@@ -2153,6 +2156,7 @@ function AnalyticsTab({ items }: AnalyticsTabProps) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function InventoryPage() {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'stock' | 'orders' | 'history' | 'analytics' | 'settings'>('stock');
   const [dashboard, setDashboard] = useState<InventoryDashboard | null>(null);
   const [categories, setCategories] = useState<string[]>(['fuel', 'electricity', 'parts', 'tools', 'other']);
@@ -2324,7 +2328,7 @@ export default function InventoryPage() {
           </Button>
           {isAdmin && (
             <Button onClick={() => { setEditingItem(null); setShowAddItem(true); }} size="sm">
-              <Plus className="h-4 w-4 mr-1.5" /> Add Item
+              <Plus className="h-4 w-4 mr-1.5" /> {t('inventory.addItem')}
             </Button>
           )}
         </div>
@@ -2344,20 +2348,20 @@ export default function InventoryPage() {
       )}
 
       <Tabs value={activeTab} onValueChange={v => setActiveTab(v as any)}>
-        <MobileTabSelect value={activeTab} onValueChange={v => setActiveTab(v as any)} options={[{ value: 'stock', label: '📦 Stock' }, { value: 'orders', label: `📋 Orders${pendingCount > 0 ? ` (${pendingCount})` : ''}` }, { value: 'history', label: '📊 History' }, { value: 'analytics', label: '📈 Analytics' }, ...(isAdmin ? [{ value: 'settings', label: '⚙️ Settings' }] : [])]} />
+        <MobileTabSelect value={activeTab} onValueChange={v => setActiveTab(v as any)} options={[{ value: 'stock', label: `📦 ${t('inventory.tabStock')}` }, { value: 'orders', label: `📋 ${t('inventory.tabOrders')}${pendingCount > 0 ? ` (${pendingCount})` : ''}` }, { value: 'history', label: `📊 ${t('inventory.tabHistory')}` }, { value: 'analytics', label: `📈 ${t('inventory.tabAnalytics')}` }, ...(isAdmin ? [{ value: 'settings', label: `⚙️ ${t('inventory.tabSettings')}` }] : [])]} />
         <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
-          <TabsTrigger value="stock">📦 Stock</TabsTrigger>
+          <TabsTrigger value="stock">📦 {t('inventory.tabStock')}</TabsTrigger>
           <TabsTrigger value="orders" className="relative">
-            📋 Orders
+            📋 {t('inventory.tabOrders')}
             {pendingCount > 0 && (
               <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-[10px] font-bold rounded-full h-4 w-4 flex items-center justify-center">
                 {pendingCount}
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="history">📊 History</TabsTrigger>
-          <TabsTrigger value="analytics">📈 Analytics</TabsTrigger>
-          {isAdmin && <TabsTrigger value="settings">⚙️ Settings</TabsTrigger>}
+          <TabsTrigger value="history">📊 {t('inventory.tabHistory')}</TabsTrigger>
+          <TabsTrigger value="analytics">📈 {t('inventory.tabAnalytics')}</TabsTrigger>
+          {isAdmin && <TabsTrigger value="settings">⚙️ {t('inventory.tabSettings')}</TabsTrigger>}
         </TabsList>
 
         {/* ── Tab 1: Stock ───────────────────────────────────────────────────── */}
@@ -2378,7 +2382,7 @@ export default function InventoryPage() {
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 text-center">
               <Package className="h-16 w-16 text-muted-foreground mb-4 opacity-30" />
-              <h3 className="text-lg font-semibold mb-2">No inventory items yet</h3>
+              <h3 className="text-lg font-semibold mb-2">{t('inventory.noStock')}</h3>
               <p className="text-muted-foreground text-sm mb-6 max-w-xs">
                 Add your first item — Diesel, Engine Oil, Drill Bits — and start tracking your stock.
               </p>
@@ -2441,9 +2445,9 @@ export default function InventoryPage() {
                             <span className="text-xs text-muted-foreground ml-1">{item.unit}</span>
                           </td>
                           <td className="px-4 py-3 text-center">
-                            {item.stock_status === 'ok'  && <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">OK</span>}
-                            {item.stock_status === 'low' && <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 font-medium">LOW</span>}
-                            {item.stock_status === 'out' && <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">OUT</span>}
+                            {item.stock_status === 'ok'  && <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">{t('inventory.statusOk')}</span>}
+                            {item.stock_status === 'low' && <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 font-medium">{t('inventory.statusLow')}</span>}
+                            {item.stock_status === 'out' && <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">{t('inventory.statusOut')}</span>}
                           </td>
                           <td className="px-4 py-3 hidden md:table-cell">
                             {preferred ? (
@@ -2471,7 +2475,7 @@ export default function InventoryPage() {
                                 className="h-7 text-xs px-2"
                                 onClick={() => setUseStockItem(item)}
                               >
-                                {item.stock_status === 'out' ? 'Out' : 'Use'}
+                                {item.stock_status === 'out' ? t('inventory.statusOut') : t('inventory.issueStock')}
                               </Button>
                               {isAdmin && (
                                 <>
@@ -2607,7 +2611,7 @@ export default function InventoryPage() {
               <Download className="h-4 w-4 mr-1.5" /> CSV
             </Button>
             <Button onClick={() => setShowNewPO(true)} size="sm">
-              <Plus className="h-4 w-4 mr-1.5" /> New Order
+              <Plus className="h-4 w-4 mr-1.5" /> {t('inventory.newPO')}
             </Button>
           </div>
 
@@ -2616,7 +2620,7 @@ export default function InventoryPage() {
           ) : orders.length === 0 ? (
             <div className="flex flex-col items-center py-20 text-center">
               <ShoppingCart className="h-14 w-14 text-muted-foreground mb-4 opacity-30" />
-              <h3 className="text-base font-semibold mb-1">No orders yet</h3>
+              <h3 className="text-base font-semibold mb-1">{t('inventory.noOrders')}</h3>
               <p className="text-sm text-muted-foreground mb-6">Click "Order More" to raise a purchase request.</p>
             </div>
           ) : (() => {
@@ -2695,7 +2699,15 @@ export default function InventoryPage() {
                   </thead>
                   <tbody>
                     {sorted.map((po, idx) => {
-                      const badge = PO_STATUS_BADGE[po.status] ?? { label: po.status, variant: 'outline' as const };
+                      const badgeRaw = PO_STATUS_BADGE[po.status] ?? { label: po.status, variant: 'outline' as const };
+                      const poStatusLabel: Record<string, string> = {
+                        pending_approval: t('inventory.poStatusPending'),
+                        approved: t('inventory.poStatusApproved'),
+                        rejected: t('inventory.poStatusRejected') ?? badgeRaw.label,
+                        partially_received: badgeRaw.label,
+                        received: badgeRaw.label,
+                      };
+                      const badge = { ...badgeRaw, label: poStatusLabel[po.status] ?? badgeRaw.label };
                       const itemsSummary = po.items.map(pi => `${pi.item_name} ×${fmtNum(pi.quantity_ordered)}`).join(', ');
                       return (
                         <tr key={po.id} className={`border-b last:border-0 hover:bg-muted/30 transition-colors ${idx % 2 === 0 ? '' : 'bg-muted/10'}`}>
@@ -2755,16 +2767,16 @@ export default function InventoryPage() {
                                     <Edit className="h-3 w-3 mr-1" /> Edit
                                   </Button>
                                   <Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => approveOrder(po.id)}>
-                                    <Check className="h-3 w-3 mr-1" /> Approve
+                                    <Check className="h-3 w-3 mr-1" /> {t('inventory.approve')}
                                   </Button>
                                   <Button size="sm" variant="destructive" className="h-7 px-2.5 text-xs" onClick={() => setRejectPO(po)}>
-                                    <X className="h-3 w-3 mr-1" /> Reject
+                                    <X className="h-3 w-3 mr-1" /> {t('inventory.reject')}
                                   </Button>
                                 </>
                               )}
                               {(po.status === 'approved' || po.status === 'partially_received') && isAdmin && (
                                 <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs" onClick={() => setReceivePO(po)}>
-                                  📦 Receive
+                                  📦 {t('inventory.receive')}
                                 </Button>
                               )}
                             </div>

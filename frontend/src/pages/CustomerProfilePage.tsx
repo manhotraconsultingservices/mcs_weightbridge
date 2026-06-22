@@ -10,6 +10,7 @@
  * Payments, Ledger).
  */
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Phone, Mail, MapPin, IndianRupee, FileText, Banknote,
@@ -130,6 +131,7 @@ function AgingChart({ aging }: { aging: Party360Response['stats']['aging'] }) {
 
 // ── Page component ──────────────────────────────────────────────────────────
 export default function CustomerProfilePage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const nav = useNavigate();
   const { user } = useAuth();
@@ -342,7 +344,7 @@ export default function CustomerProfilePage() {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard
           icon={IndianRupee}
-          label="Outstanding"
+          label={t('customer360.outstanding')}
           value={INR(stats.total_outstanding)}
           sub={
             stats.total_overdue > 0
@@ -353,21 +355,21 @@ export default function CustomerProfilePage() {
         />
         <KpiCard
           icon={TrendingUp}
-          label="Lifetime Sales"
+          label={t('customer360.ltv')}
           value={INR(stats.lifetime_sales)}
           sub={`${stats.invoice_count} invoice${stats.invoice_count === 1 ? '' : 's'}`}
           tone="default"
         />
         <KpiCard
           icon={Receipt}
-          label="Avg Order Value"
+          label={t('customer360.aov')}
           value={INR(stats.avg_order_value)}
           sub={stats.invoice_count > 0 ? `across ${stats.invoice_count} orders` : 'no orders yet'}
           tone="default"
         />
         <KpiCard
           icon={Clock}
-          label="Last Order"
+          label={t('customer360.lastOrder')}
           value={
             stats.days_since_last_order === null
               ? '—'
@@ -430,7 +432,7 @@ export default function CustomerProfilePage() {
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-sm">
             <AlertCircle className="h-4 w-4 text-amber-500" />
-            Outstanding by Aging Bucket
+            {t('customer360.agingTitle')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -440,16 +442,16 @@ export default function CustomerProfilePage() {
 
       {/* ── Tabs: invoices / payments / pricing ───────────────────────── */}
       <Tabs value={profileTab} onValueChange={setProfileTab} className="w-full">
-        <MobileTabSelect value={profileTab} onValueChange={setProfileTab} options={[{ value: 'invoices', label: `Invoices (${recent_invoices.length})` }, { value: 'payments', label: `Payments (${recent_payments.length})` }, { value: 'pricing', label: `Pricing (${custom_rates.length})` }]} />
+        <MobileTabSelect value={profileTab} onValueChange={setProfileTab} options={[{ value: 'invoices', label: `${t('customer360.invoicesTab')} (${recent_invoices.length})` }, { value: 'payments', label: `${t('customer360.paymentsTab')} (${recent_payments.length})` }, { value: 'pricing', label: `${t('customer360.pricingTab')} (${custom_rates.length})` }]} />
         <TabsList className="hidden sm:inline-flex">
           <TabsTrigger value="invoices">
-            <FileText className="mr-1.5 h-3.5 w-3.5" /> Invoices ({recent_invoices.length})
+            <FileText className="mr-1.5 h-3.5 w-3.5" /> {t('customer360.invoicesTab')} ({recent_invoices.length})
           </TabsTrigger>
           <TabsTrigger value="payments">
-            <Banknote className="mr-1.5 h-3.5 w-3.5" /> Payments ({recent_payments.length})
+            <Banknote className="mr-1.5 h-3.5 w-3.5" /> {t('customer360.paymentsTab')} ({recent_payments.length})
           </TabsTrigger>
           <TabsTrigger value="pricing">
-            <Tag className="mr-1.5 h-3.5 w-3.5" /> Pricing ({custom_rates.length})
+            <Tag className="mr-1.5 h-3.5 w-3.5" /> {t('customer360.pricingTab')} ({custom_rates.length})
           </TabsTrigger>
         </TabsList>
 
@@ -483,7 +485,7 @@ export default function CustomerProfilePage() {
                 {bulkBusy
                   ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                   : <XCircle className="h-3.5 w-3.5 mr-1.5" />}
-                Write off {selectedIds.size || ''} invoice{selectedIds.size === 1 ? '' : 's'}
+                {t('customer360.massWriteoff')} ({selectedIds.size || 0})
               </Button>
             </div>
           )}
@@ -620,7 +622,7 @@ export default function CustomerProfilePage() {
                 rowKey={inv => inv.id}
                 exportFilename={`invoices-${party.name.replace(/\s+/g, '-')}`}
                 defaultSort={{ key: 'invoice_date', direction: 'desc' }}
-                emptyMessage="No invoices yet"
+                emptyMessage={t('customer360.noInvoices')}
               />
             );
           })()}
@@ -713,7 +715,7 @@ export default function CustomerProfilePage() {
                 rowKey={p => p.id}
                 exportFilename={`payments-${party.name.replace(/\s+/g, '-')}`}
                 defaultSort={{ key: 'payment_date', direction: 'desc' }}
-                emptyMessage="No payments yet"
+                emptyMessage={t('customer360.noPayments')}
               />
             );
           })()}
@@ -724,7 +726,7 @@ export default function CustomerProfilePage() {
           {custom_rates.length === 0 ? (
             <Card>
               <CardContent className="px-4 py-8 text-center text-sm text-slate-400">
-                No custom rates set — this customer pays product default rates.
+                {t('customer360.noRates')}
                 <div className="mt-2">
                   <Link to={`/pricing-matrix?party=${party.id}`}>
                     <Button size="sm" variant="outline">

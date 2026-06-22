@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import { toast } from 'sonner';
 import { Upload, Loader2, CheckCircle2, AlertTriangle, FileWarning, FileQuestion } from 'lucide-react';
@@ -35,54 +36,50 @@ interface Result {
 const INR = (v: number) => '₹' + Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
 type Tab = 'matched' | 'value_mismatch' | 'in_2b_not_books' | 'in_books_not_2b';
 
-// ─── Shared base columns (used by all 4 buckets) ──────────────────────────────
-const BASE_COLS: ColumnDef<Row>[] = [
-  { key: 'gstin',        label: 'GSTIN',       type: 'string', accessor: r => r.gstin,
-    className: 'font-mono text-xs' },
-  { key: 'supplier',     label: 'Supplier',    type: 'string', accessor: r => r.supplier || '—' },
-  { key: 'inv_no',       label: 'Invoice',     type: 'string', accessor: r => r.inv_no,
-    className: 'font-mono text-xs' },
-  { key: 'inv_date',     label: 'Date',        type: 'date',   accessor: r => r.inv_date,
-    format: v => String(v ?? '—') },
-  { key: 'taxable',      label: 'Taxable',     type: 'number', align: 'right',
-    accessor: r => r.taxable,
-    format: v => INR(Number(v)) },
-  { key: 'total_tax',    label: 'Tax (2B)',    type: 'number', align: 'right',
-    accessor: r => r.total_tax,
-    format: v => INR(Number(v)) },
-];
-
-// Mismatch bucket also shows books tax and difference
-const MISMATCH_COLS: ColumnDef<Row>[] = [
-  ...BASE_COLS,
-  { key: 'book_tax', label: 'Tax (books)', type: 'number', align: 'right',
-    accessor: r => r.book_tax ?? 0,
-    format: v => INR(Number(v)) },
-  { key: 'diff_tax', label: 'Diff', type: 'number', align: 'right',
-    accessor: r => r.diff_tax ?? 0,
-    format: (v) => (
-      <span className={Number(v) !== 0 ? 'text-rose-600 font-medium' : ''}>
-        {INR(Number(v))}
-      </span>
-    ) },
-];
-
-// ─── Column map keyed by tab ───────────────────────────────────────────────────
-const TAB_COLS: Record<Tab, ColumnDef<Row>[]> = {
-  matched:          BASE_COLS,
-  in_2b_not_books:  BASE_COLS,
-  in_books_not_2b:  BASE_COLS,
-  value_mismatch:   MISMATCH_COLS,
-};
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Gstr2bReconcilePage() {
+  const { t } = useTranslation();
   const [file, setFile] = useState<File | null>(null);
   const [range, setRange] = useState({ from: '', to: '' });
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<Result | null>(null);
   const [tab, setTab] = useState<Tab>('in_2b_not_books');
+
+  // ─── Column definitions (inside component to access t()) ────────────────────
+  const BASE_COLS: ColumnDef<Row>[] = [
+    { key: 'gstin',     label: t('gstr2b.colGstin'),    type: 'string', accessor: r => r.gstin,
+      className: 'font-mono text-xs' },
+    { key: 'supplier',  label: t('gstr2b.colSupplier'), type: 'string', accessor: r => r.supplier || '—' },
+    { key: 'inv_no',    label: 'Invoice',               type: 'string', accessor: r => r.inv_no,
+      className: 'font-mono text-xs' },
+    { key: 'inv_date',  label: 'Date',                  type: 'date',   accessor: r => r.inv_date,
+      format: v => String(v ?? '—') },
+    { key: 'taxable',   label: 'Taxable',               type: 'number', align: 'right',
+      accessor: r => r.taxable, format: v => INR(Number(v)) },
+    { key: 'total_tax', label: 'Tax (2B)',              type: 'number', align: 'right',
+      accessor: r => r.total_tax, format: v => INR(Number(v)) },
+  ];
+
+  const MISMATCH_COLS: ColumnDef<Row>[] = [
+    ...BASE_COLS,
+    { key: 'book_tax', label: 'Tax (books)', type: 'number', align: 'right',
+      accessor: r => r.book_tax ?? 0, format: v => INR(Number(v)) },
+    { key: 'diff_tax', label: 'Diff',        type: 'number', align: 'right',
+      accessor: r => r.diff_tax ?? 0,
+      format: (v) => (
+        <span className={Number(v) !== 0 ? 'text-rose-600 font-medium' : ''}>
+          {INR(Number(v))}
+        </span>
+      ) },
+  ];
+
+  const TAB_COLS: Record<Tab, ColumnDef<Row>[]> = {
+    matched:         BASE_COLS,
+    in_2b_not_books: BASE_COLS,
+    in_books_not_2b: BASE_COLS,
+    value_mismatch:  MISMATCH_COLS,
+  };
 
   async function run() {
     if (!file) { toast.error('Choose your GSTR-2B JSON file first'); return; }
@@ -104,10 +101,10 @@ export default function Gstr2bReconcilePage() {
   }
 
   const TABS: { k: Tab; label: string; rows: Row[]; icon: typeof CheckCircle2; tone: string }[] = res ? [
-    { k: 'in_2b_not_books',  label: `In 2B, not in books (${res.in_2b_not_books.length})`,  rows: res.in_2b_not_books,  icon: FileQuestion, tone: 'text-blue-700' },
-    { k: 'in_books_not_2b',  label: `In books, not in 2B (${res.in_books_not_2b.length})`,  rows: res.in_books_not_2b,  icon: FileWarning,  tone: 'text-amber-700' },
-    { k: 'value_mismatch',   label: `Value mismatch (${res.value_mismatch.length})`,         rows: res.value_mismatch,   icon: AlertTriangle, tone: 'text-rose-700' },
-    { k: 'matched',          label: `Matched (${res.matched.length})`,                       rows: res.matched,          icon: CheckCircle2,  tone: 'text-emerald-700' },
+    { k: 'in_2b_not_books',  label: `${t('gstr2b.in2bNotBooks')} (${res.in_2b_not_books.length})`,  rows: res.in_2b_not_books,  icon: FileQuestion, tone: 'text-blue-700' },
+    { k: 'in_books_not_2b',  label: `${t('gstr2b.inBooksNot2b')} (${res.in_books_not_2b.length})`,  rows: res.in_books_not_2b,  icon: FileWarning,  tone: 'text-amber-700' },
+    { k: 'value_mismatch',   label: `${t('gstr2b.valueMismatch')} (${res.value_mismatch.length})`,   rows: res.value_mismatch,   icon: AlertTriangle, tone: 'text-rose-700' },
+    { k: 'matched',          label: `${t('gstr2b.matched')} (${res.matched.length})`,                rows: res.matched,          icon: CheckCircle2,  tone: 'text-emerald-700' },
   ] : [];
 
   const activeRows = TABS.find(t => t.k === tab)?.rows ?? [];
@@ -115,8 +112,8 @@ export default function Gstr2bReconcilePage() {
   return (
     <div className="p-4 space-y-4">
       <div>
-        <h1 className="text-xl font-bold">GSTR-2B Reconciliation</h1>
-        <p className="text-xs text-muted-foreground">Upload the GSTR-2B JSON from the GST portal and match it against your purchase invoices to verify ITC.</p>
+        <h1 className="text-xl font-bold">{t('gstr2b.title')}</h1>
+        <p className="text-xs text-muted-foreground">{t('gstr2b.subtitle')}</p>
       </div>
 
       {/* Upload panel */}
@@ -134,7 +131,8 @@ export default function Gstr2bReconcilePage() {
           <Input type="date" value={range.to} onChange={e => setRange(r => ({ ...r, to: e.target.value }))} className="h-9 w-40 text-xs" />
         </div>
         <Button onClick={run} disabled={busy} className="gap-1.5">
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Reconcile
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+          {busy ? t('gstr2b.reconciling') : t('gstr2b.reconcile')}
         </Button>
       </div>
 

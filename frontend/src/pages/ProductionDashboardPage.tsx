@@ -13,6 +13,7 @@ import {
   ResponsiveContainer, CartesianGrid, ReferenceLine,
 } from 'recharts';
 import { Activity, TrendingDown, Factory, AlertOctagon, Target } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -51,6 +52,7 @@ interface DashboardData {
 }
 
 export default function ProductionDashboardPage() {
+  const { t } = useTranslation();
   const [data, setData] = useState<DashboardData | null>(null);
   const [defaults, setDefaults] = useState<StageDefaultsResponse | null>(null);
   const [days, setDays] = useState(30);
@@ -88,8 +90,8 @@ export default function ProductionDashboardPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Production Dashboard</h1>
-          <p className="text-muted-foreground">Yield, wastage, and conveyor-belt performance over time.</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('production.dashTitle')}</h1>
+          <p className="text-muted-foreground">{t('production.dashSubtitle')}</p>
         </div>
         <div className="flex gap-2">
           {[7, 30, 90, 365].map(d => (
@@ -106,7 +108,7 @@ export default function ProductionDashboardPage() {
           <CardContent className="pt-4 flex items-start gap-3">
             <Factory className="h-8 w-8 text-blue-600 opacity-70" />
             <div>
-              <p className="text-xs text-muted-foreground">Cycles</p>
+              <p className="text-xs text-muted-foreground">{t('production.totalCycles')}</p>
               <p className="text-2xl font-bold">{s?.cycles_count ?? 0}</p>
               <p className="text-xs text-muted-foreground">{((s?.input_total_kg ?? 0) / 1000).toFixed(1)} MT input</p>
             </div>
@@ -116,7 +118,7 @@ export default function ProductionDashboardPage() {
           <CardContent className="pt-4 flex items-start gap-3">
             <Activity className={`h-8 w-8 opacity-70 ${(s?.avg_yield_pct ?? 0) > 80 ? 'text-green-600' : (s?.avg_yield_pct ?? 0) > 60 ? 'text-amber-600' : 'text-red-600'}`} />
             <div>
-              <p className="text-xs text-muted-foreground">Avg Plant Yield</p>
+              <p className="text-xs text-muted-foreground">{t('production.avgYield')}</p>
               <p className={`text-2xl font-bold ${(s?.avg_yield_pct ?? 0) > 80 ? 'text-green-600' : (s?.avg_yield_pct ?? 0) > 60 ? 'text-amber-600' : 'text-red-600'}`}>
                 {(s?.avg_yield_pct ?? 0).toFixed(1)}%
               </p>
@@ -128,7 +130,7 @@ export default function ProductionDashboardPage() {
           <CardContent className="pt-4 flex items-start gap-3">
             <Target className={`h-8 w-8 opacity-70 ${variancePositive ? 'text-emerald-600' : 'text-red-600'}`} />
             <div>
-              <p className="text-xs text-muted-foreground">vs Target ({targetYield.toFixed(1)}%)</p>
+              <p className="text-xs text-muted-foreground">{t('production.vsTarget')} ({targetYield.toFixed(1)}%)</p>
               <p className={`text-2xl font-bold ${variancePositive ? 'text-emerald-700' : 'text-red-700'}`}>
                 {variancePositive ? '+' : ''}{yieldVariance.toFixed(2)}%
               </p>
@@ -142,7 +144,7 @@ export default function ProductionDashboardPage() {
           <CardContent className="pt-4 flex items-start gap-3">
             <TrendingDown className="h-8 w-8 text-orange-600 opacity-70" />
             <div>
-              <p className="text-xs text-muted-foreground">Conveyor Belt Loss (avg)</p>
+              <p className="text-xs text-muted-foreground">{t('production.avgBeltLoss')}</p>
               <p className="text-2xl font-bold text-orange-700">{(s?.avg_belt_loss_pct ?? 0).toFixed(2)}%</p>
               <p className="text-xs text-muted-foreground">Stage 4 wash loss</p>
             </div>
@@ -164,7 +166,7 @@ export default function ProductionDashboardPage() {
       <Card>
         <CardContent className="pt-4">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="font-semibold">Plant Yield % Trend</h2>
+            <h2 className="font-semibold">{t('production.yieldTrend')}</h2>
             <Badge variant="outline" className="text-xs">
               <Target className="h-3 w-3 mr-1" /> Target {targetYield.toFixed(1)}%
             </Badge>
@@ -199,7 +201,7 @@ export default function ProductionDashboardPage() {
       {/* Wastage by stage */}
       <Card>
         <CardContent className="pt-4">
-          <h2 className="font-semibold mb-2">Wastage % by Stage</h2>
+          <h2 className="font-semibold mb-2">{t('production.wastageByStage')}</h2>
           <p className="text-xs text-muted-foreground mb-2">
             Each bar shows the loss at each stage of the day's cycle. The orange bar (belt loss) is the key
             measure of conveyor-belt washing efficiency.
@@ -227,7 +229,7 @@ export default function ProductionDashboardPage() {
       {/* Top product outputs */}
       <Card>
         <CardContent className="pt-4">
-          <h2 className="font-semibold mb-2">Top Products by Output Volume</h2>
+          <h2 className="font-semibold mb-2">{t('production.topOutputs')}</h2>
           {loading ? (
             <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">Loading…</div>
           ) : !data?.top_outputs?.length ? (

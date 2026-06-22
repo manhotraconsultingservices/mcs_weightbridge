@@ -6,6 +6,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { MonitorPlay, ScanSearch, Camera, AlertTriangle, Video } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
@@ -18,18 +19,19 @@ import GateCameraLivePage from './GateCameraLivePage';
 
 type Tab = 'cameras' | 'snapshots' | 'gate-live' | 'anpr' | 'review';
 
-const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-  { value: 'cameras',    label: 'Camera & Scale',  icon: MonitorPlay },
-  { value: 'snapshots',  label: 'Snapshots',        icon: ScanSearch },
-  { value: 'gate-live',  label: 'Gate Live Feed',   icon: Video },
-  { value: 'anpr',       label: 'ANPR Events',      icon: Camera },
-  { value: 'review',     label: 'Plate Review',     icon: AlertTriangle },
-];
-
 export default function CamerasAnprHubPage() {
+  const { t } = useTranslation();
   const nav = useNavigate();
   const loc = useLocation();
   const { isTabAllowed } = usePermissions();
+
+  const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
+    { value: 'cameras',    label: t('hubs.camerasAnpr.cameraScale'),    icon: MonitorPlay },
+    { value: 'snapshots',  label: t('hubs.camerasAnpr.snapshotSearch'), icon: ScanSearch },
+    { value: 'gate-live',  label: t('hubs.camerasAnpr.anprLive'),       icon: Video },
+    { value: 'anpr',       label: t('hubs.camerasAnpr.anprEvents'),     icon: Camera },
+    { value: 'review',     label: t('hubs.camerasAnpr.plateReview'),    icon: AlertTriangle },
+  ];
   const visibleTabs = TABS.filter(t => isTabAllowed('/cameras-anpr', t.value));
   const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'cameras';
   const initial = (visibleTabs.find(t => t.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'cameras') as Tab;

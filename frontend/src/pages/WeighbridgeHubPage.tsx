@@ -6,6 +6,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { DoorOpen, Scale, BarChart3 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
@@ -16,16 +17,17 @@ import AnprTripsPage from './AnprTripsPage';
 
 type Tab = 'gate' | 'tickets' | 'movement';
 
-const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-  { value: 'gate',     label: 'Gate Register',    icon: DoorOpen },
-  { value: 'tickets',  label: 'Weigh Tickets',    icon: Scale },
-  { value: 'movement', label: 'Movement Report',  icon: BarChart3 },
-];
-
 export default function WeighbridgeHubPage() {
+  const { t } = useTranslation();
   const nav = useNavigate();
   const loc = useLocation();
   const { isTabAllowed } = usePermissions();
+
+  const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
+    { value: 'gate',     label: t('hubs.weighbridge.gateRegister'),    icon: DoorOpen },
+    { value: 'tickets',  label: t('hubs.weighbridge.weighTickets'),    icon: Scale },
+    { value: 'movement', label: t('hubs.weighbridge.movementReport'),  icon: BarChart3 },
+  ];
   const visibleTabs = TABS.filter(t => isTabAllowed('/weighbridge', t.value));
   const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'gate';
   const initial = (visibleTabs.find(t => t.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'gate') as Tab;

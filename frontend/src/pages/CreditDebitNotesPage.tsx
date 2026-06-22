@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import { toast } from 'sonner';
 import { Plus, Loader2, CheckCircle2, FileMinus, FilePlus } from 'lucide-react';
@@ -19,62 +20,66 @@ interface SrcInvoice { id: string; invoice_no: string | null; invoice_type: stri
 
 const INR = (v: number | string) => '₹' + Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
 
-const NOTE_COLUMNS: ColumnDef<Note>[] = [
-  {
-    key: 'invoice_no', label: 'Note No', type: 'string',
-    accessor: n => n.invoice_no ?? '',
-    format: (_, n) => (n as Note).invoice_no
-      ? <span className="font-mono font-semibold">{(n as Note).invoice_no}</span>
-      : <span className="italic text-muted-foreground">draft</span>,
-  },
-  {
-    key: 'invoice_date', label: 'Date', type: 'date',
-    accessor: n => n.invoice_date,
-    format: v => new Date(String(v)).toLocaleDateString('en-IN'),
-  },
-  {
-    key: 'invoice_type', label: 'Type', type: 'enum', enumOptions: ['credit_note', 'debit_note'],
-    accessor: n => n.invoice_type,
-    format: (_, n) => {
-      const isCredit = (n as Note).invoice_type === 'credit_note';
-      return (
-        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${isCredit ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
-          {isCredit ? <FileMinus className="h-3 w-3" /> : <FilePlus className="h-3 w-3" />}
-          {isCredit ? 'Credit' : 'Debit'}
-        </span>
-      );
-    },
-    exportValue: n => n.invoice_type === 'credit_note' ? 'Credit' : 'Debit',
-  },
-  {
-    key: 'party', label: 'Party', type: 'string',
-    accessor: n => n.party?.name ?? 'Cash',
-    className: 'max-w-[160px] truncate',
-  },
-  {
-    key: 'note_reason', label: 'Reason', type: 'string',
-    accessor: n => n.note_reason ?? '',
-    format: (v) => <span className="text-xs text-muted-foreground">{String(v) || '—'}</span>,
-    className: 'max-w-[200px] truncate',
-  },
-  {
-    key: 'grand_total', label: 'Amount', type: 'number', align: 'right',
-    accessor: n => Number(n.grand_total ?? 0),
-    format: (v) => INR(v as number),
-    exportValue: n => Number(n.grand_total ?? 0),
-  },
-  {
-    key: 'status', label: 'Status', type: 'enum', enumOptions: ['draft', 'final'],
-    accessor: n => n.status,
-    format: (v) => (
-      <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${v === 'final' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
-        {String(v)}
-      </span>
-    ),
-  },
-];
+// NOTE_COLUMNS moved inside the component to use t()
 
 export default function CreditDebitNotesPage() {
+  const { t } = useTranslation();
+
+  const NOTE_COLUMNS: ColumnDef<Note>[] = [
+    {
+      key: 'invoice_no', label: t('creditNote.noteNo'), type: 'string',
+      accessor: n => n.invoice_no ?? '',
+      format: (_, n) => (n as Note).invoice_no
+        ? <span className="font-mono font-semibold">{(n as Note).invoice_no}</span>
+        : <span className="italic text-muted-foreground">draft</span>,
+    },
+    {
+      key: 'invoice_date', label: 'Date', type: 'date',
+      accessor: n => n.invoice_date,
+      format: v => new Date(String(v)).toLocaleDateString('en-IN'),
+    },
+    {
+      key: 'invoice_type', label: t('creditNote.type'), type: 'enum', enumOptions: ['credit_note', 'debit_note'],
+      accessor: n => n.invoice_type,
+      format: (_, n) => {
+        const isCredit = (n as Note).invoice_type === 'credit_note';
+        return (
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${isCredit ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
+            {isCredit ? <FileMinus className="h-3 w-3" /> : <FilePlus className="h-3 w-3" />}
+            {isCredit ? t('creditNote.creditNoteLabel') : t('creditNote.debitNoteLabel')}
+          </span>
+        );
+      },
+      exportValue: n => n.invoice_type === 'credit_note' ? 'Credit' : 'Debit',
+    },
+    {
+      key: 'party', label: 'Party', type: 'string',
+      accessor: n => n.party?.name ?? 'Cash',
+      className: 'max-w-[160px] truncate',
+    },
+    {
+      key: 'note_reason', label: t('creditNote.reason'), type: 'string',
+      accessor: n => n.note_reason ?? '',
+      format: (v) => <span className="text-xs text-muted-foreground">{String(v) || '—'}</span>,
+      className: 'max-w-[200px] truncate',
+    },
+    {
+      key: 'grand_total', label: t('creditNote.grandTotal'), type: 'number', align: 'right',
+      accessor: n => Number(n.grand_total ?? 0),
+      format: (v) => INR(v as number),
+      exportValue: n => Number(n.grand_total ?? 0),
+    },
+    {
+      key: 'status', label: 'Status', type: 'enum', enumOptions: ['draft', 'final'],
+      accessor: n => n.status,
+      format: (v) => (
+        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${v === 'final' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+          {String(v)}
+        </span>
+      ),
+    },
+  ];
+
   const [notes, setNotes] = useState<Note[]>([]);
   const [sources, setSources] = useState<SrcInvoice[]>([]);
   const [loading, setLoading] = useState(false);
@@ -140,10 +145,10 @@ export default function CreditDebitNotesPage() {
     <div className="p-4 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold">Credit / Debit Notes</h1>
+          <h1 className="text-xl font-bold">{t('creditNote.title')}</h1>
           <p className="text-xs text-muted-foreground">GST adjustment documents (CDNR). Issued against a finalised invoice; flow to GSTR-1.</p>
         </div>
-        <Button onClick={() => { setErr(''); setOpen(true); }} className="gap-1.5"><Plus className="h-4 w-4" /> New Note</Button>
+        <Button onClick={() => { setErr(''); setOpen(true); }} className="gap-1.5"><Plus className="h-4 w-4" /> {t('creditNote.newCreditNote')}</Button>
       </div>
 
       <DataTable<Note>
@@ -154,12 +159,12 @@ export default function CreditDebitNotesPage() {
         rowKey={n => n.id}
         exportFilename="credit-debit-notes"
         defaultSort={{ key: 'invoice_date', direction: 'desc' }}
-        emptyMessage="No credit/debit notes yet."
+        emptyMessage={t('creditNote.noNotesFound')}
         rowActions={n => (
           <div className="flex items-center gap-1 justify-end">
             <PrintButton a4Url={`/api/v1/invoices/${n.id}/pdf`} url={`/api/v1/invoices/${n.id}/pdf`} iconOnly />
             {n.status === 'draft' && (
-              <button onClick={() => finalise(n)} title="Finalise (assign number)"
+              <button onClick={() => finalise(n)} title={t('creditNote.finalise')}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-emerald-700">
                 <CheckCircle2 className="h-3.5 w-3.5" />
               </button>
@@ -171,7 +176,7 @@ export default function CreditDebitNotesPage() {
       {/* New note dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>New Credit / Debit Note</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('creditNote.title')}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
               <Label className="text-xs">Against invoice</Label>
@@ -210,7 +215,7 @@ export default function CreditDebitNotesPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={submit} disabled={busy} className="gap-1.5">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Create Note</Button>
+            <Button onClick={submit} disabled={busy} className="gap-1.5">{busy && <Loader2 className="h-4 w-4 animate-spin" />} {busy ? t('creditNote.saving') : t('creditNote.newCreditNote')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

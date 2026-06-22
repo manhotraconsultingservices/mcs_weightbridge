@@ -5,6 +5,7 @@
  *   GET /api/v1/reports/gst-split?from_date=&to_date=&invoice_type=
  */
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import {
   FileText, FileX, Loader2, AlertCircle, Calendar, Users, Receipt,
@@ -69,6 +70,7 @@ function defaultFromDate(): string {
 function todayISO(): string { return new Date().toISOString().split('T')[0]; }
 
 export default function GstSplitReportPage() {
+  const { t } = useTranslation();
   const [fromDate, setFromDate] = useState(defaultFromDate());
   const [toDate, setToDate] = useState(todayISO());
   const [invoiceType, setInvoiceType] = useState<'all' | 'sale' | 'purchase'>('all');
@@ -97,20 +99,20 @@ export default function GstSplitReportPage() {
 
   const customerCols = useMemo<ColumnDef<TopCashCustomer>[]>(() => [
     {
-      key: 'party_name', label: 'Customer', accessor: r => r.party_name,
+      key: 'party_name', label: t('gstSplit.colCustomer'), accessor: r => r.party_name,
       format: (_v, row) => row.party_id ? (
         <Link to={`/customers/${row.party_id}`} className="text-blue-600 hover:underline">
           {row.party_name}
         </Link>
       ) : <span>{row.party_name}</span>,
     },
-    { key: 'count', label: 'Cash Invoices', type: 'number', align: 'right', accessor: r => r.count },
+    { key: 'count', label: t('gstSplit.colCashCount'), type: 'number', align: 'right', accessor: r => r.count },
     {
-      key: 'total_amount', label: 'Total ₹', type: 'number', align: 'right',
+      key: 'total_amount', label: t('gstSplit.colTotal'), type: 'number', align: 'right',
       accessor: r => r.total_amount,
       format: v => <span className="font-bold text-amber-700">{INR(Number(v))}</span>,
     },
-  ], []);
+  ], [t]);
 
   function exportCSV() {
     if (!data) return;
@@ -171,7 +173,7 @@ export default function GstSplitReportPage() {
           <Card>
             <CardContent className="p-4">
               <div className="text-xs uppercase tracking-widest text-slate-500 font-semibold flex items-center gap-1">
-                <FileText className="h-3.5 w-3.5 text-emerald-500" /> GST Invoices
+                <FileText className="h-3.5 w-3.5 text-emerald-500" /> {t('gstSplit.gstInvoices')}
               </div>
               <div className="text-2xl font-bold text-emerald-700 mt-1">{data.summary.gst_count}</div>
               <div className="text-xs text-slate-500 mt-0.5">
@@ -182,7 +184,7 @@ export default function GstSplitReportPage() {
           <Card>
             <CardContent className="p-4">
               <div className="text-xs uppercase tracking-widest text-slate-500 font-semibold flex items-center gap-1">
-                <FileX className="h-3.5 w-3.5 text-amber-500" /> Cash (Bill of Supply)
+                <FileX className="h-3.5 w-3.5 text-amber-500" /> {t('gstSplit.cashInvoices')}
               </div>
               <div className="text-2xl font-bold text-amber-700 mt-1">{data.summary.non_gst_count}</div>
               <div className="text-xs text-slate-500 mt-0.5">
@@ -193,7 +195,7 @@ export default function GstSplitReportPage() {
           <Card>
             <CardContent className="p-4">
               <div className="text-xs uppercase tracking-widest text-slate-500 font-semibold flex items-center gap-1">
-                <Receipt className="h-3.5 w-3.5 text-blue-500" /> Total
+                <Receipt className="h-3.5 w-3.5 text-blue-500" /> {t('gstSplit.colTotal')}
               </div>
               <div className="text-2xl font-bold text-slate-900 mt-1">{data.summary.total_count}</div>
               <div className="text-xs text-slate-500 mt-0.5">{INR_L(data.summary.total_amount)} all invoices</div>
@@ -213,7 +215,7 @@ export default function GstSplitReportPage() {
       {data && data.monthly.length > 0 && (
         <Card>
           <CardContent className="p-3">
-            <div className="text-sm font-semibold text-slate-700 mb-2">Monthly Breakdown</div>
+            <div className="text-sm font-semibold text-slate-700 mb-2">{t('gstSplit.monthlyBreakdown')}</div>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={data.monthly}>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.4} />
@@ -241,16 +243,16 @@ export default function GstSplitReportPage() {
               defaultSort={{ key: 'label', direction: 'asc' }}
               exportFilename={`gst-split-monthly-${fromDate}-to-${toDate}`}
               columns={[
-                { key: 'label',          label: 'Month',      accessor: r => r.label },
-                { key: 'gst_count',      label: 'GST Count',  accessor: r => r.gst_count,     type: 'number', align: 'right',
+                { key: 'label',          label: t('gstSplit.colMonth'),    accessor: r => r.label },
+                { key: 'gst_count',      label: t('gstSplit.colGstCount'), accessor: r => r.gst_count,     type: 'number', align: 'right',
                   format: v => <span className="text-emerald-700">{String(v)}</span> },
-                { key: 'gst_amount',     label: 'GST ₹',      accessor: r => r.gst_amount,     type: 'number', align: 'right',
+                { key: 'gst_amount',     label: t('gstSplit.colGstAmt'),   accessor: r => r.gst_amount,     type: 'number', align: 'right',
                   format: v => <span className="text-emerald-700">{INR(v as number)}</span>, exportValue: r => r.gst_amount },
-                { key: 'non_gst_count',  label: 'Cash Count', accessor: r => r.non_gst_count,  type: 'number', align: 'right',
+                { key: 'non_gst_count',  label: t('gstSplit.colCashCount'), accessor: r => r.non_gst_count,  type: 'number', align: 'right',
                   format: v => <span className="text-amber-700">{String(v)}</span> },
-                { key: 'non_gst_amount', label: 'Cash ₹',     accessor: r => r.non_gst_amount, type: 'number', align: 'right',
+                { key: 'non_gst_amount', label: t('gstSplit.colCashAmt'),  accessor: r => r.non_gst_amount, type: 'number', align: 'right',
                   format: v => <span className="text-amber-700">{INR(v as number)}</span>, exportValue: r => r.non_gst_amount },
-                { key: 'total_amount',   label: 'Total ₹',    accessor: r => Number(r.gst_amount) + Number(r.non_gst_amount), type: 'number', align: 'right',
+                { key: 'total_amount',   label: t('gstSplit.colTotal'),    accessor: r => Number(r.gst_amount) + Number(r.non_gst_amount), type: 'number', align: 'right',
                   format: v => <span className="font-bold">{INR(v as number)}</span>,
                   exportValue: r => Number(r.gst_amount) + Number(r.non_gst_amount) },
               ]}
@@ -264,7 +266,7 @@ export default function GstSplitReportPage() {
         <Card>
           <CardContent className="p-3">
             <div className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-1">
-              <Users className="h-3.5 w-3.5 text-amber-500" /> Top Cash Customers (no-GST)
+              <Users className="h-3.5 w-3.5 text-amber-500" /> {t('gstSplit.topCashCustomers')}
             </div>
             <DataTable<TopCashCustomer>
               id="gst-split.top-cash"

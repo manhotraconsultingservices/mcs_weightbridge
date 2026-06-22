@@ -346,6 +346,7 @@ function CycleDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useTranslation();
   const [cycleDate, setCycleDate] = useState(today());
   const [rawMaterialId, setRawMaterialId] = useState<string>('');
   const [rawMaterials, setRawMaterials] = useState<Product[]>([]);
@@ -469,17 +470,17 @@ function CycleDialog({
     <Dialog open={open} onOpenChange={o => !o && onClose()}>
       <DialogContent className="max-w-6xl w-[95vw] max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{editing ? `Edit Cycle — ${editing.cycle_date}` : 'New Production Cycle'}</DialogTitle>
+          <DialogTitle>{editing ? `${t('production.editCycle')} — ${editing.cycle_date}` : t('production.newCycle')}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1">
-              <Label>Cycle Date *</Label>
+              <Label>{t('production.cycleDate')} *</Label>
               <Input type="date" value={cycleDate} onChange={e => setCycleDate(e.target.value)} disabled={!!editing} />
             </div>
             <div className="space-y-1">
-              <Label>Raw Material</Label>
+              <Label>{t('production.rawMaterial')}</Label>
               <Select value={rawMaterialId || 'none'} onValueChange={v => setRawMaterialId(v === 'none' ? '' : (v ?? ''))}>
                 <SelectTrigger>
                   <span className="truncate text-left flex-1">
@@ -504,7 +505,7 @@ function CycleDialog({
               </p>
             </div>
             <div className="space-y-1">
-              <Label>Input Weight (MT) — raw boulder *</Label>
+              <Label>{t('production.inputMt')} — raw boulder *</Label>
               <Input
                 type="number" min="0" step="0.001"
                 value={inputKg} onChange={e => setInputKg(e.target.value)}
@@ -692,7 +693,7 @@ function CycleDialog({
           </div>
 
           <div className="space-y-1">
-            <Label>Notes</Label>
+            <Label>{t('production.notes')}</Label>
             <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional — anything unusual about this run" />
           </div>
 
@@ -745,7 +746,7 @@ function CycleDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : editing ? 'Update Draft' : 'Create Cycle (Draft)'}</Button>
+          <Button onClick={handleSave} disabled={saving}>{saving ? t('production.saving') : editing ? 'Update Draft' : 'Create Cycle (Draft)'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

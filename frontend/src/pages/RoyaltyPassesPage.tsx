@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import { toast } from 'sonner';
 import {
@@ -54,94 +55,97 @@ const STATUS_PILL: Record<string, string> = {
 };
 
 // ─── DataTable column definitions ────────────────────────────────────────────
-
-const PASS_COLUMNS: ColumnDef<Pass>[] = [
-  {
-    key: 'pass_no',
-    label: 'Pass No',
-    type: 'string',
-    accessor: r => r.pass_no,
-    format: v => <span className="font-mono font-semibold">{String(v ?? '')}</span>,
-  },
-  {
-    key: 'pass_type',
-    label: 'Type',
-    type: 'enum',
-    enumOptions: ['royalty', 'e_transit', 'mineral_permit'],
-    accessor: r => r.pass_type,
-    format: v => <span className="text-xs capitalize">{String(v ?? '').replace('_', ' ')}</span>,
-  },
-  {
-    key: 'source_name',
-    label: 'Source / Supplier',
-    type: 'string',
-    accessor: r => r.source_name ?? r.party_name ?? '',
-    format: (_v, r) => (
-      <span className="max-w-[160px] truncate block">{r.source_name ?? r.party_name ?? '—'}</span>
-    ),
-  },
-  {
-    key: 'mineral',
-    label: 'Mineral',
-    type: 'string',
-    accessor: r => r.mineral ?? '',
-    format: v => <span className="text-xs">{String(v ?? '') || '—'}</span>,
-  },
-  {
-    key: 'valid_till',
-    label: 'Valid Till',
-    type: 'date',
-    accessor: r => r.valid_till ?? '',
-    format: (_v, r) => (
-      <span className="text-xs">
-        {r.valid_till ? new Date(r.valid_till).toLocaleDateString('en-IN') : '—'}
-        {r.days_to_expiry != null && r.days_to_expiry <= 15 && r.status === 'active' && (
-          <span className="text-amber-600"> ({r.days_to_expiry}d)</span>
-        )}
-      </span>
-    ),
-    exportValue: r => r.valid_till ?? '',
-  },
-  {
-    key: 'utilization',
-    label: 'Utilisation',
-    type: 'number',
-    accessor: r => Number(r.utilization_pct) || 0,
-    format: (_v, r) => {
-      const pct = Math.min(100, Number(r.utilization_pct) || 0);
-      const over = Number(r.balance_mt) < 0;
-      return (
-        <div className="w-40">
-          <div className="h-2 rounded-full bg-muted overflow-hidden">
-            <div
-              className={`h-full ${over ? 'bg-red-500' : pct > 85 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <p className="text-[10px] text-muted-foreground mt-0.5">
-            {MT(r.consumed_mt)} / {MT(r.quantity_mt)} · bal {MT(r.balance_mt)}
-          </p>
-        </div>
-      );
-    },
-    exportValue: r => `${Number(r.consumed_mt).toFixed(3)} / ${Number(r.quantity_mt).toFixed(3)}`,
-    sortable: false,
-  },
-  {
-    key: 'status',
-    label: 'Status',
-    type: 'enum',
-    enumOptions: ['active', 'exhausted', 'expired', 'cancelled'],
-    accessor: r => r.status,
-    format: v => (
-      <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_PILL[String(v ?? '')] ?? ''}`}>
-        {String(v ?? '')}
-      </span>
-    ),
-  },
-];
+// Built inside the component so t() is available.
 
 export default function RoyaltyPassesPage() {
+  const { t } = useTranslation();
+
+  const PASS_COLUMNS: ColumnDef<Pass>[] = [
+    {
+      key: 'pass_no',
+      label: t('royalty.passNo'),
+      type: 'string',
+      accessor: r => r.pass_no,
+      format: v => <span className="font-mono font-semibold">{String(v ?? '')}</span>,
+    },
+    {
+      key: 'pass_type',
+      label: t('royalty.passType'),
+      type: 'enum',
+      enumOptions: ['royalty', 'e_transit', 'mineral_permit'],
+      accessor: r => r.pass_type,
+      format: v => <span className="text-xs capitalize">{String(v ?? '').replace('_', ' ')}</span>,
+    },
+    {
+      key: 'source_name',
+      label: 'Source / Supplier',
+      type: 'string',
+      accessor: r => r.source_name ?? r.party_name ?? '',
+      format: (_v, r) => (
+        <span className="max-w-[160px] truncate block">{r.source_name ?? r.party_name ?? '—'}</span>
+      ),
+    },
+    {
+      key: 'mineral',
+      label: t('royalty.mineral'),
+      type: 'string',
+      accessor: r => r.mineral ?? '',
+      format: v => <span className="text-xs">{String(v ?? '') || '—'}</span>,
+    },
+    {
+      key: 'valid_till',
+      label: t('royalty.validTill'),
+      type: 'date',
+      accessor: r => r.valid_till ?? '',
+      format: (_v, r) => (
+        <span className="text-xs">
+          {r.valid_till ? new Date(r.valid_till).toLocaleDateString('en-IN') : '—'}
+          {r.days_to_expiry != null && r.days_to_expiry <= 15 && r.status === 'active' && (
+            <span className="text-amber-600"> ({r.days_to_expiry}d)</span>
+          )}
+        </span>
+      ),
+      exportValue: r => r.valid_till ?? '',
+    },
+    {
+      key: 'utilization',
+      label: 'Utilisation',
+      type: 'number',
+      accessor: r => Number(r.utilization_pct) || 0,
+      format: (_v, r) => {
+        const pct = Math.min(100, Number(r.utilization_pct) || 0);
+        const over = Number(r.balance_mt) < 0;
+        return (
+          <div className="w-40">
+            <div className="h-2 rounded-full bg-muted overflow-hidden">
+              <div
+                className={`h-full ${over ? 'bg-red-500' : pct > 85 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              {MT(r.consumed_mt)} / {MT(r.quantity_mt)} · bal {MT(r.balance_mt)}
+            </p>
+          </div>
+        );
+      },
+      exportValue: r => `${Number(r.consumed_mt).toFixed(3)} / ${Number(r.quantity_mt).toFixed(3)}`,
+      sortable: false,
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      type: 'enum',
+      enumOptions: ['active', 'exhausted', 'expired', 'cancelled'],
+      accessor: r => r.status,
+      format: v => (
+        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_PILL[String(v ?? '')] ?? ''}`}>
+          {String(v ?? '')}
+        </span>
+      ),
+    },
+  ];
+
   const [rows, setRows] = useState<Pass[]>([]);
   const [recon, setRecon] = useState<Recon | null>(null);
   const [parties, setParties] = useState<Party[]>([]);
@@ -340,7 +344,7 @@ export default function RoyaltyPassesPage() {
     <div className="p-4 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-xl font-bold">Royalty / Transit Passes</h1>
+          <h1 className="text-xl font-bold">{t('royalty.title')}</h1>
           <p className="text-xs text-muted-foreground">Track mineral royalty & e-transit passes; reconcile authorised qty vs inbound loads.</p>
         </div>
         <div className="flex items-center gap-2">
@@ -350,7 +354,7 @@ export default function RoyaltyPassesPage() {
           <Button variant="outline" onClick={() => { setImportFile(null); setImportResult(null); setImportOpen(true); }} className="gap-1.5">
             <Upload className="h-4 w-4" /> Import CSV
           </Button>
-          <Button onClick={() => { resetForm(); setOpen(true); }} className="gap-1.5"><Plus className="h-4 w-4" /> New Pass</Button>
+          <Button onClick={() => { resetForm(); setOpen(true); }} className="gap-1.5"><Plus className="h-4 w-4" /> {t('royalty.newPass')}</Button>
         </div>
       </div>
 
@@ -358,12 +362,12 @@ export default function RoyaltyPassesPage() {
       {recon && (
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
           {[
-            { label: 'Authorised', val: MT(recon.authorised_mt), hint: 'on passes issued in range' },
-            { label: 'Consumed', val: MT(recon.consumed_mt), hint: 'drawn against passes' },
-            { label: 'Purchase inbound', val: MT(recon.purchase_inbound_mt), hint: 'completed purchase tokens' },
-            { label: 'Pass balance', val: MT(recon.balance_mt), hint: 'authorised − consumed' },
-            { label: 'Unaccounted', val: MT(recon.unaccounted_mt), hint: 'inbound − consumed', warn: recon.unaccounted_mt > 0.5 },
-            { label: 'Royalty paid', val: INR(recon.total_royalty_amount), hint: 'sum of pass amounts (₹)', accent: true },
+            { label: t('royalty.authorisedMt'), val: MT(recon.authorised_mt), hint: 'on passes issued in range' },
+            { label: t('royalty.consumedMt'), val: MT(recon.consumed_mt), hint: 'drawn against passes' },
+            { label: t('royalty.inboundMt'), val: MT(recon.purchase_inbound_mt), hint: 'completed purchase tokens' },
+            { label: t('royalty.balanceMt'), val: MT(recon.balance_mt), hint: 'authorised − consumed' },
+            { label: t('royalty.unaccountedMt'), val: MT(recon.unaccounted_mt), hint: 'inbound − consumed', warn: recon.unaccounted_mt > 0.5 },
+            { label: t('royalty.royaltyPaid'), val: INR(recon.total_royalty_amount), hint: 'sum of pass amounts (₹)', accent: true },
           ].map(c => (
             <div key={c.label} className={`rounded-lg border p-3 ${c.warn ? 'border-amber-300 bg-amber-50' : c.accent ? 'border-blue-200 bg-blue-50' : ''}`}>
               <p className="text-[11px] text-muted-foreground">{c.label}</p>
@@ -423,7 +427,7 @@ export default function RoyaltyPassesPage() {
         rowKey={r => r.id}
         exportFilename="royalty-passes"
         defaultSort={{ key: 'valid_till', direction: 'desc' }}
-        emptyMessage="No royalty passes yet."
+        emptyMessage={t('royalty.noPassesFound')}
         rowActions={r => (
           <div className="flex items-center gap-1 justify-end">
             {/* Expand consumption history */}
@@ -441,7 +445,7 @@ export default function RoyaltyPassesPage() {
             {r.status !== 'cancelled' && (
               <button
                 onClick={() => { setConsumeFor(r); setConsumeForm({ quantity_mt: '', notes: '' }); }}
-                title="Record consumption"
+                title={t('royalty.addConsumption')}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-blue-700"
               >
                 <MinusCircle className="h-3.5 w-3.5" />
@@ -583,7 +587,7 @@ export default function RoyaltyPassesPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={submit} disabled={busy} className="gap-1.5">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Add Pass</Button>
+            <Button onClick={submit} disabled={busy} className="gap-1.5">{busy && <Loader2 className="h-4 w-4 animate-spin" />} {busy ? t('royalty.saving') : t('royalty.newPass')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -591,7 +595,7 @@ export default function RoyaltyPassesPage() {
       {/* Consume dialog */}
       <Dialog open={!!consumeFor} onOpenChange={o => !o && setConsumeFor(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Record consumption — {consumeFor?.pass_no}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('royalty.consume')} — {consumeFor?.pass_no}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">Balance: <b>{consumeFor ? MT(consumeFor.balance_mt) : '—'}</b></p>
             <div className="space-y-1"><Label className="text-xs">Quantity drawn (MT)</Label><Input type="number" step="0.001" value={consumeForm.quantity_mt} onChange={e => setConsumeForm(f => ({ ...f, quantity_mt: e.target.value }))} autoFocus /></div>

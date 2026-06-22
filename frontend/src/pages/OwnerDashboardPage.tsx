@@ -11,6 +11,7 @@
  * he sees one green tick and closes the app.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   CheckCircle2, AlertTriangle, AlertCircle, Loader2,
@@ -82,6 +83,7 @@ const INR_L = (v: number) => {
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export default function OwnerDashboardPage() {
+  const { t } = useTranslation();
   const [data, setData] = useState<ExceptionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -123,7 +125,7 @@ export default function OwnerDashboardPage() {
     return (
       <div className="mx-auto max-w-xl py-12 text-center space-y-3">
         <AlertCircle className="mx-auto h-10 w-10 text-rose-400" />
-        <p className="text-sm font-semibold text-slate-800">Could not load dashboard</p>
+        <p className="text-sm font-semibold text-slate-800">{t('ownerDash.couldNotLoadDashboard')}</p>
         {error && (
           <pre className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3 whitespace-pre-wrap break-all text-left max-w-md mx-auto">
             {error}
@@ -136,12 +138,12 @@ export default function OwnerDashboardPage() {
           <button
             className="px-4 py-2 rounded border border-slate-300 hover:bg-slate-50 text-sm"
             onClick={() => load()}
-          >Retry</button>
+          >{t('ownerDash.retry')}</button>
           <Link
             to="/dashboard-legacy"
             className="px-4 py-2 rounded border border-slate-300 hover:bg-slate-50 text-sm"
           >
-            Open old dashboard
+            {t('ownerDash.openOldDashboard')}
           </Link>
         </div>
       </div>
@@ -163,7 +165,7 @@ export default function OwnerDashboardPage() {
         <HeaderIcon className={`h-8 w-8 sm:h-10 sm:w-10 ${headerPalette.iconColor} shrink-0`} />
         <div className="flex-1 min-w-0">
           <div className={`text-base sm:text-lg font-bold ${headerPalette.text}`}>
-            {data.status === 'healthy' ? 'All clear today' : `${data.problem_count} thing${data.problem_count === 1 ? '' : 's'} need you`}
+            {data.status === 'healthy' ? t('ownerDash.allClear') : (data.problem_count === 1 ? t('ownerDash.thingsNeedYou', { count: data.problem_count }) : t('ownerDash.thingsNeedYouPlural', { count: data.problem_count }))}
           </div>
           <div className={`text-xs sm:text-sm ${headerPalette.text} opacity-80 mt-0.5`}>
             {data.headline}
@@ -198,11 +200,11 @@ export default function OwnerDashboardPage() {
       <div className="pt-3 border-t border-slate-200 flex flex-wrap gap-2">
         <Link to="/dashboard-legacy" className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900 px-3 py-2 rounded hover:bg-slate-100">
           <BarChart3 className="h-4 w-4" />
-          View 30-day trends
+          {t('ownerDash.view30DayTrends')}
         </Link>
         <Link to="/ledger?tab=outstanding" className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900 px-3 py-2 rounded hover:bg-slate-100">
           <IndianRupee className="h-4 w-4" />
-          Full outstanding
+          {t('ownerDash.fullOutstanding')}
         </Link>
       </div>
     </div>
@@ -212,6 +214,7 @@ export default function OwnerDashboardPage() {
 // ── Revenue strip ───────────────────────────────────────────────────────────
 
 function RevenueStrip({ rev }: { rev: { today: number; median_30d: number; variance_pct: number } }) {
+  const { t } = useTranslation();
   const tone =
     rev.today === 0 && rev.median_30d > 0  ? 'amber' :
     rev.variance_pct < -50                  ? 'amber' :
@@ -226,14 +229,14 @@ function RevenueStrip({ rev }: { rev: { today: number; median_30d: number; varia
         <IndianRupee className="h-5 w-5 sm:h-6 sm:w-6" />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-xs uppercase tracking-widest text-slate-500 font-semibold">Today's Revenue</div>
+        <div className="text-xs uppercase tracking-widest text-slate-500 font-semibold">{t('ownerDash.todayRevenue')}</div>
         <div className="text-xl sm:text-2xl font-bold text-slate-900">{INR_L(rev.today)}</div>
         <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
           <TrendIcon className={`h-3 w-3 ${trendColor}`} />
           <span className={trendColor}>
             {rev.variance_pct >= 0 ? '+' : ''}{rev.variance_pct}%
           </span>
-          <span>vs 30-day median {INR_L(rev.median_30d)}</span>
+          <span>{t('ownerDash.vs30DayMedian')} {INR_L(rev.median_30d)}</span>
         </div>
       </div>
     </div>
@@ -313,13 +316,14 @@ function ActionCard({
 // ── Overdue customers card ─────────────────────────────────────────────────
 
 function OverdueCard({ overdue, onSent }: { overdue: ExceptionsResponse['overdue_customers']; onSent: () => void }) {
+  const { t } = useTranslation();
   const [sending, setSending] = useState(false);
   if (overdue.count === 0) {
     return (
       <ActionCard
         icon={CheckCircle2} color="emerald"
-        title="All customers paid"
-        sub="No overdue balances right now"
+        title={t('ownerDash.allCustomersPaid')}
+        sub={t('ownerDash.noOverdueBalances')}
       />
     );
   }
@@ -352,7 +356,7 @@ function OverdueCard({ overdue, onSent }: { overdue: ExceptionsResponse['overdue
       title={`${INR_L(overdue.total_balance)} overdue from ${overdue.count} customer${overdue.count === 1 ? '' : 's'}`}
       sub={`Oldest: ${Math.max(...overdue.items.map(i => i.oldest_overdue_days))} days past due`}
       expanded
-      primary={{ label: 'Send WhatsApp reminders', onClick: sendBatch, busy: sending, icon: MessageCircle }}
+      primary={{ label: sending ? t('ownerDash.sending') : t('ownerDash.sendWhatsappReminders'), onClick: sendBatch, busy: sending, icon: MessageCircle }}
     >
       <div className="space-y-1.5">
         {overdue.items.slice(0, 5).map(c => (
@@ -367,7 +371,7 @@ function OverdueCard({ overdue, onSent }: { overdue: ExceptionsResponse['overdue
                 {c.phone ? <><Phone className="h-3 w-3" /> {c.phone}</> : <span className="italic text-slate-400">No phone</span>}
                 <span className="text-slate-400">·</span>
                 <span className={c.oldest_overdue_days > 60 ? 'text-rose-600 font-semibold' : 'text-amber-700'}>
-                  {c.oldest_overdue_days} days
+                  {c.oldest_overdue_days} {t('ownerDash.daysOverdue')}
                 </span>
               </div>
             </div>
@@ -377,7 +381,7 @@ function OverdueCard({ overdue, onSent }: { overdue: ExceptionsResponse['overdue
         ))}
         {overdue.items.length > 5 && (
           <div className="text-center text-xs text-slate-500 py-1">
-            +{overdue.items.length - 5} more · <Link to="/ledger?tab=outstanding" className="underline">view all</Link>
+            +{overdue.items.length - 5} {t('ownerDash.more')} · <Link to="/ledger?tab=outstanding" className="underline">{t('ownerDash.viewAll')}</Link>
           </div>
         )}
       </div>
@@ -388,12 +392,13 @@ function OverdueCard({ overdue, onSent }: { overdue: ExceptionsResponse['overdue
 // ── Low stock card ─────────────────────────────────────────────────────────
 
 function LowStockCard({ low, onAction }: { low: ExceptionsResponse['low_stock_products']; onAction: () => void }) {
+  const { t } = useTranslation();
   if (low.count === 0) {
     return (
       <ActionCard
         icon={CheckCircle2} color="emerald"
-        title="All products in stock"
-        sub="Nothing below minimum threshold"
+        title={t('ownerDash.allStockOk')}
+        sub={t('ownerDash.noLowStockItems')}
       />
     );
   }
@@ -406,7 +411,7 @@ function LowStockCard({ low, onAction }: { low: ExceptionsResponse['low_stock_pr
         : `${low.count} product${low.count === 1 ? '' : 's'} below minimum`}
       sub="Tap below to raise a Purchase Order"
       expanded
-      primary={{ label: 'Raise PO / View stock', onClick: onAction, icon: ShoppingCart }}
+      primary={{ label: t('ownerDash.viewPurchaseOrders'), onClick: onAction, icon: ShoppingCart }}
     >
       <div className="space-y-1.5">
         {low.items.slice(0, 5).map(p => (
@@ -441,12 +446,13 @@ function LowStockCard({ low, onAction }: { low: ExceptionsResponse['low_stock_pr
 // ── Compliance card ────────────────────────────────────────────────────────
 
 function ComplianceCard({ comp, onAction }: { comp: ExceptionsResponse['compliance_expiring']; onAction: (id: string) => void }) {
+  const { t } = useTranslation();
   if (comp.count === 0) {
     return (
       <ActionCard
         icon={CheckCircle2} color="emerald"
-        title="All compliance valid"
-        sub="No documents expiring soon"
+        title={t('ownerDash.allComplianceValid')}
+        sub={t('ownerDash.noExpiringDocs')}
       />
     );
   }
@@ -493,6 +499,7 @@ function ComplianceCard({ comp, onAction }: { comp: ExceptionsResponse['complian
 // ── Yield variance card ────────────────────────────────────────────────────
 
 function YieldCard({ yv, onAction }: { yv: YieldVariance; onAction: () => void }) {
+  const { t } = useTranslation();
   const palette = yv.status === 'on_track' ? 'emerald' : yv.status === 'below' ? 'amber' : 'rose';
   const Icon = yv.status === 'on_track' ? CheckCircle2 : Factory;
   return (
@@ -501,13 +508,13 @@ function YieldCard({ yv, onAction }: { yv: YieldVariance; onAction: () => void }
       title={`Today's yield: ${yv.today_yield_pct.toFixed(1)}%`}
       sub={
         yv.status === 'on_track'
-          ? `On target (${yv.target_yield_pct.toFixed(1)}%)`
+          ? `${t('ownerDash.yieldOnTarget')} (${yv.target_yield_pct.toFixed(1)}%)`
           : `${yv.variance_pct.toFixed(1)}% ${yv.variance_pct < 0 ? 'below' : 'above'} target (${yv.target_yield_pct.toFixed(1)}%)`
       }
       primary={yv.status !== 'on_track'
-        ? { label: 'Open production dashboard', onClick: onAction, icon: BarChart3 }
+        ? { label: t('ownerDash.viewProduction'), onClick: onAction, icon: BarChart3 }
         : undefined}
-      secondary={yv.status === 'on_track' ? { label: 'View detail', onClick: onAction } : undefined}
+      secondary={yv.status === 'on_track' ? { label: t('ownerDash.viewProduction'), onClick: onAction } : undefined}
     />
   );
 }

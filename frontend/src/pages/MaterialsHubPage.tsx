@@ -6,6 +6,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Package, IndianRupee, Boxes, Factory, Activity, Settings, Mountain } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
@@ -19,20 +20,21 @@ import RoyaltyPassesPage from './RoyaltyPassesPage';
 
 type Tab = 'catalog' | 'rates' | 'stock' | 'royalty' | 'production' | 'production-dashboard' | 'production-settings';
 
-const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-  { value: 'catalog', label: 'Catalog', icon: Package },
-  { value: 'rates', label: 'Customer Rates', icon: IndianRupee },
-  { value: 'stock', label: 'Stock on Hand', icon: Boxes },
-  { value: 'royalty', label: 'Royalty Passes', icon: Mountain },
-  { value: 'production', label: 'Production', icon: Factory },
-  { value: 'production-dashboard', label: 'Production Dashboard', icon: Activity },
-  { value: 'production-settings', label: 'Production Settings', icon: Settings },
-];
-
 export default function MaterialsHubPage() {
+  const { t } = useTranslation();
   const nav = useNavigate();
   const loc = useLocation();
   const initial = (new URLSearchParams(loc.search).get('tab') as Tab) || 'catalog';
+
+  const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
+    { value: 'catalog',              label: t('hubs.materials.catalog'),              icon: Package },
+    { value: 'rates',                label: t('hubs.materials.customerRates'),        icon: IndianRupee },
+    { value: 'stock',                label: t('hubs.materials.stockOnHand'),          icon: Boxes },
+    { value: 'royalty',              label: t('hubs.procurement.royaltyPasses'),      icon: Mountain },
+    { value: 'production',           label: t('hubs.materials.production'),           icon: Factory },
+    { value: 'production-dashboard', label: t('hubs.materials.productionDashboard'), icon: Activity },
+    { value: 'production-settings',  label: t('hubs.materials.productionSettings'),  icon: Settings },
+  ];
   const [tab, setTab] = useState<Tab>(initial);
 
   useEffect(() => {

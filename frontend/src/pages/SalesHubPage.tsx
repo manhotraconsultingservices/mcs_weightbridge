@@ -7,6 +7,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Users, FileText, Receipt, Truck, FileMinus } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
@@ -19,18 +20,19 @@ import CreditDebitNotesPage from './CreditDebitNotesPage';
 
 type Tab = 'customers' | 'bills' | 'estimates' | 'challans' | 'notes';
 
-const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-  { value: 'customers', label: 'Customers', icon: Users },
-  { value: 'bills',     label: 'Bills',     icon: FileText },
-  { value: 'estimates', label: 'Estimates', icon: Receipt },
-  { value: 'challans',  label: 'Challans',  icon: Truck },
-  { value: 'notes',     label: 'Notes',     icon: FileMinus },
-];
-
 export default function SalesHubPage() {
+  const { t } = useTranslation();
   const nav = useNavigate();
   const loc = useLocation();
   const { isTabAllowed } = usePermissions();
+
+  const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
+    { value: 'customers', label: t('hubs.sales.customers'), icon: Users },
+    { value: 'bills',     label: t('hubs.sales.bills'),     icon: FileText },
+    { value: 'estimates', label: t('hubs.sales.estimates'), icon: Receipt },
+    { value: 'challans',  label: t('hubs.sales.challans'),  icon: Truck },
+    { value: 'notes',     label: t('hubs.sales.creditNotes'), icon: FileMinus },
+  ];
   const visibleTabs = TABS.filter(t => isTabAllowed('/sales', t.value));
   const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'customers';
   const initial = (visibleTabs.find(t => t.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'customers') as Tab;

@@ -8,6 +8,7 @@
  * 360 view behind an inline hyperlink that wasn't obvious enough.
  */
 import { useEffect, useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import {
   Search, Users, ExternalLink, Loader2, AlertCircle, IndianRupee,
@@ -29,6 +30,7 @@ const INR_L = (v: number) => {
 };
 
 export default function CustomerPickerPage() {
+  const { t } = useTranslation();
   const [parties, setParties] = useState<Party[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,10 +73,10 @@ export default function CustomerPickerPage() {
         <div>
           <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
             <Users className="h-5 w-5 text-blue-600" />
-            Customer 360
+            {t('customer360.pickerTitle')}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Click any customer to see their full profile — balance, aging, recent invoices &amp; payments, pricing.
+            {t('customer360.pickerSubtitle')}
           </p>
         </div>
         <Link
@@ -90,7 +92,7 @@ export default function CustomerPickerPage() {
         <div className="relative flex-1 min-w-[240px] max-w-md">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search name, GSTIN, phone, city…"
+            placeholder={t('customer360.searchPlaceholder')}
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-8 h-9"
@@ -98,21 +100,21 @@ export default function CustomerPickerPage() {
         </div>
         <div className="flex items-center gap-1">
           {([
-            { key: 'all',      label: 'All',       count: parties.length      },
-            { key: 'customer', label: 'Customers', count: customerCount       },
-            { key: 'supplier', label: 'Suppliers', count: supplierCount       },
-          ] as const).map(t => (
+            { key: 'all',      label: t('customer360.allTypes'),       count: parties.length      },
+            { key: 'customer', label: t('customer360.customersOnly'), count: customerCount       },
+            { key: 'supplier', label: t('customer360.suppliersOnly'), count: supplierCount       },
+          ] as const).map(chip => (
             <button
-              key={t.key}
-              onClick={() => setTypeFilter(t.key)}
+              key={chip.key}
+              onClick={() => setTypeFilter(chip.key)}
               className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                typeFilter === t.key
+                typeFilter === chip.key
                   ? 'bg-blue-600 border-blue-600 text-white'
                   : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
               }`}
             >
-              {t.label}
-              <span className={`px-1 rounded text-[10px] ${typeFilter === t.key ? 'bg-blue-700' : 'bg-slate-100'}`}>{t.count}</span>
+              {chip.label}
+              <span className={`px-1 rounded text-[10px] ${typeFilter === chip.key ? 'bg-blue-700' : 'bg-slate-100'}`}>{chip.count}</span>
             </button>
           ))}
         </div>
@@ -134,7 +136,7 @@ export default function CustomerPickerPage() {
           <CardContent className="py-16 text-center">
             <Users className="mx-auto h-10 w-10 text-slate-300 mb-2" />
             <p className="text-sm text-muted-foreground">
-              {search ? `No customers match "${search}".` : 'No customers yet — add one via the master list.'}
+              {search ? `${t('customer360.noCustomersFound')}: "${search}"` : t('customer360.noCustomersFound')}
             </p>
             {search && (
               <button onClick={() => setSearch('')} className="mt-3 text-xs text-blue-600 hover:underline">
@@ -187,7 +189,7 @@ export default function CustomerPickerPage() {
                     </div>
                   )}
                   <div className="flex items-center justify-between pt-1 border-t border-slate-100 mt-1">
-                    <span className="text-[10px] uppercase tracking-wide text-slate-400">Balance</span>
+                    <span className="text-[10px] uppercase tracking-wide text-slate-400">{t('customer360.outstanding')}</span>
                     <span className={`font-bold inline-flex items-center gap-0.5 ${
                       owesUs ? 'text-rose-700' : weOwe ? 'text-emerald-700' : 'text-slate-500'
                     }`}>
