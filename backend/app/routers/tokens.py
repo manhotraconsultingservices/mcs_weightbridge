@@ -310,10 +310,10 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
         "product_id": str(token.product_id),
         "description": product.name,
         "hsn_code": product.hsn_code,
-        "quantity": float(qty),
+        "quantity": qty,         # keep as Decimal — float() loses precision on .toFixed() boundary
         "unit": product.unit,
-        "rate": float(rate),
-        "gst_rate": float(gst_rate),
+        "rate": rate,            # Decimal
+        "gst_rate": gst_rate,    # Decimal
         "sort_order": 0,
     }]
     totals = calculate_invoice_totals(

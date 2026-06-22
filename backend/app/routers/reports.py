@@ -344,10 +344,17 @@ async def gstr1_json_export(
             b2b_map.setdefault(party.gstin, []).append(inv_entry)
         else:
             # B2CS — aggregate by rate + state
+            # Determine supply type: prefer party billing_state_code comparison over
+            # igst_amount==0 heuristic, which fails for zero-rate inter-state supplies.
+            _party_state = getattr(party, "billing_state_code", None) if party else None
+            if _party_state:
+                _b2cs_supply_type = "INTRA" if _party_state == company_state_code else "INTER"
+            else:
+                _b2cs_supply_type = "INTRA" if _f(inv.igst_amount) == 0.0 else "INTER"
             for item in inv_items:
                 rate = float(item.gst_rate or 0)
                 pos = company_state_code
-                supply_type = "INTRA" if inv.igst_amount == 0 else "INTER"
+                supply_type = _b2cs_supply_type
                 key = f"{rate}_{pos}_{supply_type}"
                 if key not in b2cs_map:
                     b2cs_map[key] = {"sply_tp": supply_type, "pos": pos, "rt": rate, "txval": 0.0, "camt": 0.0, "samt": 0.0, "iamt": 0.0, "csamt": 0}
@@ -358,7 +365,7 @@ async def gstr1_json_export(
             if not inv_items:
                 rate = 0
                 pos = company_state_code
-                supply_type = "INTRA" if _f(inv.igst_amount) == 0 else "INTER"
+                supply_type = _b2cs_supply_type
                 key = f"{rate}_{pos}_{supply_type}"
                 if key not in b2cs_map:
                     b2cs_map[key] = {"sply_tp": supply_type, "pos": pos, "rt": rate, "txval": 0.0, "camt": 0.0, "samt": 0.0, "iamt": 0.0, "csamt": 0}

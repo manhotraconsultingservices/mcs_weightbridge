@@ -81,7 +81,11 @@ def _validate_allocations(co_id, party_id, payment_amount, allocations, invoices
             raise HTTPException(400, "Invoice does not belong to this company")
         if inv.party_id != party_id:
             raise HTTPException(400, f"Invoice {inv.invoice_no or inv.id} belongs to a different party")
-        outstanding = (inv.grand_total or Decimal("0")) - (inv.amount_paid or Decimal("0"))
+        outstanding = (
+            (inv.grand_total or Decimal("0"))
+            - (inv.amount_paid or Decimal("0"))
+            - (inv.write_off_amount or Decimal("0"))
+        )
         if amt > outstanding + Decimal("0.01"):
             raise HTTPException(
                 400,
@@ -96,14 +100,19 @@ def _validate_allocations(co_id, party_id, payment_amount, allocations, invoices
         )
 
 
+_PAISA_TOLERANCE = Decimal("0.01")
+
+
 def _settle_invoice(inv: Invoice, amount: Decimal):
     inv.amount_paid = (inv.amount_paid or Decimal("0")) + amount
-    if inv.amount_paid >= inv.grand_total:
+    effective_total = (inv.grand_total or Decimal("0")) - (inv.write_off_amount or Decimal("0"))
+    remaining = effective_total - inv.amount_paid
+    if remaining <= _PAISA_TOLERANCE:   # same tolerance as _validate_allocations
         inv.payment_status = "paid"
         inv.amount_due = Decimal("0")
     elif inv.amount_paid > 0:
         inv.payment_status = "partial"
-        inv.amount_due = inv.grand_total - inv.amount_paid
+        inv.amount_due = max(Decimal("0"), remaining)
     else:
         inv.payment_status = "unpaid"
         inv.amount_due = inv.grand_total
