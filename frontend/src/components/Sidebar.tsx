@@ -20,7 +20,7 @@ import {
   BookOpen, TrendingUp, Package,
   LogOut, Usb, Settings,
   Bell, HardDrive, Upload, UserCog, Lock, ImageIcon, Building2,
-  Camera, Cog, FileBarChart, ShieldAlert,
+  Camera, Cog, FileBarChart, ShieldAlert, FileCheck2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getTenantModules } from '@/hooks/useAuth';
@@ -102,10 +102,11 @@ const NAV_SECTIONS: NavSection[] = [
   {
     headerKey: 'sidebar.sectionFinance',
     items: [
-      { to: '/accounts',        icon: BookOpen,    labelKey: 'sidebar.accounts' },
+      { to: '/accounts',        icon: BookOpen,     labelKey: 'sidebar.accounts' },
+      { to: '/compliance',      icon: FileCheck2,   labelKey: 'sidebar.compliance' },
       { to: '/gst-compliance',  icon: FileBarChart, labelKey: 'sidebar.gstCompliance' },
-      { to: '/analytics',       icon: TrendingUp,  labelKey: 'sidebar.analytics' },
-      { to: '/fraud-registers', icon: ShieldAlert, labelKey: 'sidebar.fraudRegisters' },
+      { to: '/analytics',       icon: TrendingUp,   labelKey: 'sidebar.analytics' },
+      { to: '/fraud-registers', icon: ShieldAlert,  labelKey: 'sidebar.fraudRegisters' },
     ],
   },
 ];
