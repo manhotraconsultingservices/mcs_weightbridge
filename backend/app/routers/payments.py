@@ -137,10 +137,13 @@ async def create_receipt(
         created_by=current_user.id,
     )
     # Fetch + validate all allocations BEFORE persisting anything.
+    # FOR UPDATE locks the invoice rows to prevent concurrent double-settlement.
     inv_ids = [a.invoice_id for a in payload.allocations if a.amount and Decimal(str(a.amount)) > 0]
     invoices_by_id = {}
     if inv_ids:
-        for inv in (await db.execute(select(Invoice).where(Invoice.id.in_(inv_ids)))).scalars().all():
+        for inv in (await db.execute(
+            select(Invoice).where(Invoice.id.in_(inv_ids)).with_for_update()
+        )).scalars().all():
             invoices_by_id[str(inv.id)] = inv
     _validate_allocations(co.id, payload.party_id, payload.amount, payload.allocations, invoices_by_id)
 
@@ -273,10 +276,13 @@ async def create_voucher(
         created_by=current_user.id,
     )
     # Fetch + validate all allocations BEFORE persisting anything.
+    # FOR UPDATE locks the invoice rows to prevent concurrent double-settlement.
     inv_ids = [a.invoice_id for a in payload.allocations if a.amount and Decimal(str(a.amount)) > 0]
     invoices_by_id = {}
     if inv_ids:
-        for inv in (await db.execute(select(Invoice).where(Invoice.id.in_(inv_ids)))).scalars().all():
+        for inv in (await db.execute(
+            select(Invoice).where(Invoice.id.in_(inv_ids)).with_for_update()
+        )).scalars().all():
             invoices_by_id[str(inv.id)] = inv
     _validate_allocations(co.id, payload.party_id, payload.amount, payload.allocations, invoices_by_id)
 
@@ -453,8 +459,12 @@ async def outstanding(
     current_user: User = Depends(get_current_user),
 ):
     co, _ = await _get_company_fy(db)
+    # Restrict to sale/purchase only — credit/debit notes are netted into
+    # party.current_balance via recompute_party_balance and should not
+    # appear as standalone receivables/payables in the aging report.
     filters = [Invoice.company_id == co.id, Invoice.status == "final",
-               Invoice.payment_status != "paid"]
+               Invoice.payment_status != "paid",
+               Invoice.invoice_type.in_(("sale", "purchase"))]
     if invoice_type:
         filters.append(Invoice.invoice_type == invoice_type)
     if party_id:

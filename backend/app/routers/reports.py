@@ -333,7 +333,7 @@ async def gstr1_json_export(
         inv_entry = {
             "inum": inv.invoice_no,
             "idt": inv.invoice_date.strftime("%d-%m-%Y"),
-            "val": _r2(inv.grand_total),
+            "val": _r2(inv.grand_total),  # NIC portal requires grand_total (inclusive of tax) for val
             "pos": party.billing_state_code or company_state_code if hasattr(party, "billing_state_code") else company_state_code,
             "rchrg": "N",
             "inv_typ": "R",
@@ -545,39 +545,55 @@ async def gstr3b(
     )
     purch_row = purchase_result.one()
 
-    # Credit/Debit notes against outward (sale) supplies — net them into 3.1(a).
-    # A credit note REDUCES output tax liability; a debit note increases it.
+    # Credit/Debit notes — classify by source invoice type via reference_invoice_id.
+    # Sale-side notes (CDN against a sale) adjust outward tax liability (3.1a).
+    # Purchase-side notes (CDN against a purchase) adjust ITC (4A5).
+    # Unlinked notes (no reference_invoice_id) default to sale-side (over-reports
+    # liability — safer than under-reporting).
+    from sqlalchemy.orm import aliased as _aliased
+    _OrigInv = _aliased(Invoice)
     note_result = await db.execute(
         select(
-            Invoice.invoice_type.label("itype"),
+            _OrigInv.invoice_type.label("orig_type"),
+            Invoice.invoice_type.label("note_type"),
             func.sum(Invoice.taxable_amount).label("taxable"),
             func.sum(Invoice.cgst_amount).label("cgst"),
             func.sum(Invoice.sgst_amount).label("sgst"),
             func.sum(Invoice.igst_amount).label("igst"),
         )
+        .outerjoin(_OrigInv, Invoice.reference_invoice_id == _OrigInv.id)
         .where(Invoice.invoice_type.in_(("credit_note", "debit_note")),
                Invoice.status == "final", Invoice.tax_type == "gst",
                Invoice.company_id == current_user.company_id,
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
-        .group_by(Invoice.invoice_type)
+        .group_by(_OrigInv.invoice_type, Invoice.invoice_type)
     )
-    note_taxable = note_cgst = note_sgst = note_igst = 0.0
+    # sale-side CDN → adjusts 3.1(a); purchase-side CDN → adjusts 4(A)(5) ITC
+    sale_note_taxable = sale_note_cgst = sale_note_sgst = sale_note_igst = 0.0
+    purch_note_taxable = purch_note_cgst = purch_note_sgst = purch_note_igst = 0.0
     for r in note_result.all():
-        sign = 1.0 if r.itype == "debit_note" else -1.0
-        note_taxable += sign * _f(r.taxable)
-        note_cgst += sign * _f(r.cgst)
-        note_sgst += sign * _f(r.sgst)
-        note_igst += sign * _f(r.igst)
+        sign = 1.0 if r.note_type == "debit_note" else -1.0
+        orig = r.orig_type or "sale"  # unlinked notes default to sale-side
+        if orig == "sale":
+            sale_note_taxable += sign * _f(r.taxable)
+            sale_note_cgst += sign * _f(r.cgst)
+            sale_note_sgst += sign * _f(r.sgst)
+            sale_note_igst += sign * _f(r.igst)
+        else:  # purchase-side: credit note REDUCES ITC, debit note INCREASES ITC
+            purch_note_taxable += sign * _f(r.taxable)
+            purch_note_cgst += sign * _f(r.cgst)
+            purch_note_sgst += sign * _f(r.sgst)
+            purch_note_igst += sign * _f(r.igst)
 
-    outward_taxable = _r2(_f(sale_row.taxable) + note_taxable)
-    outward_cgst = _r2(_f(sale_row.cgst) + note_cgst)
-    outward_sgst = _r2(_f(sale_row.sgst) + note_sgst)
-    outward_igst = _r2(_f(sale_row.igst) + note_igst)
+    outward_taxable = _r2(_f(sale_row.taxable) + sale_note_taxable)
+    outward_cgst = _r2(_f(sale_row.cgst) + sale_note_cgst)
+    outward_sgst = _r2(_f(sale_row.sgst) + sale_note_sgst)
+    outward_igst = _r2(_f(sale_row.igst) + sale_note_igst)
     outward_tax = _r2(outward_cgst + outward_sgst + outward_igst)
 
-    itc_cgst = _r2(purch_row.cgst)
-    itc_sgst = _r2(purch_row.sgst)
-    itc_igst = _r2(purch_row.igst)
+    itc_cgst = _r2(_f(purch_row.cgst) + purch_note_cgst)
+    itc_sgst = _r2(_f(purch_row.sgst) + purch_note_sgst)
+    itc_igst = _r2(_f(purch_row.igst) + purch_note_igst)
     itc_total = itc_cgst + itc_sgst + itc_igst
 
     net_cgst = _r2(outward_cgst - itc_cgst)
@@ -598,10 +614,10 @@ async def gstr3b(
                 "cess": 0.0,
                 "total_tax": outward_tax,
                 "credit_debit_note_adjustment": {
-                    "taxable": _r2(note_taxable),
-                    "cgst": _r2(note_cgst),
-                    "sgst": _r2(note_sgst),
-                    "igst": _r2(note_igst),
+                    "taxable": _r2(sale_note_taxable),
+                    "cgst": _r2(sale_note_cgst),
+                    "sgst": _r2(sale_note_sgst),
+                    "igst": _r2(sale_note_igst),
                 },
             },
             "b_zero_rated": {
@@ -626,9 +642,9 @@ async def gstr3b(
         "section_4": {
             "a_itc_available": {
                 "all_other_itc": {
-                    "description": "All other ITC — purchases from GST-registered suppliers",
+                    "description": "All other ITC — purchases from GST-registered suppliers (net of purchase credit/debit notes)",
                     "invoice_count": int(purch_row.count or 0),
-                    "taxable_value": _r2(purch_row.taxable),
+                    "taxable_value": _r2(_f(purch_row.taxable) + purch_note_taxable),
                     "igst": itc_igst,
                     "cgst": itc_cgst,
                     "sgst": itc_sgst,
@@ -894,20 +910,24 @@ async def stock_summary(
         name = p.get("name") or s.get("name") or "Unknown"
         hsn = p.get("hsn_code") or s.get("hsn_code") or "—"
         unit = p.get("unit") or s.get("unit") or ""
-        rate = p.get("default_rate") or s.get("default_rate") or 0.0
         qty_in = p.get("qty_purchased", 0.0)
+        val_in = p.get("value_purchased", 0.0)
+        # Use weighted-average purchase cost when available; fall back to default_rate.
+        wac = _r2(val_in / qty_in) if qty_in > 0 else (
+            p.get("default_rate") or s.get("default_rate") or 0.0
+        )
         qty_out = s.get("qty_sold", 0.0)
         closing_qty = _r2(qty_in - qty_out)
-        closing_value = _r2(closing_qty * rate)
+        closing_value = _r2(closing_qty * wac)
         u = unit or "—"
         qty_purchased_by_unit[u] = _r2(qty_purchased_by_unit.get(u, 0.0) + qty_in)
         qty_sold_by_unit[u] = _r2(qty_sold_by_unit.get(u, 0.0) + qty_out)
-        total_value_purchased += p.get("value_purchased", 0.0)
+        total_value_purchased += val_in
         total_value_sold += s.get("value_sold", 0.0)
         total_closing_value += closing_value
         items.append({
-            "product_name": name, "hsn_code": hsn, "unit": unit, "rate": rate,
-            "qty_purchased": qty_in, "value_purchased": p.get("value_purchased", 0.0),
+            "product_name": name, "hsn_code": hsn, "unit": unit, "rate": wac,
+            "qty_purchased": qty_in, "value_purchased": val_in,
             "qty_sold": qty_out, "value_sold": s.get("value_sold", 0.0),
             "closing_qty": closing_qty, "closing_value": closing_value,
         })

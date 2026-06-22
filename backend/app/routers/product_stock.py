@@ -65,6 +65,16 @@ async def _get_or_create_stock_row(db: AsyncSession, company_id: uuid.UUID,
     return row
 
 
+_VALID_MOVEMENT_TYPES = frozenset({
+    "opening",
+    "sale", "sale_cancelled",
+    "purchase", "purchase_cancelled",
+    "cycle_input", "cycle_input_cancelled",
+    "cycle_output", "cycle_output_cancelled",
+    "adjustment",
+})
+
+
 async def _record_movement(
     db: AsyncSession, company_id: uuid.UUID, product_id: uuid.UUID,
     movement_type: str, quantity: Decimal,
@@ -76,6 +86,11 @@ async def _record_movement(
     user_name: Optional[str] = None,
 ) -> ProductStockMovement:
     """Atomically apply a signed quantity to product_stock and record the movement."""
+    if movement_type not in _VALID_MOVEMENT_TYPES:
+        raise ValueError(
+            f"Invalid movement_type {movement_type!r}. "
+            f"Must be one of: {sorted(_VALID_MOVEMENT_TYPES)}"
+        )
     stock = await _get_or_create_stock_row(db, company_id, product_id)
     before = stock.current_stock
     after = before + quantity

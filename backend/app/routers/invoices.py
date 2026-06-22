@@ -682,6 +682,7 @@ async def finalise_invoice(
     # Sale finalise → stock down; purchase finalise → stock up. Skip for revisions
     # (share invoice_no with the original → double-count) and for credit/debit
     # notes (a note is a value adjustment, not a goods movement).
+    _stock_warning: str | None = None
     if not (inv.revision_no and inv.revision_no > 1) and inv.invoice_type in ("sale", "purchase"):
         try:
             from app.routers.product_stock import post_invoice_movement
@@ -691,9 +692,12 @@ async def finalise_invoice(
                 user_name=current_user.full_name or current_user.username,
             )
         except Exception as e:
-            # Stock posting failure shouldn't block finalisation — log and continue
             import logging
             logging.getLogger(__name__).warning("Stock auto-posting failed for invoice %s: %s", inv.id, e)
+            _stock_warning = (
+                f"Invoice finalised but stock balance update failed — "
+                f"please re-check Product Inventory. ({type(e).__name__}: {e})"
+            )
 
     # ── eInvoice IRN generation (if enabled + B2B party with GSTIN) ──────────
     # Skip for credit/debit notes in v1 (note-IRN is a future enhancement).
@@ -753,7 +757,12 @@ async def finalise_invoice(
             co.id, "invoice_finalized", _notify_ctx, "invoice", str(invoice_id), _bg_tenant,
         )
 
-    return await _load_invoice(db, invoice_id)
+    _inv_orm = await _load_invoice(db, invoice_id)
+    from app.schemas.invoice import InvoiceResponse as _InvResp
+    _resp = _InvResp.model_validate(_inv_orm)
+    if _stock_warning:
+        _resp.warnings = [_stock_warning]
+    return _resp
 
 
 @router.post("/{invoice_id}/convert-to-gst", response_model=InvoiceResponse)
@@ -812,8 +821,9 @@ async def convert_invoice_to_gst(
     inv.amount_due = totals["grand_total"] - inv.amount_paid
     inv.tally_synced = False  # mark for re-sync now that it's a GST invoice
 
-    # Update per-item GST amounts
+    # Update per-item amounts (amount = qty × rate; GST amounts recalculated from it)
     for item, ci in zip(inv.items, totals["computed_items"]):
+        item.amount = ci["amount"]
         item.cgst_amount = ci["cgst_amount"]
         item.sgst_amount = ci["sgst_amount"]
         item.igst_amount = ci["igst_amount"]

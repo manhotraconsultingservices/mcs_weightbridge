@@ -188,6 +188,9 @@ class InvoiceResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     items: list[ItemResponse]
+    # Populated by finalise_invoice when a non-critical side-effect (e.g. stock
+    # auto-posting) fails. Empty list = all good. Frontend should surface these.
+    warnings: list[str] = []
     model_config = {"from_attributes": True}
 
     @model_validator(mode='after')
