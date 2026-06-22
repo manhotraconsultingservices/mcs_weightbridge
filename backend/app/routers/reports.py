@@ -52,6 +52,7 @@ async def sales_register(
         .where(
             Invoice.invoice_type == invoice_type,
             Invoice.status == "final",
+            Invoice.company_id == current_user.company_id,
             Invoice.invoice_date >= from_date,
             Invoice.invoice_date <= to_date,
         )
@@ -105,7 +106,8 @@ async def weight_register(
         select(Token, Party, Product)
         .outerjoin(Party, Token.party_id == Party.id)
         .outerjoin(Product, Token.product_id == Product.id)
-        .where(Token.token_date >= from_date, Token.token_date <= to_date, Token.status == "COMPLETED")
+        .where(Token.token_date >= from_date, Token.token_date <= to_date, Token.status == "COMPLETED",
+               Token.company_id == current_user.company_id)
         .order_by(Token.token_date, Token.token_no)
     )
     if party_id:
@@ -153,6 +155,7 @@ async def gstr1_summary(
         .join(Party, Invoice.party_id == Party.id)
         .where(Invoice.invoice_type == "sale", Invoice.status == "final",
                Invoice.tax_type == "gst",   # exclude non-GST Bill-of-Supply from GSTR-1
+               Invoice.company_id == current_user.company_id,
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
         .order_by(Invoice.invoice_date)
     )
@@ -191,6 +194,7 @@ async def gstr1_summary(
         .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
         .where(Invoice.invoice_type == "sale", Invoice.status == "final",
                Invoice.tax_type == "gst",   # exclude non-GST Bill-of-Supply from GSTR-1 HSN
+               Invoice.company_id == current_user.company_id,
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
         .group_by(InvoiceItem.hsn_code, InvoiceItem.unit)
         .order_by(InvoiceItem.hsn_code)
@@ -211,6 +215,8 @@ async def gstr1_summary(
         .outerjoin(RefInv, Invoice.reference_invoice_id == RefInv.id)
         .where(Invoice.invoice_type.in_(("credit_note", "debit_note")),
                Invoice.status == "final",
+               Invoice.tax_type == "gst",
+               Invoice.company_id == current_user.company_id,
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
         .order_by(Invoice.invoice_date)
     )
@@ -261,6 +267,7 @@ async def gstr1_json_export(
         .join(Party, Invoice.party_id == Party.id)
         .where(Invoice.invoice_type == "sale", Invoice.status == "final",
                Invoice.tax_type == "gst",   # exclude non-GST Bill-of-Supply from GSTR-1 JSON
+               Invoice.company_id == current_user.company_id,
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
         .order_by(Invoice.invoice_date)
     )
@@ -373,6 +380,7 @@ async def gstr1_json_export(
         .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
         .where(Invoice.invoice_type == "sale", Invoice.status == "final",
                Invoice.tax_type == "gst",   # exclude non-GST Bill-of-Supply from GSTR-1 JSON HSN
+               Invoice.company_id == current_user.company_id,
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
         .group_by(InvoiceItem.hsn_code, InvoiceItem.unit, Product.name)
         .order_by(InvoiceItem.hsn_code)
@@ -403,6 +411,7 @@ async def gstr1_json_export(
         .join(Party, Invoice.party_id == Party.id)
         .where(Invoice.invoice_type.in_(("credit_note", "debit_note")),
                Invoice.status == "final", Invoice.tax_type == "gst",
+               Invoice.company_id == current_user.company_id,
                Party.gstin.isnot(None),
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
         .order_by(Invoice.invoice_date)
@@ -501,6 +510,7 @@ async def gstr3b(
         )
         .where(Invoice.invoice_type == "sale", Invoice.status == "final",
                Invoice.tax_type == "gst",
+               Invoice.company_id == current_user.company_id,
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
     )
     sale_row = sale_result.one()
@@ -513,6 +523,7 @@ async def gstr3b(
         )
         .where(Invoice.invoice_type == "sale", Invoice.status == "final",
                Invoice.tax_type == "non_gst",
+               Invoice.company_id == current_user.company_id,
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
     )
     non_gst_row = non_gst_result.one()
@@ -529,6 +540,7 @@ async def gstr3b(
         )
         .where(Invoice.invoice_type == "purchase", Invoice.status == "final",
                Invoice.tax_type == "gst",
+               Invoice.company_id == current_user.company_id,
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
     )
     purch_row = purchase_result.one()
@@ -545,6 +557,7 @@ async def gstr3b(
         )
         .where(Invoice.invoice_type.in_(("credit_note", "debit_note")),
                Invoice.status == "final", Invoice.tax_type == "gst",
+               Invoice.company_id == current_user.company_id,
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
         .group_by(Invoice.invoice_type)
     )
@@ -662,6 +675,7 @@ async def profit_loss(
             func.count(Invoice.id).label("count"),
         )
         .where(Invoice.invoice_type == "sale", Invoice.status == "final",
+               Invoice.company_id == current_user.company_id,
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
         .group_by(yr, mo)
         .order_by(yr, mo)
@@ -677,6 +691,7 @@ async def profit_loss(
             func.count(Invoice.id).label("count"),
         )
         .where(Invoice.invoice_type == "purchase", Invoice.status == "final",
+               Invoice.company_id == current_user.company_id,
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
         .group_by(yr, mo)
         .order_by(yr, mo)
@@ -697,6 +712,7 @@ async def profit_loss(
             Invoice.invoice_type == "sale",
             Invoice.write_off_amount > 0,
             Invoice.write_off_at.isnot(None),
+            Invoice.company_id == current_user.company_id,
             func.date(Invoice.write_off_at) >= from_date,
             func.date(Invoice.write_off_at) <= to_date,
         )
@@ -718,6 +734,7 @@ async def profit_loss(
         .where(
             Invoice.invoice_type.in_(("credit_note", "debit_note")),
             Invoice.status == "final",
+            Invoice.company_id == current_user.company_id,
             Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date,
         )
         .group_by(note_yr, note_mo, Invoice.invoice_type)
@@ -830,6 +847,7 @@ async def stock_summary(
         .join(Product, InvoiceItem.product_id == Product.id)
         .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
         .where(Invoice.invoice_type == "purchase", Invoice.status == "final",
+               Invoice.company_id == current_user.company_id,
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
         .group_by(Product.id, Product.name, Product.hsn_code, Product.unit, Product.default_rate)
     )
@@ -844,6 +862,7 @@ async def stock_summary(
         .join(Product, InvoiceItem.product_id == Product.id)
         .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
         .where(Invoice.invoice_type == "sale", Invoice.status == "final",
+               Invoice.company_id == current_user.company_id,
                Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date)
         .group_by(Product.id, Product.name, Product.hsn_code, Product.unit, Product.default_rate)
     )
@@ -928,6 +947,7 @@ async def write_off_report(
     filters = [
         Invoice.write_off_amount > 0,
         Invoice.write_off_at.isnot(None),
+        Invoice.company_id == current_user.company_id,
         func.date(Invoice.write_off_at) >= from_date,
         func.date(Invoice.write_off_at) <= to_date,
     ]
@@ -1027,6 +1047,7 @@ async def gst_split_report(
     """
     filters = [
         Invoice.status == "final",
+        Invoice.company_id == current_user.company_id,
         Invoice.invoice_date >= from_date,
         Invoice.invoice_date <= to_date,
     ]

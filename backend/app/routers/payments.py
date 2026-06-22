@@ -384,11 +384,17 @@ async def party_ledger(
     raw = []
     for inv in invoices:
         gt = inv.grand_total or Decimal("0")
-        dr = gt if inv.invoice_type == "sale" else Decimal("0")
-        cr = gt if inv.invoice_type == "purchase" else Decimal("0")
+        # credit_note reduces what customer owes (credit); debit_note increases it (debit)
+        if inv.invoice_type in ("sale", "debit_note"):
+            dr, cr = gt, Decimal("0")
+        elif inv.invoice_type in ("purchase", "credit_note"):
+            dr, cr = Decimal("0"), gt
+        else:
+            dr, cr = Decimal("0"), Decimal("0")
+        narration = inv.invoice_type.replace("_", " ").title()
         raw.append({"date": inv.invoice_date, "type": f"{inv.invoice_type}_invoice",
                     "no": inv.invoice_no,
-                    "narration": f"{inv.invoice_type.title()} Invoice",
+                    "narration": narration,
                     "debit": dr, "credit": cr, "ts": inv.created_at})
         # ── Write-off as a separate ledger entry on its own date ──────
         # For a sale: write-off CREDITS the party (their balance owed goes down).
@@ -468,7 +474,7 @@ async def outstanding(
 
     for row in rows:
         inv = row.Invoice
-        balance = inv.grand_total - inv.amount_paid
+        balance = (inv.grand_total or Decimal("0")) - (inv.amount_paid or Decimal("0")) - (inv.write_off_amount or Decimal("0"))
         days_overdue = 0
         age_bucket = "current"
         if inv.due_date and inv.due_date < today:

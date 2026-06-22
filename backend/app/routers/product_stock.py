@@ -50,7 +50,9 @@ async def _get_or_create_stock_row(db: AsyncSession, company_id: uuid.UUID,
                                    product_id: uuid.UUID) -> ProductStock:
     """Fetch the stock row for a product, creating it lazily if absent."""
     row = (await db.execute(
-        select(ProductStock).where(ProductStock.product_id == product_id)
+        select(ProductStock)
+        .where(ProductStock.product_id == product_id)
+        .with_for_update()
     )).scalar_one_or_none()
     if row:
         return row
