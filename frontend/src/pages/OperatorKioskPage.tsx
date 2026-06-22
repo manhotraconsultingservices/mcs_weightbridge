@@ -31,9 +31,9 @@ import type { User, Party, Product, Token, TokenListResponse } from '@/types';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-// Default volume per tyre-class in m³ (canonical DB unit; weight_kg = m³ × density_MT_m3 × 1000).
-const TYRE_VOLUME_M3: Record<number, number> = {
-  4: 3.0, 6: 7.0, 8: 10.0, 10: 13.0, 12: 17.0,
+// Default volume per tyre-class in CFT (canonical DB unit; weight_kg = volume_cft × bulk_density_kg_per_cft).
+const TYRE_VOLUME_CFT: Record<number, number> = {
+  4: 106, 6: 247, 8: 353, 10: 459, 12: 600,
 };
 const TYRE_OPTIONS = [4, 6, 8, 10, 12];
 
@@ -401,7 +401,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
       const today = new Date().toISOString().split('T')[0];
       // Volume path: tyre_count selected → one-shot create+complete+invoice
       if (draft.tyre_count != null) {
-        const m3 = TYRE_VOLUME_M3[draft.tyre_count] ?? 0;
+        const cft = TYRE_VOLUME_CFT[draft.tyre_count] ?? 0;
         const { data } = await api.post<Token>('/api/v1/tokens/volume', {
           token_date: today,
           vehicle_no: draft.vehicle_no.trim().toUpperCase(),
@@ -409,12 +409,12 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
           direction: draft.token_type === 'sale' ? 'outbound' : 'inbound',
           party_id: draft.party.id,
           product_id: draft.product.id,
-          volume_m3: m3,
+          volume_cft: cft,
           tyre_count: draft.tyre_count,
           gate_pass_id: draft.gate_pass_id,
         });
         speak(
-          `Volume token created. ${draft.product.name}, ${m3} cubic metres, for ${draft.party.name}. Bill will print.`,
+          `Volume token created. ${draft.product.name}, ${cft} cubic feet, for ${draft.party.name}. Bill will print.`,
         );
         onProceed(data);
         return;
@@ -726,7 +726,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
                 }`}
               >
                 <div className="text-xl">{n} 🛞</div>
-                <div className="text-[10px] text-slate-500 mt-0.5">{TYRE_VOLUME_M3[n]} m³</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">{TYRE_VOLUME_CFT[n]} CFT</div>
               </button>
             );
           })}

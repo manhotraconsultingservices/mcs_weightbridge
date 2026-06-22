@@ -74,15 +74,15 @@
   {% if w %}
     {{ '%.4f' % (w|float / 1000) }} MT
     {% if bulk_density and (bulk_density|float) > 0 %}
-      {# volume_m3 = weight_kg / (density_MT_per_m3 × 1000) #}
-      / {{ '%.4f' % (w|float / (bulk_density|float) / 1000) }} m³
+      {# volume_cft = weight_kg / bulk_density(kg/CFT) #}
+      / {{ '%.2f' % (w|float / (bulk_density|float)) }} CFT
     {% endif %}
   {% else %}—{% endif %}
 {% endmacro %}
 
-{# Volume display: volume_m3 is stored in cubic metres (canonical unit). #}
-{% macro vol_fmt(m3) %}
-  {% if m3 %}{{ '%.4f' % (m3|float) }} m³ ({{ '%.2f' % (m3|float * 35.3147) }} CFT){% else %}—{% endif %}
+{# Volume display: volume_cft is stored in cubic feet (canonical unit). #}
+{% macro vol_fmt(cft) %}
+  {% if cft %}{{ '%.2f' % (cft|float) }} CFT{% else %}—{% endif %}
 {% endmacro %}
 
 {% macro slip_title(token) %}
@@ -152,7 +152,7 @@
     <span class="lbl">ITEM:</span>
     <span class="val">{{ token.product.name if token.product else '—' }}
       {%- if token.product and token.product.bulk_density %}
-        · {{ '%.4f' % (token.product.bulk_density|float) }} MT/m³
+        · {{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT
       {%- endif %}
     </span>
   </div>
@@ -163,13 +163,13 @@
       <div class="vol-grid">
         <div class="vol-cell">
           <div class="lbl">{{ bl('volume') }}</div>
-          <div class="val">{{ vol_fmt(token.volume_m3) }}</div>
+          <div class="val">{{ vol_fmt(token.volume_cft) }}</div>
         </div>
         <div class="vol-cell">
           <div class="lbl">× {{ bl('bulk_density') }}</div>
           <div class="val">
             {% if token.product and token.product.bulk_density %}
-              {{ '%.4f' % (token.product.bulk_density|float) }} MT/m³
+              {{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT
             {% else %}—{% endif %}
           </div>
         </div>
@@ -181,8 +181,8 @@
         </div>
       </div>
       <div class="vol-eq">
-        {% if token.volume_m3 and token.product and token.product.bulk_density %}
-          {{ vol_fmt(token.volume_m3) }}  ×  {{ '%.4f' % (token.product.bulk_density|float) }} MT/m³  =  {{ '%.4f' % (token.volume_m3|float * token.product.bulk_density|float) }} MT
+        {% if token.volume_cft and token.product and token.product.bulk_density %}
+          {{ vol_fmt(token.volume_cft) }} × {{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT = {{ '%.3f' % (token.volume_cft|float * token.product.bulk_density|float / 1000) }} MT
         {% endif %}
       </div>
       <div class="vol-net">

@@ -256,20 +256,20 @@
     <div class="row">
       <span class="row-label">{{ bl('volume') | upper }}</span>
       <span class="row-value">
-        {% if token.volume_m3 %}{{ '%.4f'|format(token.volume_m3|float) }} m³ ({{ '%.2f'|format(token.volume_m3|float * 35.3147) }} CFT){% else %}—{% endif %}
+        {% if token.volume_cft %}{{ '%.2f'|format(token.volume_cft|float) }} CFT{% else %}—{% endif %}
       </span>
     </div>
     <div class="row">
       <span class="row-label">{{ bl('bulk_density') | upper }}</span>
       <span class="row-value">
         {% if token.product and token.product.bulk_density %}
-          {{ '%.4f'|format(token.product.bulk_density|float) }} MT/m³
+          {{ '%.2f'|format(token.product.bulk_density|float) }} kg/CFT
         {% else %}—{% endif %}
       </span>
     </div>
-    {% if token.volume_m3 and token.product and token.product.bulk_density %}
+    {% if token.volume_cft and token.product and token.product.bulk_density %}
     <div class="vol-eq">
-      {{ '%.4f'|format(token.volume_m3|float) }} m³ × {{ '%.4f'|format(token.product.bulk_density|float) }} MT/m³ = {{ '%.4f'|format((token.volume_m3|float) * (token.product.bulk_density|float)) }} MT
+      {{ '%.2f'|format(token.volume_cft|float) }} CFT × {{ '%.2f'|format(token.product.bulk_density|float) }} kg/CFT = {{ '%.2f'|format((token.volume_cft|float) * (token.product.bulk_density|float) / 1000) }} MT
     </div>
     {% endif %}
   </div>
@@ -294,7 +294,7 @@
     {% if token.net_weight %}{{ '%.3f'|format(token.net_weight|float / 1000) }} MT{% else %}—{% endif %}
   </div>
   {% if token.net_weight and token.product and token.product.bulk_density and (token.product.bulk_density|float) > 0 %}
-  <div class="sub">{{ '%.4f'|format(token.net_weight|float / (token.product.bulk_density|float) / 1000) }} m³</div>
+  <div class="sub">{{ '%.2f'|format(token.net_weight|float / (token.product.bulk_density|float)) }} CFT</div>
   {% endif %}
 </div>
 

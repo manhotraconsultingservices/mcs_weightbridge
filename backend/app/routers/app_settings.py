@@ -841,8 +841,7 @@ async def test_gate_camera(
 
 # ── Volume Unit Preference ────────────────────────────────────────────────────
 # Controls how operators enter volumes on the Token page and Kiosk.
-# 'm3' = cubic metres (input directly); 'cft' = cubic feet (frontend converts
-# CFT → m³ before posting volume_m3 to the API). Density is always MT/m³.
+# CFT is the only unit. API accepts volume_cft (cubic feet). Density is kg/CFT.
 
 VOLUME_UNIT_KEY = "volume_unit"
 

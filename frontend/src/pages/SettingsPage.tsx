@@ -2940,9 +2940,8 @@ function VolumeUnitSettingsTab() {
       </CardHeader>
       <CardContent className="space-y-5">
         <p className="text-sm text-muted-foreground">
-          Choose the unit your operators see and enter volumes in. Internally the system always stores
-          cubic metres (m³) — this setting only changes the display and entry unit on the Token and
-          Kiosk screens. Weights are always in metric tonnes (MT).
+          The system stores volumes in cubic feet (CFT) and bulk density in kg/CFT.
+          Weights are always in metric tonnes (MT).
         </p>
 
         <div className="space-y-3">
@@ -2958,8 +2957,8 @@ function VolumeUnitSettingsTab() {
               className="h-4 w-4"
             />
             <div>
-              <p className="text-sm font-medium">Cubic Metres (m³) <span className="text-muted-foreground font-normal">— SI unit, default</span></p>
-              <p className="text-xs text-muted-foreground">Volumes entered and shown as m³. Bulk density set as MT/m³.</p>
+              <p className="text-sm font-medium">Cubic Metres (m³) <span className="text-muted-foreground font-normal">— deprecated</span></p>
+              <p className="text-xs text-muted-foreground">Legacy option — system now stores CFT internally. Selecting this has no effect.</p>
             </div>
           </label>
 
@@ -2973,15 +2972,15 @@ function VolumeUnitSettingsTab() {
               className="h-4 w-4"
             />
             <div>
-              <p className="text-sm font-medium">Cubic Feet (CFT) <span className="text-muted-foreground font-normal">— traditional Indian unit</span></p>
-              <p className="text-xs text-muted-foreground">Operators enter volumes in CFT; the system converts to m³ before saving. Bulk density always in MT/m³.</p>
+              <p className="text-sm font-medium">Cubic Feet (CFT) <span className="text-muted-foreground font-normal">— Indian standard (active)</span></p>
+              <p className="text-xs text-muted-foreground">Operators enter and see volumes in CFT. Bulk density in kg/CFT. This is the only active unit.</p>
             </div>
           </label>
         </div>
 
         <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
-          <p><strong>Conversion:</strong> 1 m³ = 35.3147 CFT</p>
-          <p><strong>Typical bulk densities (MT/m³):</strong> Aggregate 1.5 · Sand 1.71 · GSB 1.91 · Stone dust 1.56. (Old kg/CFT ÷ 28.32 = MT/m³)</p>
+          <p><strong>Conversion reference:</strong> 1 m³ = 35.3147 CFT</p>
+          <p><strong>Typical bulk densities (kg/CFT):</strong> Aggregate 42.5 · Sand 48.1 · GSB 53.8 · Stone dust 43.9. (Old MT/m³ × 28.32 = kg/CFT)</p>
         </div>
 
         <div className="flex items-center gap-3">
