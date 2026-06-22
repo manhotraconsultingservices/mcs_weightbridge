@@ -211,7 +211,7 @@ export default function AnomalyReportPage() {
       { key: 'net_mt',     label: t('anomaly.colNetWt'),     type: 'number', align: 'right',
         accessor: r => r.net_mt },
     ],
-  };
+  }), [t]);
 
   const load = useCallback(async () => {
     setLoading(true);

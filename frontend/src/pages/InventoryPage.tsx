@@ -2703,7 +2703,7 @@ export default function InventoryPage() {
                       const poStatusLabel: Record<string, string> = {
                         pending_approval: t('inventory.poStatusPending'),
                         approved: t('inventory.poStatusApproved'),
-                        rejected: t('inventory.poStatusRejected') ?? badgeRaw.label,
+                        rejected: t('inventory.poStatusRejected'),
                         partially_received: badgeRaw.label,
                         received: badgeRaw.label,
                       };

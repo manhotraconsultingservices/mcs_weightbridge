@@ -11,6 +11,7 @@
  *   DELETE /api/v1/parties/{party_id}/rates/{product_id} → clear one cell
  */
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Search, Save, IndianRupee, Copy, AlertCircle, RotateCcw, Download } from 'lucide-react';
 import { downloadCsv } from '@/components/DataTable';
 import { toast } from 'sonner';
@@ -43,6 +44,7 @@ const INR = (v: number) =>
   v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function PricingMatrixPage() {
+  const { t } = useTranslation();
   const [parties, setParties] = useState<Party[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [cells, setCells] = useState<MatrixCell[]>([]);
@@ -167,10 +169,8 @@ export default function PricingMatrixPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Customer Pricing Matrix</h1>
-          <p className="text-muted-foreground">
-            Set negotiated rates per customer per product. Empty cells fall back to product default rates.
-          </p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('pricingMatrix.title')}</h1>
+          <p className="text-muted-foreground">{t('pricingMatrix.subtitle')}</p>
         </div>
       </div>
 
@@ -225,7 +225,7 @@ export default function PricingMatrixPage() {
             {!selectedPartyId ? (
               <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
                 <IndianRupee className="h-10 w-10 mb-3 opacity-40" />
-                <p className="text-sm">Pick a customer from the left to edit their rates</p>
+                <p className="text-sm">{t('pricingMatrix.selectParty')}</p>
               </div>
             ) : (
               <>
@@ -244,7 +244,7 @@ export default function PricingMatrixPage() {
                       onClick={() => setCopyFromOpen(o => !o)}
                       disabled={parties.length < 2}
                     >
-                      <Copy className="mr-1 h-3 w-3" /> Copy from…
+                      <Copy className="mr-1 h-3 w-3" /> {t('pricingMatrix.copyFrom')}
                     </Button>
                     {copyFromOpen && (
                       <div className="flex gap-1">
@@ -262,7 +262,7 @@ export default function PricingMatrixPage() {
                       </div>
                     )}
                     <Button variant="outline" size="sm" onClick={handleResetAll} disabled={overrideCount === 0 && dirtyCount === 0}>
-                      <RotateCcw className="mr-1 h-3 w-3" /> Reset all
+                      <RotateCcw className="mr-1 h-3 w-3" /> {t('pricingMatrix.resetAll')}
                     </Button>
                     <Button
                       variant="outline" size="sm"
@@ -293,7 +293,7 @@ export default function PricingMatrixPage() {
                     </Button>
                     <Button size="sm" onClick={handleSave} disabled={dirtyCount === 0 || saving}>
                       <Save className="mr-1 h-3 w-3" />
-                      {saving ? 'Saving…' : `Save (${dirtyCount})`}
+                      {saving ? t('pricingMatrix.saving') : `${t('pricingMatrix.saveRates')} (${dirtyCount})`}
                     </Button>
                   </div>
                 </div>
@@ -302,10 +302,10 @@ export default function PricingMatrixPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b bg-muted/50">
-                        <th className="text-left p-2 font-medium">Product</th>
-                        <th className="text-right p-2 font-medium">Default Rate (₹)</th>
-                        <th className="text-right p-2 font-medium">Customer Rate (₹)</th>
-                        <th className="text-center p-2 font-medium">Source</th>
+                        <th className="text-left p-2 font-medium">{t('pricingMatrix.colProduct')}</th>
+                        <th className="text-right p-2 font-medium">{t('pricingMatrix.colDefaultRate')} (₹)</th>
+                        <th className="text-right p-2 font-medium">{t('pricingMatrix.colCustomRate')} (₹)</th>
+                        <th className="text-center p-2 font-medium">{t('pricingMatrix.colUnit')}</th>
                       </tr>
                     </thead>
                     <tbody>

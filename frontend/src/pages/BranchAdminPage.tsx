@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import { toast } from 'sonner';
 import { Plus, Loader2, Building2, Star, Power } from 'lucide-react';
@@ -16,43 +17,44 @@ interface Branch {
 
 const blank = { name: '', code: '', gstin: '', address_line1: '', city: '', state: '', state_code: '', pincode: '', phone: '', is_default: false };
 
-const BRANCH_COLUMNS: ColumnDef<Branch>[] = [
-  {
-    key: 'name', label: 'Name', type: 'string',
-    accessor: b => b.name,
-    format: (_, b) => (
-      <span className="font-medium flex items-center gap-1">
-        {(b as Branch).name}
-        {(b as Branch).is_default && <Star className="inline h-3.5 w-3.5 text-amber-500" />}
-      </span>
-    ),
-  },
-  { key: 'code', label: 'Code', type: 'string', accessor: b => b.code, className: 'font-mono' },
-  { key: 'gstin', label: 'GSTIN', type: 'string', accessor: b => b.gstin ?? '', format: (v) => v ? <span className="font-mono text-xs">{String(v)}</span> : <span className="text-muted-foreground">—</span> },
-  {
-    key: 'city_state', label: 'City / State', type: 'string',
-    accessor: b => [b.city, b.state].filter(Boolean).join(', '),
-    format: (v) => <span className="text-xs">{String(v) || '—'}</span>,
-  },
-  { key: 'phone', label: 'Phone', type: 'string', accessor: b => b.phone ?? '', format: (v) => <span className="text-xs">{String(v) || '—'}</span> },
-  {
-    key: 'status', label: 'Status', type: 'enum', enumOptions: ['active', 'inactive'],
-    accessor: b => b.is_active ? 'active' : 'inactive',
-    format: (v) => (
-      <span className={`px-2 py-0.5 rounded-full text-[11px] ${v === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-500'}`}>
-        {String(v)}
-      </span>
-    ),
-  },
-];
-
 export default function BranchAdminPage() {
+  const { t } = useTranslation();
   const [rows, setRows] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...blank });
   const [busy, setBusy] = useState(false);
+
+  const BRANCH_COLUMNS: ColumnDef<Branch>[] = [
+    {
+      key: 'name', label: t('branch.colName'), type: 'string',
+      accessor: b => b.name,
+      format: (_, b) => (
+        <span className="font-medium flex items-center gap-1">
+          {(b as Branch).name}
+          {(b as Branch).is_default && <Star className="inline h-3.5 w-3.5 text-amber-500" />}
+        </span>
+      ),
+    },
+    { key: 'code', label: t('branch.colCode'), type: 'string', accessor: b => b.code, className: 'font-mono' },
+    { key: 'gstin', label: t('branch.colGstin'), type: 'string', accessor: b => b.gstin ?? '', format: (v) => v ? <span className="font-mono text-xs">{String(v)}</span> : <span className="text-muted-foreground">—</span> },
+    {
+      key: 'city_state', label: t('branch.colCity'), type: 'string',
+      accessor: b => [b.city, b.state].filter(Boolean).join(', '),
+      format: (v) => <span className="text-xs">{String(v) || '—'}</span>,
+    },
+    { key: 'phone', label: 'Phone', type: 'string', accessor: b => b.phone ?? '', format: (v) => <span className="text-xs">{String(v) || '—'}</span> },
+    {
+      key: 'status', label: t('branch.colStatus'), type: 'enum', enumOptions: ['active', 'inactive'],
+      accessor: b => b.is_active ? 'active' : 'inactive',
+      format: (v) => (
+        <span className={`px-2 py-0.5 rounded-full text-[11px] ${v === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-500'}`}>
+          {String(v)}
+        </span>
+      ),
+    },
+  ];
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -92,10 +94,10 @@ export default function BranchAdminPage() {
     <div className="p-4 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold flex items-center gap-2"><Building2 className="h-5 w-5" /> Branches / Plants</h1>
-          <p className="text-xs text-muted-foreground">Each branch gets its own invoice/token/gate-pass series. Switch the active branch from the header picker.</p>
+          <h1 className="text-xl font-bold flex items-center gap-2"><Building2 className="h-5 w-5" /> {t('branch.title')}</h1>
+          <p className="text-xs text-muted-foreground">{t('branch.subtitle')}</p>
         </div>
-        <Button onClick={openNew} className="gap-1.5"><Plus className="h-4 w-4" /> New Branch</Button>
+        <Button onClick={openNew} className="gap-1.5"><Plus className="h-4 w-4" /> {t('branch.addBranch')}</Button>
       </div>
 
       <DataTable<Branch>
@@ -106,7 +108,7 @@ export default function BranchAdminPage() {
         rowKey={b => b.id}
         exportFilename="branches"
         defaultSort={{ key: 'name', direction: 'asc' }}
-        emptyMessage="No branches yet — single-plant mode. Add a branch to enable multi-branch."
+        emptyMessage={t('branch.noBranches')}
         rowActions={b => (
           <div className="flex items-center gap-1 justify-end">
             <Button size="sm" variant="ghost" onClick={() => openEdit(b)}>Edit</Button>
@@ -122,23 +124,23 @@ export default function BranchAdminPage() {
           <DialogHeader><DialogTitle>{editId ? 'Edit branch' : 'New branch'}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1"><Label className="text-xs">Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
-              <div className="space-y-1"><Label className="text-xs">Code * (short)</Label><Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))} maxLength={12} placeholder="HQ / PL2" /></div>
+              <div className="space-y-1"><Label className="text-xs">{t('branch.branchName')} *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+              <div className="space-y-1"><Label className="text-xs">{t('branch.branchCode')} * (short)</Label><Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))} maxLength={12} placeholder="HQ / PL2" /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1"><Label className="text-xs">GSTIN (optional)</Label><Input value={form.gstin} onChange={e => setForm(f => ({ ...f, gstin: e.target.value.toUpperCase() }))} maxLength={15} /></div>
               <div className="space-y-1"><Label className="text-xs">Phone</Label><Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} /></div>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1"><Label className="text-xs">City</Label><Input value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} /></div>
-              <div className="space-y-1"><Label className="text-xs">State</Label><Input value={form.state} onChange={e => setForm(f => ({ ...f, state: e.target.value }))} /></div>
+              <div className="space-y-1"><Label className="text-xs">{t('branch.city')}</Label><Input value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} /></div>
+              <div className="space-y-1"><Label className="text-xs">{t('branch.state')}</Label><Input value={form.state} onChange={e => setForm(f => ({ ...f, state: e.target.value }))} /></div>
               <div className="space-y-1"><Label className="text-xs">State code</Label><Input value={form.state_code} onChange={e => setForm(f => ({ ...f, state_code: e.target.value }))} maxLength={2} placeholder="27" /></div>
             </div>
             <div className="flex items-center gap-2"><input type="checkbox" id="bdef" checked={form.is_default} onChange={e => setForm(f => ({ ...f, is_default: e.target.checked }))} /><Label htmlFor="bdef" className="text-xs cursor-pointer">Default branch</Label></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={save} disabled={busy} className="gap-1.5">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Save</Button>
+            <Button onClick={save} disabled={busy} className="gap-1.5">{busy && <Loader2 className="h-4 w-4 animate-spin" />} {busy ? t('branch.saving') : 'Save'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

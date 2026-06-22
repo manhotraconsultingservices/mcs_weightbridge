@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Save, RotateCcw, Info, FileText, Layout } from 'lucide-react';
@@ -379,6 +380,7 @@ function RoleTab({ allowed, onChange, invoiceActions, onInvoiceActionsChange, hu
 // ── Main Page ─────────────────────────────────────────────────────────────── //
 
 export default function PermissionsPage() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [permissions, setPermissions] = useState<Record<string, string[]>>(() => {
@@ -481,9 +483,9 @@ export default function PermissionsPage() {
       }
 
       window.dispatchEvent(new CustomEvent('appsettings:updated'));
-      toast.success('Role permissions saved');
+      toast.success(t('permissions.saved'));
     } catch {
-      toast.error('Failed to save permissions');
+      toast.error(t('permissions.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -493,12 +495,12 @@ export default function PermissionsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Role Permissions</h1>
-          <p className="text-sm text-muted-foreground">Configure page access and invoice actions per role</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('permissions.title')}</h1>
+          <p className="text-sm text-muted-foreground">{t('permissions.subtitle')}</p>
         </div>
         <Button onClick={save} disabled={saving}>
           <Save className="h-4 w-4 mr-1" />
-          {saving ? 'Saving…' : 'Save All Changes'}
+          {saving ? t('permissions.saving') : t('permissions.savePermissions')}
         </Button>
       </div>
 
@@ -520,7 +522,7 @@ export default function PermissionsPage() {
                   onClick={() => resetToDefault(r.value)}
                 >
                   <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                  Reset to Default
+                  {t('permissions.resetDefaults')}
                 </Button>
               </div>
               <RoleTab
