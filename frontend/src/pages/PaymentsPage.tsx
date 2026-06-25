@@ -135,7 +135,7 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
         <div className="space-y-4">
           {error && <p className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>{type === 'receipt' ? t('payment.customer') : t('payment.supplier')} *</Label>
               <Select value={partyId || undefined} onValueChange={v => setPartyId(v ?? '')}>
@@ -161,7 +161,7 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>{t('payment.amount')} (₹) *</Label>
               <Input type="number" min="0" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" />
@@ -178,7 +178,7 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
           </div>
 
           {(mode === 'cheque' || mode === 'upi' || mode === 'bank_transfer' || mode === 'neft' || mode === 'rtgs') && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label>{t('payment.reference')}</Label>
                 <Input value={refNo} onChange={e => setRefNo(e.target.value)} placeholder={t('payment.chequeUtr')} />
@@ -413,7 +413,7 @@ export default function PaymentsPage() {
 
       <Tabs value={tab} onValueChange={setTab}>
         <MobileTabSelect value={tab} onValueChange={setTab} options={[{ value: 'receipts', label: t('payment.receiptsTab') }, { value: 'vouchers', label: t('payment.vouchersTab') }]} />
-        <TabsList className="hidden sm:inline-flex">
+        <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
           <TabsTrigger value="receipts">{t('payment.receiptsTab')}</TabsTrigger>
           <TabsTrigger value="vouchers">{t('payment.vouchersTab')}</TabsTrigger>
         </TabsList>

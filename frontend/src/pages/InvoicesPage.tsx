@@ -397,7 +397,8 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
                 <Plus className="h-3 w-3 mr-1" /> {t('invoice.addRow')}
               </Button>
             </div>
-            <div className="space-y-2">
+            <div className="overflow-x-auto -mx-4 sm:mx-0 pb-1">
+              <div className="min-w-[540px] space-y-2">
               {lines.map((line, idx) => (
                 <div key={idx} className="grid gap-2 items-end"
                   style={{ gridTemplateColumns: 'minmax(0,2fr) minmax(80px,1.1fr) minmax(100px,1.4fr) minmax(70px,0.9fr) minmax(90px,1fr) 36px' }}>
@@ -449,6 +450,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
                   </Button>
                 </div>
               ))}
+              </div>
             </div>
             <div className="text-right mt-2 text-sm font-semibold">
               {t('invoice.estTotal')} {INR(grandEstimate)}
@@ -829,7 +831,8 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
                 <Plus className="h-3 w-3 mr-1" /> {t('invoice.addRow')}
               </Button>
             </div>
-            <div className="space-y-2">
+            <div className="overflow-x-auto -mx-4 sm:mx-0 pb-1">
+              <div className="min-w-[540px] space-y-2">
               {lines.map((line, idx) => (
                 <div key={idx} className="grid gap-2 items-end"
                   style={{ gridTemplateColumns: 'minmax(0,2fr) minmax(80px,1.1fr) minmax(100px,1.4fr) minmax(70px,0.9fr) minmax(90px,1fr) 36px' }}>
@@ -881,6 +884,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
                   </Button>
                 </div>
               ))}
+              </div>
             </div>
             <div className="text-right mt-2 text-sm font-semibold">
               {t('invoice.estTotal')} {INR(grandEstimate)}
@@ -1579,7 +1583,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
 
       <div className="flex gap-3 flex-wrap items-center">
         <Tabs value={invoiceType} onValueChange={v => { setInvoiceType(v as 'sale' | 'purchase'); setPage(1); }}>
-          <TabsList>
+          <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="sale">{t('token.sale')}</TabsTrigger>
             <TabsTrigger value="purchase">{t('token.purchase')}</TabsTrigger>
           </TabsList>

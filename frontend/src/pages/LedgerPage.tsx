@@ -158,7 +158,7 @@ export default function LedgerPage() {
 
       <Tabs value={tab} onValueChange={setTab}>
         <MobileTabSelect value={tab} onValueChange={setTab} options={[{ value: 'ledger', label: t('ledger.partyLedger') }, { value: 'outstanding', label: t('ledger.outstanding') }]} />
-        <TabsList className="hidden sm:inline-flex">
+        <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
           <TabsTrigger value="ledger">{t('ledger.partyLedger')}</TabsTrigger>
           <TabsTrigger value="outstanding">{t('ledger.outstanding')}</TabsTrigger>
         </TabsList>

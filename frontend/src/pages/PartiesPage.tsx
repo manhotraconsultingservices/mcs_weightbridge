@@ -121,7 +121,7 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
           {error && <p className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
 
           {/* Basic */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>{t('party.type')} *</Label>
               <Select value={form.party_type} onValueChange={v => set('party_type', v ?? 'customer')}>
@@ -139,7 +139,7 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>{t('party.gstin')}</Label>
               <Input value={form.gstin ?? ''} onChange={e => set('gstin', e.target.value.toUpperCase())} placeholder="27XXXXX" maxLength={15} />
@@ -150,7 +150,7 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1">
               <Label>{t('party.phone')}</Label>
               <Input value={form.phone ?? ''} onChange={e => set('phone', e.target.value)} placeholder="9876543210" />
@@ -173,7 +173,7 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
                 <Label>{t('party.address')}</Label>
                 <Input value={form.billing_address} onChange={e => set('billing_address', e.target.value)} placeholder="Street / Plot no" />
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <Label>{t('party.city')}</Label>
                   <Input value={form.billing_city} onChange={e => set('billing_city', e.target.value)} />
@@ -202,7 +202,7 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
           {/* Financial */}
           <div className="border-t pt-4">
             <p className="text-sm font-medium mb-3">{t('party.financialSettings')}</p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label>{t('party.creditLimit')} (₹)</Label>
                 <Input type="number" min="0" value={form.credit_limit ?? 0} onChange={e => set('credit_limit', parseFloat(e.target.value) || 0)} />

@@ -166,7 +166,7 @@ function VehicleDialog({ open, editing, vehicleTypes, onClose, onSaved }: {
         <DialogHeader><DialogTitle>{editing ? t('vehicle.editVehicle') : t('vehicle.addVehicle')}</DialogTitle></DialogHeader>
         <div className="space-y-4">
           {error && <p className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>{t('vehicle.regNoLabel')}</Label>
               <Input value={form.registration_no} onChange={e => set('registration_no', e.target.value.toUpperCase())} placeholder="MH12AB1234" />
@@ -185,7 +185,7 @@ function VehicleDialog({ open, editing, vehicleTypes, onClose, onSaved }: {
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>{t('vehicle.ownerName')}</Label>
               <Input value={form.owner_name} onChange={e => set('owner_name', e.target.value)} />
@@ -254,7 +254,7 @@ function DriverDialog({ open, editing, onClose, onSaved }: {
         <DialogHeader><DialogTitle>{editing ? t('vehicle.editDriver') : t('vehicle.addDriver')}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1"><Label>{t('vehicle.nameRequired')}</Label><Input value={form.name} onChange={e => set('name', e.target.value)} /></div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1"><Label>{t('vehicle.licenseNo')}</Label><Input value={form.license_no} onChange={e => set('license_no', e.target.value.toUpperCase())} /></div>
             <div className="space-y-1"><Label>{t('party.phone')}</Label><Input value={form.phone} onChange={e => set('phone', e.target.value)} /></div>
           </div>
@@ -306,7 +306,7 @@ function TransporterDialog({ open, editing, onClose, onSaved }: {
         <DialogHeader><DialogTitle>{editing ? t('vehicle.editTransporter') : t('vehicle.addTransporter')}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1"><Label>{t('vehicle.nameRequired')}</Label><Input value={form.name} onChange={e => set('name', e.target.value)} /></div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1"><Label>{t('party.gstin')}</Label><Input value={form.gstin} onChange={e => set('gstin', e.target.value.toUpperCase())} maxLength={15} /></div>
             <div className="space-y-1"><Label>{t('party.phone')}</Label><Input value={form.phone} onChange={e => set('phone', e.target.value)} /></div>
           </div>
@@ -428,7 +428,7 @@ export default function VehiclesPage() {
 
       <Tabs value={tab} onValueChange={setTab}>
         <MobileTabSelect value={tab} onValueChange={setTab} options={[{ value: 'vehicles', label: `${t('vehicle.tabVehicles')} (${vehicleTotal})` }, { value: 'drivers', label: `${t('vehicle.tabDrivers')} (${driverTotal})` }, { value: 'transporters', label: `${t('vehicle.tabTransporters')} (${transporterTotal})` }]} />
-        <TabsList className="hidden sm:inline-flex">
+        <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
           <TabsTrigger value="vehicles">{t('vehicle.tabVehicles')} ({vehicleTotal})</TabsTrigger>
           <TabsTrigger value="drivers">{t('vehicle.tabDrivers')} ({driverTotal})</TabsTrigger>
           <TabsTrigger value="transporters">{t('vehicle.tabTransporters')} ({transporterTotal})</TabsTrigger>

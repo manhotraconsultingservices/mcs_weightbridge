@@ -299,7 +299,7 @@ export default function NotificationsPage() {
 
       <Tabs value={tab} onValueChange={v => setTab(v ?? 'templates')}>
         <MobileTabSelect value={tab} onValueChange={v => setTab(v ?? 'templates')} options={[{ value: 'templates', label: 'Templates' }, { value: 'recipients', label: 'Recipients' }, { value: 'log', label: 'Delivery Log' }]} />
-        <TabsList className="hidden sm:inline-flex">
+        <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
           <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="recipients"><Users className="mr-1 h-3.5 w-3.5" />Recipients</TabsTrigger>
           <TabsTrigger value="log">Delivery Log</TabsTrigger>

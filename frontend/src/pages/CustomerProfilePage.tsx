@@ -443,7 +443,7 @@ export default function CustomerProfilePage() {
       {/* ── Tabs: invoices / payments / pricing ───────────────────────── */}
       <Tabs value={profileTab} onValueChange={setProfileTab} className="w-full">
         <MobileTabSelect value={profileTab} onValueChange={setProfileTab} options={[{ value: 'invoices', label: `${t('customer360.invoicesTab')} (${recent_invoices.length})` }, { value: 'payments', label: `${t('customer360.paymentsTab')} (${recent_payments.length})` }, { value: 'pricing', label: `${t('customer360.pricingTab')} (${custom_rates.length})` }]} />
-        <TabsList className="hidden sm:inline-flex">
+        <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
           <TabsTrigger value="invoices">
             <FileText className="mr-1.5 h-3.5 w-3.5" /> {t('customer360.invoicesTab')} ({recent_invoices.length})
           </TabsTrigger>

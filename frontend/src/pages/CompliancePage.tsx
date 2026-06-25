@@ -405,7 +405,7 @@ function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps
         <div className="space-y-3">
           {error && <p className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>{t('compliance.typeLabel')} <span className="text-destructive">*</span></Label>
               <Select value={form.item_type} onValueChange={v => setForm(prev => ({ ...prev, item_type: v ?? itemTypes[0] }))}>
@@ -429,7 +429,7 @@ function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps
             <p className="text-[11px] text-muted-foreground">{t('compliance.policyHolderHint')}</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>{t('compliance.issuingAuthority')}</Label>
               <Input value={form.issuer} onChange={e => setForm(prev => ({ ...prev, issuer: e.target.value }))}
@@ -442,7 +442,7 @@ function EditDialog({ open, item, itemTypes, onClose, onSaved }: EditDialogProps
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>{t('compliance.issueDate')}</Label>
               <Input type="date" value={form.issue_date} onChange={e => setForm(prev => ({ ...prev, issue_date: e.target.value }))} />
@@ -673,7 +673,7 @@ export default function CompliancePage() {
 
       {/* Summary Cards — always show all 4 when there's data */}
       {items.length > 0 && (
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {/* Expired */}
           <button
             onClick={() => toggleAlertFilter('expired')}
@@ -763,7 +763,7 @@ export default function CompliancePage() {
         <div className="flex items-center gap-2 border-b px-4 py-3">
           <Tabs value={typeFilter} onValueChange={setTypeFilter}>
             <MobileTabSelect value={typeFilter} onValueChange={setTypeFilter} options={[{ value: 'all', label: t('compliance.allTab', { total }) }, ...itemTypes.map(v => ({ value: v, label: typeLabel(v) }))]} />
-            <TabsList className="hidden sm:inline-flex">
+            <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
               <TabsTrigger value="all">{t('compliance.allTab', { total })}</TabsTrigger>
               {itemTypes.map(typeVal => (
                 <TabsTrigger key={typeVal} value={typeVal}>{typeLabel(typeVal)}</TabsTrigger>

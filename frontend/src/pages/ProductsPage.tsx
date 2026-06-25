@@ -119,7 +119,7 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
           <DialogTitle>{editing ? t('product.editProduct') : t('product.addProduct')}</DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-4 py-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
           <div className="col-span-2 space-y-1">
             <Label>{t('product.name')} *</Label>
             <Input value={form.name} onChange={e => set('name', e.target.value)} placeholder={t('product.namePlaceholder')} />
