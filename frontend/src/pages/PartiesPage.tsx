@@ -302,21 +302,6 @@ export default function PartiesPage() {
         </Button>
       </div>
 
-      {/* Pointer to the Customer 360 view */}
-      <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 flex items-start gap-3 text-sm">
-        <ExternalLink className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
-        <div className="flex-1">
-          <span className="font-semibold text-blue-900">Looking for Customer 360?</span>
-          <span className="text-blue-700"> Click a party name (blue link) or the 🔗 icon in the row to open
-            their full profile — outstanding · aging · last 20 invoices · last 20 payments · custom rates.
-          </span>
-          <Link to="/customers" className="ml-1 text-blue-700 hover:text-blue-900 underline underline-offset-2 font-medium">
-            Or open the 360 picker
-          </Link>
-          <span className="text-blue-700">.</span>
-        </div>
-      </div>
-
       <div className="flex gap-3">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
