@@ -29,7 +29,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger
 } from '@/components/ui/select';
 import { useWeight } from '@/hooks/useWeight';
-import { useAuth, moduleEnabled } from '@/hooks/useAuth';
+import { useAuth, moduleEnabled, getTenantIndustry } from '@/hooks/useAuth';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import api from '@/services/api';
 import type { Token, TokenListResponse, Party, Product, Vehicle, GatePass, SnapshotResult, TokenSnapshotsResponse, CustomFieldDefinition } from '@/types';
@@ -162,8 +162,24 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const [customDefs, setCustomDefs] = useState<CustomFieldDefinition[]>([]);
   const [customValues, setCustomValues] = useState<Record<string, unknown>>({});
   useEffect(() => {
+    const ind = getTenantIndustry();
     api.get<CustomFieldDefinition[]>('/api/v1/custom-fields?entity_type=token')
-      .then(r => setCustomDefs(r.data)).catch(() => setCustomDefs([]));
+      .then(async r => {
+        let defs = r.data;
+        // First-run: seed the industry's recommended fields (e.g. maize →
+        // Moisture % + Quality grade) so they show on the form + slip without a
+        // separate setup step. Idempotent; non-admins get a 403 and just skip.
+        if (defs.length === 0 && ind && ind !== 'generic') {
+          try {
+            const seeded = await api.post<CustomFieldDefinition[]>(
+              `/api/v1/custom-fields/seed-defaults?industry=${encodeURIComponent(ind)}`,
+            );
+            if (seeded.data.length) defs = seeded.data;
+          } catch { /* not admin or no defaults — ignore */ }
+        }
+        setCustomDefs(defs);
+      })
+      .catch(() => setCustomDefs([]));
   }, []);
 
   // Picking a tyre count auto-fills the volume field with the standard capacity.
