@@ -979,6 +979,8 @@ interface TallyConfig {
   narration_vehicle: boolean;
   narration_token: boolean;
   narration_weight: boolean;
+  // Invoice-number prefix filter (comma-separated; blank = sync all)
+  sync_invoice_prefix: string;
 }
 
 // ── Weighbridge / Urgency Settings Tab ───────────────────────────────────────
@@ -1208,7 +1210,7 @@ function WeighbridgeTab() {
 }
 
 const DEFAULT_TALLY_CFG: TallyConfig = {
-  host: 'localhost', port: 9002, tally_company_name: '', auto_sync: false, is_enabled: false,
+  host: 'localhost', port: 9002, tally_company_name: '', auto_sync: false, is_enabled: false, sync_invoice_prefix: '',
   ledger_sales: 'Sales', ledger_purchase: 'Purchase',
   ledger_cgst: 'CGST', ledger_sgst: 'SGST', ledger_igst: 'IGST',
   ledger_freight: 'Freight Outward', ledger_discount: 'Trade Discount',
@@ -1318,11 +1320,33 @@ function TallyTab() {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <input type="checkbox" id="auto_sync" checked={cfg.auto_sync}
-              onChange={e => setCfg(c => ({ ...c, auto_sync: e.target.checked }))}
-              className="h-4 w-4 rounded border-gray-300" />
-            <label htmlFor="auto_sync" className="text-sm">Auto-sync when invoice is finalised</label>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="auto_sync" checked={cfg.auto_sync}
+                onChange={e => setCfg(c => ({ ...c, auto_sync: e.target.checked }))}
+                className="h-4 w-4 rounded border-gray-300" />
+              <label htmlFor="auto_sync" className="text-sm font-medium">Auto-sync when invoice is finalised</label>
+            </div>
+            <p className="text-xs text-muted-foreground pl-6">
+              When ON, finalising a GST sale/purchase invoice automatically pushes it to Tally in the
+              background. When OFF, nothing syncs automatically — you push invoices manually from the
+              Invoices page or the Pending list.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Invoice prefixes to sync to Tally</Label>
+            <Input className="h-8 text-sm" value={cfg.sync_invoice_prefix ?? ''}
+              onChange={e => setCfg(c => ({ ...c, sync_invoice_prefix: e.target.value }))}
+              placeholder="e.g. INV,PUR  (leave blank to sync all GST invoices)" />
+            <p className="text-xs text-muted-foreground">
+              Only invoices whose number starts with one of these prefixes go to Tally
+              (comma-separated, case-insensitive). Blank = all GST invoices. Series prefixes:
+              <span className="font-mono"> INV</span> = GST sales,
+              <span className="font-mono"> PUR</span> = purchases,
+              <span className="font-mono"> CN/DN</span> = credit/debit notes.
+              Applies to auto-sync, manual sync, and bulk sync alike.
+            </p>
           </div>
         </CardContent>
       </Card>

@@ -161,6 +161,7 @@ Content-Type: application/json
   "tally_company_name": "Manhotra Quarry Pvt Ltd",
   "is_enabled": true,
   "auto_sync": false,
+  "sync_invoice_prefix": "INV,PUR",
   "ledger_sales": "Sales",
   "ledger_purchase": "Purchase",
   "ledger_cgst": "CGST",
@@ -1432,7 +1433,9 @@ The background helper opens its **own tenant-routed session** (`get_tenant_sessi
 - **Race-safe** — `_push_invoice` independently re-reads `TallyConfig` and returns `False` if Tally was disabled between enqueue and execution.
 - **Multi-tenant safe** — the tenant slug is captured in-request and replayed when the background session opens.
 
-**Enable it:** Settings → Tally → tick *"Auto-sync when invoice is finalised"* (the toggle already existed in the UI; it is now wired to real behaviour). Requires `is_enabled = true` and a reachable Tally on the configured host/port.
+**Enable it:** Settings → Tally → tick *"Auto-sync when invoice is finalised"* (the toggle already existed in the UI; it is now wired to real behaviour). Requires `is_enabled = true` and a reachable Tally on the configured host/port. When the toggle is **off, nothing auto-syncs** — invoices are pushed manually only.
+
+**Scope it by prefix (optional):** `tally_config.sync_invoice_prefix` (Settings → Tally → *"Invoice prefixes to sync to Tally"*) is a comma-separated list of invoice-number prefixes — only invoices whose number starts with one of them flow to Tally. Blank = all GST invoices. Enforced at the `_push_invoice` chokepoint (`_invoice_matches_prefix`, case-insensitive) so **manual, bulk, and auto-sync all respect it**, plus SQL-side `ILIKE` filtering on the `/tally/pending` and bulk worklists. Series prefixes: `INV` = GST sale, `PUR` = purchase, `CN`/`DN` = credit/debit notes, `CINV` = non-GST cash sale (already excluded by the GST guard). A manual sync of an excluded invoice returns `{success: false, message: "…does not match the Tally sync prefix filter…"}`.
 
 **Manual verification:**
 1. Settings → Tally → enable + auto-sync, point at a running TallyPrime.

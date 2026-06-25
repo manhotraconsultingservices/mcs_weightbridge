@@ -64,6 +64,11 @@ class TallyConfig(Base):
     narration_token: Mapped[bool] = mapped_column(Boolean, default=True)
     narration_weight: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Invoice-number prefix filter — only invoices whose number starts with one
+    # of these prefixes are sent to Tally (comma-separated; blank/NULL = all).
+    # E.g. "INV,PUR" syncs GST sales + purchases but excludes any other series.
+    sync_invoice_prefix: Mapped[str | None] = mapped_column(String(200))
+
 
 class AuditLog(Base):
     __tablename__ = "audit_log"

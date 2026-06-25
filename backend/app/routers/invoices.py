@@ -774,9 +774,13 @@ async def finalise_invoice(
                 select(TallyConfig).where(TallyConfig.company_id == co.id)
             )).scalar_one_or_none()
             if _tcfg and _tcfg.is_enabled and _tcfg.auto_sync:
-                background_tasks.add_task(
-                    _auto_sync_tally_bg, co.id, invoice_id, _bg_tenant,
-                )
+                # Honour the invoice-number prefix filter — don't spawn a task for
+                # an invoice that the chokepoint would reject anyway.
+                from app.routers.tally import _invoice_matches_prefix
+                if _invoice_matches_prefix(inv.invoice_no, getattr(_tcfg, "sync_invoice_prefix", None)):
+                    background_tasks.add_task(
+                        _auto_sync_tally_bg, co.id, invoice_id, _bg_tenant,
+                    )
         except Exception:
             pass
 

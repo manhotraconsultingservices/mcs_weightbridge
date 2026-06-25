@@ -64,6 +64,9 @@ class TallyConfigIn(BaseModel):
     narration_vehicle: bool = True
     narration_token: bool = True
     narration_weight: bool = True
+    # Invoice-number prefix filter (comma-separated; blank = sync all). Only
+    # invoices whose number starts with one of these prefixes go to Tally.
+    sync_invoice_prefix: Optional[str] = None
 
 
 class TallyConfigOut(BaseModel):
@@ -87,6 +90,7 @@ class TallyConfigOut(BaseModel):
     narration_vehicle: bool
     narration_token: bool
     narration_weight: bool
+    sync_invoice_prefix: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -134,6 +138,45 @@ def _make_client(cfg: TallyConfig) -> TallyClient:
     )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Invoice-number prefix filter
+#   Only invoices whose number starts with one of the configured prefixes are
+#   sent to Tally. Blank/None = sync all (backward compatible). Comma-separated
+#   list, e.g. "INV,PUR". Applied uniformly at the _push_invoice chokepoint
+#   (manual + bulk + auto-sync) and SQL-side on the pending/bulk worklists.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _normalize_prefixes(raw: str | None) -> list[str]:
+    """Split the configured comma-separated prefix string into a clean list."""
+    if not raw or not raw.strip():
+        return []
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+def _invoice_matches_prefix(invoice_no: str | None, raw_prefix: str | None) -> bool:
+    """True if ``invoice_no`` should sync to Tally given the prefix filter.
+
+    Empty/blank filter → every invoice matches. Otherwise the number must start
+    with one of the configured prefixes (case-insensitive).
+    """
+    prefixes = _normalize_prefixes(raw_prefix)
+    if not prefixes:
+        return True
+    if not invoice_no:
+        return False
+    inv = invoice_no.strip().lower()
+    return any(inv.startswith(p.lower()) for p in prefixes)
+
+
+def _prefix_sql_clause(raw_prefix: str | None):
+    """Build an OR of ``invoice_no ILIKE 'prefix%'`` for SQL filtering, or None."""
+    prefixes = _normalize_prefixes(raw_prefix)
+    if not prefixes:
+        return None
+    from sqlalchemy import or_ as _or
+    return _or(*[Invoice.invoice_no.ilike(f"{p}%") for p in prefixes])
+
+
 async def _push_invoice(
     invoice: Invoice,
     company: Company,
@@ -147,6 +190,15 @@ async def _push_invoice(
     cfg = cfg_result.scalar_one_or_none()
     if not cfg or not cfg.is_enabled:
         return False, "Tally integration is not enabled. Enable it in Settings → Tally."
+
+    # Invoice-number prefix filter — the single chokepoint for manual, bulk and
+    # auto-sync. Blank filter → everything matches (backward compatible).
+    if not _invoice_matches_prefix(invoice.invoice_no, cfg.sync_invoice_prefix):
+        return False, (
+            f"Invoice {invoice.invoice_no} does not match the Tally sync prefix "
+            f"filter ('{cfg.sync_invoice_prefix}'). Change it in Settings → Tally "
+            f"if this invoice should sync."
+        )
 
     # Resolve party
     party = None
@@ -250,6 +302,8 @@ async def update_tally_config(
     cfg.narration_vehicle = payload.narration_vehicle
     cfg.narration_token = payload.narration_token
     cfg.narration_weight = payload.narration_weight
+    # Invoice prefix filter — normalise blank → NULL (means "sync all")
+    cfg.sync_invoice_prefix = (payload.sync_invoice_prefix or "").strip() or None
     await db.commit()
     await db.refresh(cfg)
     return cfg
@@ -296,6 +350,13 @@ async def list_pending_invoices(
     )
     if invoice_type:
         q = q.where(Invoice.invoice_type == invoice_type)
+    # Restrict the worklist to invoices that match the configured prefix filter
+    _cfg = (await db.execute(
+        select(TallyConfig).where(TallyConfig.company_id == current_user.company_id)
+    )).scalar_one_or_none()
+    _pfx = _prefix_sql_clause(_cfg.sync_invoice_prefix if _cfg else None)
+    if _pfx is not None:
+        q = q.where(_pfx)
     q = q.order_by(Invoice.invoice_date.desc())
     rows = (await db.execute(q)).scalars().all()
     return {
@@ -679,6 +740,13 @@ async def bulk_sync_to_tally(
         q = q.where(Invoice.invoice_date >= payload.from_date)
     if payload.to_date:
         q = q.where(Invoice.invoice_date <= payload.to_date)
+    # Apply the configured invoice-number prefix filter
+    _cfg = (await db.execute(
+        select(TallyConfig).where(TallyConfig.company_id == current_user.company_id)
+    )).scalar_one_or_none()
+    _pfx = _prefix_sql_clause(_cfg.sync_invoice_prefix if _cfg else None)
+    if _pfx is not None:
+        q = q.where(_pfx)
     q = q.order_by(Invoice.invoice_date.asc()).limit(100)
 
     invoices = (await db.execute(q)).scalars().all()

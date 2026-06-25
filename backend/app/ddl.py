@@ -339,6 +339,7 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE tally_config ADD COLUMN IF NOT EXISTS narration_vehicle BOOLEAN NOT NULL DEFAULT TRUE",
         "ALTER TABLE tally_config ADD COLUMN IF NOT EXISTS narration_token BOOLEAN NOT NULL DEFAULT TRUE",
         "ALTER TABLE tally_config ADD COLUMN IF NOT EXISTS narration_weight BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE tally_config ADD COLUMN IF NOT EXISTS sync_invoice_prefix VARCHAR(200)",
         # Tally Phase 2 — per-party ledger name
         "ALTER TABLE parties ADD COLUMN IF NOT EXISTS tally_ledger_name VARCHAR(200)",
         # Inventory — auto-reorder columns (added after initial release)
