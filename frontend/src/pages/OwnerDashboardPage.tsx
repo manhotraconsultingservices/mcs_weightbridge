@@ -67,6 +67,8 @@ interface ExceptionsResponse {
   compliance_expiring: { items: ComplianceExpiring[]; count: number };
   yield_variance: YieldVariance | null;
   today_revenue: { today: number; median_30d: number; variance_pct: number };
+  today_purchases: { today: number; median_30d: number; variance_pct: number };
+  payables: { total: number; supplier_count: number };
 }
 
 const INR = (v: number) =>
@@ -180,8 +182,13 @@ export default function OwnerDashboardPage() {
         </button>
       </div>
 
-      {/* ── Today's revenue strip ───────────────────────────────────── */}
+      {/* ── Today's revenue + purchases strips ──────────────────────── */}
       <RevenueStrip rev={data.today_revenue} />
+      {((data.today_purchases?.today ?? 0) > 0
+        || (data.today_purchases?.median_30d ?? 0) > 0
+        || (data.payables?.total ?? 0) > 0) && (
+        <PurchasesStrip pur={data.today_purchases} payables={data.payables} />
+      )}
 
       {/* ── ANPR gate-camera widget (hidden when ANPR off or no traffic) ── */}
       <AnprStatsCard />
@@ -239,6 +246,43 @@ function RevenueStrip({ rev }: { rev: { today: number; median_30d: number; varia
           <span>{t('ownerDash.vs30DayMedian')} {INR_L(rev.median_30d)}</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Purchases + Payables strip (supplier / farmer side) ─────────────────────
+
+function PurchasesStrip({ pur, payables }: {
+  pur: { today: number; median_30d: number; variance_pct: number };
+  payables: { total: number; supplier_count: number };
+}) {
+  const { t } = useTranslation();
+  const supplierWord = t('party.supplier');   // "Supplier" / "Farmer" per industry
+  const TrendIcon = pur.variance_pct >= 0 ? TrendingUp : TrendingDown;
+
+  return (
+    <div className="rounded-xl border bg-white border-slate-200 p-3 sm:p-4 flex items-center gap-3">
+      <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-lg bg-orange-100 text-orange-700 shrink-0">
+        <ShoppingCart className="h-5 w-5 sm:h-6 sm:w-6" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-xs uppercase tracking-widest text-slate-500 font-semibold">{t('ownerDash.todayPurchases')}</div>
+        <div className="text-xl sm:text-2xl font-bold text-slate-900">{INR_L(pur.today)}</div>
+        <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
+          <TrendIcon className="h-3 w-3 text-slate-400" />
+          <span>{pur.variance_pct >= 0 ? '+' : ''}{pur.variance_pct}%</span>
+          <span>{t('ownerDash.vs30DayMedian')} {INR_L(pur.median_30d)}</span>
+        </div>
+      </div>
+      {payables.total > 0 && (
+        <Link to="/procurement" className="text-right shrink-0 rounded-lg px-2 py-1 hover:bg-slate-50">
+          <div className="text-[10px] uppercase tracking-wide text-slate-400">{t('ownerDash.owe')} {supplierWord}s</div>
+          <div className="text-base sm:text-lg font-bold text-rose-700">{INR_L(payables.total)}</div>
+          <div className="text-[10px] text-slate-500">
+            {payables.supplier_count} {supplierWord.toLowerCase()}{payables.supplier_count === 1 ? '' : 's'}
+          </div>
+        </Link>
+      )}
     </div>
   );
 }

@@ -9,7 +9,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
+import { moduleEnabled } from '@/hooks/useAuth';
 import type { Product, ProductCategory } from '@/types';
+
+// Bulk density (volume→weight) + raw-material (production input) are crusher-only
+// concepts. Hidden for verticals where the production module is off (e.g. maize).
+const SHOW_PRODUCTION_FIELDS = moduleEnabled('production');
 
 const UNITS = ['MT', 'QUINTAL', 'KG', 'CFT', 'BRASS', 'CUM', 'PCS', 'NOS'];
 const GST_RATES = ['0', '5', '12', '18', '28'];
@@ -179,6 +184,7 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
             </Select>
           </div>
 
+          {SHOW_PRODUCTION_FIELDS && (
           <div className="col-span-2 space-y-1">
             <Label>{t('product.bulkDensity')}</Label>
             <Input
@@ -197,7 +203,9 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
               </span>
             </p>
           </div>
+          )}
 
+          {SHOW_PRODUCTION_FIELDS && (
           <div className="col-span-2 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
             <input
               type="checkbox"
@@ -213,6 +221,7 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
               {t('product.rawMaterialHint')}
             </span>
           </div>
+          )}
 
           <div className="col-span-2 space-y-1">
             <Label>{t('product.description')}</Label>
@@ -392,7 +401,7 @@ function ProductsTable({
 }) {
   const { t } = useTranslation();
 
-  const columns = useMemo<ColumnDef<Product>[]>(() => [
+  const columns = useMemo<ColumnDef<Product>[]>(() => ([
     { key: 'name', label: t('product.colProduct'), accessor: p => p.name, className: 'font-medium' },
     { key: 'code', label: t('product.colCode'), accessor: p => p.code ?? '', className: 'text-muted-foreground' },
     {
@@ -436,7 +445,7 @@ function ProductsTable({
         : <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">{t('product.statusInactive')}</span>,
     },
     { key: 'description', label: t('product.description'), defaultVisible: false, accessor: p => p.description ?? '' },
-  ], [catMap, t]);
+  ] as ColumnDef<Product>[]).filter(c => SHOW_PRODUCTION_FIELDS || (c.key !== 'bulk_density' && c.key !== 'is_raw_material')), [catMap, t]);
 
   return (
     <DataTable<Product>

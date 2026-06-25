@@ -385,6 +385,8 @@ async def dashboard_exceptions(
             "compliance_expiring": {"items": [], "count": 0},
             "yield_variance": None,
             "today_revenue": {"today": 0, "median_30d": 0, "variance_pct": 0},
+            "today_purchases": {"today": 0, "median_30d": 0, "variance_pct": 0},
+            "payables": {"total": 0, "supplier_count": 0},
         }
     today = date.today()
 
@@ -606,6 +608,65 @@ async def dashboard_exceptions(
         "variance_pct": rev_variance_pct,
     }
 
+    # ── 6. Today's purchases vs 30-day median (supplier / farmer side) ───────
+    today_pur = 0.0
+    median_pur_30d = 0.0
+    pur_variance_pct = 0.0
+    try:
+        m_start = today - timedelta(days=30)
+        pur_rows = (await db.execute(
+            select(Invoice.invoice_date, func.coalesce(func.sum(Invoice.grand_total), 0))
+            .where(
+                Invoice.company_id == co.id,
+                Invoice.invoice_type == "purchase",
+                Invoice.status == "final",
+                Invoice.invoice_date >= m_start,
+                Invoice.invoice_date <= today,
+            )
+            .group_by(Invoice.invoice_date)
+        )).all()
+        pmap = {d: float(amt) for d, amt in pur_rows}
+        today_pur = pmap.get(today, 0.0)
+        past_p = [pmap.get(m_start + timedelta(days=i), 0.0) for i in range(30)]
+        ps = sorted(past_p)
+        median_pur_30d = ps[len(ps) // 2] if ps else 0.0
+        if median_pur_30d > 0:
+            pur_variance_pct = round((today_pur - median_pur_30d) / median_pur_30d * 100, 1)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("dashboard.exceptions: purchases query failed: %s", exc)
+
+    today_purchases = {
+        "today": round(today_pur, 2),
+        "median_30d": round(median_pur_30d, 2),
+        "variance_pct": pur_variance_pct,
+    }
+
+    # ── 7. Payables — money owed to suppliers/farmers (unpaid purchase bills) ─
+    payables_total = 0.0
+    payables_count = 0
+    try:
+        prow = (await db.execute(
+            select(
+                func.coalesce(func.sum(Invoice.grand_total - Invoice.amount_paid), 0),
+                func.count(func.distinct(Invoice.party_id)),
+            )
+            .where(
+                Invoice.company_id == co.id,
+                Invoice.invoice_type == "purchase",
+                Invoice.status == "final",
+                Invoice.payment_status != "paid",
+            )
+        )).first()
+        if prow:
+            payables_total = float(prow[0] or 0)
+            payables_count = int(prow[1] or 0)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("dashboard.exceptions: payables query failed: %s", exc)
+
+    payables = {"total": round(payables_total, 2), "supplier_count": payables_count}
+
     # ── Traffic-light overall status + headline ──────────────────────────────
     # critical: anything expired, anything fully out of stock, or critical yield miss
     # warning: any overdue, any low stock, any expiring compliance, yield below target
@@ -668,6 +729,8 @@ async def dashboard_exceptions(
         },
         "yield_variance": yield_variance,
         "today_revenue": today_revenue,
+        "today_purchases": today_purchases,
+        "payables": payables,
     }
 
 

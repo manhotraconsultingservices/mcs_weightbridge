@@ -1013,6 +1013,8 @@
     "thingsNeedYou": "{{count}} काम आपका इंतज़ार कर रहा है",
     "thingsNeedYouPlural": "{{count}} काम आपका इंतज़ार कर रहे हैं",
     "todayRevenue": "आज की आय",
+    "todayPurchases": "आज की खरीद",
+    "owe": "देय",
     "vs30DayMedian": "30 दिन के औसत से",
     "view30DayTrends": "30 दिन के रुझान देखें",
     "fullOutstanding": "पूरा बकाया",

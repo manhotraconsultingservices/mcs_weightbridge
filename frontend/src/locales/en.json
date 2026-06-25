@@ -1013,6 +1013,8 @@
     "thingsNeedYou": "{{count}} thing need you",
     "thingsNeedYouPlural": "{{count}} things need you",
     "todayRevenue": "Today's Revenue",
+    "todayPurchases": "Today's Purchases",
+    "owe": "Owe",
     "vs30DayMedian": "vs 30-day median",
     "view30DayTrends": "View 30-day trends",
     "fullOutstanding": "Full outstanding",
