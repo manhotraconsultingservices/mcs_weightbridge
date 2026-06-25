@@ -19,6 +19,7 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import OwnerDashboardPage from '@/pages/OwnerDashboardPage';
 // Sprint 3 — hub pages that consolidate the old 28-item sidebar
 import SalesHubPage from '@/pages/SalesHubPage';
+import CrmHubPage from '@/pages/CrmHubPage';
 import MaterialsHubPage from '@/pages/MaterialsHubPage';
 import OperationsHubPage from '@/pages/OperationsHubPage';
 import ReportsHubPage from '@/pages/ReportsHubPage';
@@ -221,6 +222,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/admin/branches" element={<BranchAdminPage />} />
             {/* Sprint 3 hubs — consolidate sub-pages into tabbed views */}
             <Route path="/sales" element={<SalesHubPage />} />
+            <Route path="/crm" element={<CrmHubPage />} />
             <Route path="/materials" element={<MaterialsHubPage />} />
             <Route path="/operations" element={<OperationsHubPage />} />
             {/* BCG navigation — 4-section grouped hubs */}

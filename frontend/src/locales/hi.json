@@ -79,10 +79,12 @@
     "weighbridge": "वेब्रिज",
     "camerasAnpr": "कैमरा & ANPR",
     "salesCrm": "बिक्री और CRM",
+    "crm": "CRM",
     "procurement": "क्रय प्रबंधन",
     "catalog": "आइटम कैटालॉग",
     "inventoryProduction": "सूची",
     "productionHub": "उत्पादन",
+    "vehicleMaster": "वाहन मास्टर",
     "accounts": "खाते",
     "gstCompliance": "GST & अनुपालन",
     "analytics": "विश्लेषण",
@@ -936,6 +938,10 @@
       "challans": "चालान",
       "creditNotes": "क्रेडिट / डेबिट नोट",
       "customers": "ग्राहक"
+    },
+    "crm": {
+      "customers": "ग्राहक",
+      "suppliers": "आपूर्तिकर्ता"
     },
     "procurement": {
       "purchaseInvoices": "खरीद चालान",

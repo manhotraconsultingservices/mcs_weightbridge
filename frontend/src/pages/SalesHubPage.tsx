@@ -8,17 +8,16 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Users, FileText, Receipt, Truck, FileMinus } from 'lucide-react';
+import { FileText, Receipt, Truck, FileMinus } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { usePermissions } from '@/contexts/PermissionsContext';
-import CustomerPickerPage from './CustomerPickerPage';
 import InvoicesPage from './InvoicesPage';
 import QuotationsPage from './QuotationsPage';
 import DeliveryChallansPage from './DeliveryChallansPage';
 import CreditDebitNotesPage from './CreditDebitNotesPage';
 
-type Tab = 'customers' | 'bills' | 'estimates' | 'challans' | 'notes';
+type Tab = 'bills' | 'estimates' | 'challans' | 'notes';
 
 export default function SalesHubPage() {
   const { t } = useTranslation();
@@ -27,15 +26,14 @@ export default function SalesHubPage() {
   const { isTabAllowed } = usePermissions();
 
   const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-    { value: 'customers', label: t('hubs.sales.customers'), icon: Users },
     { value: 'bills',     label: t('hubs.sales.bills'),     icon: FileText },
     { value: 'estimates', label: t('hubs.sales.estimates'), icon: Receipt },
     { value: 'challans',  label: t('hubs.sales.challans'),  icon: Truck },
     { value: 'notes',     label: t('hubs.sales.creditNotes'), icon: FileMinus },
   ];
   const visibleTabs = TABS.filter(t => isTabAllowed('/sales', t.value));
-  const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'customers';
-  const initial = (visibleTabs.find(t => t.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'customers') as Tab;
+  const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'bills';
+  const initial = (visibleTabs.find(t => t.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'bills') as Tab;
   const [tab, setTab] = useState<Tab>(initial);
 
   // Keep URL in sync so refresh / share preserves the active tab
@@ -61,9 +59,6 @@ export default function SalesHubPage() {
             );
           })}
         </TabsList>
-        <TabsContent value="customers" className="mt-4">
-          <CustomerPickerPage />
-        </TabsContent>
         <TabsContent value="bills" className="mt-4">
           <InvoicesPage defaultType="sale" />
         </TabsContent>

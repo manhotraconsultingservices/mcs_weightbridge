@@ -79,10 +79,12 @@
     "weighbridge": "Weighbridge",
     "camerasAnpr": "Cameras & ANPR",
     "salesCrm": "Sales & CRM",
+    "crm": "CRM",
     "procurement": "Procurement",
     "catalog": "Item Catalog",
     "inventoryProduction": "Inventory",
     "productionHub": "Production",
+    "vehicleMaster": "Vehicle Master",
     "accounts": "Accounts",
     "gstCompliance": "GST & Compliance",
     "analytics": "Analytics",
@@ -936,6 +938,10 @@
       "challans": "Challans",
       "creditNotes": "Credit / Debit Notes",
       "customers": "Customers"
+    },
+    "crm": {
+      "customers": "Customers",
+      "suppliers": "Suppliers"
     },
     "procurement": {
       "purchaseInvoices": "Purchase Invoices",

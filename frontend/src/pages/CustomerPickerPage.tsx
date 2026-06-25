@@ -29,13 +29,14 @@ const INR_L = (v: number) => {
   return '₹' + Math.abs(v).toFixed(0);
 };
 
-export default function CustomerPickerPage() {
+export default function CustomerPickerPage({ lockType }: { lockType?: 'customer' | 'supplier' } = {}) {
   const { t } = useTranslation();
   const [parties, setParties] = useState<Party[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'customer' | 'supplier'>('all');
+  // When embedded as a CRM tab the type is fixed (and the chips are hidden).
+  const [typeFilter, setTypeFilter] = useState<'all' | 'customer' | 'supplier'>(lockType ?? 'all');
 
   useEffect(() => {
     setLoading(true);
@@ -73,7 +74,9 @@ export default function CustomerPickerPage() {
         <div>
           <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
             <Users className="h-5 w-5 text-blue-600" />
-            {t('customer360.pickerTitle')}
+            {lockType === 'supplier' ? `${t('party.supplier')}s`
+              : lockType === 'customer' ? `${t('party.customer')}s`
+              : t('customer360.pickerTitle')}
           </h1>
           <p className="text-sm text-muted-foreground">
             {t('customer360.pickerSubtitle')}
@@ -98,6 +101,7 @@ export default function CustomerPickerPage() {
             className="pl-8 h-9"
           />
         </div>
+        {!lockType && (
         <div className="flex items-center gap-1">
           {([
             { key: 'all',      label: t('customer360.allTypes'),       count: parties.length      },
@@ -118,6 +122,7 @@ export default function CustomerPickerPage() {
             </button>
           ))}
         </div>
+        )}
       </div>
 
       {/* Error / loading / empty / list */}

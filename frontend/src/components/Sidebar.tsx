@@ -20,7 +20,7 @@ import {
   BookOpen, TrendingUp, Package,
   LogOut, Usb, Settings,
   Bell, HardDrive, Upload, UserCog, Lock, ImageIcon, Building2,
-  Camera, Cog, FileBarChart, ShieldAlert, FileCheck2, Tags,
+  Camera, Cog, FileBarChart, ShieldAlert, FileCheck2, Tags, Users, Truck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getTenantModules } from '@/hooks/useAuth';
@@ -35,7 +35,8 @@ import type { User } from '@/types';
 const HUB_CHILDREN: Record<string, string[]> = {
   '/weighbridge':      ['/gate', '/tokens-v1', '/tokens', '/anpr/trips'],
   '/cameras-anpr':     ['/camera-scale', '/snapshot-search', '/anpr/events', '/anpr/live', '/anpr/review', '/anpr/trips'],
-  '/sales':            ['/invoices', '/quotations', '/delivery-challans', '/credit-debit-notes', '/customers', '/parties'],
+  '/sales':            ['/invoices', '/quotations', '/delivery-challans', '/credit-debit-notes'],
+  '/crm':              ['/customers', '/parties'],
   '/procurement':      ['/purchase-invoices', '/royalty'],
   '/inventory-hub':    ['/products', '/pricing-matrix', '/product-inventory', '/inventory'],
   '/production-hub':   ['/production', '/production/dashboard', '/production/settings'],
@@ -91,7 +92,8 @@ const NAV_SECTIONS: NavSection[] = [
   {
     headerKey: 'sidebar.sectionCommercial',
     items: [
-      { to: '/sales',       icon: FileText,     labelKey: 'sidebar.salesCrm' },
+      { to: '/sales',       icon: FileText,     labelKey: 'sidebar.sales' },
+      { to: '/crm',         icon: Users,        labelKey: 'sidebar.crm' },
       { to: '/procurement', icon: ShoppingCart, labelKey: 'sidebar.procurement' },
       { to: '/products',    icon: Package,      labelKey: 'sidebar.catalog' },
     ],
@@ -101,6 +103,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/inventory-hub',  icon: Factory, labelKey: 'sidebar.inventoryProduction' },
       { to: '/production-hub', icon: Cog,     labelKey: 'sidebar.productionHub' },
+      { to: '/vehicles',       icon: Truck,   labelKey: 'sidebar.vehicleMaster' },
     ],
   },
   {
