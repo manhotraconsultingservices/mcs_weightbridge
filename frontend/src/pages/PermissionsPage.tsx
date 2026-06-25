@@ -68,7 +68,7 @@ const PAGE_GROUPS = [
       {
         path: '/inventory-hub',
         label: 'Inventory',
-        hint: 'Finished Goods · Store Inventory · Products Catalog · Customer Rates',
+        hint: 'Finished Goods · Store Inventory · Products Catalog · Pricing',
       },
       {
         path: '/production-hub',
@@ -135,7 +135,7 @@ const HUB_TABS: Record<string, { value: string; label: string }[]> = {
     { value: 'stock',   label: 'Finished Goods Stock' },
     { value: 'store',   label: 'Store Inventory' },
     { value: 'catalog', label: 'Products Catalog' },
-    { value: 'rates',   label: 'Customer Rates' },
+    { value: 'rates',   label: 'Pricing' },
   ],
   '/production-hub': [
     { value: 'production', label: 'Daily Cycles' },

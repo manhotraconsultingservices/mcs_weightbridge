@@ -943,7 +943,7 @@
     },
     "materials": {
       "catalog": "कैटालॉग",
-      "customerRates": "ग्राहक दरें",
+      "customerRates": "मूल्य निर्धारण",
       "stockOnHand": "उपलब्ध स्टॉक",
       "production": "उत्पादन",
       "productionDashboard": "उत्पादन डैशबोर्ड",

@@ -943,7 +943,7 @@
     },
     "materials": {
       "catalog": "Catalog",
-      "customerRates": "Customer Rates",
+      "customerRates": "Pricing",
       "stockOnHand": "Stock on Hand",
       "production": "Production",
       "productionDashboard": "Production Dashboard",
