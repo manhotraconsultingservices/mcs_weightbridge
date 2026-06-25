@@ -486,7 +486,7 @@ def finalise_purchase_invoices(c: Client) -> None:
         log.info("[DRY] would finalise draft purchase invoices")
         return
     try:
-        drafts = c.get("/api/v1/invoices/", params={"invoice_type": "purchase", "status": "draft", "page_size": 200})
+        drafts = c.get("/api/v1/invoices/", params={"invoice_type": "purchase", "status": "draft", "page_size": 100})
         for inv in drafts.get("items", []):
             try:
                 c.post(f"/api/v1/invoices/{inv['id']}/finalise", {}, f"finalise PUR {inv.get('invoice_no') or inv['id'][:8]}")
@@ -520,6 +520,14 @@ def seed_sales(c: Client, parties: dict[str, dict], products: dict[str, dict], v
     veh = list(vehicles.values())
     if not buyers:
         return
+    # Idempotency: skip if sales already exist (avoid duplicating on re-run)
+    try:
+        existing_sales = c.get("/api/v1/invoices/", params={"invoice_type": "sale", "page_size": 1})
+        if isinstance(existing_sales, dict) and (existing_sales.get("total") or 0) >= 10:
+            c.skip(f"sales already present ({existing_sales['total']}) — skipping sale seed")
+            return
+    except Exception:
+        pass
     for i in range(12):
         buyer = random.choice(buyers)
         d = TODAY - timedelta(days=random.randint(0, 40))
@@ -548,7 +556,7 @@ def seed_payments(c: Client) -> None:
         log.info("[DRY] would pay farmers + collect from buyers")
         return
     # Pay farmers against finalised PURCHASE invoices (~70%, mostly full)
-    purch = c.get("/api/v1/invoices/", params={"invoice_type": "purchase", "status": "final", "page_size": 200})
+    purch = c.get("/api/v1/invoices/", params={"invoice_type": "purchase", "status": "final", "page_size": 100})
     for inv in purch.get("items", []):
         pid = (inv.get("party") or {}).get("id") or inv.get("party_id")
         grand = Decimal(str(inv.get("grand_total") or "0"))
@@ -573,7 +581,7 @@ def seed_payments(c: Client) -> None:
         except Exception as e:
             log.warning("voucher failed: %s", e)
     # Collect from buyers against finalised SALE invoices (~60%)
-    sales = c.get("/api/v1/invoices/", params={"invoice_type": "sale", "status": "final", "page_size": 200})
+    sales = c.get("/api/v1/invoices/", params={"invoice_type": "sale", "status": "final", "page_size": 100})
     for inv in sales.get("items", []):
         pid = (inv.get("party") or {}).get("id") or inv.get("party_id")
         grand = Decimal(str(inv.get("grand_total") or "0"))

@@ -823,6 +823,31 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS transit_pass_id UUID REFERENCES royalty_passes(id)",
         # Vehicle rent — payment to truck owner per trip (stone crusher practice)
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS vehicle_rent NUMERIC(14,2) DEFAULT 0",
+
+        # ── Tokens backfill: the `tokens` table is created by SQLAlchemy
+        # create_all (NOT a runtime CREATE TABLE), so a tenant whose tokens table
+        # was built by an OLDER model version permanently lacks any column added
+        # since that had no ALTER here — create_all skips existing tables. That
+        # makes GET/POST /tokens 500 on those tenants. These IF-NOT-EXISTS ALTERs
+        # are the idempotent safety net for every two-stage / type / weighment
+        # column. Harmless (no-op) where the column already exists.
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS token_type VARCHAR(20) NOT NULL DEFAULT 'sale'",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS direction VARCHAR(10)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'OPEN'",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS driver_id UUID REFERENCES drivers(id)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS transporter_id UUID REFERENCES transporters(id)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS gross_weight NUMERIC(10,2)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS tare_weight NUMERIC(10,2)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS net_weight NUMERIC(10,2)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS first_weight NUMERIC(10,2)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS second_weight NUMERIC(10,2)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS first_weight_type VARCHAR(5)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS first_weight_at TIMESTAMPTZ",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS second_weight_at TIMESTAMPTZ",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS first_weight_by UUID REFERENCES users(id)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS second_weight_by UUID REFERENCES users(id)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS is_manual_weight BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ",
         "ALTER TABLE royalty_pass_consumptions ADD COLUMN IF NOT EXISTS authorized_mt NUMERIC(14,3)",
         "ALTER TABLE royalty_pass_consumptions ADD COLUMN IF NOT EXISTS actual_mt NUMERIC(14,3)",
         "ALTER TABLE royalty_pass_consumptions ADD COLUMN IF NOT EXISTS variance_mt NUMERIC(14,3)",
