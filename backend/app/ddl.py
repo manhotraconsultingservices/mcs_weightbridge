@@ -318,12 +318,35 @@ def get_runtime_ddl() -> list[str]:
             created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """,
+        # Owner-managed custom attributes (per-tenant). Definitions live here;
+        # values live in a JSONB column on the target entity (e.g. tokens.custom_fields).
+        """
+        CREATE TABLE IF NOT EXISTS custom_field_definitions (
+            id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id    UUID REFERENCES companies(id),
+            entity_type   VARCHAR(20) NOT NULL DEFAULT 'token',   -- token | product | party
+            field_key     VARCHAR(60) NOT NULL,
+            label         VARCHAR(120) NOT NULL,
+            field_type    VARCHAR(20) NOT NULL DEFAULT 'text',    -- text|number|select|date|boolean
+            unit          VARCHAR(20),
+            options       JSONB,                                   -- choices for field_type='select'
+            required      BOOLEAN NOT NULL DEFAULT FALSE,
+            show_on_slip  BOOLEAN NOT NULL DEFAULT TRUE,
+            sort_order    INTEGER NOT NULL DEFAULT 0,
+            is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (company_id, entity_type, field_key)
+        )
+        """,
     ]
 
 
 def get_column_migrations() -> list[str]:
     """Return column migration ALTER TABLE statements."""
     return [
+        # Custom-attribute values (owner-defined fields) per weighment.
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS custom_fields JSONB",
         "ALTER TABLE compliance_items ADD COLUMN IF NOT EXISTS policy_holder VARCHAR(200)",
         "ALTER TABLE compliance_items ALTER COLUMN item_type TYPE VARCHAR(50)",
         # Tally ledger name mappings (Phase 1)

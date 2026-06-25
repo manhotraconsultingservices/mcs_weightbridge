@@ -20,7 +20,7 @@ import {
   BookOpen, TrendingUp, Package,
   LogOut, Usb, Settings,
   Bell, HardDrive, Upload, UserCog, Lock, ImageIcon, Building2,
-  Camera, Cog, FileBarChart, ShieldAlert, FileCheck2,
+  Camera, Cog, FileBarChart, ShieldAlert, FileCheck2, Tags,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getTenantModules } from '@/hooks/useAuth';
@@ -121,6 +121,7 @@ const ADMIN_ITEMS: NavItem[] = [
   { to: '/admin/branches',    icon: Building2, labelKey: 'sidebar.branches' },
   { to: '/admin/users',       icon: UserCog,   labelKey: 'sidebar.users' },
   { to: '/admin/permissions', icon: Lock,      labelKey: 'sidebar.rolePermissions' },
+  { to: '/admin/custom-fields', icon: Tags,    labelKey: 'sidebar.customFields' },
   { to: '/admin/wallpaper',   icon: ImageIcon, labelKey: 'sidebar.branding' },
   { to: '/notifications',     icon: Bell,      labelKey: 'sidebar.notifications' },
   { to: '/backup',            icon: HardDrive, labelKey: 'sidebar.backup' },

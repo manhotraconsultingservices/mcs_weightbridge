@@ -167,6 +167,13 @@
     </span>
   </div>
 
+  {# Owner-defined custom attributes flagged to print on the slip #}
+  {% if slip_custom_fields is defined and slip_custom_fields %}
+    {% for f in slip_custom_fields %}
+  <div class="row"><span class="lbl">{{ f.label | upper }}:</span><span class="val">{{ f.value }}</span></div>
+    {% endfor %}
+  {% endif %}
+
   {# ── Mode-specific body ── #}
   {% if is_volume %}
     <div class="vol-block">

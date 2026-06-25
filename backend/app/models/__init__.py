@@ -11,6 +11,7 @@ from app.models.account import AccountGroup, Account, LedgerEntry
 from app.models.settings import NumberSequence, SerialPortConfig, TallyConfig, AuditLog
 from app.models.notification import NotificationConfig, NotificationTemplate, NotificationLog
 from app.models.compliance import ComplianceItem
+from app.models.custom_field import CustomFieldDefinition
 
 __all__ = [
     "Company", "FinancialYear",
@@ -26,4 +27,5 @@ __all__ = [
     "NumberSequence", "SerialPortConfig", "TallyConfig", "AuditLog",
     "NotificationConfig", "NotificationTemplate", "NotificationLog",
     "ComplianceItem",
+    "CustomFieldDefinition",
 ]

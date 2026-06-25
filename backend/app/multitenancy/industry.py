@@ -48,6 +48,30 @@ INDUSTRY_PRESETS: dict[str, dict] = {
 }
 
 
+# Starter custom-attribute definitions seeded (idempotently, opt-in) for a
+# vertical. Keyed by industry. v1 only seeds 'token' (weighment) attributes.
+# field_key is derived from label if omitted.
+INDUSTRY_DEFAULT_FIELDS: dict[str, list[dict]] = {
+    "maize_trader": [
+        {
+            "entity_type": "token", "field_key": "moisture_pct", "label": "Moisture %",
+            "field_type": "number", "unit": "%", "required": False,
+            "show_on_slip": True, "sort_order": 10,
+        },
+        {
+            "entity_type": "token", "field_key": "quality_grade", "label": "Quality grade",
+            "field_type": "select", "options": ["A", "B", "FAQ"], "required": False,
+            "show_on_slip": True, "sort_order": 20,
+        },
+    ],
+}
+
+
+def industry_default_fields(value: str | None) -> list[dict]:
+    """Starter custom-field definitions for an industry (empty for generic/unknown)."""
+    return [dict(f) for f in INDUSTRY_DEFAULT_FIELDS.get(normalize_industry(value), [])]
+
+
 def normalize_industry(value: str | None) -> str:
     """Coerce any input to a known industry value (falls back to generic)."""
     v = (value or "").strip().lower()

@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, field_validator
@@ -23,6 +23,7 @@ class TokenCreate(BaseModel):
     remarks: Optional[str] = None
     transit_pass_id: Optional[UUID] = None   # links purchase token to its transit/royalty pass
     vehicle_rent: Optional[Decimal] = None   # payment to truck owner per trip
+    custom_fields: Optional[dict[str, Any]] = None   # owner-defined attributes (moisture, quality…)
 
 
 class TokenFirstWeight(BaseModel):
@@ -57,6 +58,7 @@ class TokenVolumeCreate(BaseModel):
     remarks: Optional[str] = None
     transit_pass_id: Optional[UUID] = None
     vehicle_rent: Optional[Decimal] = None
+    custom_fields: Optional[dict[str, Any]] = None
 
 
 class TokenUpdate(BaseModel):
@@ -69,6 +71,7 @@ class TokenUpdate(BaseModel):
     driver_id: Optional[UUID] = None
     transporter_id: Optional[UUID] = None
     remarks: Optional[str] = None
+    custom_fields: Optional[dict[str, Any]] = None
 
 
 class PartyBrief(BaseModel):
@@ -149,6 +152,7 @@ class TokenResponse(BaseModel):
     transit_pass_id: Optional[UUID] = None
     vehicle_rent: Optional[Decimal] = None
     remarks: Optional[str] = None
+    custom_fields: Optional[dict[str, Any]] = None   # owner-defined attribute values
     created_at: datetime
     first_weight_at: Optional[datetime] = None
     second_weight_at: Optional[datetime] = None

@@ -63,6 +63,7 @@ import CompliancePage from '@/pages/CompliancePage';
 import InventoryPage from '@/pages/InventoryPage';
 import UserManagementPage from '@/pages/UserManagementPage';
 import PermissionsPage from '@/pages/PermissionsPage';
+import CustomFieldsPage from '@/pages/CustomFieldsPage';
 import WallpaperSettingsPage from '@/pages/WallpaperSettingsPage';
 import CameraScalePage from '@/pages/CameraScalePage';
 import AnprEventsPage from '@/pages/AnprEventsPage';
@@ -268,6 +269,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             {/* Administration — admin only (each page self-guards via role check) */}
             <Route path="/admin/users" element={<UserManagementPage />} />
             <Route path="/admin/permissions" element={<PermissionsPage />} />
+            <Route path="/admin/custom-fields" element={<CustomFieldsPage />} />
             <Route path="/admin/wallpaper" element={<WallpaperSettingsPage />} />
               <Route path="*" element={<HomeRedirect permissions={permissions} role={user.role} />} />
             </Routes>

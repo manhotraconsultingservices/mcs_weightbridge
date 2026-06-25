@@ -252,6 +252,14 @@
   <span class="row-label">PRODUCT</span>
   <span class="row-value">{{ token.product.name if token.product else '—' }}</span>
 </div>
+{% if slip_custom_fields is defined and slip_custom_fields %}
+{% for f in slip_custom_fields %}
+<div class="row">
+  <span class="row-label">{{ f.label | upper }}</span>
+  <span class="row-value">{{ f.value }}</span>
+</div>
+{% endfor %}
+{% endif %}
 <hr class="sep">
 
 {% if is_volume %}

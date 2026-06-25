@@ -32,7 +32,8 @@ import { useWeight } from '@/hooks/useWeight';
 import { useAuth } from '@/hooks/useAuth';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import api from '@/services/api';
-import type { Token, TokenListResponse, Party, Product, Vehicle, GatePass, SnapshotResult, TokenSnapshotsResponse } from '@/types';
+import type { Token, TokenListResponse, Party, Product, Vehicle, GatePass, SnapshotResult, TokenSnapshotsResponse, CustomFieldDefinition } from '@/types';
+import CustomFieldsInput from '@/components/CustomFieldsInput';
 import { cn } from '@/lib/utils';
 import { TokenDetailModal } from '@/components/TokenDetailModal';
 import { useTranslation } from 'react-i18next';
@@ -157,6 +158,13 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const [weightMethod, setWeightMethod] = useState<'weighbridge' | 'volume'>('weighbridge');
   const [volumeValue, setVolumeValue] = useState('');
   const [tyreCount, setTyreCount] = useState<number | null>(null);   // 4/6/8/10/12 or null
+  // Owner-defined custom attributes (Moisture %, Quality grade…) captured per weighment
+  const [customDefs, setCustomDefs] = useState<CustomFieldDefinition[]>([]);
+  const [customValues, setCustomValues] = useState<Record<string, unknown>>({});
+  useEffect(() => {
+    api.get<CustomFieldDefinition[]>('/api/v1/custom-fields?entity_type=token')
+      .then(r => setCustomDefs(r.data)).catch(() => setCustomDefs([]));
+  }, []);
 
   // Picking a tyre count auto-fills the volume field with the standard capacity.
   function pickTyreCount(n: number) {
@@ -244,6 +252,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
   function resetForm() {
     setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '' });
+    setCustomValues({});
     setVehicleSearch('');
     setSelectedVehicle(null);
     setVolumeValue('');
@@ -366,6 +375,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           remarks: form.remarks
             ? `${form.remarks}${tyreCount ? ` | ${tyreCount}-tyre truck` : ''}`
             : (tyreCount ? `${tyreCount}-tyre truck` : undefined),
+          custom_fields: Object.keys(customValues).length ? customValues : undefined,
         });
         onCreated(data);
         resetForm();
@@ -409,6 +419,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       gate_pass_id: form.gate_pass_id || undefined,
       vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
       remarks: form.remarks || undefined,
+      custom_fields: Object.keys(customValues).length ? customValues : undefined,
     };
     try {
       if (!navigator.onLine) throw new Error('offline');
@@ -908,6 +919,16 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             placeholder="Driver name, challan no…"
           />
         </div>
+
+        {/* Owner-defined custom attributes (Moisture %, Quality, …) */}
+        {customDefs.length > 0 && (
+          <CustomFieldsInput
+            definitions={customDefs}
+            values={customValues}
+            onChange={(k, v) => setCustomValues(s => ({ ...s, [k]: v }))}
+            compact
+          />
+        )}
       </div>
 
       {/* Submit */}

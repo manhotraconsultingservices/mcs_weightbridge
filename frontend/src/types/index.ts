@@ -179,6 +179,20 @@ export interface TokenLinkedInvoice {
   payment_status: string | null;
 }
 
+export interface CustomFieldDefinition {
+  id: string;
+  entity_type: 'token' | 'product' | 'party';
+  field_key: string;
+  label: string;
+  field_type: 'text' | 'number' | 'select' | 'date' | 'boolean';
+  unit: string | null;
+  options: string[] | null;
+  required: boolean;
+  show_on_slip: boolean;
+  sort_order: number;
+  is_active: boolean;
+}
+
 export interface Token {
   id: string;
   token_no: number | null;
@@ -213,6 +227,7 @@ export interface Token {
   transit_pass_id: string | null;
   vehicle_rent: number | null;
   remarks: string | null;
+  custom_fields: Record<string, unknown> | null;   // owner-defined attribute values
   created_at: string;
   first_weight_at: string | null;
   second_weight_at: string | null;

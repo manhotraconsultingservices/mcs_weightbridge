@@ -13,7 +13,7 @@ from app.routers import (
     usb_guard, private_invoices, notifications, audit, backup, import_data,
     tally, app_settings, license, compliance, cameras, inventory,
     product_stock, production, anpr, delivery_challans, royalty, portal, branches, gstr2b,
-    anomalies, gate,
+    anomalies, gate, custom_fields,
 )
 from app.middleware.license_guard import LicenseGuardMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -873,6 +873,7 @@ app.include_router(branches.router)
 app.include_router(gstr2b.router)
 app.include_router(anomalies.router)
 app.include_router(gate.router)
+app.include_router(custom_fields.router)
 
 
 @app.get("/api/v1/health")

@@ -475,6 +475,7 @@ async def create_token(
         transit_pass_id=payload.transit_pass_id,
         vehicle_rent=payload.vehicle_rent,
         remarks=payload.remarks,
+        custom_fields=payload.custom_fields,
         created_by=current_user.id,
         status="OPEN",
     )
@@ -610,6 +611,7 @@ async def create_volume_token(
         transit_pass_id=payload.transit_pass_id,
         vehicle_rent=payload.vehicle_rent,
         remarks=payload.remarks,
+        custom_fields=payload.custom_fields,
         created_by=current_user.id,
         status="COMPLETED",
         completed_at=datetime.now(timezone.utc),
@@ -1099,6 +1101,32 @@ async def print_token(
     vehicle_rent = float(token.vehicle_rent or 0)
     total_amount = (amount or 0) + royalty_amount + vehicle_rent
 
+    # Owner-defined custom attributes flagged to print on the slip (e.g. Moisture %)
+    slip_custom_fields: list[dict] = []
+    try:
+        from app.models.custom_field import CustomFieldDefinition
+        defs = (await db.execute(
+            select(CustomFieldDefinition)
+            .where(
+                CustomFieldDefinition.company_id == company.id,
+                CustomFieldDefinition.entity_type == "token",
+                CustomFieldDefinition.show_on_slip.is_(True),
+                CustomFieldDefinition.is_active.is_(True),
+            )
+            .order_by(CustomFieldDefinition.sort_order, CustomFieldDefinition.label)
+        )).scalars().all()
+        cf = token.custom_fields or {}
+        for d in defs:
+            v = cf.get(d.field_key)
+            if v is None or v == "":
+                continue
+            slip_custom_fields.append({
+                "label": d.label,
+                "value": f"{v}{(' ' + d.unit) if d.unit else ''}",
+            })
+    except Exception:
+        slip_custom_fields = []
+
     template = "token_thermal.html" if format == "thermal" else "token_a4.html"
     html = render_html(template, {
         "token": token,
@@ -1111,5 +1139,6 @@ async def print_token(
         "royalty_per_mt": royalty_per_mt,
         "vehicle_rent": vehicle_rent,
         "total_amount": total_amount,
+        "slip_custom_fields": slip_custom_fields,
     })
     return HTMLResponse(content=html)

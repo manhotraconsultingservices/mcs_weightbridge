@@ -1,7 +1,9 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 from sqlalchemy import String, Boolean, DateTime, Date, ForeignKey, Numeric, Text, Integer, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -62,6 +64,9 @@ class Token(Base):
     transit_pass_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("royalty_passes.id"), nullable=True)
     vehicle_rent: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), default=0)
     remarks: Mapped[str | None] = mapped_column(Text)
+    # Owner-defined custom attributes, keyed by custom_field_definitions.field_key
+    # (e.g. {"moisture_pct": 13.5, "quality": "A"}). Definitions drive the UI/slip.
+    custom_fields: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
