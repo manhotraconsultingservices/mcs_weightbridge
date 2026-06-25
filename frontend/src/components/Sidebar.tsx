@@ -56,6 +56,8 @@ const HUB_MODULES: Record<string, string[]> = {
   '/procurement':   ['invoicing'],
   '/production-hub': ['production'],
   '/accounts':      ['payments', 'gst_reports', 'compliance'],
+  '/compliance':    ['compliance'],
+  '/gst-compliance': ['gst_reports', 'compliance'],
   '/analytics':     ['reports'],
 };
 

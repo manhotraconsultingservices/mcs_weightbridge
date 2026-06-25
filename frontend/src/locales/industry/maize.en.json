@@ -9,7 +9,8 @@
     "title": "Farmers & Buyers",
     "subtitle": "Farmers & buyers — {{count}} records",
     "customer": "Buyer",
-    "supplier": "Farmer"
+    "supplier": "Farmer",
+    "both": "Farmer + Buyer"
   },
   "token": {
     "title": "Weighments",
@@ -20,5 +21,12 @@
   },
   "hubs": {
     "materials": { "catalog": "Commodities" }
+  },
+  "customer360": {
+    "profileTitle": "Farmer / Buyer 360",
+    "pickerTitle": "All Farmers & Buyers",
+    "customersOnly": "Buyers",
+    "suppliersOnly": "Farmers",
+    "noCustomersFound": "No farmers / buyers found"
   }
 }

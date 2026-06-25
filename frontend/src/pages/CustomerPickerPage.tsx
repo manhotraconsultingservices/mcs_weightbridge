@@ -167,7 +167,9 @@ export default function CustomerPickerPage() {
                     </div>
                     <div className="flex items-center gap-1 mt-0.5">
                       <Badge variant="outline" className="text-[9px] uppercase">
-                        {p.party_type === 'both' ? 'Cust + Supp' : p.party_type}
+                        {p.party_type === 'both' ? t('party.both')
+                          : p.party_type === 'supplier' ? t('party.supplier')
+                          : t('party.customer')}
                       </Badge>
                       {p.gstin && (
                         <Badge variant="outline" className="text-[9px] font-mono">GST</Badge>

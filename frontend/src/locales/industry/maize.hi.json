@@ -9,7 +9,8 @@
     "title": "किसान और खरीदार",
     "subtitle": "किसान और खरीदार — {{count}} रिकॉर्ड",
     "customer": "खरीदार",
-    "supplier": "किसान"
+    "supplier": "किसान",
+    "both": "किसान + खरीदार"
   },
   "token": {
     "title": "तौल",
@@ -20,5 +21,12 @@
   },
   "hubs": {
     "materials": { "catalog": "जिंसें" }
+  },
+  "customer360": {
+    "profileTitle": "किसान / खरीदार 360",
+    "pickerTitle": "सभी किसान और खरीदार",
+    "customersOnly": "खरीदार",
+    "suppliersOnly": "किसान",
+    "noCustomersFound": "कोई किसान / खरीदार नहीं मिला"
   }
 }
