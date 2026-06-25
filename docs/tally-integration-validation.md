@@ -1420,20 +1420,24 @@ Run this checklist for each fresh deployment before going live.
 
 ## 18. Known Gaps & Pending Work
 
-### GAP-1: Auto-sync on finalize ★ HIGH PRIORITY
+### GAP-1: Auto-sync on finalize ✅ IMPLEMENTED (2026-06-25)
 
-**Status:** `auto_sync` flag is stored and exposed in Settings, but `routers/invoices.py::finalize_invoice()` never reads it. Manual push only.
+**Resolved.** `routers/invoices.py::finalise_invoice()` now reads `TallyConfig.auto_sync`. After the finalisation commits, if `is_enabled && auto_sync` and the invoice is a GST `sale`/`purchase`, it enqueues a fire-and-forget `BackgroundTask` → `_auto_sync_tally_bg(company_id, invoice_id, tenant_slug)`.
 
-**Fix:** In `routers/invoices.py`, after `invoice.status = "final"`, add:
+The background helper opens its **own tenant-routed session** (`get_tenant_session(tenant_slug)` — same idiom as `_send_notification_bg`), re-checks the guards (final + GST + sale/purchase), reuses the canonical `routers.tally._push_invoice` builder + HTTP push, and commits `tally_synced`. Key properties:
 
-```python
-cfg_result = await db.execute(select(TallyConfig).where(TallyConfig.company_id == company.id))
-cfg = cfg_result.scalar_one_or_none()
-if cfg and cfg.is_enabled and cfg.auto_sync and invoice.tax_type == "gst":
-    background_tasks.add_task(_bg_push_to_tally, invoice.id, current_user.company_id)
-```
+- **Non-blocking** — the finalise HTTP response returns immediately; the Tally round-trip runs after the response is sent.
+- **Never rolls back** — the helper swallows all exceptions; a Tally outage cannot affect the already-committed invoice.
+- **Self-healing** — on failure `tally_synced` stays `False`, so the invoice remains in `GET /api/v1/tally/pending` for manual retry (see GAP-5 for an automatic retry loop).
+- **Race-safe** — `_push_invoice` independently re-reads `TallyConfig` and returns `False` if Tally was disabled between enqueue and execution.
+- **Multi-tenant safe** — the tenant slug is captured in-request and replayed when the background session opens.
 
-The push **must** be a `BackgroundTask` — finalize response must not block on Tally. Tally failure must not roll back finalization. Add a `_bg_push_to_tally(invoice_id, company_id)` async function in `routers/tally.py` that creates its own DB session.
+**Enable it:** Settings → Tally → tick *"Auto-sync when invoice is finalised"* (the toggle already existed in the UI; it is now wired to real behaviour). Requires `is_enabled = true` and a reachable Tally on the configured host/port.
+
+**Manual verification:**
+1. Settings → Tally → enable + auto-sync, point at a running TallyPrime.
+2. Create a GST sale invoice → Finalise. The response returns instantly; within a second or two the invoice drops out of `GET /api/v1/tally/pending` and the voucher appears in Tally → Voucher Register → Sales.
+3. Stop Tally, finalise another GST invoice → finalise still succeeds instantly and the invoice stays in `/tally/pending` (no error surfaced to the operator).
 
 ---
 
@@ -1518,7 +1522,7 @@ A full line-by-line pass of `xml_builder.py`, `client.py`, `routers/tally.py`, t
 
 ### Net result
 
-The **integration code is production-correct**; the only defects were in this document, now corrected. The single functional enhancement worth scheduling is **GAP-1 (auto-sync on finalize)**, since today every voucher requires a manual push.
+The **integration code is production-correct**; the only defects were in this document, now corrected. **GAP-1 (auto-sync on finalize) was implemented in this round** (2026-06-25) — finalising a GST sale/purchase invoice now pushes it to Tally automatically as a non-blocking background task when *Auto-sync* is enabled. Remaining enhancements (credit/debit notes, payment vouchers, stock-item master, retry loop) are tracked as GAP-2…GAP-5.
 
 ---
 

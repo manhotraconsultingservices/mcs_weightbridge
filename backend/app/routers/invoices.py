@@ -760,6 +760,26 @@ async def finalise_invoice(
             co.id, "invoice_finalized", _notify_ctx, "invoice", str(invoice_id), _bg_tenant,
         )
 
+    # ── GAP-1: Auto-sync finalised GST invoice to Tally (fire-and-forget) ──────
+    # Only when Tally is enabled AND auto_sync is on. Mirrors the manual-sync
+    # guards (final + tax_type=gst + sale/purchase — non-GST Bills of Supply and
+    # credit/debit notes never go to the GST books). The push runs in its own
+    # tenant-routed session and never blocks or rolls back the finalisation; on
+    # failure tally_synced stays False so the invoice remains in /tally/pending
+    # for the accountant to retry manually.
+    if inv.invoice_type in ("sale", "purchase") and inv.tax_type == "gst":
+        try:
+            from app.models.settings import TallyConfig
+            _tcfg = (await db.execute(
+                select(TallyConfig).where(TallyConfig.company_id == co.id)
+            )).scalar_one_or_none()
+            if _tcfg and _tcfg.is_enabled and _tcfg.auto_sync:
+                background_tasks.add_task(
+                    _auto_sync_tally_bg, co.id, invoice_id, _bg_tenant,
+                )
+        except Exception:
+            pass
+
     _inv_orm = await _load_invoice(db, invoice_id)
     from app.schemas.invoice import InvoiceResponse as _InvResp
     _resp = _InvResp.model_validate(_inv_orm)
@@ -1062,6 +1082,61 @@ async def _send_notification_bg(
             await send_notification(db, company_id, event_type, context, entity_type, entity_id)
     except Exception as exc:
         _logging.getLogger(__name__).warning("Background notification failed [%s]: %s", event_type, exc)
+
+
+async def _auto_sync_tally_bg(
+    company_id: uuid.UUID,
+    invoice_id: uuid.UUID,
+    tenant_slug: str | None = None,
+) -> None:
+    """GAP-1 — background-task wrapper that pushes a finalised GST invoice to Tally.
+
+    Fire-and-forget: opens its own tenant-routed session, re-checks the guards
+    (status=final, tax_type=gst, sale/purchase), reuses the canonical
+    ``routers.tally._push_invoice`` builder + HTTP push, and commits the
+    ``tally_synced`` flag. NEVER raises — a Tally outage must not affect the
+    already-committed finalisation. On failure ``tally_synced`` stays False so
+    the invoice still surfaces in ``GET /api/v1/tally/pending`` for manual retry.
+
+    ``_push_invoice`` independently re-reads TallyConfig and returns False if the
+    integration was disabled between enqueue and execution, so the auto_sync flag
+    is checked both here (to avoid spawning the task) and there (race-safe).
+    """
+    import logging as _logging
+    try:
+        from sqlalchemy.orm import selectinload as _selectinload
+        from app.database import get_tenant_session
+        from app.models.invoice import Invoice as _Invoice
+        from app.models.company import Company as _Company
+        from app.routers.tally import _push_invoice
+        async with await get_tenant_session(tenant_slug) as db:
+            inv = (await db.execute(
+                select(_Invoice)
+                .options(_selectinload(_Invoice.items))
+                .where(_Invoice.id == invoice_id, _Invoice.company_id == company_id)
+            )).scalar_one_or_none()
+            if (
+                inv is None
+                or inv.status != "final"
+                or inv.tax_type != "gst"
+                or inv.invoice_type not in ("sale", "purchase")
+            ):
+                return
+            company = (await db.execute(
+                select(_Company).where(_Company.id == company_id)
+            )).scalar_one_or_none()
+            if company is None:
+                return
+            success, message = await _push_invoice(inv, company, db)
+            await db.commit()
+            if not success:
+                _logging.getLogger(__name__).warning(
+                    "Tally auto-sync failed for invoice %s: %s", invoice_id, message
+                )
+    except Exception as exc:
+        _logging.getLogger(__name__).warning(
+            "Tally auto-sync error [invoice %s]: %s", invoice_id, exc
+        )
 
 
 @router.post("/{invoice_id}/move-to-supplement", status_code=201)
