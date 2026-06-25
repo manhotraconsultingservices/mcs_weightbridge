@@ -29,7 +29,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger
 } from '@/components/ui/select';
 import { useWeight } from '@/hooks/useWeight';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth, moduleEnabled } from '@/hooks/useAuth';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import api from '@/services/api';
 import type { Token, TokenListResponse, Party, Product, Vehicle, GatePass, SnapshotResult, TokenSnapshotsResponse, CustomFieldDefinition } from '@/types';
@@ -274,7 +274,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
   const handleTypeChange = (type: string) => {
     setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '', vehicle_rent: '' }));
-    if (type === 'purchase') {
+    if (type === 'purchase' && moduleEnabled('royalty')) {
       api.get('/api/v1/royalty/passes', { params: { status: 'active', page_size: 100 } })
         .then(r => {
           const passes = (r.data.items ?? []).map((p: { id: string; pass_no: string; balance_mt: number | string }) => ({
@@ -620,8 +620,9 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           {form.party_id && <CreditStatusBanner partyId={form.party_id} className="mt-1.5" />}
         </div>
 
-        {/* P1: Transit / Royalty Pass — only shown for purchase tokens */}
-        {form.token_type === 'purchase' && (
+        {/* P1: Transit / Royalty Pass — purchase tokens only, and only when the
+            royalty module is on (mining; hidden for maize etc.) */}
+        {form.token_type === 'purchase' && moduleEnabled('royalty') && (
           <div className="space-y-1">
             <Label className="text-xs">{t('token.transitPass')}</Label>
             {passWarning && (

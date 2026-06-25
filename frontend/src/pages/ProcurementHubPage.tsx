@@ -12,6 +12,7 @@ import { ShoppingCart, Mountain, Truck } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { usePermissions } from '@/contexts/PermissionsContext';
+import { moduleEnabled } from '@/hooks/useAuth';
 import InvoicesPage from './InvoicesPage';
 import RoyaltyPassesPage from './RoyaltyPassesPage';
 import CustomerPickerPage from './CustomerPickerPage';
@@ -29,7 +30,11 @@ export default function ProcurementHubPage() {
     { value: 'suppliers', label: t('hubs.procurement.suppliers'),        icon: Truck },
     { value: 'royalty',   label: t('hubs.procurement.royaltyPasses'),    icon: Mountain },
   ];
-  const visibleTabs = TABS.filter(t => isTabAllowed('/procurement', t.value));
+  // Royalty / transit passes are mining-only — hide when the royalty module is
+  // off (e.g. maize_trader). Defaults to visible when modules are unset.
+  const visibleTabs = TABS.filter(t =>
+    isTabAllowed('/procurement', t.value) && (t.value !== 'royalty' || moduleEnabled('royalty')),
+  );
   const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'purchases';
   const initial = (visibleTabs.find(t => t.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'purchases') as Tab;
   const [tab, setTab] = useState<Tab>(initial);
