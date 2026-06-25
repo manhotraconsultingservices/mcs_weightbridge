@@ -292,9 +292,18 @@ async def update_tenant(
         raise HTTPException(404, "Tenant not found")
 
     updates = payload.model_dump(exclude_unset=True)
+    # `industry` is not a column — it lives in config JSON. Handle separately.
+    industry_val = updates.pop("industry", None)
     for field, value in updates.items():
         if hasattr(tenant, field):
             setattr(tenant, field, value)
+    if industry_val is not None:
+        from app.multitenancy.industry import normalize_industry
+        from app.multitenancy.middleware import _modules_cache
+        cfg = dict(tenant.config or {})
+        cfg["industry"] = normalize_industry(industry_val)
+        tenant.config = cfg
+        _modules_cache.pop(slug, None)   # take effect on next request
     # Keep is_active in sync with status
     if "status" in updates:
         tenant.is_active = updates["status"] != "suspended"
@@ -321,10 +330,13 @@ async def get_tenant_modules(
     if not tenant:
         raise HTTPException(404, "Tenant not found")
 
+    from app.multitenancy.industry import industry_modules, normalize_industry
     config = tenant.config or {}
     saved_modules = config.get("modules", {})
-    resolved = {**DEFAULT_MODULES, **saved_modules}
-    return {"slug": slug, "modules": resolved}
+    industry = normalize_industry(config.get("industry"))
+    # Reflect the industry preset so the panel shows what the tenant actually sees.
+    resolved = {**DEFAULT_MODULES, **industry_modules(industry), **saved_modules}
+    return {"slug": slug, "modules": resolved, "industry": industry}
 
 
 @router.put("/tenants/{slug}/modules")

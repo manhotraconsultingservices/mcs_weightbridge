@@ -53,6 +53,7 @@ export interface TenantOverview {
   contact_email: string | null;
   contact_phone: string | null;
   agent_api_key: string;
+  config?: Record<string, any> | null;   // tenant config JSON (incl. industry, modules)
   sales_reps: { id: string; username: string; full_name: string | null; email: string | null }[];
   created_at: string;
   updated_at: string;

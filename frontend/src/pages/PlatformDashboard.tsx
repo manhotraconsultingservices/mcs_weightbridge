@@ -135,20 +135,41 @@ function EditTenantDialog({ tenant, open, onClose, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [modules, setModules] = useState<Record<string, boolean>>({});
   const [modulesLoading, setModulesLoading] = useState(false);
+  const [industry, setIndustry] = useState('generic');
+
+  // Industry presets — picking one flips the vertical-specific module flags so
+  // the checkboxes + the subsequent save stay consistent with the preset.
+  const INDUSTRY_OPTIONS: { value: string; label: string }[] = [
+    { value: 'generic',       label: 'Generic Weighbridge' },
+    { value: 'stone_crusher', label: 'Stone Crusher' },
+    { value: 'maize_trader',  label: 'Maize / Grain Trader' },
+  ];
+  const INDUSTRY_MODULE_PRESET: Record<string, Record<string, boolean>> = {
+    generic:       { production: true,  cameras: true,  anpr: true,  royalty: true,  gate: true },
+    stone_crusher: { production: true,  cameras: true,  anpr: true,  royalty: true,  gate: true },
+    maize_trader:  { production: false, cameras: false, anpr: false, royalty: false, gate: false },
+  };
 
   useEffect(() => {
     if (tenant) {
       setStatus(tenant.status); setDisplayName(tenant.display_name);
       setAmcStart(tenant.amc_start_date || ''); setAmcExpiry(tenant.amc_expiry_date || '');
       setContactEmail(tenant.contact_email || ''); setContactPhone(tenant.contact_phone || '');
-      // Load modules
+      setIndustry((tenant.config?.industry as string) || 'generic');
+      // Load modules (response also carries the resolved industry)
       setModulesLoading(true);
       platformApi.get(`/api/v1/platform/tenants/${tenant.slug}/modules`)
-        .then(r => setModules(r.data.modules))
+        .then(r => { setModules(r.data.modules); if (r.data.industry) setIndustry(r.data.industry); })
         .catch(() => {})
         .finally(() => setModulesLoading(false));
     }
   }, [tenant]);
+
+  function handleIndustryChange(v: string) {
+    setIndustry(v);
+    // Flip the vertical module flags to match the chosen industry.
+    setModules(prev => ({ ...prev, ...(INDUSTRY_MODULE_PRESET[v] || {}) }));
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -156,6 +177,7 @@ function EditTenantDialog({ tenant, open, onClose, onSaved }: {
       await platformApi.put(`/api/v1/platform/tenants/${tenant!.slug}`, {
         display_name: displayName, status, amc_start_date: amcStart || null,
         amc_expiry_date: amcExpiry || null, contact_email: contactEmail || null, contact_phone: contactPhone || null,
+        industry,
       });
       // Save modules separately
       await platformApi.put(`/api/v1/platform/tenants/${tenant!.slug}/modules`, modules);
@@ -177,6 +199,11 @@ function EditTenantDialog({ tenant, open, onClose, onSaved }: {
     { key: 'tally_sync',    label: 'Tally Integration',   description: 'Push invoices and masters to Tally Prime' },
     { key: 'einvoice',      label: 'eInvoice (IRN)',      description: 'NIC eInvoice generation for B2B invoices' },
     { key: 'data_import',   label: 'Data Import',         description: 'Bulk import parties, products, vehicles from Excel' },
+    { key: 'production',    label: 'Production / Crushing', description: 'Production cycles + yield (stone crusher)' },
+    { key: 'cameras',       label: 'Gate Cameras',        description: 'Camera snapshots on weighment' },
+    { key: 'anpr',          label: 'ANPR Gate',           description: 'Number-plate recognition gate + trips' },
+    { key: 'royalty',       label: 'Royalty Passes',      description: 'Mineral royalty / transit passes (mining)' },
+    { key: 'gate',          label: 'Gate Register',       description: 'Controlled-access gate pass register' },
   ];
 
   if (!tenant) return null;
@@ -203,6 +230,22 @@ function EditTenantDialog({ tenant, open, onClose, onSaved }: {
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Contact Email</Label><Input value={contactEmail} onChange={e => setContactEmail(e.target.value)} /></div>
             <div><Label>Contact Phone</Label><Input value={contactPhone} onChange={e => setContactPhone(e.target.value)} /></div>
+          </div>
+
+          {/* ── Industry profile ── */}
+          <div className="pt-2 border-t">
+            <Label className="text-sm font-semibold">Industry</Label>
+            <Select value={industry} onValueChange={v => handleIndustryChange(v ?? 'generic')}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {INDUSTRY_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Sets the vertical: hides irrelevant modules below + applies that industry's
+              terminology (e.g. Maize → Farmer / Weighment / Commodity). Existing tenants stay
+              "Generic" unless changed.
+            </p>
           </div>
 
           {/* ── Module Toggles ── */}
