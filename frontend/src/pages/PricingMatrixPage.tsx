@@ -55,6 +55,8 @@ export default function PricingMatrixPage() {
   const [partySearch, setPartySearch] = useState('');
   const [copyFromOpen, setCopyFromOpen] = useState(false);
   const [copyFromParty, setCopyFromParty] = useState('');
+  // Customer rates vs Supplier/Farmer (purchase) rates — same party_rates table.
+  const [mode, setMode] = useState<'customer' | 'supplier'>('customer');
 
   // Load parties, products, and current matrix in parallel
   const loadData = useCallback(async () => {
@@ -67,8 +69,8 @@ export default function PricingMatrixPage() {
       ]);
       const partyList = Array.isArray(pa.data) ? pa.data : (pa.data as { items: Party[] }).items ?? [];
       const prodList = Array.isArray(pr.data) ? pr.data : (pr.data as { items: Product[] }).items ?? [];
-      // Customers only — pricing matrix is irrelevant for suppliers
-      setParties(partyList.filter(p => p.party_type === 'customer' || p.party_type === 'both'));
+      // Keep all parties — the Customer / Supplier toggle scopes which show.
+      setParties(partyList);
       setProducts(prodList.filter(p => p.is_active));
       setCells(ma.data.cells ?? []);
     } finally {
@@ -94,11 +96,22 @@ export default function PricingMatrixPage() {
     }));
   }, [selectedPartyId, products, cells]);
 
+  // Localised noun for the active mode (Customer/Buyer vs Supplier/Farmer).
+  const partyWord = mode === 'supplier' ? t('party.supplier') : t('party.customer');
+
+  const typedParties = useMemo(
+    () => parties.filter(p =>
+      mode === 'supplier'
+        ? (p.party_type === 'supplier' || p.party_type === 'both')
+        : (p.party_type === 'customer' || p.party_type === 'both')),
+    [parties, mode],
+  );
+
   const filteredParties = useMemo(() => {
     const q = partySearch.toLowerCase().trim();
-    if (!q) return parties;
-    return parties.filter(p => p.name.toLowerCase().includes(q));
-  }, [parties, partySearch]);
+    if (!q) return typedParties;
+    return typedParties.filter(p => p.name.toLowerCase().includes(q));
+  }, [typedParties, partySearch]);
 
   const overrideCount = useMemo(() => {
     if (!selectedPartyId) return 0;
@@ -159,7 +172,7 @@ export default function PricingMatrixPage() {
   }
 
   function handleResetAll() {
-    if (!confirm('Clear all customer-specific rates for this party? They will use product default rates.')) return;
+    if (!confirm(`Clear all ${partyWord.toLowerCase()}-specific rates for this party? They will use product default rates.`)) return;
     setRows(rs => rs.map(r => ({ ...r, override: '', dirty: true })));
   }
 
@@ -169,7 +182,7 @@ export default function PricingMatrixPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">{t('pricingMatrix.title')}</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{partyWord} Pricing Matrix</h1>
           <p className="text-muted-foreground">{t('pricingMatrix.subtitle')}</p>
         </div>
       </div>
@@ -178,8 +191,22 @@ export default function PricingMatrixPage() {
         {/* Party picker */}
         <Card>
           <CardContent className="p-3 space-y-3">
+            <div className="flex gap-1">
+              {(['customer', 'supplier'] as const).map(mtab => (
+                <button
+                  key={mtab}
+                  type="button"
+                  onClick={() => { setMode(mtab); setSelectedPartyId(''); setCopyFromOpen(false); setCopyFromParty(''); }}
+                  className={`flex-1 px-2 py-1.5 rounded text-xs font-medium border transition-colors ${
+                    mode === mtab ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-muted border-input'
+                  }`}
+                >
+                  {mtab === 'supplier' ? t('party.supplier') : t('party.customer')}
+                </button>
+              ))}
+            </div>
             <div className="space-y-1">
-              <Label className="text-xs">Search Customer</Label>
+              <Label className="text-xs">Search {partyWord}</Label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
@@ -194,7 +221,7 @@ export default function PricingMatrixPage() {
               {loading ? (
                 <p className="text-xs text-muted-foreground text-center py-6">Loading…</p>
               ) : filteredParties.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-6">No customers</p>
+                <p className="text-xs text-muted-foreground text-center py-6">No {partyWord.toLowerCase()}s</p>
               ) : (
                 filteredParties.map(p => {
                   const cellCount = cells.filter(c => c.party_id === p.id).length;
@@ -242,7 +269,7 @@ export default function PricingMatrixPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => setCopyFromOpen(o => !o)}
-                      disabled={parties.length < 2}
+                      disabled={typedParties.length < 2}
                     >
                       <Copy className="mr-1 h-3 w-3" /> {t('pricingMatrix.copyFrom')}
                     </Button>
@@ -250,10 +277,10 @@ export default function PricingMatrixPage() {
                       <div className="flex gap-1">
                         <Select value={copyFromParty || undefined} onValueChange={v => setCopyFromParty(v ?? '')}>
                           <SelectTrigger className="h-8 text-xs w-48">
-                            <SelectValue placeholder="Source customer" />
+                            <SelectValue placeholder={`Source ${partyWord.toLowerCase()}`} />
                           </SelectTrigger>
                           <SelectContent>
-                            {parties.filter(p => p.id !== selectedPartyId).map(p => (
+                            {typedParties.filter(p => p.id !== selectedPartyId).map(p => (
                               <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                             ))}
                           </SelectContent>
@@ -269,14 +296,14 @@ export default function PricingMatrixPage() {
                       onClick={() => {
                         // Export FULL matrix: parties as rows, products as columns
                         const productNames = products.map(p => p.name);
-                        const headers = ['Customer', ...productNames.map(n => `${n} (Custom)`), ...productNames.map(n => `${n} (Default)`)];
+                        const headers = [partyWord, ...productNames.map(n => `${n} (Custom)`), ...productNames.map(n => `${n} (Default)`)];
                         const productById = Object.fromEntries(products.map(p => [p.id, p]));
                         const rowsByParty = new Map<string, Map<string, number>>();
                         cells.forEach(c => {
                           if (!rowsByParty.has(c.party_id)) rowsByParty.set(c.party_id, new Map());
                           rowsByParty.get(c.party_id)!.set(c.product_id, c.rate);
                         });
-                        const rows = parties.map(p => {
+                        const rows = typedParties.map(p => {
                           const partyRates = rowsByParty.get(p.id) ?? new Map();
                           const custom = products.map(pr => {
                             const r = partyRates.get(pr.id);
@@ -351,9 +378,9 @@ export default function PricingMatrixPage() {
         <div>
           <p className="font-medium">How rates are applied at invoice time</p>
           <p>
-            Customer-specific rate → product default rate → ₹0. Token auto-invoices and the New Invoice
-            dialog both honour customer rates as long as the rate field is left at zero (the server fills it in).
-            Operators can still type a one-off rate to override either default.
+            {partyWord}-specific rate → product default rate → ₹0. Token auto-invoices and the New Invoice /
+            Purchase dialog both honour {partyWord.toLowerCase()} rates as long as the rate field is left at zero
+            (the server fills it in). Operators can still type a one-off rate to override either default.
           </p>
         </div>
       </div>

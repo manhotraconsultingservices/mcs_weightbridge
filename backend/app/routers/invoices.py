@@ -178,9 +178,11 @@ async def create_invoice(
     items_data = [i.model_dump() for i in payload.items]
 
     # Server-side safety net: if the client sent rate=0 or omitted it for a
-    # (party, product) combo where a customer-specific rate exists, swap it in.
-    # The UI should also do this, but we don't trust the client.
-    if payload.party_id and payload.invoice_type == "sale":
+    # (party, product) combo where a party-specific rate exists, swap it in.
+    # Applies to BOTH sales (customer rate) and purchases (supplier/farmer rate)
+    # — party_rates is keyed by party, not type. The UI should also do this, but
+    # we don't trust the client.
+    if payload.party_id and payload.invoice_type in ("sale", "purchase"):
         from app.models.party import PartyRate
         from datetime import date as _date
         for it in items_data:
