@@ -6,9 +6,11 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Truck, Warehouse, MonitorPlay, ScanSearch, Camera, AlertTriangle, FileText } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
+import { moduleEnabled } from '@/hooks/useAuth';
 import VehiclesPage from './VehiclesPage';
 import InventoryPage from './InventoryPage';
 import CameraScalePage from './CameraScalePage';
@@ -19,20 +21,25 @@ import AnprTripsPage from './AnprTripsPage';
 
 type Tab = 'vehicles' | 'store' | 'camera-scale' | 'snapshots' | 'anpr-trips' | 'anpr-events' | 'anpr-review';
 
-const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-  { value: 'vehicles', label: 'Vehicles', icon: Truck },
-  { value: 'store', label: 'Store Inventory', icon: Warehouse },
-  { value: 'camera-scale', label: 'Camera & Scale', icon: MonitorPlay },
-  { value: 'snapshots', label: 'Snapshot Search', icon: ScanSearch },
-  { value: 'anpr-trips', label: 'Movement Report', icon: FileText },
-  { value: 'anpr-events', label: 'Gate Cameras', icon: Camera },
-  { value: 'anpr-review', label: 'Plate Review', icon: AlertTriangle },
-];
-
 export default function OperationsHubPage() {
+  const { t } = useTranslation();
   const nav = useNavigate();
   const loc = useLocation();
-  const initial = (new URLSearchParams(loc.search).get('tab') as Tab) || 'vehicles';
+
+  // Camera/ANPR tabs gate on the 'cameras' / 'anpr' modules (hidden for e.g.
+  // maize_trader). Defaults to visible when modules are unset.
+  const ALL_TABS: { value: Tab; label: string; icon: React.ElementType; module?: string }[] = [
+    { value: 'vehicles',     label: t('hubs.operations.vehicles'),       icon: Truck },
+    { value: 'store',        label: t('hubs.operations.storeInventory'), icon: Warehouse },
+    { value: 'camera-scale', label: t('hubs.operations.cameraScale'),    icon: MonitorPlay,  module: 'cameras' },
+    { value: 'snapshots',    label: t('hubs.operations.snapshotSearch'), icon: ScanSearch,   module: 'cameras' },
+    { value: 'anpr-trips',   label: t('hubs.operations.movementReport'), icon: FileText,     module: 'anpr' },
+    { value: 'anpr-events',  label: t('hubs.operations.gateCameras'),    icon: Camera,       module: 'anpr' },
+    { value: 'anpr-review',  label: t('hubs.operations.plateReview'),    icon: AlertTriangle, module: 'anpr' },
+  ];
+  const TABS = ALL_TABS.filter(tt => !tt.module || moduleEnabled(tt.module));
+  const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'vehicles';
+  const initial = TABS.some(tt => tt.value === initialRaw) ? initialRaw : (TABS[0]?.value ?? 'vehicles');
   const [tab, setTab] = useState<Tab>(initial);
 
   useEffect(() => {

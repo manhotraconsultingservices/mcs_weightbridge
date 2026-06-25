@@ -1,0 +1,24 @@
+{
+  "sidebar": {
+    "trips": "तौल",
+    "customers": "किसान और खरीदार",
+    "materials": "जिंसें",
+    "catalog": "जिंसें"
+  },
+  "party": {
+    "title": "किसान और खरीदार",
+    "subtitle": "किसान और खरीदार — {{count}} रिकॉर्ड",
+    "customer": "खरीदार",
+    "supplier": "किसान"
+  },
+  "token": {
+    "title": "तौल",
+    "newToken": "नई तौल",
+    "tokenNo": "तौल #",
+    "product": "जिंस",
+    "party": "किसान / खरीदार"
+  },
+  "hubs": {
+    "materials": { "catalog": "जिंसें" }
+  }
+}

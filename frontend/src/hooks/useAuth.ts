@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { User } from '@/types';
+import { applyIndustryTerminology } from '@/i18n';
 
 // Use sessionStorage — tokens are cleared when the browser tab/window closes.
 // This prevents tokens persisting on disk (localStorage survives browser close
@@ -14,7 +15,7 @@ export function useAuth() {
 
   const [token, setToken] = useState<string | null>(() => STORE.getItem('token'));
 
-  const login = useCallback((accessToken: string, userData: User, tenantSlug?: string, tenantModules?: Record<string, boolean>) => {
+  const login = useCallback((accessToken: string, userData: User, tenantSlug?: string, tenantModules?: Record<string, boolean>, tenantIndustry?: string) => {
     STORE.setItem('token', accessToken);
     STORE.setItem('user', JSON.stringify(userData));
     if (tenantSlug) {
@@ -27,6 +28,13 @@ export function useAuth() {
     } else {
       STORE.removeItem('tenant_modules');
     }
+    if (tenantIndustry) {
+      STORE.setItem('tenant_industry', tenantIndustry);
+    } else {
+      STORE.removeItem('tenant_industry');
+    }
+    // Swap in (or clear) the industry terminology overlay for this tenant.
+    applyIndustryTerminology(tenantIndustry || null);
     setToken(accessToken);
     setUser(userData);
   }, []);
@@ -36,6 +44,8 @@ export function useAuth() {
     STORE.removeItem('user');
     STORE.removeItem('tenant_slug');
     STORE.removeItem('tenant_modules');
+    STORE.removeItem('tenant_industry');
+    applyIndustryTerminology(null);   // reset labels to base
     setToken(null);
     setUser(null);
   }, []);
@@ -62,4 +72,20 @@ export function getTenantModules(): Record<string, boolean> | null {
   const raw = sessionStorage.getItem('tenant_modules');
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
+}
+
+/** Get the tenant's industry profile (e.g. 'maize_trader'); null = generic. */
+export function getTenantIndustry(): string | null {
+  return sessionStorage.getItem('tenant_industry');
+}
+
+/**
+ * Is a feature module enabled for this tenant? Defaults to TRUE when modules
+ * are unset (single-tenant / no config) or the key is absent — so gating is
+ * purely additive and never hides anything for tenants without a profile.
+ */
+export function moduleEnabled(name: string): boolean {
+  const mods = getTenantModules();
+  if (!mods) return true;
+  return mods[name] !== false;
 }

@@ -199,11 +199,26 @@ async def update_tenant(
             await tenant_registry.remove_tenant(slug)
     if payload.config is not None:
         tenant.config = payload.config
+    if payload.industry is not None:
+        # Convenience: stamp the industry into config["industry"]. The module
+        # preset is applied dynamically at login (not baked in), so switching
+        # industry takes effect immediately and per-tenant module overrides win.
+        from app.multitenancy.industry import normalize_industry
+        cfg = dict(tenant.config or {})
+        cfg["industry"] = normalize_industry(payload.industry)
+        tenant.config = cfg
 
     await db.commit()
     await db.refresh(tenant)
     logger.info("Tenant updated: %s", slug)
     return TenantResponse.model_validate(tenant)
+
+
+@router.get("/industries")
+async def list_industries(_auth=Depends(_require_super_admin)):
+    """Available industry profiles for the platform-admin picker."""
+    from app.multitenancy.industry import industry_list
+    return {"items": industry_list()}
 
 
 @router.post("/tenants/{slug}/rotate-key", response_model=TenantResponse)

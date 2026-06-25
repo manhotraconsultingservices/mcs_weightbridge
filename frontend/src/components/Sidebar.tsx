@@ -51,8 +51,10 @@ const HUB_CHILDREN: Record<string, string[]> = {
 // Store Inventory API (/api/v1/inventory) at the backend level.
 const HUB_MODULES: Record<string, string[]> = {
   '/weighbridge':   ['weighing'],
+  '/cameras-anpr':  ['cameras', 'anpr'],
   '/sales':         ['invoicing', 'quotations'],
   '/procurement':   ['invoicing'],
+  '/production-hub': ['production'],
   '/accounts':      ['payments', 'gst_reports', 'compliance'],
   '/analytics':     ['reports'],
 };

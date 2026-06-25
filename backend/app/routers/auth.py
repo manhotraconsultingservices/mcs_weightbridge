@@ -38,6 +38,13 @@ DEFAULT_MODULES = {
     "tally_sync":    False,     # Tally Integration
     "einvoice":      False,     # eInvoice (IRN)
     "data_import":   False,     # Data Import (Excel/CSV)
+    # Vertical-specific areas — default True so existing tenants are unaffected;
+    # an industry preset (e.g. maize_trader) turns the irrelevant ones off.
+    "production":    True,      # Production cycles / crushing yield
+    "cameras":       True,      # Gate-camera snapshots
+    "anpr":          True,      # ANPR plate-recognition gate
+    "royalty":       True,      # Mineral royalty / transit passes
+    "gate":          True,      # Controlled-access gate register
 }
 
 from fastapi import Request
@@ -155,10 +162,21 @@ async def login(
         if tenant_status == "readonly":
             tenant_status_message = "AMC expired. Your account is in read-only mode. Contact support to renew."
 
-        # Resolve tenant modules (merge saved config with defaults)
+        # Resolve tenant modules. Precedence (lowest → highest):
+        #   DEFAULT_MODULES  <  industry preset overrides  <  saved config.modules
+        # The industry preset is applied dynamically here (not baked into config)
+        # so switching a tenant's industry takes effect on next login.
+        from app.multitenancy.industry import (
+            industry_modules, normalize_industry,
+        )
         tenant_config = getattr(tenant, "config", None) or {}
         saved_modules = tenant_config.get("modules", {})
-        resolved_modules = {**DEFAULT_MODULES, **saved_modules}
+        tenant_industry = normalize_industry(tenant_config.get("industry"))
+        resolved_modules = {
+            **DEFAULT_MODULES,
+            **industry_modules(tenant_industry),
+            **saved_modules,
+        }
 
         # Authenticate against the tenant's database
         factory = await tenant_registry.get_session_factory(tenant_slug)
@@ -175,15 +193,39 @@ async def login(
                 tenant_status=tenant_status,
                 tenant_status_message=tenant_status_message,
                 tenant_modules=resolved_modules,
+                tenant_industry=tenant_industry,
             )
     else:
         # ── Single-tenant login (existing behavior) ─────────────────────────
         user = await _authenticate_user(db, form_data, request)
         token = create_access_token(data={"sub": str(user.id)})
-        return TokenResponse(
+        resp = TokenResponse(
             access_token=token,
             user=UserResponse.model_validate(user),
         )
+        # Optional industry profile for single-tenant installs (app_settings).
+        # Absent → no change (resp stays exactly as before).
+        industry = await _single_tenant_industry(db)
+        if industry and industry != "generic":
+            from app.multitenancy.industry import industry_modules
+            resp.tenant_industry = industry
+            resp.tenant_modules = {**DEFAULT_MODULES, **industry_modules(industry)}
+        return resp
+
+
+async def _single_tenant_industry(db: AsyncSession) -> str | None:
+    """Read the optional `industry_profile` app_settings key (single-tenant).
+
+    Safe no-op if the table/key is absent — returns None so login is unchanged.
+    """
+    try:
+        from app.multitenancy.industry import normalize_industry
+        row = (await db.execute(
+            _sql("SELECT value FROM app_settings WHERE key = 'industry_profile'")
+        )).first()
+        return normalize_industry(row[0]) if row and row[0] else None
+    except Exception:
+        return None
 
 
 @router.get("/me", response_model=UserResponse)

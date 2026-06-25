@@ -9,7 +9,7 @@ import api from '@/services/api';
 import type { LoginResponse } from '@/types';
 
 interface LoginPageProps {
-  onLogin: (token: string, user: LoginResponse['user'], tenantSlug?: string, tenantModules?: Record<string, boolean>) => void;
+  onLogin: (token: string, user: LoginResponse['user'], tenantSlug?: string, tenantModules?: Record<string, boolean>, tenantIndustry?: string) => void;
 }
 
 interface TenantInfo {
@@ -124,7 +124,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         }
       }
 
-      onLogin(data.access_token, data.user, data.tenant_slug, data.tenant_modules);
+      onLogin(data.access_token, data.user, data.tenant_slug, data.tenant_modules, data.tenant_industry);
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
       setError(typeof detail === 'string' ? detail : t('login.invalidCredentials'));

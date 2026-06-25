@@ -16,6 +16,7 @@ export interface LoginResponse {
   tenant_status?: string;         // active | readonly | suspended
   tenant_status_message?: string;
   tenant_modules?: Record<string, boolean>;
+  tenant_industry?: string;       // vertical profile → terminology overlay
 }
 
 // ── Platform types ──────────────────────────────────────────────────────────

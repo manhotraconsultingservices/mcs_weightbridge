@@ -41,6 +41,7 @@ class TenantUpdate(BaseModel):
     is_active: Optional[bool] = None
     status: Optional[str] = None              # active / readonly / suspended
     config: Optional[dict] = None
+    industry: Optional[str] = None            # convenience: sets config["industry"]
     amc_start_date: Optional[date] = None
     amc_expiry_date: Optional[date] = None
     logo_url: Optional[str] = None

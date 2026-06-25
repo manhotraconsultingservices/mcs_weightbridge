@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { Package, IndianRupee, Boxes, Factory, Activity, Settings, Mountain } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
+import { moduleEnabled } from '@/hooks/useAuth';
 import ProductsPage from './ProductsPage';
 import PricingMatrixPage from './PricingMatrixPage';
 import ProductInventoryPage from './ProductInventoryPage';
@@ -26,7 +27,15 @@ export default function MaterialsHubPage() {
   const loc = useLocation();
   const initial = (new URLSearchParams(loc.search).get('tab') as Tab) || 'catalog';
 
-  const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
+  // Per-industry module gating: hide Royalty / Production tabs when their
+  // module is off (e.g. maize_trader). Defaults to visible when modules unset.
+  const TAB_MODULE: Partial<Record<Tab, string>> = {
+    royalty: 'royalty',
+    production: 'production',
+    'production-dashboard': 'production',
+    'production-settings': 'production',
+  };
+  const ALL_TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
     { value: 'catalog',              label: t('hubs.materials.catalog'),              icon: Package },
     { value: 'rates',                label: t('hubs.materials.customerRates'),        icon: IndianRupee },
     { value: 'stock',                label: t('hubs.materials.stockOnHand'),          icon: Boxes },
@@ -35,7 +44,9 @@ export default function MaterialsHubPage() {
     { value: 'production-dashboard', label: t('hubs.materials.productionDashboard'), icon: Activity },
     { value: 'production-settings',  label: t('hubs.materials.productionSettings'),  icon: Settings },
   ];
-  const [tab, setTab] = useState<Tab>(initial);
+  const TABS = ALL_TABS.filter(tt => { const m = TAB_MODULE[tt.value]; return !m || moduleEnabled(m); });
+  const isVisible = (v: Tab) => TABS.some(tt => tt.value === v);
+  const [tab, setTab] = useState<Tab>(isVisible(initial) ? initial : (TABS[0]?.value ?? 'catalog'));
 
   useEffect(() => {
     const params = new URLSearchParams(loc.search);

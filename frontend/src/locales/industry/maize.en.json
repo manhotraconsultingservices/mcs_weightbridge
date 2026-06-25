@@ -1,0 +1,24 @@
+{
+  "sidebar": {
+    "trips": "Weighments",
+    "customers": "Farmers & Buyers",
+    "materials": "Commodities",
+    "catalog": "Commodities"
+  },
+  "party": {
+    "title": "Farmers & Buyers",
+    "subtitle": "Farmers & buyers — {{count}} records",
+    "customer": "Buyer",
+    "supplier": "Farmer"
+  },
+  "token": {
+    "title": "Weighments",
+    "newToken": "New Weighment",
+    "tokenNo": "Weighment #",
+    "product": "Commodity",
+    "party": "Farmer / Buyer"
+  },
+  "hubs": {
+    "materials": { "catalog": "Commodities" }
+  }
+}
