@@ -188,11 +188,16 @@ async def _push_invoice(
         include_weight=cfg.narration_weight,
     )
 
-    # Build XML
+    # Build XML — only sale/purchase are valid Tally voucher types
     if invoice.invoice_type == "sale":
         xml = build_sales_xml(invoice, company, party, ledger_map, narration_opts)
-    else:
+    elif invoice.invoice_type == "purchase":
         xml = build_purchase_xml(invoice, company, party, ledger_map, narration_opts)
+    else:
+        return False, (
+            f"Invoice type '{invoice.invoice_type}' cannot be synced to Tally. "
+            "Only 'sale' and 'purchase' invoices are supported."
+        )
 
     # Push to Tally
     client = _make_client(cfg)
@@ -703,5 +708,5 @@ async def bulk_sync_to_tally(
         "total": len(invoices),
         "synced": synced,
         "failed": failed,
-        "results": [r.dict() for r in results],
+        "results": [r.model_dump() for r in results],
     }

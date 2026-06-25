@@ -121,8 +121,9 @@ def _parse_tally_response(xml_text: str) -> tuple[bool, str]:
         # If we got XML back without errors, assume success
         return True, "Sent to Tally successfully"
     except ET.ParseError:
-        # Tally sometimes returns non-XML on success
-        if "CREATED" in xml_text or "created" in xml_text.lower():
+        # Tally sometimes returns non-XML on success (older versions)
+        # Use tag form to avoid matching error messages that mention "created"
+        if "<CREATED>" in xml_text:
             return True, "Voucher created in Tally"
         return True, "Sent to Tally (response: OK)"
 

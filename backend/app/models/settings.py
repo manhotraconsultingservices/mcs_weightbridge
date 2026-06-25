@@ -43,7 +43,7 @@ class TallyConfig(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id"))
     host: Mapped[str] = mapped_column(String(100), default="localhost")
-    port: Mapped[int] = mapped_column(Integer, default=9000)
+    port: Mapped[int] = mapped_column(Integer, default=9002)
     tally_company_name: Mapped[str | None] = mapped_column(String(200))
     auto_sync: Mapped[bool] = mapped_column(Boolean, default=False)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
