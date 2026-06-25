@@ -115,6 +115,22 @@ async def get_summary(
         )
     )).scalar() or Decimal(0))
 
+    # ── Purchases (supplier / farmer side) ────────────────────────────────────
+    purchases_today = float((await db.execute(
+        select(func.coalesce(func.sum(Invoice.grand_total), 0))
+        .where(Invoice.invoice_type == "purchase", Invoice.invoice_date == today, Invoice.status == "final")
+    )).scalar() or Decimal(0))
+
+    purchases_month = float((await db.execute(
+        select(func.coalesce(func.sum(Invoice.grand_total), 0))
+        .where(
+            Invoice.invoice_type == "purchase",
+            Invoice.invoice_date >= month_start,
+            Invoice.invoice_date <= today,
+            Invoice.status == "final",
+        )
+    )).scalar() or Decimal(0))
+
     # ── Tonnage (exclude supplement tokens when USB not active) ───────────────
     tonnage_today = float((await db.execute(
         select(func.coalesce(func.sum(Token.net_weight), 0))
@@ -126,6 +142,12 @@ async def get_summary(
     outstanding = float((await db.execute(
         select(func.coalesce(func.sum(Invoice.amount_due), 0))
         .where(Invoice.invoice_type == "sale", Invoice.status == "final", Invoice.payment_status != "paid")
+    )).scalar() or Decimal(0))
+
+    # ── Payables — owed to suppliers/farmers (unpaid purchase invoices) ───────
+    payables = float((await db.execute(
+        select(func.coalesce(func.sum(Invoice.amount_due), 0))
+        .where(Invoice.invoice_type == "purchase", Invoice.status == "final", Invoice.payment_status != "paid")
     )).scalar() or Decimal(0))
 
     # ── Recent tokens ─────────────────────────────────────────────────────────
@@ -187,6 +209,24 @@ async def get_summary(
         reverse=True,
     )[:5]
 
+    # ── Top suppliers / farmers (purchase invoices) ───────────────────────────
+    sup_map: dict[str, float] = {}
+    sup_id_map: dict[str, str] = {}
+    inv_suppliers = await db.execute(
+        select(Party.id, Party.name, func.sum(Invoice.grand_total).label("total"))
+        .join(Invoice, Invoice.party_id == Party.id)
+        .where(Invoice.invoice_type == "purchase", Invoice.status == "final")
+        .group_by(Party.id, Party.name)
+    )
+    for pid, name, total in inv_suppliers.all():
+        sup_map[name] = sup_map.get(name, 0.0) + float(total)
+        sup_id_map[name] = str(pid)
+    top_suppliers = sorted(
+        [{"name": k, "total": v, "party_id": sup_id_map.get(k)} for k, v in sup_map.items()],
+        key=lambda x: x["total"],
+        reverse=True,
+    )[:5]
+
     return {
         "tokens_today": tokens_today,
         "revenue_today": revenue_today,
@@ -194,8 +234,12 @@ async def get_summary(
         "outstanding": outstanding,
         "revenue_month": revenue_month,
         "tokens_month": tokens_month,
+        "purchases_today": purchases_today,
+        "purchases_month": purchases_month,
+        "payables": payables,
         "recent_tokens": recent_tokens,
         "top_customers": top_customers,
+        "top_suppliers": top_suppliers,
         "supplement_included": with_supp,
     }
 

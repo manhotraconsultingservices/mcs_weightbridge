@@ -1,8 +1,9 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Scale, IndianRupee, Package, AlertCircle,
   TrendingUp, TrendingDown, Activity,
-  Truck, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Search, X, Usb,
+  Truck, ShoppingCart, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Search, X, Usb,
   ShieldCheck, ExternalLink,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,6 +32,9 @@ interface DashboardSummary {
   outstanding: number;
   revenue_month: number;
   tokens_month: number;
+  purchases_today: number;
+  purchases_month: number;
+  payables: number;
   supplement_included: boolean;
   recent_tokens: {
     id: string;
@@ -44,6 +48,7 @@ interface DashboardSummary {
     is_supplement?: boolean;
   }[];
   top_customers: { name: string; total: number; party_id: string | null }[];
+  top_suppliers: { name: string; total: number; party_id: string | null }[];
 }
 
 interface ChartsData {
@@ -76,6 +81,8 @@ const ACCENT_CLASSES: Record<string, { border: string; icon: string }> = {
   green:  { border: 'border-t-green-500',  icon: 'text-green-500' },
   violet: { border: 'border-t-violet-500', icon: 'text-violet-500' },
   orange: { border: 'border-t-orange-500', icon: 'text-orange-500' },
+  amber:  { border: 'border-t-amber-500',  icon: 'text-amber-500' },
+  rose:   { border: 'border-t-rose-500',   icon: 'text-rose-500' },
 };
 
 // ── KPI Card ──────────────────────────────────────────────────────────────────
@@ -96,6 +103,8 @@ const PROGRESS_CLASSES: Record<string, string> = {
   green:  'bg-green-500',
   violet: 'bg-violet-500',
   orange: 'bg-orange-500',
+  amber:  'bg-amber-500',
+  rose:   'bg-rose-500',
 };
 
 function KpiCard({ title, value, sub, icon: Icon, accent, trend, progress, progressLabel }: KpiCardProps) {
@@ -423,6 +432,7 @@ interface ComplianceAlert {
 }
 
 export default function DashboardPage() {
+  const { t } = useTranslation();
   const { authorized: usbAuthorized } = useUsbGuard();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [charts, setCharts] = useState<ChartsData | null>(null);
@@ -485,6 +495,7 @@ export default function DashboardPage() {
   const d = summary ?? {
     tokens_today: 0, revenue_today: 0, tonnage_today: 0, outstanding: 0,
     revenue_month: 0, tokens_month: 0, recent_tokens: [], top_customers: [],
+    purchases_today: 0, purchases_month: 0, payables: 0, top_suppliers: [],
   };
   const c = charts ?? {
     daily_trend: [], product_tonnage: [], token_status: {}, payment_pipeline: [],
@@ -592,6 +603,27 @@ export default function DashboardPage() {
               accent="orange"
             />
             <ExternalLink className="absolute right-3 top-3 h-3 w-3 text-orange-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
+        </Link>
+        <KpiCard
+          title="Today's Purchases"
+          value={INR(d.purchases_today)}
+          sub={`${INR(d.purchases_month)} this month`}
+          icon={ShoppingCart}
+          accent="amber"
+          progress={d.purchases_month > 0 ? Math.round((d.purchases_today / d.purchases_month) * 100) : null}
+          progressLabel={d.purchases_month > 0 ? `${Math.round((d.purchases_today / d.purchases_month) * 100)}% of month total` : undefined}
+        />
+        <Link to="/procurement" className="block group" title="See purchase invoices">
+          <div className="relative">
+            <KpiCard
+              title="Payables"
+              value={INR(d.payables)}
+              sub={`Owed to ${t('party.supplier').toLowerCase()}s · click to view`}
+              icon={IndianRupee}
+              accent="rose"
+            />
+            <ExternalLink className="absolute right-3 top-3 h-3 w-3 text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
         </Link>
       </div>
@@ -809,6 +841,47 @@ export default function DashboardPage() {
                     </Link>
                   ) : (
                     <div key={c.name} className="flex items-center gap-3 px-4 py-2.5">
+                      {RowInner}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Top Suppliers / Farmers */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <ShoppingCart className="h-4 w-4 text-amber-500" /> Top {t('party.supplier')}s
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {d.top_suppliers.length === 0 ? (
+              <div className="px-6 pb-6 text-sm text-muted-foreground">No purchase data yet.</div>
+            ) : (
+              <div className="divide-y">
+                {d.top_suppliers.map((s, i) => {
+                  const RowInner = (
+                    <>
+                      <span className="text-base font-bold text-muted-foreground/30 w-5 text-center shrink-0">{i + 1}</span>
+                      <p className="flex-1 text-sm font-medium truncate">{s.name}</p>
+                      <p className="text-sm font-semibold text-amber-700 shrink-0">{INR(s.total)}</p>
+                    </>
+                  );
+                  return s.party_id ? (
+                    <Link
+                      key={s.name}
+                      to={`/suppliers/${s.party_id}`}
+                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 group"
+                      title={`View ${t('party.supplier').toLowerCase()} 360 profile`}
+                    >
+                      {RowInner}
+                      <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100" />
+                    </Link>
+                  ) : (
+                    <div key={s.name} className="flex items-center gap-3 px-4 py-2.5">
                       {RowInner}
                     </div>
                   );
