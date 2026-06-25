@@ -180,7 +180,7 @@ export default function CustomFieldsPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label>Type</Label>
-                <Select value={form.field_type} onValueChange={v => setForm(f => ({ ...f, field_type: v }))}>
+                <Select value={form.field_type} onValueChange={v => setForm(f => ({ ...f, field_type: v ?? 'text' }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>{FIELD_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                 </Select>
