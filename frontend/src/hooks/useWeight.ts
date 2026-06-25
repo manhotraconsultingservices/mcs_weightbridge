@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { getTenantSlug } from './useAuth';
+import { fmtKg } from '@/lib/weightUnit';
 
 export interface WeightReading {
   weight_kg: number;
@@ -85,11 +86,9 @@ export function useWeight() {
     maximumFractionDigits: 2,
   }) + ' kg';
 
-  /** Formatted weight in metric tonnes, e.g. "1.2350 MT" (primary unit). */
-  const formattedMT = (reading.weight_kg / 1000).toLocaleString('en-IN', {
-    minimumFractionDigits: 4,
-    maximumFractionDigits: 4,
-  }) + ' MT';
+  /** Formatted weight in the tenant's display unit, e.g. "1.2350 MT" or
+   *  "12.350 Qtl" for maize. (Name kept for backward compat with callers.) */
+  const formattedMT = fmtKg(reading.weight_kg, 4);
 
   return { reading, formatted, formattedMT };
 }

@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import api from '@/services/api';
 import { useWeight } from '@/hooks/useWeight';
+import { fmtKg, displayToKg, weightUnitLabel, weightUnit } from '@/lib/weightUnit';
 import type { User, Party, Product, Token, TokenListResponse } from '@/types';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -842,10 +843,10 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
   const tareNow = (isSale && isFirst) || (!isSale && !isFirst);
   const tareOrGrossLabel = tareNow ? t('kiosk.emptyTruck') : t('kiosk.loadedTruck');
 
-  // Effective weight: live scale OR manual MT × 1000
-  const manualKg = (parseFloat(manualMt) || 0) * 1000;
+  // Effective weight: live scale OR manual display-unit value → kg
+  const manualKg = displayToKg(manualMt);
   const weightKg = manualMode ? manualKg : reading.weight_kg;
-  const formattedMT = (weightKg / 1000).toLocaleString('en-IN', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  const formattedMT = fmtKg(weightKg, 4, false);
   const canCapture = manualMode
     ? weightKg > 0
     : reading.scale_connected && reading.is_stable && weightKg > 0;
@@ -861,14 +862,15 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
       const { data } = await api.post<Token>(endpoint, {
         weight_kg: weightKg, is_manual: manualMode,
       });
-      const mt = (weightKg / 1000).toFixed(2);
+      const dispVal = fmtKg(weightKg, 2, false);
+      const unitWord = weightUnit().code === 'QUINTAL' ? 'quintal' : 'tonne';
       // Voice confirm — short + memorable
       if (isFirst) {
-        speak(`${mt} tonne captured. Truck can load. Bring back for second weight.`);
+        speak(`${dispVal} ${unitWord} captured. Truck can load. Bring back for second weight.`);
         onParked();
       } else {
-        const netMt = data.net_weight ? (data.net_weight / 1000).toFixed(2) : mt;
-        speak(`Done. Net weight ${netMt} tonne. Print bill.`);
+        const netDisp = data.net_weight ? fmtKg(data.net_weight, 2, false) : dispVal;
+        speak(`Done. Net weight ${netDisp} ${unitWord}. Print bill.`);
         onDone(data);
       }
     } catch (e: unknown) {
@@ -947,7 +949,7 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
               className="w-full font-mono font-black tabular-nums leading-none text-blue-700 bg-transparent border-none focus:outline-none text-center"
               style={{ fontSize: 'clamp(60px, 14vw, 140px)' }}
             />
-            <div className="text-3xl font-bold text-slate-500 mt-2">MT</div>
+            <div className="text-3xl font-bold text-slate-500 mt-2">{weightUnitLabel()}</div>
             <div className="mt-4 text-base text-slate-600">
               {t('kiosk.enterMtHint')}
             </div>
@@ -972,7 +974,7 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
             >
               {formattedMT}
             </div>
-            <div className="text-3xl font-bold text-slate-500 mt-2">MT</div>
+            <div className="text-3xl font-bold text-slate-500 mt-2">{weightUnitLabel()}</div>
             <div className="mt-4 text-base font-semibold">
               {canCapture ? (
                 <span className="text-emerald-700">{t('kiosk.stable')}</span>
@@ -1037,9 +1039,10 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
 
 function DoneScreen({ token, onNew }: { token: Token; onNew: () => void }) {
   const { t } = useTranslation();
-  const grossMt = token.gross_weight ? (token.gross_weight / 1000).toFixed(3) : '—';
-  const tareMt = token.tare_weight ? (token.tare_weight / 1000).toFixed(3) : '—';
-  const netMt = token.net_weight ? (token.net_weight / 1000).toFixed(3) : '—';
+  const grossMt = fmtKg(token.gross_weight, 3, false);
+  const tareMt = fmtKg(token.tare_weight, 3, false);
+  const netMt = fmtKg(token.net_weight, 3, false);
+  const wu = weightUnitLabel();
   const printUrl = `/api/v1/tokens/${token.id}/print`;
 
   // Open the print PDF in a new tab — leverages browser print
@@ -1054,7 +1057,7 @@ function DoneScreen({ token, onNew }: { token: Token; onNew: () => void }) {
     const msg = encodeURIComponent(
       `${partyName},\n\n` +
       `Trip slip #${token.token_no} — ${token.vehicle_no}\n` +
-      `${token.product?.name ?? ''}  ·  ${netMt} MT\n\n` +
+      `${token.product?.name ?? ''}  ·  ${netMt} ${wu}\n\n` +
       `Bill: ${billUrl}`
     );
     window.open(`https://wa.me/?text=${msg}`, '_blank', 'noopener');
@@ -1084,17 +1087,17 @@ function DoneScreen({ token, onNew }: { token: Token; onNew: () => void }) {
           <div>
             <div className="text-xs uppercase tracking-widest text-slate-500">{t('kiosk.gross')}</div>
             <div className="text-xl font-mono font-bold text-slate-900 mt-1">{grossMt}</div>
-            <div className="text-[10px] text-slate-400">MT</div>
+            <div className="text-[10px] text-slate-400">{wu}</div>
           </div>
           <div>
             <div className="text-xs uppercase tracking-widest text-slate-500">{t('kiosk.tare')}</div>
             <div className="text-xl font-mono font-bold text-slate-900 mt-1">{tareMt}</div>
-            <div className="text-[10px] text-slate-400">MT</div>
+            <div className="text-[10px] text-slate-400">{wu}</div>
           </div>
           <div className="rounded-lg bg-blue-50 -m-1 p-1">
             <div className="text-xs uppercase tracking-widest text-blue-700 font-semibold">{t('kiosk.net')}</div>
             <div className="text-2xl font-mono font-black text-blue-900 mt-1">{netMt}</div>
-            <div className="text-[10px] text-blue-600 font-semibold">MT</div>
+            <div className="text-[10px] text-blue-600 font-semibold">{wu}</div>
           </div>
         </div>
       </div>

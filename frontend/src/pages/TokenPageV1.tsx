@@ -17,6 +17,7 @@ import ResizableSplit from '@/components/ResizableSplit';
 import CreditStatusBanner from '@/components/CreditStatusBanner';
 import { toast } from 'sonner';
 import { enqueueToken } from '@/lib/offlineQueue';
+import { fmtKg, displayToKg, weightUnitLabel } from '@/lib/weightUnit';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -53,9 +54,9 @@ const TOKEN_COL_DEFS = [
   { key: 'vehicle',  label: 'Vehicle',     width: '110px',                alwaysVisible: true  },
   { key: 'party',    label: 'Party',       width: 'minmax(140px, 1.4fr)', alwaysVisible: false },
   { key: 'product',  label: 'Material',    width: 'minmax(110px, 1fr)',   alwaysVisible: false },
-  { key: 'gross',    label: 'Gross (MT)',  width: '80px',                 alwaysVisible: false },
-  { key: 'tare',     label: 'Tare (MT)',   width: '80px',                 alwaysVisible: false },
-  { key: 'net',      label: 'Net (MT)',    width: '160px',                alwaysVisible: true  },
+  { key: 'gross',    label: 'Gross',       width: '80px',                 alwaysVisible: false },
+  { key: 'tare',     label: 'Tare',        width: '80px',                 alwaysVisible: false },
+  { key: 'net',      label: 'Net',         width: '160px',                alwaysVisible: true  },
   { key: 'actions',  label: 'Actions',     width: '60px',                 alwaysVisible: true  },
 ] as const;
 
@@ -64,10 +65,11 @@ const DEFAULT_TOKEN_COLS: TokenColKey[] = ['token_no', 'vehicle', 'party', 'prod
 const TOKEN_COLS_LS = 'dt.tokens-v1.visible';
 
 
-// Weight values are stored in kg in the DB. UI displays MT.
+// Weight values are stored in kg in the DB. UI displays the tenant's unit
+// (MT, or Qtl for maize) via the shared weightUnit helper.
 function wFmt(v: number | null | undefined) {
   if (v == null) return '—';
-  return (Number(v) / 1000).toLocaleString('en-IN', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) + ' MT';
+  return fmtKg(v, 4);
 }
 
 function today() {
@@ -762,7 +764,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
                 </div>
                 <div className="mt-1 flex justify-between border-t pt-1 text-sm font-bold text-amber-700">
                   <span>= Net weight</span>
-                  <span>{(computedWeightKg / 1000).toFixed(3)} MT</span>
+                  <span>{fmtKg(computedWeightKg, 3)}</span>
                 </div>
               </div>
             )}
@@ -1005,9 +1007,9 @@ interface WeightDialogProps {
   onDone: (updated: Token) => void;
 }
 
-// Convert kg → "x.xxx MT" for the live readout
+// Convert kg → display string ("x.xxx MT" / "x.xxx Qtl") for the live readout
 function mtFromKg(kg: number) {
-  return (kg / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' MT';
+  return fmtKg(kg, 3);
 }
 
 function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: WeightDialogProps) {
@@ -1045,9 +1047,9 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
   const currentLabel = weightStage === 'first' ? stage1Label : stage2Label;
   const stageNum = weightStage === 'first' ? 1 : 2;
 
-  // Manual entry is in MT (operator-friendly). Multiply by 1000 to get kg —
-  // the unit the backend stores and the bridge streams.
-  const manualKg = manualMode ? (parseFloat(manualWeight) || 0) * 1000 : 0;
+  // Manual entry is in the tenant's display unit (MT, or Qtl for maize).
+  // displayToKg converts to kg — the unit the backend stores and the bridge streams.
+  const manualKg = manualMode ? displayToKg(manualWeight) : 0;
   const liveWeight = manualMode ? manualKg : reading.weight_kg;
   const stage1Weight = token.first_weight ?? 0;
   const liveNet = weightStage === 'second' && stage1Weight > 0
@@ -1195,7 +1197,7 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
                   ? canCapture ? 'text-green-600' : 'text-amber-600'
                   : 'text-muted-foreground/40'
               )}>
-                {reading.scale_connected ? formattedMT : '— . — — —  MT'}
+                {reading.scale_connected ? formattedMT : `— . — — —  ${weightUnitLabel()}`}
               </div>
               <div className="h-5 mt-1">
                 {reading.scale_connected && (
@@ -1207,7 +1209,7 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
             </div>
           ) : (
             <div className="space-y-2">
-              <Label>{t('token.enterWeightManual')}</Label>
+              <Label>{t('token.enterWeightManual')} ({weightUnitLabel()})</Label>
               <Input
                 ref={manualRef}
                 type="number"
@@ -1290,10 +1292,10 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
               onClick={() => capture(storedTare, true)}
               disabled={saving}
               className="min-w-44"
-              title={`Use vehicle's registered tare weight: ${(storedTare / 1000).toFixed(3)} MT`}
+              title={`Use vehicle's registered tare weight: ${fmtKg(storedTare)}`}
             >
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}
-              {t('token.useRegTare')} ({(storedTare / 1000).toFixed(3)} MT)
+              {t('token.useRegTare')} ({fmtKg(storedTare)})
             </Button>
           )}
           {capturePhase === 'idle' && (
@@ -1308,7 +1310,7 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
               </Button>
             ) : (
               <Button
-                onClick={() => capture(parseFloat(manualWeight) * 1000, true) /* MT → kg */}
+                onClick={() => capture(displayToKg(manualWeight), true) /* display unit → kg */}
                 disabled={saving || !manualWeight || parseFloat(manualWeight) <= 0}
                 className="min-w-32"
               >
@@ -1488,20 +1490,20 @@ function CameraPanel({ cameraId, label }: CameraPanelProps) {
 }
 
 // ------------------------------------------------------------------ //
-// MT + CFT weight formatters
+// Weight formatters (tenant unit: MT, or Qtl for maize) + optional CFT
 // ------------------------------------------------------------------ //
 function mtFmt(v: number | null | undefined) {
   if (v == null) return '—';
-  return (v / 1000).toLocaleString('en-IN', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) + ' MT';
+  return fmtKg(v, 4);
 }
-/** Returns "9.7500 MT / 247.23 CFT" when bulk_density(kg/CFT) available, else "9.7500 MT".
- *  bulk_density is kg/CFT (canonical), so vol_cft = kg / (kg/CFT). */
+/** Net weight in the tenant unit; MT products with a bulk_density(kg/CFT) also
+ *  show CFT, e.g. "9.7500 MT / 247.23 CFT". Maize (Qtl, no density) → "97.500 Qtl". */
 function dualFmt(weightKg: number | null | undefined, bulkDensity: number | null | undefined): string {
   if (weightKg == null) return '—';
-  const mt = (weightKg / 1000).toLocaleString('en-IN', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-  if (!bulkDensity || Number(bulkDensity) <= 0) return `${mt} MT`;
+  const base = fmtKg(weightKg, 4);
+  if (!bulkDensity || Number(bulkDensity) <= 0) return base;
   const volCft = weightKg / Number(bulkDensity);   // kg ÷ (kg/CFT) = CFT
-  return `${mt} MT / ${volCft.toFixed(2)} CFT`;
+  return `${base} / ${volCft.toFixed(2)} CFT`;
 }
 
 // Active statuses (default filter)
@@ -1861,7 +1863,8 @@ export default function TokenPageV1() {
               className="text-muted-foreground h-7 gap-1 text-xs shrink-0"
               disabled={filtered.length === 0}
               onClick={() => {
-                const headers = ['Token No', 'Gate Pass', 'Date', 'Vehicle', 'Method', 'Party', 'Material', 'Gross (MT)', 'Tare (MT)', 'Net (MT)', 'Net (CFT)', 'Volume (CFT)', 'Status'];
+                const wu = weightUnitLabel();
+                const headers = ['Token No', 'Gate Pass', 'Date', 'Vehicle', 'Method', 'Party', 'Material', `Gross (${wu})`, `Tare (${wu})`, `Net (${wu})`, 'Net (CFT)', 'Volume (CFT)', 'Status'];
                 const rows = filtered.map(t => {
                   // bulk_density is kg/CFT, so vol_cft = weight_kg / (kg/CFT)
                   const bd = t.product?.bulk_density;
@@ -1876,9 +1879,9 @@ export default function TokenPageV1() {
                     t.weight_method ?? 'weighbridge',
                     t.party?.name ?? '',
                     t.product?.name ?? '',
-                    t.gross_weight != null ? (Number(t.gross_weight) / 1000).toFixed(4) : '',
-                    t.tare_weight != null ? (Number(t.tare_weight) / 1000).toFixed(4) : '',
-                    t.net_weight != null ? (Number(t.net_weight) / 1000).toFixed(4) : '',
+                    t.gross_weight != null ? fmtKg(t.gross_weight, 4, false) : '',
+                    t.tare_weight != null ? fmtKg(t.tare_weight, 4, false) : '',
+                    t.net_weight != null ? fmtKg(t.net_weight, 4, false) : '',
                     cft,
                     t.volume_cft != null ? Number(t.volume_cft).toFixed(2) : '',
                     t.status,
