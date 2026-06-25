@@ -291,6 +291,11 @@ export default function CustomerProfilePage() {
   const outstandingTone: 'good' | 'warn' | 'bad' =
     (stats.total_overdue ?? 0) > 0 ? 'bad' : (stats.total_outstanding ?? 0) > 0 ? 'warn' : 'good';
 
+  // Supplier/Farmer 360 mirrors the customer view but off PURCHASE invoices +
+  // payment vouchers: "Outstanding" is what WE owe (payable), and the lifetime
+  // figures count purchases, not sales.
+  const isSupplier = party.party_type === 'supplier';
+
   return (
     <div className="space-y-4 px-4 py-4">
       {/* ── Header ───────────────────────────────────────────────────── */}
@@ -303,7 +308,9 @@ export default function CustomerProfilePage() {
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-bold text-slate-900">{party.name}</h1>
               <Badge variant="outline" className="text-[10px] uppercase">
-                {party.party_type === 'both' ? 'Customer + Supplier' : party.party_type}
+                {party.party_type === 'both' ? t('party.both')
+                  : party.party_type === 'supplier' ? t('party.supplier')
+                  : t('party.customer')}
               </Badge>
               {!party.is_active && (
                 <Badge variant="outline" className="border-slate-300 bg-slate-100 text-[10px] text-slate-600">
@@ -344,7 +351,7 @@ export default function CustomerProfilePage() {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard
           icon={IndianRupee}
-          label={t('customer360.outstanding')}
+          label={isSupplier ? 'Outstanding Payable' : t('customer360.outstanding')}
           value={INR(stats.total_outstanding)}
           sub={
             stats.total_overdue > 0
@@ -355,21 +362,21 @@ export default function CustomerProfilePage() {
         />
         <KpiCard
           icon={TrendingUp}
-          label={t('customer360.ltv')}
+          label={isSupplier ? 'Total Purchases' : t('customer360.ltv')}
           value={INR(stats.lifetime_sales)}
-          sub={`${stats.invoice_count} invoice${stats.invoice_count === 1 ? '' : 's'}`}
+          sub={`${stats.invoice_count} ${isSupplier ? 'purchase' : 'invoice'}${stats.invoice_count === 1 ? '' : 's'}`}
           tone="default"
         />
         <KpiCard
           icon={Receipt}
-          label={t('customer360.aov')}
+          label={isSupplier ? 'Avg Purchase' : t('customer360.aov')}
           value={INR(stats.avg_order_value)}
-          sub={stats.invoice_count > 0 ? `across ${stats.invoice_count} orders` : 'no orders yet'}
+          sub={stats.invoice_count > 0 ? `across ${stats.invoice_count} ${isSupplier ? 'loads' : 'orders'}` : 'none yet'}
           tone="default"
         />
         <KpiCard
           icon={Clock}
-          label={t('customer360.lastOrder')}
+          label={isSupplier ? 'Last Purchase' : t('customer360.lastOrder')}
           value={
             stats.days_since_last_order === null
               ? '—'
@@ -392,7 +399,7 @@ export default function CustomerProfilePage() {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard
           icon={Banknote}
-          label="Lifetime Paid"
+          label={isSupplier ? 'Total Paid Out' : 'Lifetime Paid'}
           value={INR(stats.lifetime_paid)}
           sub={
             stats.write_off_count > 0

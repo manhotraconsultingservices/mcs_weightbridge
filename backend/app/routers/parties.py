@@ -345,15 +345,25 @@ async def party_360(
         .order_by(Invoice.invoice_date.desc(), Invoice.created_at.desc())
     )).scalars().all()
 
-    # Lifetime metrics — sale invoices only define LTV/AOV
-    sale_invoices = [i for i in inv_rows if i.invoice_type == "sale"]
-    lifetime_sales = sum((i.grand_total or Decimal("0")) for i in sale_invoices)
-    lifetime_paid = sum((i.amount_paid or Decimal("0")) for i in sale_invoices)
-    lifetime_written_off = sum((i.write_off_amount or Decimal("0")) for i in sale_invoices)
-    write_off_count = sum(1 for i in sale_invoices if (i.write_off_amount or Decimal("0")) > 0)
-    invoice_count = len(sale_invoices)
+    # Lifetime metrics — driven by the party's PRIMARY trade direction so the
+    # 360 works for both Customers (sales) and Suppliers/Farmers (purchases):
+    #   customer → sale invoices · supplier → purchase invoices · both → either.
+    # `lifetime_sales` therefore means "lifetime transacted value" — sales for a
+    # customer, purchases for a supplier.
+    if party.party_type == "supplier":
+        primary_types = ("purchase",)
+    elif party.party_type == "both":
+        primary_types = ("sale", "purchase")
+    else:
+        primary_types = ("sale",)
+    primary_invoices = [i for i in inv_rows if i.invoice_type in primary_types]
+    lifetime_sales = sum((i.grand_total or Decimal("0")) for i in primary_invoices)
+    lifetime_paid = sum((i.amount_paid or Decimal("0")) for i in primary_invoices)
+    lifetime_written_off = sum((i.write_off_amount or Decimal("0")) for i in primary_invoices)
+    write_off_count = sum(1 for i in primary_invoices if (i.write_off_amount or Decimal("0")) > 0)
+    invoice_count = len(primary_invoices)
     aov = (lifetime_sales / invoice_count) if invoice_count else Decimal("0")
-    last_invoice_date = max((i.invoice_date for i in sale_invoices), default=None)
+    last_invoice_date = max((i.invoice_date for i in primary_invoices), default=None)
     days_since_last_order = (today - last_invoice_date).days if last_invoice_date else None
 
     # ── Outstanding + aging buckets (final, unpaid invoices only) ─────────
