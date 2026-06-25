@@ -285,12 +285,10 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
 
     rate = await _fetch_rate(db, token.party_id, token.product_id)
 
-    # Convert weight to MT if unit is MT (weights stored in KG in some systems; here net_weight is in KG from scale)
-    # In this system net_weight is stored as-is from the scale (KG). Product unit determines display.
-    if product.unit == "MT":
-        qty = token.net_weight / Decimal("1000") if token.net_weight else Decimal("0")
-    else:
-        qty = token.net_weight if token.net_weight else Decimal("0")
+    # Convert scale weight (kg) to the product's billing unit:
+    #   MT → ÷1000 · QUINTAL → ÷100 · KG/other → as-is (kg)
+    _div = {"MT": Decimal("1000"), "QUINTAL": Decimal("100")}.get((product.unit or "").upper(), Decimal("1"))
+    qty = (Decimal(str(token.net_weight)) / _div) if token.net_weight else Decimal("0")
 
     amount = (qty * rate).quantize(Decimal("0.01"))
     gst_rate = product.gst_rate or Decimal("0")
@@ -1080,7 +1078,10 @@ async def print_token(
         fetched = await _fetch_rate(db, token.party_id, token.product_id)
         rate = float(fetched)
         if rate > 0 and token.net_weight:
-            amount = rate * float(token.net_weight) / 1000
+            from app.models.product import Product as _Prod
+            _u = (await db.execute(select(_Prod.unit).where(_Prod.id == token.product_id))).scalar() if token.product_id else None
+            _div = {"MT": 1000.0, "QUINTAL": 100.0}.get((_u or "").upper(), 1.0)
+            amount = rate * float(token.net_weight) / _div
 
     # Royalty: look up the consumption linked to this token
     royalty_amount: float = 0.0

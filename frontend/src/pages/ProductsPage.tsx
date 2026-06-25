@@ -11,7 +11,7 @@ import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 import type { Product, ProductCategory } from '@/types';
 
-const UNITS = ['MT', 'KG', 'CFT', 'BRASS', 'CUM', 'PCS', 'NOS'];
+const UNITS = ['MT', 'QUINTAL', 'KG', 'CFT', 'BRASS', 'CUM', 'PCS', 'NOS'];
 const GST_RATES = ['0', '5', '12', '18', '28'];
 
 // ------------------------------------------------------------------ //
@@ -402,7 +402,7 @@ function ProductsTable({
       className: 'text-muted-foreground',
     },
     { key: 'hsn_code', label: t('product.colHsn'), accessor: p => p.hsn_code, className: 'font-mono text-xs' },
-    { key: 'unit', label: t('product.unit'), type: 'enum', enumOptions: ['MT','KG','CFT','BRASS','CUM','PCS','NOS'], accessor: p => p.unit },
+    { key: 'unit', label: t('product.unit'), type: 'enum', enumOptions: ['MT','QUINTAL','KG','CFT','BRASS','CUM','PCS','NOS'], accessor: p => p.unit },
     {
       key: 'default_rate', label: t('product.colRate'), type: 'number', align: 'right',
       accessor: p => p.default_rate,

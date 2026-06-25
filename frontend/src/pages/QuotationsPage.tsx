@@ -228,7 +228,7 @@ function CreateQuotationDialog({ open, onClose, onCreated }: CreateQuotationDial
                       <Select value={line.unit} onValueChange={v => setLine(i, 'unit', v)}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          {['MT','KG','CFT','BRASS','CUM','PCS','NOS'].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                          {['MT','QUINTAL','KG','CFT','BRASS','CUM','PCS','NOS'].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </td>
