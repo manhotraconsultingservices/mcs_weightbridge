@@ -167,6 +167,10 @@
 </div>
 
 {% set is_volume = (token.weight_method == 'volume') %}
+{# Billing unit driven by the product: MT (default) ÷1000 · Qtl ÷100 · KG ÷1 #}
+{% set _u = (token.product.unit if token.product and token.product.unit else 'MT')|upper %}
+{% set bill_div = 100.0 if _u == 'QUINTAL' else (1.0 if _u == 'KG' else 1000.0) %}
+{% set unit_lbl = 'Qtl' if _u == 'QUINTAL' else ('KG' if _u == 'KG' else 'MT') %}
 
 <div class="co-name">{{ company.name }}</div>
 {% if company.gstin %}
@@ -278,11 +282,11 @@
   <div class="weight-block">
     <div class="weight-row">
       <span class="wlabel">{{ bl('gross_weight') | upper }}:</span>
-      <span class="wval">{% if token.gross_weight %}{{ '%.3f'|format(token.gross_weight|float / 1000) }} MT{% else %}—{% endif %}</span>
+      <span class="wval">{% if token.gross_weight %}{{ '%.3f'|format(token.gross_weight|float / bill_div) }} {{ unit_lbl }}{% else %}—{% endif %}</span>
     </div>
     <div class="weight-row">
       <span class="wlabel">{{ bl('tare_weight') | upper }}:</span>
-      <span class="wval">{% if token.tare_weight %}{{ '%.3f'|format(token.tare_weight|float / 1000) }} MT{% else %}—{% endif %}</span>
+      <span class="wval">{% if token.tare_weight %}{{ '%.3f'|format(token.tare_weight|float / bill_div) }} {{ unit_lbl }}{% else %}—{% endif %}</span>
     </div>
   </div>
 {% endif %}
@@ -291,9 +295,9 @@
 <div class="net-big">
   <div class="lbl">{{ bl('net_weight') | upper }}</div>
   <div class="val">
-    {% if token.net_weight %}{{ '%.3f'|format(token.net_weight|float / 1000) }} MT{% else %}—{% endif %}
+    {% if token.net_weight %}{{ '%.3f'|format(token.net_weight|float / bill_div) }} {{ unit_lbl }}{% else %}—{% endif %}
   </div>
-  {% if token.net_weight and token.product and token.product.bulk_density and (token.product.bulk_density|float) > 0 %}
+  {% if _u == 'MT' and token.net_weight and token.product and token.product.bulk_density and (token.product.bulk_density|float) > 0 %}
   <div class="sub">{{ '%.2f'|format(token.net_weight|float / (token.product.bulk_density|float)) }} CFT</div>
   {% endif %}
 </div>
@@ -328,7 +332,7 @@
 {% if rate is defined and rate and rate > 0 %}
 <div class="row">
   <span class="row-label">{{ bl('rate') | upper }}</span>
-  <span class="row-value">₹{{ '%.2f'|format(rate) }}/MT</span>
+  <span class="row-value">₹{{ '%.2f'|format(rate) }}/{{ unit_lbl }}</span>
 </div>
 {% endif %}
 {% if amount is defined and amount %}

@@ -68,14 +68,24 @@
 
 {% macro format_dt(dt) %}{% if dt %}{{ dt.strftime('%d-%b-%Y %H:%M') }}{% endif %}{% endmacro %}
 {% macro format_date(dt) %}{% if dt %}{{ dt.strftime('%d-%b-%Y') }}{% endif %}{% endmacro %}
-{# Weight in MT (3 decimals) #}
+{# Weight in MT (3 decimals) — used by the volume block #}
 {% macro format_wt_mt(w) %}{% if w %}{{ '%.3f' % (w|float / 1000) }} MT{% else %}—{% endif %}{% endmacro %}
-{% macro format_wt_dual(w, bulk_density) %}
+{# Billing-unit label for a product: MT (default) · Qtl · KG #}
+{% macro unit_label(product) %}{% set u = (product.unit if product and product.unit else 'MT')|upper %}{% if u == 'QUINTAL' %}Qtl{% elif u == 'KG' %}KG{% else %}MT{% endif %}{% endmacro %}
+{# Weight in the product's billing unit (no CFT) — gross/tare rows #}
+{% macro format_wt(w, product) %}{% if w %}{% set u = (product.unit if product and product.unit else 'MT')|upper %}{% if u == 'QUINTAL' %}{{ '%.3f' % (w|float / 100) }} Qtl{% elif u == 'KG' %}{{ '%.0f' % (w|float) }} KG{% else %}{{ '%.3f' % (w|float / 1000) }} MT{% endif %}{% else %}—{% endif %}{% endmacro %}
+{# Net weight in the product's billing unit; MT products with a bulk density also show CFT #}
+{% macro format_wt_dual(w, product) %}
   {% if w %}
-    {{ '%.4f' % (w|float / 1000) }} MT
-    {% if bulk_density and (bulk_density|float) > 0 %}
-      {# volume_cft = weight_kg / bulk_density(kg/CFT) #}
-      / {{ '%.2f' % (w|float / (bulk_density|float)) }} CFT
+    {% set u = (product.unit if product and product.unit else 'MT')|upper %}
+    {% if u == 'QUINTAL' %}{{ '%.3f' % (w|float / 100) }} Qtl
+    {% elif u == 'KG' %}{{ '%.0f' % (w|float) }} KG
+    {% else %}
+      {{ '%.4f' % (w|float / 1000) }} MT
+      {% if product and product.bulk_density and (product.bulk_density|float) > 0 %}
+        {# volume_cft = weight_kg / bulk_density(kg/CFT) #}
+        / {{ '%.2f' % (w|float / (product.bulk_density|float)) }} CFT
+      {% endif %}
     {% endif %}
   {% else %}—{% endif %}
 {% endmacro %}
@@ -205,17 +215,17 @@
         {% set gross_first = (token.first_weight_type or 'gross') == 'gross' %}
         <tr>
           <td>{{ bl('gross_weight') }}</td>
-          <td class="col-wt">{{ format_wt_mt(token.gross_weight) }}</td>
+          <td class="col-wt">{{ format_wt(token.gross_weight, token.product) }}</td>
           <td class="col-dt">{{ format_dt(token.first_weight_at if gross_first else token.second_weight_at) }}</td>
         </tr>
         <tr>
           <td>{{ bl('tare_weight') }}</td>
-          <td class="col-wt">{{ format_wt_mt(token.tare_weight) }}</td>
+          <td class="col-wt">{{ format_wt(token.tare_weight, token.product) }}</td>
           <td class="col-dt">{{ format_dt(token.second_weight_at if gross_first else token.first_weight_at) }}</td>
         </tr>
         <tr class="net">
           <td>{{ bl('net_weight') }}</td>
-          <td class="col-wt">{{ format_wt_dual(token.net_weight, token.product.bulk_density if token.product else none) }}</td>
+          <td class="col-wt">{{ format_wt_dual(token.net_weight, token.product) }}</td>
           <td class="col-dt">{{ format_dt(token.completed_at) }}</td>
         </tr>
       </tbody>
@@ -230,7 +240,7 @@
     {% if rate is defined and rate and rate > 0 %}
     <tr>
       <td class="lbl">{{ bl('rate') }}</td>
-      <td class="val">₹{{ '%.2f' % rate }}/MT</td>
+      <td class="val">₹{{ '%.2f' % rate }}/{{ unit_label(token.product) | trim }}</td>
     </tr>
     {% endif %}
     {% if amount is defined and amount %}
