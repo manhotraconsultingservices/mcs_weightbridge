@@ -241,6 +241,9 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             {/* Customer 360 — picker landing at /customers, full profile at /customers/:id */}
             <Route path="/customers" element={<CustomerPickerPage />} />
             <Route path="/customers/:id" element={<CustomerProfilePage />} />
+            {/* Supplier 360 — dedicated namespace (reuses the type-aware picker + profile) */}
+            <Route path="/suppliers" element={<CustomerPickerPage lockType="supplier" linkBase="/suppliers" />} />
+            <Route path="/suppliers/:id" element={<CustomerProfilePage />} />
             <Route path="/vehicles" element={<VehiclesPage />} />
             <Route path="/payments" element={<PaymentsPage />} />
             <Route path="/ledger" element={<LedgerPage />} />

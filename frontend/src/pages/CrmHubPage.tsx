@@ -57,7 +57,7 @@ export default function CrmHubPage() {
           <CustomerPickerPage lockType="customer" />
         </TabsContent>
         <TabsContent value="suppliers" className="mt-4">
-          <CustomerPickerPage lockType="supplier" />
+          <CustomerPickerPage lockType="supplier" linkBase="/suppliers" />
         </TabsContent>
       </Tabs>
     </div>

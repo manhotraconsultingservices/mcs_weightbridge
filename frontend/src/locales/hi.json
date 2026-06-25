@@ -945,6 +945,7 @@
     },
     "procurement": {
       "purchaseInvoices": "खरीद चालान",
+      "suppliers": "आपूर्तिकर्ता",
       "royaltyPasses": "रॉयल्टी पास"
     },
     "materials": {

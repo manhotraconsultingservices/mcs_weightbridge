@@ -945,6 +945,7 @@
     },
     "procurement": {
       "purchaseInvoices": "Purchase Invoices",
+      "suppliers": "Suppliers",
       "royaltyPasses": "Royalty Passes"
     },
     "materials": {

@@ -8,14 +8,15 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ShoppingCart, Mountain } from 'lucide-react';
+import { ShoppingCart, Mountain, Truck } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import InvoicesPage from './InvoicesPage';
 import RoyaltyPassesPage from './RoyaltyPassesPage';
+import CustomerPickerPage from './CustomerPickerPage';
 
-type Tab = 'purchases' | 'royalty';
+type Tab = 'purchases' | 'suppliers' | 'royalty';
 
 export default function ProcurementHubPage() {
   const { t } = useTranslation();
@@ -25,6 +26,7 @@ export default function ProcurementHubPage() {
 
   const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
     { value: 'purchases', label: t('hubs.procurement.purchaseInvoices'), icon: ShoppingCart },
+    { value: 'suppliers', label: t('hubs.procurement.suppliers'),        icon: Truck },
     { value: 'royalty',   label: t('hubs.procurement.royaltyPasses'),    icon: Mountain },
   ];
   const visibleTabs = TABS.filter(t => isTabAllowed('/procurement', t.value));
@@ -57,6 +59,9 @@ export default function ProcurementHubPage() {
         </TabsList>
         <TabsContent value="purchases" className="mt-4">
           <InvoicesPage defaultType="purchase" />
+        </TabsContent>
+        <TabsContent value="suppliers" className="mt-4">
+          <CustomerPickerPage lockType="supplier" linkBase="/suppliers" />
         </TabsContent>
         <TabsContent value="royalty" className="mt-4">
           <RoyaltyPassesPage />

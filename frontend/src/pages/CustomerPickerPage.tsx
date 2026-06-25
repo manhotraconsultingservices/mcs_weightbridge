@@ -29,7 +29,9 @@ const INR_L = (v: number) => {
   return '₹' + Math.abs(v).toFixed(0);
 };
 
-export default function CustomerPickerPage({ lockType }: { lockType?: 'customer' | 'supplier' } = {}) {
+export default function CustomerPickerPage(
+  { lockType, linkBase = '/customers' }: { lockType?: 'customer' | 'supplier'; linkBase?: string } = {},
+) {
   const { t } = useTranslation();
   const [parties, setParties] = useState<Party[]>([]);
   const [loading, setLoading] = useState(true);
@@ -159,7 +161,7 @@ export default function CustomerPickerPage({ lockType }: { lockType?: 'customer'
             return (
               <Link
                 key={p.id}
-                to={`/customers/${p.id}`}
+                to={`${linkBase}/${p.id}`}
                 className="group block rounded-xl border-2 border-slate-200 hover:border-blue-400 bg-white p-3 transition-all hover:shadow-md"
               >
                 <div className="flex items-start gap-2 mb-2">
