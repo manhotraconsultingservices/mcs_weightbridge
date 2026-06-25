@@ -1711,6 +1711,10 @@ async def write_off_invoice(
       previous payments + write-off don't fully close it).
     """
     inv = await _load_invoice(db, invoice_id)
+    # Write-off = bad-debt closure of an uncollectable RECEIVABLE (a sale). A
+    # purchase invoice is a payable we owe the supplier — it is not written off here.
+    if inv.invoice_type != "sale":
+        raise HTTPException(400, "Write-off applies only to sales invoices (uncollectable receivables). A purchase invoice is a payable and cannot be written off.")
     if inv.status != "final":
         raise HTTPException(400, f"Cannot write off invoice in status '{inv.status}'. Only finalised invoices can be written off.")
     if inv.payment_status == "paid" and Decimal(str(inv.amount_due or 0)) == 0:
@@ -1816,6 +1820,9 @@ async def write_off_bulk(
             continue
         if inv.status != "final":
             skipped.append(f"{inv.invoice_no or inv_id}: status={inv.status}")
+            continue
+        if inv.invoice_type != "sale":
+            skipped.append(f"{inv.invoice_no or inv_id}: not a sales invoice")
             continue
         balance = Decimal(str(inv.amount_due or 0))
         if balance <= 0:
