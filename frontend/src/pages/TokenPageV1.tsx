@@ -444,13 +444,30 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       resetForm();
     } catch (e: unknown) {
       // Offline OR network failure (request never reached the server) → queue it.
-      const reached = (e as { response?: unknown })?.response;
+      const err = e as {
+        response?: { status?: number; data?: { detail?: string | Array<{ msg: string; loc?: string[] }> } };
+        message?: string;
+      };
+      const reached = err.response;
       if (!navigator.onLine || !reached) {
         enqueueToken('/tokens', tokenPayload, tokenPayload.vehicle_no);
         toast.success(`Saved offline — ${tokenPayload.vehicle_no} will sync when the connection returns`);
         resetForm();
       } else {
-        setError('Failed to create token. Please try again.');
+        // Surface the REAL backend error (409 duplicate active token, 422 validation,
+        // 500 server) instead of a generic "try again" that hides the cause.
+        const detail = err.response?.data?.detail;
+        let msg: string;
+        if (typeof detail === 'string') {
+          msg = detail;
+        } else if (Array.isArray(detail)) {
+          msg = detail.map(d => `${(d.loc ?? []).join('.')}: ${d.msg}`).join(' · ');
+        } else {
+          msg = err.message ?? 'Failed to create token';
+        }
+        const status = err.response?.status ?? '?';
+        setError(`HTTP ${status}: ${msg}`);
+        console.error('Token create failed:', err);
       }
     } finally {
       setSaving(false);
