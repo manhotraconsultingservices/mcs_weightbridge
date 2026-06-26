@@ -5,6 +5,11 @@ move to the next stage until its **GATE** passes. This removes the on-site
 trial-and-error of finding the right COM port + baud + framing (7N1 / 7E1 /
 8N1 / 8O1 …) and guarantees the feed reaches the cloud.
 
+> This is the **1-page runbook**. For the full manual — architecture & data
+> flow, the Discovery UI, calibration/unit checks, the complete troubleshooting
+> matrix, and config/CLI/status appendices — see
+> [**`DPD-GUIDE.md`**](./DPD-GUIDE.md).
+
 Server side needs nothing — the agent posts to `POST /api/v1/weight/external-reading`
 with `tenant` + `agent_key` in the body; the server validates the key and
 broadcasts live weight to the browser. No server change is ever required.
