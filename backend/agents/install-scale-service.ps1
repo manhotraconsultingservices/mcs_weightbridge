@@ -5,11 +5,14 @@
 
 .DESCRIPTION
   Wraps everything that previously had to be done by hand after a
-  client-site visit: downloads NSSM, removes any leftover Scheduled
-  Tasks from the older deploy-agents.ps1 flow, registers the agent as
-  a Windows service with auto-start + auto-restart on crash, captures
-  stdout/stderr to rotating log files, and verifies the agent is
-  responding on its status port.
+  client-site visit: locates an already-installed NSSM, removes any
+  leftover Scheduled Tasks from the older deploy-agents.ps1 flow,
+  registers the agent as a Windows service with auto-start +
+  auto-restart on crash, captures stdout/stderr to rotating log files,
+  and verifies the agent is responding on its status port.
+
+  Assumes nssm.exe is already installed (on PATH or a common location /
+  -NssmDir). It does NOT download NSSM.
 
   Idempotent - safe to re-run. Each invocation tears down and recreates
   the service cleanly.
@@ -30,7 +33,7 @@
   C:\Program Files\Python311\python.exe
 
 .PARAMETER NssmDir
-  Where to install nssm.exe. Default: C:\nssm
+  Extra folder to look for nssm.exe (PATH is checked first). Default: C:\nssm
 
 .PARAMETER Uninstall
   Remove the service (and the leftover Scheduled Tasks too). Does NOT
@@ -83,20 +86,25 @@ function Resolve-PythonExe {
 }
 
 function Ensure-Nssm {
-    $exe = Join-Path $NssmDir "nssm.exe"
-    if (Test-Path $exe) {
-        Write-OK "NSSM already at $exe"
-        return $exe
+    # Assumes NSSM is already installed. Looks on PATH first, then common
+    # locations. Does NOT download (offline / locked-down client machines).
+    $cmd = Get-Command nssm.exe -ErrorAction SilentlyContinue
+    if ($cmd) { Write-OK "NSSM on PATH: $($cmd.Source)"; return $cmd.Source }
+    foreach ($p in @(
+        (Join-Path $NssmDir "nssm.exe"),
+        "C:\nssm\nssm.exe",
+        "C:\nssm\win64\nssm.exe",
+        "C:\tools\nssm\nssm.exe",
+        "C:\Program Files\nssm\nssm.exe",
+        "C:\ProgramData\chocolatey\bin\nssm.exe",
+        (Join-Path $InstallDir "nssm.exe")
+    )) {
+        if (Test-Path $p) { Write-OK "NSSM at $p"; return $p }
     }
-    Write-Info "Downloading NSSM 2.24 from nssm.cc"
-    New-Item -ItemType Directory -Path $NssmDir -Force | Out-Null
-    $zip = Join-Path $env:TEMP "nssm.zip"
-    Invoke-WebRequest -Uri "https://nssm.cc/release/nssm-2.24.zip" -OutFile $zip
-    Expand-Archive -Path $zip -DestinationPath $env:TEMP -Force
-    Copy-Item (Join-Path $env:TEMP "nssm-2.24\win64\nssm.exe") -Destination $exe -Force
-    Remove-Item $zip, (Join-Path $env:TEMP "nssm-2.24") -Recurse -Force
-    Write-OK "NSSM installed at $exe"
-    return $exe
+    Write-Err "nssm.exe not found on PATH or in common locations."
+    Write-Info "Install NSSM (https://nssm.cc/download) and put nssm.exe on PATH,"
+    Write-Info "or pass its folder with -NssmDir C:\path\to\nssm-folder."
+    throw "NSSM not found"
 }
 
 # --------------------------------------------------------------------------
