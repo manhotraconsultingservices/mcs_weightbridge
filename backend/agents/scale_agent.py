@@ -262,6 +262,60 @@ def auto_detect_scale() -> dict | None:
     return None
 
 
+def _port_exists(port: str) -> bool:
+    """True if `port` is currently enumerated. After a USB replug COMx renumbers,
+    so a saved port can vanish — used to skip straight to re-detection."""
+    try:
+        import serial.tools.list_ports
+        return any(p.device == port for p in serial.tools.list_ports.comports())
+    except Exception:
+        return True  # can't tell → assume present, let open() decide
+
+
+def _peek_port(port: str, probe_sec: float = 1.0) -> dict:
+    """Open `port` across the standard serial configs and report exactly what
+    bytes arrive — raw ASCII + hex + a quality score — so a technician can SEE
+    clean feed vs garbage during Discovery. Stops at the first config that yields
+    a parseable weight. Returns {"port", "results":[...]}.
+    """
+    import serial as _ser
+    import time as _t
+    results = []
+    for baud, dbits, parity, sbits in PROBE_CONFIGS:
+        cfg_label = f"{baud} {dbits}{parity}{sbits}"
+        try:
+            bsz = {7: _ser.SEVENBITS, 8: _ser.EIGHTBITS}.get(dbits, _ser.EIGHTBITS)
+            par = {"N": _ser.PARITY_NONE, "E": _ser.PARITY_EVEN,
+                   "O": _ser.PARITY_ODD}.get(parity, _ser.PARITY_NONE)
+            ser = _ser.Serial(port=port, baudrate=baud, bytesize=bsz, parity=par,
+                              stopbits=_ser.STOPBITS_ONE, timeout=0.3)
+            ser.dtr = True
+            ser.rts = True
+            data = b""
+            deadline = _t.time() + probe_sec
+            while _t.time() < deadline and len(data) < 400:
+                chunk = ser.read(256)
+                if chunk:
+                    data += chunk
+            ser.close()
+            ascii_preview = data.decode("ascii", errors="replace")[:200]
+            q = round(_ascii_quality(data), 2) if data else 0.0
+            weight = parse_weight(ascii_preview) if q > 0.7 else None
+            results.append({
+                "config": cfg_label, "bytes": len(data), "ascii_quality": q,
+                "raw_ascii": ascii_preview, "raw_hex": data[:80].hex(" "),
+                "weight": weight, "looks_good": bool(q > 0.7 and weight is not None),
+            })
+            if q > 0.7 and weight is not None:
+                break  # clean config found — no need to keep trying
+        except Exception as exc:
+            msg = str(exc)
+            results.append({"config": cfg_label, "error": msg[:140]})
+            if "access" in msg.lower() or "denied" in msg.lower():
+                break  # port is held by another program — stop probing it
+    return {"port": port, "results": results}
+
+
 # ── CH340 USB-serial auto-recovery ────────────────────────────────────────────
 
 def _try_reset_ch340(port: str) -> bool:
@@ -337,10 +391,14 @@ class ScaleReader:
         dbits = self.cfg.get("data_bits", 0)
         par   = self.cfg.get("parity", "")
         if port and baud and dbits and par:
-            log.info("Using saved serial config: %s @ %d  %d%s%d",
-                     port, baud, dbits, par, self.cfg.get("stop_bits", 1))
-            return {"port": port, "baud_rate": baud, "data_bits": dbits,
-                    "parity": par, "stop_bits": self.cfg.get("stop_bits", 1)}
+            # USB replug renumbers COMx — if the saved port has vanished, skip it
+            # and re-detect instead of looping on a dead port.
+            if _port_exists(port):
+                log.info("Using saved serial config: %s @ %d  %d%s%d",
+                         port, baud, dbits, par, self.cfg.get("stop_bits", 1))
+                return {"port": port, "baud_rate": baud, "data_bits": dbits,
+                        "parity": par, "stop_bits": self.cfg.get("stop_bits", 1)}
+            log.warning("Saved port %s no longer present (USB replug?) — re-detecting", port)
 
         log.info("No serial config saved — starting auto-detection ...")
         found = auto_detect_scale()
@@ -573,8 +631,95 @@ class ScaleReader:
 
 # ── Status Server ─────────────────────────────────────────────────────────────
 
+# ── Discovery UI (served by StatusServer at /) ────────────────────────────────
+
+DISCOVERY_HTML = r"""<!doctype html><html><head><meta charset="utf-8">
+<title>Weighbridge Scale - Discovery</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+ body{font-family:system-ui,'Segoe UI',Arial;margin:0;background:#0f172a;color:#e2e8f0}
+ .wrap{max-width:780px;margin:0 auto;padding:16px}
+ h1{font-size:18px;margin:6px 0 2px}.sub{color:#94a3b8;font-size:12px;margin-bottom:14px}
+ .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;margin-bottom:14px}
+ .wt{font-size:64px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
+ .unit{font-size:20px;color:#94a3b8;margin-left:8px}
+ .badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+ .b{font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid}
+ .ok{background:#064e3b;border-color:#10b981;color:#a7f3d0}
+ .bad{background:#450a0a;border-color:#ef4444;color:#fecaca}
+ .warn{background:#451a03;border-color:#f59e0b;color:#fde68a}
+ .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8}
+ .mono{font-family:Consolas,monospace;font-size:13px;background:#0b1220;border:1px solid #334155;border-radius:8px;padding:10px;white-space:pre-wrap;word-break:break-all;min-height:18px}
+ table{width:100%;border-collapse:collapse;font-size:13px}
+ td,th{text-align:left;padding:7px 8px;border-bottom:1px solid #334155}
+ button{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:600;cursor:pointer}
+ button.sec{background:#334155}
+</style></head><body><div class="wrap">
+ <h1>Weighbridge Scale - Discovery</h1>
+ <div class="sub">Local agent diagnostics - this page stays on this PC. Use it to confirm the port is reading clean weight before/after install.</div>
+ <div class="card"><div class="lbl">Live weight</div>
+  <div><span class="wt" id="wt">- . -</span><span class="unit">kg</span></div>
+  <div class="badges" id="badges"></div></div>
+ <div class="card"><div class="lbl">Raw frame from the indicator (what the port is reading)</div>
+  <div class="mono" id="raw">(waiting for data...)</div>
+  <div class="sub" id="cfgline" style="margin-top:8px"></div></div>
+ <div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+   <div class="lbl">COM ports on this PC</div>
+   <button class="sec" onclick="rescan()">Force re-scan</button></div>
+  <table id="ports"><tbody></tbody></table>
+  <div class="mono" id="peekout" style="display:none;margin-top:10px"></div></div>
+</div><script>
+async function poll(){try{const s=await(await fetch('/status')).json();
+ const w=Number(s.last_weight_kg);
+ document.getElementById('wt').textContent=(w>=0?w.toLocaleString('en-IN',{maximumFractionDigits:1}):'- . -');
+ document.getElementById('raw').textContent=s.last_raw_frame||'(no frame yet)';
+ const c=s.detected_config||{};
+ document.getElementById('cfgline').textContent=s.detected_port?('Locked on '+s.detected_port+'  '+(c.baud_rate||'')+' baud  '+(c.data_bits||'')+(c.parity||'')+(c.stop_bits||'')):'Not locked on a port yet';
+ const b=[];b.push(s.scale_connected?'<span class="b ok">SCALE CONNECTED</span>':'<span class="b bad">SCALE NOT FOUND</span>');
+ b.push(s.cloud_online?'<span class="b ok">CLOUD ONLINE</span>':'<span class="b warn">CLOUD OFFLINE</span>');
+ b.push('<span class="b '+(s.push_count>0?'ok':'warn')+'">PUSHED '+s.push_count+'</span>');
+ document.getElementById('badges').innerHTML=b.join('');
+ }catch(e){document.getElementById('badges').innerHTML='<span class="b bad">agent not reachable</span>';}}
+async function loadPorts(){try{const d=await(await fetch('/ports')).json();
+ const rows=(d.ports||[]).map(p=>'<tr><td><b>'+p.port+'</b></td><td>'+(p.description||'')+'</td><td>'+(p.in_use?'<span class="b warn">in use by agent</span>':'')+'</td><td style="text-align:right"><button onclick="peek(\''+p.port+'\')">Peek</button></td></tr>').join('');
+ document.querySelector('#ports tbody').innerHTML=rows||'<tr><td colspan=4>No COM ports found - check the USB cable / driver.</td></tr>';
+ }catch(e){}}
+async function peek(port){const out=document.getElementById('peekout');out.style.display='block';
+ out.textContent='Peeking '+port+' ... (a few seconds; close any terminal using it first)';
+ try{const d=await(await fetch('/peek?port='+encodeURIComponent(port))).json();
+  if(d.note){out.textContent=port+': '+d.note+'\n'+(d.raw_ascii||'');return;}
+  out.textContent=(d.results||[]).map(r=>r.error?(r.config+': ERROR '+r.error):(r.config+': '+r.bytes+' bytes  ascii='+r.ascii_quality+'  weight='+(r.weight==null?'-':r.weight)+(r.looks_good?'   <-- LOOKS GOOD':'')+'\n   '+r.raw_ascii)).join('\n\n')||'(no data on this port)';
+ }catch(e){out.textContent='peek failed: '+e;}}
+async function rescan(){try{await fetch('/rescan');}catch(e){}}
+poll();loadPorts();setInterval(poll,700);setInterval(loadPorts,5000);
+</script></body></html>"""
+
+
+def _list_ports(reader) -> dict:
+    try:
+        import serial.tools.list_ports
+        held = reader.detected_port if getattr(reader, "connected", False) else None
+        return {"ports": [
+            {"port": p.device, "description": (p.description or ""), "in_use": (p.device == held)}
+            for p in serial.tools.list_ports.comports()
+        ]}
+    except Exception as exc:
+        return {"ports": [], "error": str(exc)}
+
+
+def _peek_for_ui(reader, port: str) -> dict:
+    if not port:
+        return {"note": "no port specified"}
+    # Can't double-open a port the agent is actively reading — show its frame.
+    if getattr(reader, "connected", False) and reader.detected_port == port:
+        return {"note": "this port is live in the agent - showing its current frame",
+                "raw_ascii": reader.last_raw_frame or ""}
+    return _peek_port(port)
+
+
 class StatusServer:
-    """Local HTTP diagnostic API at http://127.0.0.1:{port}.
+    """Local HTTP diagnostic API + Discovery UI at http://127.0.0.1:{port}.
     Auto-picks the first available port starting from preferred_port,
     so Tally on 9002 never blocks this service.
     """
@@ -598,43 +743,64 @@ class StatusServer:
         return start
 
     def start(self):
-        from http.server import BaseHTTPRequestHandler, HTTPServer
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from urllib.parse import urlparse, parse_qs
         reader = self.reader
         port   = self.port
 
+        def _status_dict():
+            r = reader
+            return {
+                "service": "scale_agent_v2", "status": "running",
+                "timestamp": datetime.now().isoformat(),
+                "scale_connected": r.connected, "detected_port": r.detected_port,
+                "detected_config": r.detected_config, "cloud_online": r.cloud_online,
+                "last_weight_kg": r.last_weight, "last_raw_frame": r.last_raw_frame,
+                "calibration_offset_kg": r.cfg.get("calibration_offset_kg", 0.0),
+                "push_count": r.push_count, "error_count": r.error_count,
+            }
+
         class Handler(BaseHTTPRequestHandler):
-            def do_GET(self):
-                r = reader
-                body = json.dumps({
-                    "service":               "scale_agent_v2",
-                    "status":                "running",
-                    "timestamp":             datetime.now().isoformat(),
-                    "scale_connected":       r.connected,
-                    "detected_port":         r.detected_port,
-                    "detected_config":       r.detected_config,
-                    "cloud_online":          r.cloud_online,
-                    "last_weight_kg":        r.last_weight,
-                    "last_raw_frame":        r.last_raw_frame,
-                    "calibration_offset_kg": r.cfg.get("calibration_offset_kg", 0.0),
-                    "push_count":            r.push_count,
-                    "error_count":           r.error_count,
-                }, indent=2)
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
+            def _send(self, code, body, ctype):
+                data = body.encode() if isinstance(body, str) else body
+                self.send_response(code)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
-                self.wfile.write(body.encode())
+                self.wfile.write(data)
+
+            def do_GET(self):
+                u = urlparse(self.path)
+                p = u.path
+                if p in ("/", "/index.html", "/discover"):
+                    self._send(200, DISCOVERY_HTML, "text/html; charset=utf-8")
+                elif p == "/status":
+                    self._send(200, json.dumps(_status_dict(), indent=2), "application/json")
+                elif p == "/ports":
+                    self._send(200, json.dumps(_list_ports(reader)), "application/json")
+                elif p == "/rescan":
+                    try:
+                        reader._clear_serial_cfg()
+                    except Exception:
+                        pass
+                    self._send(200, json.dumps({"ok": True}), "application/json")
+                elif p == "/peek":
+                    cp = (parse_qs(u.query).get("port", [""])[0]).strip()
+                    self._send(200, json.dumps(_peek_for_ui(reader, cp)), "application/json")
+                else:
+                    self._send(404, json.dumps({"error": "not found"}), "application/json")
 
             def log_message(self, *args):
                 pass  # suppress HTTP access log noise
 
         def _serve():
             try:
-                HTTPServer(("127.0.0.1", port), Handler).serve_forever()
+                ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
             except OSError as exc:
                 log.warning("Status server on :%d failed to bind: %s", port, exc)
 
         threading.Thread(target=_serve, daemon=True, name="status-http").start()
-        log.info("Status API: http://127.0.0.1:%d", self.port)
+        log.info("Status + Discovery UI: http://127.0.0.1:%d", self.port)
 
 
 # ── Config helpers ────────────────────────────────────────────────────────────
