@@ -21,6 +21,7 @@ the CLAUDE.md changelog (2026-06-26 Phase 1 + Phase 2 entries).
 
 **Tally dual-mode roadmap is COMPLETE (Phases 1-4).** Remaining are all *optional*:
 - [ ] Per-invoice **Download XML** button on `InvoicesPage` (backend `GET /tally/invoices/{id}/xml` already exists — just wire a row action).
+- [ ] **Credit/Debit Note auto-sync.** Builders + Tier-0 export + manual sync-by-id now handle CN/DN (2026-06-26). Still to do: include them in `/tally/pending` + fire auto-sync-on-finalise (today sale/purchase only). Also: the CN/DN builders assume **seller-issued vs a sale** — extend if notes against *purchase* invoices are ever added.
 - [ ] Scoped `tally_agent_key` (separate from the scale agent's `agent_api_key`) so a leaked key can't drain financial XML — currently both reuse `Tenant.agent_api_key`.
 - [ ] Combined single-process "edge agent" (scale + Tally) for single-PC sites.
 

@@ -136,8 +136,16 @@ def _build_voucher_xml(
     grand_total: Decimal,
     ledgers: TallyLedgerMap,
     guid: str | None = None,
+    sign_basis: str | None = None,        # "sales" | "purchase" — Dr/Cr direction; defaults from vch_type
+    item_ledger_kind: str | None = None,  # "sales" | "purchase" — which income/expense ledger goods post to
+    bill_type: str = "New Ref",           # "New Ref" (invoice) | "Agst Ref" (credit/debit note vs original)
+    bill_ref_name: str | None = None,     # original invoice no, used when bill_type="Agst Ref"
 ) -> str:
-    is_sale = vch_type == "Sales"
+    # Sign + income-ledger selection are decoupled from the voucher label so a
+    # Credit Note (which reverses a sale) can carry VCHTYPE="Credit Note", post
+    # to the "Sales" ledger, yet use purchase-direction Dr/Cr signs.
+    effective_basis = sign_basis or ("sales" if vch_type == "Sales" else "purchase")
+    is_sale = effective_basis == "sales"
 
     # Sign convention: Sales → party +, ledgers -
     #                  Purchase → party -, ledgers +
@@ -207,14 +215,15 @@ def _build_voucher_xml(
         credit_days = payment_terms_days or 0
 
     bill_alloc = _sub(party_entry, "BILLALLOCATIONS.LIST")
-    _sub(bill_alloc, "NAME", voucher_no or str(_uuid.uuid4())[:8])
-    _sub(bill_alloc, "BILLTYPE", "New Ref")
+    _sub(bill_alloc, "NAME", (bill_ref_name if (bill_type != "New Ref" and bill_ref_name)
+                              else (voucher_no or str(_uuid.uuid4())[:8])))
+    _sub(bill_alloc, "BILLTYPE", bill_type)
     _sub(bill_alloc, "AMOUNT", _fmt_amt(grand_total, party_sign))
-    if credit_days > 0:
+    if credit_days > 0 and bill_type == "New Ref":
         _sub(bill_alloc, "CREDITPERIOD", f"{credit_days} Days")
 
     # ── Inventory entries (one per line item) ───────────────────────────────
-    item_ledger = ledgers.sales if is_sale else ledgers.purchase
+    item_ledger = ledgers.sales if (item_ledger_kind or effective_basis) == "sales" else ledgers.purchase
     for item in items:
         inv_entry = _sub(vch, "INVENTORYENTRIES.LIST")
         _sub(inv_entry, "STOCKITEMNAME", item["name"])
@@ -698,6 +707,113 @@ def build_purchase_xml(
         due_date=getattr(invoice, "due_date", None),
         payment_terms_days=getattr(party, "payment_terms_days", 0) or 0,
         narration=narration,
+        party_name=_party_name(invoice, party),
+        party_gstin=_party_gstin(party),
+        place_of_supply=_place_of_supply(party),
+        tally_company=_tally_company(invoice, company),
+        items=_extract_items(invoice),
+        taxable_amount=invoice.taxable_amount or Decimal("0"),
+        discount_amount=invoice.discount_amount or Decimal("0"),
+        freight=invoice.freight or Decimal("0"),
+        cgst_amount=invoice.cgst_amount or Decimal("0"),
+        sgst_amount=invoice.sgst_amount or Decimal("0"),
+        igst_amount=invoice.igst_amount or Decimal("0"),
+        tcs_amount=invoice.tcs_amount or Decimal("0"),
+        round_off=invoice.round_off or Decimal("0"),
+        grand_total=invoice.grand_total,
+        ledgers=ledgers,
+        guid=str(invoice.id),
+    )
+
+
+def _note_narration(vch_type, invoice, narration_opts, ref_no):
+    narration = _build_narration(
+        vch_type=vch_type,
+        invoice_no=invoice.invoice_no or "Draft",
+        opts=narration_opts,
+        vehicle_no=getattr(invoice, "vehicle_no", None),
+        token_no=getattr(invoice, "token_no", None),
+        net_weight_kg=getattr(invoice, "net_weight", None),
+    )
+    reason = getattr(invoice, "note_reason", None)
+    if ref_no and reason:
+        return f"{narration} | vs {ref_no}: {reason}"
+    if ref_no:
+        return f"{narration} | vs {ref_no}"
+    return narration
+
+
+def build_credit_note_xml(
+    invoice,
+    company,
+    party,
+    ledgers: TallyLedgerMap | None = None,
+    narration_opts: NarrationOptions | None = None,
+    reference_invoice_no: str | None = None,
+) -> str:
+    """Build Tally XML for a Credit Note (seller-issued, against a SALE invoice).
+
+    A credit note reverses a sale: the customer is CREDITED (receivable down) and
+    Sales + output-GST are DEBITED. Hence purchase-direction signs, but the goods
+    still post to the "Sales" income ledger, and the bill settles "Agst Ref" the
+    original invoice so GSTR-1 CDNR links correctly.
+    """
+    ledgers = ledgers or TallyLedgerMap()
+    narration_opts = narration_opts or NarrationOptions()
+    ref_no = reference_invoice_no or invoice.invoice_no or ""
+    return _build_voucher_xml(
+        vch_type="Credit Note",
+        sign_basis="purchase",
+        item_ledger_kind="sales",
+        bill_type="Agst Ref",
+        bill_ref_name=ref_no,
+        voucher_no=invoice.invoice_no or "",
+        voucher_date=invoice.invoice_date,
+        narration=_note_narration("Credit Note", invoice, narration_opts, ref_no),
+        party_name=_party_name(invoice, party),
+        party_gstin=_party_gstin(party),
+        place_of_supply=_place_of_supply(party),
+        tally_company=_tally_company(invoice, company),
+        items=_extract_items(invoice),
+        taxable_amount=invoice.taxable_amount or Decimal("0"),
+        discount_amount=invoice.discount_amount or Decimal("0"),
+        freight=invoice.freight or Decimal("0"),
+        cgst_amount=invoice.cgst_amount or Decimal("0"),
+        sgst_amount=invoice.sgst_amount or Decimal("0"),
+        igst_amount=invoice.igst_amount or Decimal("0"),
+        tcs_amount=invoice.tcs_amount or Decimal("0"),
+        round_off=invoice.round_off or Decimal("0"),
+        grand_total=invoice.grand_total,
+        ledgers=ledgers,
+        guid=str(invoice.id),
+    )
+
+
+def build_debit_note_xml(
+    invoice,
+    company,
+    party,
+    ledgers: TallyLedgerMap | None = None,
+    narration_opts: NarrationOptions | None = None,
+    reference_invoice_no: str | None = None,
+) -> str:
+    """Build Tally XML for a Debit Note (seller-issued supplementary, against a
+    SALE invoice). A debit note increases the sale: the customer is DEBITED
+    (receivable up) and Sales + output-GST are CREDITED — same direction as a
+    sale, settled "Agst Ref" the original invoice.
+    """
+    ledgers = ledgers or TallyLedgerMap()
+    narration_opts = narration_opts or NarrationOptions()
+    ref_no = reference_invoice_no or invoice.invoice_no or ""
+    return _build_voucher_xml(
+        vch_type="Debit Note",
+        sign_basis="sales",
+        item_ledger_kind="sales",
+        bill_type="Agst Ref",
+        bill_ref_name=ref_no,
+        voucher_no=invoice.invoice_no or "",
+        voucher_date=invoice.invoice_date,
+        narration=_note_narration("Debit Note", invoice, narration_opts, ref_no),
         party_name=_party_name(invoice, party),
         party_gstin=_party_gstin(party),
         place_of_supply=_place_of_supply(party),

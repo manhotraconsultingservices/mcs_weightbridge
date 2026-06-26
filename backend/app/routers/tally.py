@@ -32,6 +32,7 @@ from app.models.quotation import Quotation, QuotationItem
 from app.models.inventory import InventoryPurchaseOrder, InventoryPOItem
 from app.integrations.tally.xml_builder import (
     build_sales_xml, build_purchase_xml,
+    build_credit_note_xml, build_debit_note_xml,
     build_customer_master_xml, build_supplier_master_xml,
     build_sales_order_xml, build_purchase_order_xml,
     TallyLedgerMap, NarrationOptions,
@@ -255,9 +256,18 @@ async def _build_invoice_xml(
         return build_sales_xml(invoice, company, party, ledger_map, narration_opts), ""
     if invoice.invoice_type == "purchase":
         return build_purchase_xml(invoice, company, party, ledger_map, narration_opts), ""
+    if invoice.invoice_type in ("credit_note", "debit_note"):
+        # Settle the note "Agst Ref" the original invoice number (GSTR-1 CDNR link).
+        ref_no = None
+        if getattr(invoice, "reference_invoice_id", None):
+            ref_no = (await db.execute(
+                select(Invoice.invoice_no).where(Invoice.id == invoice.reference_invoice_id)
+            )).scalar_one_or_none()
+        builder = build_credit_note_xml if invoice.invoice_type == "credit_note" else build_debit_note_xml
+        return builder(invoice, company, party, ledger_map, narration_opts, reference_invoice_no=ref_no), ""
     return None, (
         f"Invoice type '{invoice.invoice_type}' cannot be exported to Tally. "
-        "Only 'sale' and 'purchase' invoices are supported."
+        "Only sale, purchase, credit_note and debit_note are supported."
     )
 
 
