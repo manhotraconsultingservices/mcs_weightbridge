@@ -344,6 +344,13 @@ function PartiesTable({
   const { t } = useTranslation();
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<{ id: string; text: string; ok: boolean } | null>(null);
+  const [tallyEnabled, setTallyEnabled] = useState(false);
+
+  useEffect(() => {
+    api.get<{ is_enabled?: boolean }>('/api/v1/tally/config')
+      .then(({ data }) => setTallyEnabled(!!data?.is_enabled))
+      .catch(() => setTallyEnabled(false));
+  }, []);
 
   async function syncToTally(p: Party) {
     setSyncingId(p.id); setSyncMsg(null);
@@ -449,12 +456,12 @@ function PartiesTable({
           <Button
             size="icon" variant="ghost"
             onClick={() => syncToTally(p)}
-            disabled={syncingId === p.id}
-            title="Sync this master to Tally"
+            disabled={syncingId === p.id || !tallyEnabled}
+            title={tallyEnabled ? 'Sync this master to Tally' : 'Enable Tally Integration in Settings → Tally to sync'}
           >
             {syncingId === p.id
               ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <RefreshCw className="h-4 w-4 text-emerald-600" />}
+              : <RefreshCw className={`h-4 w-4 ${tallyEnabled ? 'text-emerald-600' : 'text-muted-foreground'}`} />}
           </Button>
           <Button
             size="icon" variant="ghost"
