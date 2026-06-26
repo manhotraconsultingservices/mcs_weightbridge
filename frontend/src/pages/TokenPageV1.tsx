@@ -1070,6 +1070,7 @@ function mtFromKg(kg: number) {
 function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: WeightDialogProps) {
   const { t } = useTranslation();
   const { reading, formattedMT } = useWeight();
+  const camerasEnabled = moduleEnabled('cameras');
   const [manualMode, setManualMode] = useState(false);
   const [manualWeight, setManualWeight] = useState('');
   const [saving, setSaving] = useState(false);
@@ -1126,6 +1127,8 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
 
       if (isCaptureStage) {
         onDone(data);
+        // No camera module for this tenant → no snapshot capture; just close.
+        if (!camerasEnabled) { onClose(); return; }
         setCapturePhase('capturing');
         const tokenId = token!.id;
         const deadline = Date.now() + 20_000;
@@ -1747,6 +1750,10 @@ export default function TokenPageV1() {
   // split the 1fr columns shrink to zero and `break-words` falls back to
   // character-level wrapping (e.g. "T o u r N o i d a" rendered vertically).
   // Weight columns widened slightly so "10.000 MT / 235 CFT" fits on one line.
+  // Cameras are a per-tenant feature (the `cameras` module). When off (e.g. a
+  // client with no camera agent, or a maize tenant), hide the live feeds + skip
+  // snapshot capture entirely so the page isn't cluttered with "offline" panels.
+  const camerasEnabled = moduleEnabled('cameras');
   const COLS = TOKEN_COL_DEFS.filter(c => visibleCols.includes(c.key)).map(c => c.width).join(' ');
 
   // ── Mobile layout: stacked sections instead of resizable split ──────── //
@@ -1755,10 +1762,12 @@ export default function TokenPageV1() {
       <div className="flex flex-col gap-3 pb-20">
         <ScaleStatus />
         <CreateTokenForm onCreated={handleTokenCreated} />
-        <div className="grid grid-cols-2 gap-2 h-36">
-          <CameraPanel cameraId="front" label={t('token.frontCamera')} />
-          <CameraPanel cameraId="top" label={t('token.topCamera')} />
-        </div>
+        {camerasEnabled && (
+          <div className="grid grid-cols-2 gap-2 h-36">
+            <CameraPanel cameraId="front" label={t('token.frontCamera')} />
+            <CameraPanel cameraId="top" label={t('token.topCamera')} />
+          </div>
+        )}
         {/* Compact token list */}
         <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
           <div className="px-3 py-2 border-b bg-muted/30 flex items-center justify-between shrink-0">
@@ -1840,21 +1849,16 @@ export default function TokenPageV1() {
 
         {/* ==================== RIGHT pane ==================== */}
         <div className="h-full flex flex-col overflow-hidden min-w-0 pl-1">
-          <ResizableSplit
-            direction="vertical"
-            defaultSize={45}
-            minSize={15}
-            maxSize={80}
-            storageKey="tokens.camerasSplit"
-          >
-            {/* ---- TOP — Live Cameras ---- */}
-            <div className="h-full grid grid-cols-2 gap-3 min-h-0 pb-1">
-              <CameraPanel cameraId="front" label={t('token.frontCamera')} />
-              <CameraPanel cameraId="top" label={t('token.topCamera')} />
-            </div>
+            {/* ---- Live Cameras — only when the camera module is enabled ---- */}
+            {camerasEnabled && (
+              <div className="grid grid-cols-2 gap-3 h-44 shrink-0 mb-1">
+                <CameraPanel cameraId="front" label={t('token.frontCamera')} />
+                <CameraPanel cameraId="top" label={t('token.topCamera')} />
+              </div>
+            )}
 
-            {/* ---- BOTTOM — Token List ---- */}
-            <div className="h-full rounded-xl border bg-card shadow-sm flex flex-col min-h-0 overflow-hidden mt-1">
+            {/* ---- Token List (fills remaining height) ---- */}
+            <div className="flex-1 rounded-xl border bg-card shadow-sm flex flex-col min-h-0 overflow-hidden">
 
           {/* Header row */}
           <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30 shrink-0 flex-wrap">
@@ -2191,7 +2195,6 @@ export default function TokenPageV1() {
             )}
           </div>
             </div>
-          </ResizableSplit>
         </div>
       </ResizableSplit>
 
