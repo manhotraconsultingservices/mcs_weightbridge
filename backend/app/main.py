@@ -11,7 +11,7 @@ from app.routers import (
     auth, company, products, parties, vehicles, tokens,
     weight, invoices, quotations, payments, dashboard, reports,
     usb_guard, private_invoices, notifications, audit, backup, import_data,
-    tally, app_settings, license, compliance, cameras, inventory,
+    tally, tally_connector, app_settings, license, compliance, cameras, inventory,
     product_stock, production, anpr, delivery_challans, royalty, portal, branches, gstr2b,
     anomalies, gate, custom_fields,
 )
@@ -858,6 +858,7 @@ app.include_router(audit.router)
 app.include_router(backup.router)
 app.include_router(import_data.router)
 app.include_router(tally.router)
+app.include_router(tally_connector.router)
 app.include_router(app_settings.router)
 app.include_router(compliance.router)
 app.include_router(cameras.router)

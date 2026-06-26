@@ -339,6 +339,36 @@ def get_runtime_ddl() -> list[str]:
             UNIQUE (company_id, entity_type, field_key)
         )
         """,
+        # Tally SaaS relay queue — in cloud/relay mode the backend builds the
+        # voucher XML and enqueues it here; a LAN-side Tally Connector claims
+        # jobs, pushes to the local Tally gateway, and reports the result back
+        # (which flips the source row's tally_synced). Direct/on-prem mode never
+        # touches this table.
+        """
+        CREATE TABLE IF NOT EXISTS tally_sync_jobs (
+            id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id       UUID REFERENCES companies(id),
+            entity_type      VARCHAR(20) NOT NULL,          -- invoice|party|sales_order|purchase_order
+            entity_id        UUID NOT NULL,
+            idempotency_key  VARCHAR(80) NOT NULL,          -- "<entity_type>:<entity_id>"
+            priority         INTEGER NOT NULL DEFAULT 100,  -- party=10, order=50, invoice=100 (masters first)
+            company_name     VARCHAR(200),                  -- target Tally company
+            xml              TEXT NOT NULL,
+            status           VARCHAR(12) NOT NULL DEFAULT 'pending',  -- pending|in_progress|done|failed|dead
+            attempts         INTEGER NOT NULL DEFAULT 0,
+            max_attempts     INTEGER NOT NULL DEFAULT 6,
+            next_attempt_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            last_error       TEXT,
+            tally_response   TEXT,
+            claim_token      VARCHAR(64),
+            claimed_until    TIMESTAMPTZ,
+            created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            picked_at        TIMESTAMPTZ,
+            completed_at     TIMESTAMPTZ,
+            UNIQUE (company_id, idempotency_key)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_tally_jobs_claim ON tally_sync_jobs (status, priority, next_attempt_at, created_at)",
     ]
 
 
@@ -363,6 +393,8 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE tally_config ADD COLUMN IF NOT EXISTS narration_token BOOLEAN NOT NULL DEFAULT TRUE",
         "ALTER TABLE tally_config ADD COLUMN IF NOT EXISTS narration_weight BOOLEAN NOT NULL DEFAULT TRUE",
         "ALTER TABLE tally_config ADD COLUMN IF NOT EXISTS sync_invoice_prefix VARCHAR(200)",
+        # Sync transport mode (NULL = derive from MULTI_TENANT: cloud=relay, on-prem=direct).
+        "ALTER TABLE tally_config ADD COLUMN IF NOT EXISTS mode VARCHAR(10)",
         # Tally Phase 2 — per-party ledger name
         "ALTER TABLE parties ADD COLUMN IF NOT EXISTS tally_ledger_name VARCHAR(200)",
         # Inventory — auto-reorder columns (added after initial release)

@@ -69,6 +69,11 @@ class TallyConfig(Base):
     # E.g. "INV,PUR" syncs GST sales + purchases but excludes any other series.
     sync_invoice_prefix: Mapped[str | None] = mapped_column(String(200))
 
+    # Sync transport mode. NULL = derive from MULTI_TENANT (cloud → 'relay',
+    # on-prem → 'direct'). 'direct' = backend pushes XML to Tally on the LAN;
+    # 'relay' = enqueue into tally_sync_jobs for the LAN-side Tally Connector.
+    mode: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
 
 class AuditLog(Base):
     __tablename__ = "audit_log"
