@@ -56,18 +56,20 @@ async def ws_weight(websocket: WebSocket, tenant: str = Query(""), token: str = 
 
     if settings.MULTI_TENANT:
         if not tenant:
-            await websocket.close(code=4001, reason="tenant query param required")
+            await websocket.close(code=4001)   # tenant query param required
             return
         # Authenticate the subscriber: the JWT's tenant claim must equal the
         # requested tenant. Closes the cross-tenant live-weight read gap.
-        import jwt as _jwt
+        # NOTE: this app uses python-jose (`from jose import jwt`), NOT PyJWT —
+        # `import jwt` would ModuleNotFoundError and 500 the whole handshake.
+        from jose import jwt as _jwt
         try:
             claims = _jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         except Exception:
-            await websocket.close(code=4003, reason="invalid or missing token")
+            await websocket.close(code=4403)   # policy violation: bad/missing token
             return
         if (claims.get("tenant") or "") != tenant:
-            await websocket.close(code=4003, reason="token does not match tenant")
+            await websocket.close(code=4403)   # policy violation: tenant mismatch
             return
 
     manager = _get_manager_for_tenant(tenant if settings.MULTI_TENANT else None)
