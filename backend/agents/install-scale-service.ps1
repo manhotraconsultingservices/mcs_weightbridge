@@ -194,9 +194,19 @@ $nssm = Ensure-Nssm
 
 Write-Section "Register service '$ServiceName'"
 
-# Idempotent - tear down any prior instance first
-& $nssm stop   $ServiceName confirm 2>$null | Out-Null
-& $nssm remove $ServiceName confirm 2>$null | Out-Null
+# NSSM writes status text to stderr even on success; under $ErrorActionPreference
+# = 'Stop' that native stderr becomes a TERMINATING error. Relax it for all the
+# NSSM calls and rely on the explicit "Running" + status-port checks below to
+# catch a genuinely failed install.
+$ErrorActionPreference = "Continue"
+
+# Idempotent - tear down any prior instance first, but ONLY if it already
+# exists. On a fresh install nssm prints "Can't open service!" otherwise.
+if (Get-Service $ServiceName -ErrorAction SilentlyContinue) {
+    & $nssm stop   $ServiceName confirm 2>$null | Out-Null
+    & $nssm remove $ServiceName confirm 2>$null | Out-Null
+    Start-Sleep -Milliseconds 500
+}
 
 $logDir = Join-Path $InstallDir "logs"
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
@@ -226,7 +236,7 @@ Write-OK "Service registered"
 
 Write-Section "Start + verify"
 
-& $nssm start $ServiceName | Out-Null
+& $nssm start $ServiceName 2>$null | Out-Null
 Start-Sleep -Seconds 3
 
 $svc = Get-Service $ServiceName -ErrorAction SilentlyContinue
