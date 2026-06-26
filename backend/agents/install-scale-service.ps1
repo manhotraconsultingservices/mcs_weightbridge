@@ -181,6 +181,23 @@ Get-ScheduledTask -TaskName "Weighbridge*" -ErrorAction SilentlyContinue |
     Unregister-ScheduledTask -Confirm:$false
 Write-OK "Older Scheduled Tasks (if any) removed"
 
+# The OLD standalone reader (weight_bridge.py, service 'WeighbridgeWeightBridge')
+# is SUPERSEDED by this agent and FIGHTS it for the COM port - a Windows serial
+# port is single-owner, so whichever service grabs it first locks the other out.
+# This is the #1 cause of 'Scale NOT FOUND' on upgraded sites. Stop + disable it.
+$legacy = Get-Service "WeighbridgeWeightBridge" -ErrorAction SilentlyContinue
+if ($legacy) {
+    try { Stop-Service "WeighbridgeWeightBridge" -Force -ErrorAction SilentlyContinue } catch {}
+    try { Set-Service  "WeighbridgeWeightBridge" -StartupType Disabled -ErrorAction SilentlyContinue } catch {}
+    Write-OK "Legacy 'WeighbridgeWeightBridge' service stopped + disabled (it conflicts on the COM port)"
+}
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like '*weight_bridge.py*' } |
+    ForEach-Object {
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        Write-OK "Killed legacy weight_bridge.py PID $($_.ProcessId) (freed the COM port)"
+    }
+
 # --------------------------------------------------------------------------
 # NSSM
 # --------------------------------------------------------------------------

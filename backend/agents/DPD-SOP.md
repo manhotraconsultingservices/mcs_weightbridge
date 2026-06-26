@@ -9,6 +9,37 @@ Server side needs nothing — the agent posts to `POST /api/v1/weight/external-r
 with `tenant` + `agent_key` in the body; the server validates the key and
 broadcasts live weight to the browser. No server change is ever required.
 
+> ## ⚠ SINGLE-OWNER RULE — the #1 gotcha, read this first
+>
+> **A Windows COM port can be opened by exactly ONE process at a time.** If
+> anything else holds the port, the agent gets *"Access to the port 'COMx' is
+> denied"* and reports **Scale NOT FOUND** — even though the scale, baud rate
+> and wiring are perfectly fine. Things that silently hold the port:
+>
+> - A **serial terminal** left open (PuTTY, RealTerm, Hercules, Arduino Serial
+>   Monitor, even a `terminal.exe` window showing the feed).
+> - The **vendor's own weighbridge software**.
+> - The **legacy `WeighbridgeWeightBridge` service** (the old `weight_bridge.py`).
+>   On any site upgraded from the pre-cloud build, this service is still running
+>   and will lock the agent out of the port forever.
+>
+> **Before Deploy, make sure NOTHING else owns the port.** The installer now
+> auto-stops + disables `WeighbridgeWeightBridge` and kills stray
+> `weight_bridge.py` — but you must close any terminal / vendor app yourself.
+> **The service and a terminal can never read the same COM port at once** — if
+> you Peek/sniff a port in the Discovery UI, the agent can't read it during that
+> moment, and vice-versa.
+>
+> **Find what holds a port (when COMx is "denied"):**
+> ```powershell
+> # any python still on the port?
+> Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+>   Where-Object { $_.CommandLine -match 'weight_bridge|scale_agent' } |
+>   Select-Object ProcessId,CommandLine
+> # legacy service still alive?
+> Get-Service WeighbridgeWeightBridge   # must be Stopped + Disabled
+> ```
+
 ---
 
 ## 0. Prerequisites (one-time per machine)
@@ -53,7 +84,7 @@ weight, e.g.:
 | Symptom | Fix |
 |---|---|
 | `No COM ports found` | USB cable not seated / adapter driver missing — check Device Manager → Ports (COM & LPT). Install CH340 / FTDI / Prolific driver. |
-| `Scale NOT FOUND` | Indicator off, or it only sends on a "print"/"stable" trigger — press the indicator's PRINT key while detecting; confirm it's set to **continuous** output in its menu. |
+| `Scale NOT FOUND` | **First check the port isn't already owned** (see the Single-owner rule above — close any terminal, stop the legacy `WeighbridgeWeightBridge` service). Then: indicator off, or it only sends on a "print"/"stable" trigger — press the indicator's PRINT key while detecting; confirm it's set to **continuous** output in its menu. |
 | Found, but weight is wrong / jumps | Wrong framing matched. Re-run `--detect`; if it keeps mismatching, set the indicator to a standard mode (most common: **9600 8N1** or **2400 7E1**) and retry. Note the indicator's documented protocol. |
 
 ---
