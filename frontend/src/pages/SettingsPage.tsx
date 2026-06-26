@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Save, Loader2, Plus, CheckCircle2, Usb, Shield, Trash2, Mail, Phone, MessageSquare, TestTube, Send, RefreshCw, CheckCircle, XCircle, Server, Scale, ScanLine, Play, RotateCcw, Camera, Truck, X } from 'lucide-react';
+import { Save, Loader2, Plus, CheckCircle2, Usb, Shield, Trash2, Mail, Phone, MessageSquare, TestTube, Send, RefreshCw, CheckCircle, XCircle, Server, Scale, ScanLine, Play, RotateCcw, Camera, Truck, X, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -1262,6 +1262,22 @@ function TallyTab() {
     try { await api.post(`/api/v1/tally/connector/jobs/${id}/requeue`); loadConnector(); } catch { /* ignore */ }
   }
 
+  async function downloadPendingXml() {
+    setSaveMsg('Preparing XML…');
+    try {
+      const resp = await api.get('/api/v1/tally/export-xml', { responseType: 'blob' });
+      const count = resp.headers['x-voucher-count'];
+      const url = URL.createObjectURL(resp.data as Blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `tally-vouchers-${new Date().toISOString().slice(0, 10)}.xml`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      setSaveMsg(count ? `Downloaded ${count} voucher(s)` : 'Downloaded');
+      setTimeout(() => setSaveMsg(''), 4000);
+    } catch { setSaveMsg('Download failed'); }
+  }
+
   async function save() {
     setSaving(true); setSaveMsg('');
     try {
@@ -1515,6 +1531,25 @@ function TallyTab() {
               Include Net Weight (e.g. <span className="font-mono text-xs bg-muted px-1 rounded">Net Wt: 15.760 MT</span>)
             </label>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Tier-0 manual export — works in any mode, no connector needed */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Download className="h-4 w-4" /> Manual export (no connector)
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Download your finalised, not-yet-synced GST vouchers as one Tally XML file, then import it in
+            Tally via <span className="font-mono">Gateway → Import → Vouchers</span>. A fallback for when
+            you don't run the live connection — it uses the same ledger map + prefix filter above.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <Button variant="outline" onClick={downloadPendingXml}>
+            <Download className="mr-2 h-4 w-4" /> Download pending vouchers (XML)
+          </Button>
         </CardContent>
       </Card>
 

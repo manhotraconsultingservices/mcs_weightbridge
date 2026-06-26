@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime, timezone, date as _date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
@@ -209,6 +209,81 @@ async def _dispatch_xml(
     return (result.synced or result.queued), result.message, result.synced
 
 
+async def _build_invoice_xml(
+    invoice: Invoice,
+    company: Company,
+    cfg: TallyConfig,
+    db: AsyncSession,
+) -> tuple[str | None, str]:
+    """Build the Tally voucher XML for a sale/purchase invoice using the saved
+    ledger map + narration options. Returns ``(xml, "")`` on success, or
+    ``(None, reason)`` for unsupported invoice types. No dispatch / no DB writes
+    — shared by the live sync path and the Tier-0 'Download Tally XML' export.
+    """
+    party = None
+    if invoice.party_id:
+        party = (await db.execute(select(Party).where(Party.id == invoice.party_id))).scalar_one_or_none()
+
+    # Ensure items are loaded
+    if not invoice.items:
+        inv_with_items = (await db.execute(
+            select(Invoice).options(selectinload(Invoice.items)).where(Invoice.id == invoice.id)
+        )).scalar_one_or_none()
+        if inv_with_items:
+            invoice = inv_with_items
+    for item in (invoice.items or []):
+        if not item.description:
+            item._product_name = "Item"
+
+    ledger_map = TallyLedgerMap(
+        sales=cfg.ledger_sales or "Sales",
+        purchase=cfg.ledger_purchase or "Purchase",
+        cgst=cfg.ledger_cgst or "CGST",
+        sgst=cfg.ledger_sgst or "SGST",
+        igst=cfg.ledger_igst or "IGST",
+        freight=cfg.ledger_freight or "Freight Outward",
+        discount=cfg.ledger_discount or "Trade Discount",
+        tcs=cfg.ledger_tcs or "TCS Payable",
+        roundoff=cfg.ledger_roundoff or "Round Off",
+    )
+    narration_opts = NarrationOptions(
+        include_vehicle=cfg.narration_vehicle,
+        include_token=cfg.narration_token,
+        include_weight=cfg.narration_weight,
+    )
+    if invoice.invoice_type == "sale":
+        return build_sales_xml(invoice, company, party, ledger_map, narration_opts), ""
+    if invoice.invoice_type == "purchase":
+        return build_purchase_xml(invoice, company, party, ledger_map, narration_opts), ""
+    return None, (
+        f"Invoice type '{invoice.invoice_type}' cannot be exported to Tally. "
+        "Only 'sale' and 'purchase' invoices are supported."
+    )
+
+
+def _merge_voucher_xmls(xmls: list[str]) -> str:
+    """Bundle N single-voucher ENVELOPEs into one importable Tally ENVELOPE by
+    collecting their TALLYMESSAGE blocks under one REQUESTDATA (REPORTNAME=Vouchers).
+    """
+    from xml.etree import ElementTree as ET
+    messages: list[str] = []
+    for x in xmls:
+        try:
+            root = ET.fromstring(x)
+        except ET.ParseError:
+            continue
+        for tm in root.findall(".//TALLYMESSAGE"):
+            messages.append(ET.tostring(tm, encoding="unicode"))
+    body = "".join(messages)
+    return (
+        '<ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>'
+        '<BODY><IMPORTDATA>'
+        '<REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME></REQUESTDESC>'
+        f'<REQUESTDATA>{body}</REQUESTDATA>'
+        '</IMPORTDATA></BODY></ENVELOPE>'
+    )
+
+
 async def _push_invoice(
     invoice: Invoice,
     company: Company,
@@ -232,56 +307,10 @@ async def _push_invoice(
             f"if this invoice should sync."
         )
 
-    # Resolve party
-    party = None
-    if invoice.party_id:
-        party = (await db.execute(select(Party).where(Party.id == invoice.party_id))).scalar_one_or_none()
-
-    # Ensure items are loaded
-    if not invoice.items:
-        inv_with_items = (await db.execute(
-            select(Invoice)
-            .options(selectinload(Invoice.items))
-            .where(Invoice.id == invoice.id)
-        )).scalar_one_or_none()
-        if inv_with_items:
-            invoice = inv_with_items
-
-    # Attach product names to items (best-effort)
-    for item in (invoice.items or []):
-        if not item.description:
-            item._product_name = "Item"
-
-    # Build ledger map from saved config
-    ledger_map = TallyLedgerMap(
-        sales=cfg.ledger_sales or "Sales",
-        purchase=cfg.ledger_purchase or "Purchase",
-        cgst=cfg.ledger_cgst or "CGST",
-        sgst=cfg.ledger_sgst or "SGST",
-        igst=cfg.ledger_igst or "IGST",
-        freight=cfg.ledger_freight or "Freight Outward",
-        discount=cfg.ledger_discount or "Trade Discount",
-        tcs=cfg.ledger_tcs or "TCS Payable",
-        roundoff=cfg.ledger_roundoff or "Round Off",
-    )
-
-    # Build narration options from saved config
-    narration_opts = NarrationOptions(
-        include_vehicle=cfg.narration_vehicle,
-        include_token=cfg.narration_token,
-        include_weight=cfg.narration_weight,
-    )
-
-    # Build XML — only sale/purchase are valid Tally voucher types
-    if invoice.invoice_type == "sale":
-        xml = build_sales_xml(invoice, company, party, ledger_map, narration_opts)
-    elif invoice.invoice_type == "purchase":
-        xml = build_purchase_xml(invoice, company, party, ledger_map, narration_opts)
-    else:
-        return False, (
-            f"Invoice type '{invoice.invoice_type}' cannot be synced to Tally. "
-            "Only 'sale' and 'purchase' invoices are supported."
-        )
+    # Build the voucher XML (shared with the Tier-0 export)
+    xml, build_err = await _build_invoice_xml(invoice, company, cfg, db)
+    if xml is None:
+        return False, build_err
 
     # Dispatch via the configured transport (direct push, or relay queue in SaaS)
     company_name = cfg.tally_company_name or getattr(company, "name", "") or ""
@@ -815,3 +844,99 @@ async def bulk_sync_to_tally(
         "failed": failed,
         "results": [r.model_dump() for r in results],
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tier-0 — manual XML export (no connector, no direct push). The user downloads
+# the voucher XML and imports it via Tally → Import Data. Works in any mode and
+# ignores is_enabled + the prefix filter (an explicit user-requested download).
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/invoices/{invoice_id}/xml")
+async def download_invoice_xml(
+    invoice_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download one finalised GST invoice as a Tally-importable voucher XML file."""
+    invoice = (await db.execute(
+        select(Invoice).options(selectinload(Invoice.items)).where(
+            Invoice.id == invoice_id,
+            Invoice.company_id == current_user.company_id,
+        )
+    )).scalar_one_or_none()
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+    if invoice.status != "final":
+        raise HTTPException(400, "Only finalised invoices can be exported to Tally")
+    if invoice.tax_type != "gst":
+        raise HTTPException(400, "Non-GST (Bill of Supply) invoices are not exported to Tally")
+
+    cfg = await _get_config(db, current_user.company_id)
+    company = await _get_company(db, current_user.company_id)
+    xml, err = await _build_invoice_xml(invoice, company, cfg, db)
+    if xml is None:
+        raise HTTPException(400, err)
+    safe = (invoice.invoice_no or str(invoice.id)).replace("/", "-").replace("\\", "-")
+    return Response(
+        content=xml, media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="tally-{safe}.xml"'},
+    )
+
+
+@router.get("/export-xml")
+async def export_vouchers_xml(
+    invoice_type: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    include_synced: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download finalised GST invoices as ONE importable Tally XML (Tier-0
+    fallback for clients with no connector). Defaults to not-yet-synced."""
+    def _pd(s: str):
+        try:
+            return _date.fromisoformat(s)
+        except ValueError:
+            raise HTTPException(400, f"Invalid date '{s}' (use YYYY-MM-DD)")
+
+    q = select(Invoice).options(selectinload(Invoice.items)).where(
+        Invoice.company_id == current_user.company_id,
+        Invoice.status == "final",
+        Invoice.tax_type == "gst",
+    )
+    if invoice_type:
+        q = q.where(Invoice.invoice_type == invoice_type)
+    if not include_synced:
+        q = q.where(Invoice.tally_synced == False)  # noqa: E712
+    if from_date:
+        q = q.where(Invoice.invoice_date >= _pd(from_date))
+    if to_date:
+        q = q.where(Invoice.invoice_date <= _pd(to_date))
+    # Apply the same prefix filter the sync worklist uses, for consistency.
+    _cfg = (await db.execute(
+        select(TallyConfig).where(TallyConfig.company_id == current_user.company_id)
+    )).scalar_one_or_none()
+    _pfx = _prefix_sql_clause(_cfg.sync_invoice_prefix if _cfg else None)
+    if _pfx is not None:
+        q = q.where(_pfx)
+    q = q.order_by(Invoice.invoice_date.asc())
+    invoices = (await db.execute(q)).scalars().all()
+
+    cfg = _cfg or await _get_config(db, current_user.company_id)
+    company = await _get_company(db, current_user.company_id)
+    xmls: list[str] = []
+    for inv in invoices:
+        x, _err = await _build_invoice_xml(inv, company, cfg, db)
+        if x:
+            xmls.append(x)
+    merged = _merge_voucher_xmls(xmls)
+    fname = f"tally-vouchers-{datetime.now().strftime('%Y%m%d')}.xml"
+    return Response(
+        content=merged, media_type="application/xml",
+        headers={
+            "Content-Disposition": f'attachment; filename="{fname}"',
+            "X-Voucher-Count": str(len(xmls)),
+        },
+    )

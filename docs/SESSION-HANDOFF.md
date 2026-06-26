@@ -17,12 +17,12 @@ the CLAUDE.md changelog (2026-06-26 Phase 1 + Phase 2 entries).
 | **1** | Transport seam (`integrations/tally/transport.py`) + `tally_sync_jobs` queue + `relay_queue.py` + connector endpoints (`routers/tally_connector.py`) + `tally_config.mode`. On-prem `direct` push unchanged; SaaS auto-`relay`. | ✅ done (`9779986`) — 44 tests green |
 | **2** | LAN-side `backend/agents/tally_connector.py` (Windows service: claim → push to local Tally → report) + `POST /connector/ping` + `DPD-TALLY-CONNECTOR.md`. | ✅ done (`d54fede`) — compile + MockTally round-trip verified |
 | **3** | Settings connector-status card + relay-aware UI (hide host/port + Test, mode badge) + dead-letter/Retry + 30-day `done`-job retention. | ✅ done (`<pending push>`) — 44 tests + tsc green |
-| **4** | **PENDING (optional)** — Tier-0 "Download Tally XML" route + button; optional combined edge agent; optional scoped `tally_agent_key` | ⏳ |
+| **4** | Tier-0 "Download Tally XML" — `_build_invoice_xml` extraction + `_merge_voucher_xmls`; `GET /invoices/{id}/xml` + `GET /export-xml`; Settings "Manual export" button. | ✅ done — 44 tests + tsc green |
 
-### Phase 4 — remaining (optional)
-- [ ] **Tier-0 "Download Tally XML"** — a cloud route + Settings/Invoices button that streams the same builder output for manual Tally → Import Data (no-install fallback for clients who refuse any local agent).
-- [ ] Optional: a per-tenant scoped `tally_agent_key` (separate from the scale agent's `agent_api_key`) so a leaked key can't drain financial XML — currently both reuse `Tenant.agent_api_key`.
-- [ ] Optional: combined single-process "edge agent" (scale + Tally) for single-PC sites.
+**Tally dual-mode roadmap is COMPLETE (Phases 1-4).** Remaining are all *optional*:
+- [ ] Per-invoice **Download XML** button on `InvoicesPage` (backend `GET /tally/invoices/{id}/xml` already exists — just wire a row action).
+- [ ] Scoped `tally_agent_key` (separate from the scale agent's `agent_api_key`) so a leaked key can't drain financial XML — currently both reuse `Tenant.agent_api_key`.
+- [ ] Combined single-process "edge agent" (scale + Tally) for single-PC sites.
 
 ### Live end-to-end smoke still owed (couldn't run from dev box)
 The connector's **live HTTP against a seeded cloud tenant** wasn't exercised here
