@@ -78,7 +78,9 @@ Write-OK "Services stopped."
 Write-Step "Step 5: Reconfiguring WeighbridgeBackend..."
 
 & $Nssm set WeighbridgeBackend Application    $VenvPython
-& $Nssm set WeighbridgeBackend AppParameters  "-m uvicorn app.main:app --host 0.0.0.0 --port 9001 --workers 2"
+# --workers 1 ONLY: the live-weight WebSocket pub/sub is in-memory per process;
+# >1 worker splits the agent push and the browser WebSocket -> dialog shows OFFLINE.
+& $Nssm set WeighbridgeBackend AppParameters  "-m uvicorn app.main:app --host 0.0.0.0 --port 9001 --workers 1"
 & $Nssm set WeighbridgeBackend AppDirectory   $BackendDir
 & $Nssm set WeighbridgeBackend AppRestartDelay        3000
 & $Nssm set WeighbridgeBackend Start                 SERVICE_AUTO_START

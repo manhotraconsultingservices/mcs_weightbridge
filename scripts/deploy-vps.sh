@@ -144,7 +144,14 @@ Requires=docker.service
 Type=simple
 User=root
 WorkingDirectory=/opt/weighbridge/backend
-ExecStart=/opt/weighbridge/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 9001 --workers 2 --log-level info
+# IMPORTANT: --workers 1 ONLY. The live-weight WebSocket pub/sub
+# (weight.py::_tenant_weight_managers) is in-memory PER PROCESS. With >1 worker
+# the scale agent's POST /weight/external-reading and the browser's
+# /ws/weight WebSocket land on DIFFERENT workers, so the pushed weight never
+# reaches the browser (the weighment dialog shows "OFFLINE" even though the
+# agent reports CLOUD ONLINE + rising push count). To scale past 1 worker you
+# MUST first add a cross-process bus (Redis pub/sub or Postgres LISTEN/NOTIFY).
+ExecStart=/opt/weighbridge/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 9001 --workers 1 --log-level info
 Restart=always
 RestartSec=5
 Environment=PATH=/opt/weighbridge/backend/venv/bin:/usr/bin:/usr/local/bin

@@ -255,7 +255,10 @@ Write-Host "Step 3 - Registering backend service ($SvcBackend)" -ForegroundColor
 Remove-ServiceIfExists $SvcBackend
 
 & $nssm install $SvcBackend $pythonExe
-& $nssm set $SvcBackend AppParameters    "-m uvicorn app.main:app --host 0.0.0.0 --port 9001 --workers 2"
+# --workers 1 ONLY: the live-weight WebSocket pub/sub is in-memory per process;
+# >1 worker splits the scale agent push and the browser WebSocket across
+# processes so the weight never reaches the browser (dialog shows OFFLINE).
+& $nssm set $SvcBackend AppParameters    "-m uvicorn app.main:app --host 0.0.0.0 --port 9001 --workers 1"
 & $nssm set $SvcBackend AppDirectory     $BackendDir
 & $nssm set $SvcBackend DisplayName      "Weighbridge - Backend (FastAPI)"
 & $nssm set $SvcBackend Description      "Weighbridge Invoice Software backend. FastAPI + PostgreSQL."
