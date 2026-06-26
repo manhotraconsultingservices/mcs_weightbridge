@@ -43,6 +43,20 @@ async def _authed_tenant(payload: dict[str, Any]) -> str:
     return tenant_slug
 
 
+@router.post("/ping")
+async def connector_ping(payload: dict[str, Any]):
+    """Lightweight auth + queue-depth check for the connector's --test (no jobs consumed)."""
+    tenant = await _authed_tenant(payload)
+    async with await get_tenant_session(tenant) as db:
+        pending = (await db.execute(text(
+            "SELECT count(*) FROM tally_sync_jobs WHERE status='pending'"
+        ))).scalar()
+        dead = (await db.execute(text(
+            "SELECT count(*) FROM tally_sync_jobs WHERE status='dead'"
+        ))).scalar()
+    return {"ok": True, "pending": int(pending or 0), "dead": int(dead or 0)}
+
+
 @router.post("/jobs/claim")
 async def claim_jobs(payload: dict[str, Any]):
     """Atomically lease up to ``max_jobs`` pending jobs (priority then FIFO)."""
