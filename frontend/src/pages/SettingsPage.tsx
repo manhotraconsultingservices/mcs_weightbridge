@@ -1288,7 +1288,10 @@ function TallyTab() {
       setCfg({ ...data, tally_company_name: data.tally_company_name || '' });
       setSaveMsg('Saved successfully');
       setTimeout(() => setSaveMsg(''), 3000);
-    } catch { setSaveMsg('Failed to save'); }
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      setSaveMsg(typeof detail === 'string' ? `Save failed: ${detail}` : 'Failed to save');
+    }
     finally { setSaving(false); }
   }
 

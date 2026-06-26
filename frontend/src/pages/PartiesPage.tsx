@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Search, Pencil, Loader2, ExternalLink } from 'lucide-react';
+import { Plus, Search, Pencil, Loader2, ExternalLink, RefreshCw } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -342,6 +342,25 @@ function PartiesTable({
 }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [syncMsg, setSyncMsg] = useState<{ id: string; text: string; ok: boolean } | null>(null);
+
+  async function syncToTally(p: Party) {
+    setSyncingId(p.id); setSyncMsg(null);
+    try {
+      const { data } = await api.post<{ success: boolean; message?: string; tally_synced?: boolean }>(
+        `/api/v1/tally/sync/party/${p.id}`);
+      const text = data?.message || (data?.tally_synced ? 'Sent to Tally' : 'Queued for Tally');
+      setSyncMsg({ id: p.id, text, ok: data?.success !== false });
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      setSyncMsg({ id: p.id, text: typeof detail === 'string' ? detail : 'Tally sync failed', ok: false });
+    } finally {
+      setSyncingId(null);
+      setTimeout(() => setSyncMsg(m => (m && m.id === p.id ? null : m)), 6000);
+    }
+  }
+
   const columns = useMemo<ColumnDef<Party>[]>(() => [
     {
       key: 'name', label: t('party.name'), accessor: p => p.name, className: 'font-medium',
@@ -422,6 +441,21 @@ function PartiesTable({
       emptyMessage="No parties yet. Add your first customer or supplier to get started."
       rowActions={p => (
         <div className="flex items-center gap-1 justify-end">
+          {syncMsg?.id === p.id && (
+            <span className={`text-xs mr-1 whitespace-nowrap ${syncMsg.ok ? 'text-emerald-600' : 'text-red-600'}`}>
+              {syncMsg.text}
+            </span>
+          )}
+          <Button
+            size="icon" variant="ghost"
+            onClick={() => syncToTally(p)}
+            disabled={syncingId === p.id}
+            title="Sync this master to Tally"
+          >
+            {syncingId === p.id
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <RefreshCw className="h-4 w-4 text-emerald-600" />}
+          </Button>
           <Button
             size="icon" variant="ghost"
             onClick={() => navigate(`/customers/${p.id}`)}

@@ -385,7 +385,11 @@ async def update_tally_config(
     # it (None) → leave unchanged so a relay tenant isn't flipped back to direct.
     if payload.mode is not None:
         cfg.mode = (payload.mode or "").strip().lower() or None
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception as e:  # surface the real DB error instead of a silent 500
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Could not save Tally settings: {str(e)[:300]}")
     await db.refresh(cfg)
     return cfg
 
