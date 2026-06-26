@@ -146,13 +146,54 @@ async def requeue_job(
     current_user: User = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Re-arm a dead/failed (or stuck-pending) job so the connector retries it."""
-    row = (await db.execute(text(
-        "UPDATE tally_sync_jobs SET status='pending', attempts=0, last_error=NULL, "
-        "claim_token=NULL, claimed_until=NULL, next_attempt_at=now() "
-        "WHERE id=:id AND company_id=:cid AND status IN ('dead','failed','pending') RETURNING id"
-    ), {"id": str(job_id), "cid": str(current_user.company_id)})).fetchone()
-    await db.commit()
-    if not row:
+    """Re-arm a dead/failed (or stuck-pending) job so the connector retries it.
+
+    For invoice / credit-note / debit-note jobs the voucher XML is **rebuilt from
+    the CURRENT Tally config** first — so a job queued before a config change
+    (e.g. before "No-GST / accounting-only" was switched on) is regenerated
+    correctly instead of replaying the stale, possibly Tally-crashing voucher.
+    Falls back to re-arming the stored XML if the rebuild can't run.
+    """
+    import logging
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from app.models.tally_job import TallySyncJob
+
+    job = (await db.execute(
+        select(TallySyncJob).where(
+            TallySyncJob.id == job_id,
+            TallySyncJob.company_id == current_user.company_id,
+            TallySyncJob.status.in_(["dead", "failed", "pending"]),
+        )
+    )).scalar_one_or_none()
+    if not job:
         raise HTTPException(404, "Job not found or not re-queueable")
-    return {"ok": True, "id": str(job_id), "status": "pending"}
+
+    rebuilt = False
+    if job.entity_type in ("invoice", "credit_note", "debit_note"):
+        try:
+            from app.routers.tally import _get_config, _get_company, _build_invoice_xml
+            from app.models.invoice import Invoice
+            inv = (await db.execute(
+                select(Invoice).where(Invoice.id == job.entity_id)
+            )).scalar_one_or_none()
+            if inv is not None:
+                cfg = await _get_config(db, current_user.company_id)
+                company = await _get_company(db, current_user.company_id)
+                new_xml, _err = await _build_invoice_xml(inv, company, cfg, db)
+                if new_xml:
+                    job.xml = new_xml
+                    job.company_name = (getattr(cfg, "tally_company_name", None)
+                                        or getattr(company, "name", None) or job.company_name)
+                    rebuilt = True
+        except Exception as e:
+            logging.getLogger(__name__).warning("requeue rebuild failed for job %s: %s", job_id, e)
+
+    job.status = "pending"
+    job.attempts = 0
+    job.last_error = None
+    job.claim_token = None
+    job.claimed_until = None
+    job.next_attempt_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"ok": True, "id": str(job_id), "status": "pending", "rebuilt": rebuilt}
