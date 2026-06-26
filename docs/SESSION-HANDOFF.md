@@ -31,6 +31,12 @@ Do the DPD GATE-D smoke on a real SaaS tenant: `tally_connector.py --setup` →
 `--test` (both [OK]) → finalise a GST invoice → watch it drain from
 `/tally/pending` into Tally and `tally_synced` flip.
 
+**Before the smoke, set the client's Tally Import Configuration** (DPD-TALLY-CONNECTOR.md §0a):
+**Overwrite voucher when same GUID exists = Yes** + **Record Exceptions and Import**.
+With `Overwrite = No`, a re-sent/corrected voucher is skipped as a duplicate and the
+connector now reports it as a **failure** (parser hardened 2026-06-26) → it lands in
+the dead-letter list instead of silently flipping `tally_synced`.
+
 ---
 
 ## 🛠 Operational follow-ups (tenant DATA/config — not code)

@@ -28,6 +28,33 @@ Tally** when possible.
 - [ ] In the app: **Settings → Tally** is **enabled**, the company name + ledger
       names match Tally exactly, and the invoice-prefix filter is set as desired.
       (These live in the cloud and apply to the queued vouchers.)
+- [ ] **Tally Import Configuration set correctly** — see the next section. This is
+      mandatory; the wrong setting causes vouchers to silently not import.
+
+---
+
+## 0a. Tally Import Configuration (CRITICAL — set once per company)
+
+In Tally: **Gateway of Tally → O: Import → Import Configuration** (or
+`Alt+O → Configuration`). Set, for **this** company:
+
+| Setting | Required value | Why |
+|---|---|---|
+| **Overwrite voucher when a voucher with same GUID exists** (XML & JSON) | **Yes** | Every voucher we send carries a stable `<GUID>`. With **Yes**, a re-send (a retry after a lost ACK, or a re-synced *corrected* invoice) **alters** the existing voucher — no duplicate, and corrections actually land. With **No**, Tally **skips** the same-GUID voucher as a duplicate exception: a retry is harmless but a **correction never updates Tally**, and the connector would otherwise think it succeeded. |
+| **Behaviour of Import when exceptions exist** | **Record Exceptions and Import** | One bad voucher (e.g. a missing ledger) is logged and skipped instead of aborting the whole batch. |
+
+> **Why this matters to the connector:** a duplicate-GUID skip returns
+> `CREATED=0 ALTERED=0 EXCEPTIONS=1` with **no** `LINEERROR`. The connector now
+> treats that as a **failure** (so it surfaces in the dead-letter list rather than
+> silently flipping `tally_synced`). If you see jobs failing with *"Tally imported
+> 0 records … Overwrite voucher when same GUID exists = No"*, fix this setting and
+> re-queue — with **Yes** the retry alters the voucher and self-heals.
+
+> If Tally runs over **RDP / Terminal Server** (the Import-config "Location of
+> Import/Export Files" shows a `\\TSCLIENT\…` path), the gateway and the
+> connector must agree on the host: point the connector's **Local Tally host/port**
+> at wherever Tally's XML/ODBC server actually listens (often the RDP **host**, not
+> the weighbridge PC).
 
 ---
 

@@ -98,27 +98,68 @@ class TallyClient:
 # Response parsers
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _count_tag(root, tag: str):
+    """Return the int value of a Tally response count tag, or None if absent/blank."""
+    el = root.find(f".//{tag}")
+    if el is None or el.text is None:
+        return None
+    try:
+        return int(el.text.strip())
+    except ValueError:
+        return None
+
+
+# Shared message so the on-prem client and the relay connector report the same
+# actionable hint when Tally silently skips a voucher.
+ZERO_IMPORT_HINT = (
+    'Tally imported 0 records. Most likely a duplicate-GUID voucher was skipped '
+    'because the company\'s Import Configuration has "Overwrite voucher when a '
+    'voucher with same GUID exists" = No (set it to Yes), or a referenced master '
+    'is missing. Check Tally\'s import exceptions and retry.'
+)
+
+
 def _parse_tally_response(xml_text: str) -> tuple[bool, str]:
-    """Parse Tally's XML response to determine success/failure."""
+    """Parse Tally's XML response to determine success/failure.
+
+    Tally's import envelope reports counts: ``<CREATED>``/``<ALTERED>`` on a real
+    import, and ``<EXCEPTIONS>``/``<ERRORS>`` when vouchers were skipped. A skipped
+    duplicate (Import Config "Overwrite voucher when same GUID exists" = No) returns
+    ``CREATED=0 ALTERED=0 EXCEPTIONS=1`` with NO ``<LINEERROR>`` — so we MUST inspect
+    the counts, otherwise a silent no-op masquerades as a successful sync and we'd
+    wrongly flip ``tally_synced``. We only treat "zero imported" as a failure when
+    Tally actually returned count tags; a count-less envelope (older builds) stays
+    leniently successful so we don't false-fail those.
+    """
     try:
         root = ET.fromstring(xml_text)
-        # Check for LINEERROR
+        # Hard per-line errors (malformed voucher, missing ledger, etc.)
         errors = root.findall(".//LINEERROR")
         if errors:
             msgs = [e.text or "" for e in errors if e.text]
             return False, "; ".join(msgs) or "Tally reported an error"
-        # Check for CREATED count
-        created = root.find(".//CREATED")
-        altered = root.find(".//ALTERED")
-        if created is not None:
-            count = int(created.text or "0")
-            if count > 0:
-                return True, f"Voucher created in Tally ({count} record(s))"
-        if altered is not None:
-            count = int(altered.text or "0")
-            if count > 0:
-                return True, f"Voucher updated in Tally ({count} record(s))"
-        # If we got XML back without errors, assume success
+
+        created = _count_tag(root, "CREATED")
+        altered = _count_tag(root, "ALTERED")
+        exceptions = _count_tag(root, "EXCEPTIONS")
+        errs = _count_tag(root, "ERRORS")
+
+        # Something actually landed.
+        if (created or 0) > 0:
+            return True, f"Voucher created in Tally ({created} record(s))"
+        if (altered or 0) > 0:
+            return True, f"Voucher updated in Tally ({altered} record(s))"
+
+        # Nothing landed but Tally flagged exceptions/errors — surface it.
+        if (exceptions or 0) > 0 or (errs or 0) > 0:
+            n = (exceptions or 0) + (errs or 0)
+            return False, f"{ZERO_IMPORT_HINT} ({n} exception(s)/error(s) reported)"
+
+        # Tally returned count tags and they all show zero imported.
+        if any(v is not None for v in (created, altered, exceptions, errs)):
+            return False, ZERO_IMPORT_HINT
+
+        # No count tags at all — older Tally returns a bare envelope on success.
         return True, "Sent to Tally successfully"
     except ET.ParseError:
         # Tally sometimes returns non-XML on success (older versions)

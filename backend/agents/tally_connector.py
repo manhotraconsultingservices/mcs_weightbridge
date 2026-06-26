@@ -112,19 +112,48 @@ def _effective_push_base(cloud_url: str, tenant_slug: str) -> str:
 
 # ── Local Tally push ────────────────────────────────────────────────────────────
 
+def _count_tag(root, tag):
+    """Return the int value of a Tally response count tag, or None if absent/blank."""
+    el = root.find(f".//{tag}")
+    if el is None or el.text is None:
+        return None
+    try:
+        return int(el.text.strip())
+    except ValueError:
+        return None
+
+
+# A skipped duplicate (Import Config "Overwrite voucher when same GUID exists" = No)
+# returns CREATED=0/ALTERED=0/EXCEPTIONS=1 with no LINEERROR. Treating that as
+# success would wrongly flip tally_synced, so we surface it instead.
+_ZERO_IMPORT_HINT = (
+    'Tally imported 0 records. Likely a duplicate-GUID voucher was skipped because '
+    'Import Config "Overwrite voucher when same GUID exists" = No (set it to Yes), '
+    "or a referenced master is missing. Check Tally's import exceptions and retry."
+)
+
+
 def _parse_tally_response(xml_text: str) -> tuple[bool, str]:
-    """Decode Tally's import reply: LINEERROR → fail, CREATED/ALTERED → ok."""
+    """Decode Tally's import reply. LINEERROR or zero-import-with-exceptions → fail;
+    CREATED/ALTERED > 0 → ok; a count-less envelope (older Tally) stays lenient."""
     try:
         root = ET.fromstring(xml_text)
         errors = [e.text for e in root.findall(".//LINEERROR") if e.text]
         if errors:
             return False, "; ".join(errors)
-        created = root.find(".//CREATED")
-        altered = root.find(".//ALTERED")
-        if created is not None and int(created.text or "0") > 0:
-            return True, f"Created in Tally ({created.text})"
-        if altered is not None and int(altered.text or "0") > 0:
-            return True, f"Updated in Tally ({altered.text})"
+        created = _count_tag(root, "CREATED")
+        altered = _count_tag(root, "ALTERED")
+        exceptions = _count_tag(root, "EXCEPTIONS")
+        errs = _count_tag(root, "ERRORS")
+        if (created or 0) > 0:
+            return True, f"Created in Tally ({created})"
+        if (altered or 0) > 0:
+            return True, f"Updated in Tally ({altered})"
+        if (exceptions or 0) > 0 or (errs or 0) > 0:
+            n = (exceptions or 0) + (errs or 0)
+            return False, f"{_ZERO_IMPORT_HINT} ({n} exception(s)/error(s))"
+        if any(v is not None for v in (created, altered, exceptions, errs)):
+            return False, _ZERO_IMPORT_HINT
         return True, "Sent to Tally"
     except ET.ParseError:
         if "<CREATED>" in xml_text:
