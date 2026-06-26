@@ -501,13 +501,13 @@ async def dashboard_exceptions(
         )).all()
         low_stock_items = [
             {
-                "product_id": str(s.ProductStock.product_id),
+                "product_id": str(s.product_id),
                 "product_name": name,
                 "unit": unit,
-                "current_stock": float(s.ProductStock.current_stock or 0),
-                "min_stock_level": float(s.ProductStock.min_stock_level or 0),
-                "deficit": float((s.ProductStock.min_stock_level or 0) - (s.ProductStock.current_stock or 0)),
-                "is_out": float(s.ProductStock.current_stock or 0) == 0,
+                "current_stock": float(s.current_stock or 0),
+                "min_stock_level": float(s.min_stock_level or 0),
+                "deficit": float((s.min_stock_level or 0) - (s.current_stock or 0)),
+                "is_out": float(s.current_stock or 0) == 0,
             }
             for s, name, unit in stock_rows
         ]

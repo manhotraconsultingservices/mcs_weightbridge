@@ -245,7 +245,7 @@ async def create_gate_pass(
     # Fire-and-forget entry photo capture
     if body.get("capture_photo", True):
         background_tasks.add_task(
-            _bg_capture_entry_photo, company_id, gp_id
+            _bg_capture_entry_photo, company_id, gp_id, _ctx_tenant_slug()
         )
 
     return {
@@ -279,14 +279,25 @@ async def _stamp_agent_frame(company_id: str, gate_pass_id: str, position: str) 
     return f"uploads/{rel.replace(os.sep, '/')}"
 
 
-async def _bg_capture_entry_photo(company_id: str, gate_pass_id: str):
+def _ctx_tenant_slug() -> str | None:
+    """Current request's tenant slug — used to route a background task's DB
+    session to the right tenant database. Returns None in single-tenant mode or
+    outside a request context (get_tenant_session(None) → default engine)."""
+    try:
+        from app.multitenancy.context import current_tenant_slug
+        return current_tenant_slug.get()
+    except Exception:
+        return None
+
+
+async def _bg_capture_entry_photo(company_id: str, gate_pass_id: str, tenant_slug: str | None = None):
     """Background task: capture entry photo and update the gate pass row.
 
     Cloud deployment: copies the latest frame pushed by gate_camera_agent (no direct camera
     access from server). On-premise fallback: tries direct HTTP capture if no agent frame exists.
     """
-    from app.database import async_session_factory
-    async with async_session_factory() as db:
+    from app.database import get_tenant_session
+    async with await get_tenant_session(tenant_slug) as db:
         try:
             photo_path = await _stamp_agent_frame(company_id, gate_pass_id, "entry")
             if photo_path is None:
@@ -583,15 +594,15 @@ async def record_exit(
     await db.commit()
 
     if body.get("capture_photo", True):
-        background_tasks.add_task(_bg_capture_exit_photo, company_id, gp_id)
+        background_tasks.add_task(_bg_capture_exit_photo, company_id, gp_id, _ctx_tenant_slug())
 
     return {"ok": True, "status": "exited"}
 
 
-async def _bg_capture_exit_photo(company_id: str, gate_pass_id: str):
+async def _bg_capture_exit_photo(company_id: str, gate_pass_id: str, tenant_slug: str | None = None):
     """Background task: capture exit photo. Mirrors entry logic — agent frame first."""
-    from app.database import async_session_factory
-    async with async_session_factory() as db:
+    from app.database import get_tenant_session
+    async with await get_tenant_session(tenant_slug) as db:
         try:
             photo_path = await _stamp_agent_frame(company_id, gate_pass_id, "exit")
             if photo_path is None:
@@ -835,7 +846,7 @@ async def cpplus_webhook(
 
     # Capture snapshot and create event
     asyncio.create_task(
-        _async_webhook_event(company_id, position, cam_id, payload)
+        _async_webhook_event(company_id, position, cam_id, payload, _ctx_tenant_slug())
     )
 
     return {"ok": True}
@@ -855,10 +866,10 @@ def _infer_position(cfg: dict, cam_id: str, payload: dict) -> str:
     return "entry"  # default to entry for ambiguous
 
 
-async def _async_webhook_event(company_id: str, position: str, cam_id: str, payload: dict):
+async def _async_webhook_event(company_id: str, position: str, cam_id: str, payload: dict, tenant_slug: str | None = None):
     """Create camera event from webhook (run as asyncio task, no response latency)."""
-    from app.database import async_session_factory
-    async with async_session_factory() as db:
+    from app.database import get_tenant_session
+    async with await get_tenant_session(tenant_slug) as db:
         try:
             cfg = await _get_gate_cam_cfg(db)
             today_str = date.today().strftime("%Y%m%d")
