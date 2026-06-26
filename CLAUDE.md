@@ -14,6 +14,10 @@
 > data / schema / config, not code.** State the proven cause before writing the
 > fix, and prefer surfacing the real error over a generic message.
 
+> **IN-FLIGHT WORK & PENDING:** see [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
+> — the living tracker of what's not done yet (currently: Tally dual-mode Phase 3-4
+> + tenant operational follow-ups). Update it as items close.
+
 ---
 
 ## Project Overview
