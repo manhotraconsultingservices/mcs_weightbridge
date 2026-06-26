@@ -140,6 +140,7 @@ def _build_voucher_xml(
     item_ledger_kind: str | None = None,  # "sales" | "purchase" — which income/expense ledger goods post to
     bill_type: str = "New Ref",           # "New Ref" (invoice) | "Agst Ref" (credit/debit note vs original)
     bill_ref_name: str | None = None,     # original invoice no, used when bill_type="Agst Ref"
+    accounting_only: bool = False,        # legacy/no-GST mode: party + income ledger only, no stock/GST
 ) -> str:
     # Sign + income-ledger selection are decoupled from the voucher label so a
     # Credit Note (which reverses a sale) can carry VCHTYPE="Credit Note", post
@@ -171,10 +172,11 @@ def _build_voucher_xml(
     msg = _sub(rdata, "TALLYMESSAGE")
     msg.set("xmlns:UDF", "TallyUDF")
 
+    _view = "Accounting Voucher View" if accounting_only else "Invoice Voucher View"
     vch = _sub(msg, "VOUCHER")
     vch.set("VCHTYPE", vch_type)
     vch.set("ACTION", "Create")
-    vch.set("OBJVIEW", "Invoice Voucher View")
+    vch.set("OBJVIEW", _view)
 
     _sub(vch, "DATE", _fmt_date(voucher_date))
     _sub(vch, "GUID", guid or str(_uuid.uuid4()))
@@ -182,11 +184,15 @@ def _build_voucher_xml(
     _sub(vch, "VOUCHERTYPENAME", vch_type)
     _sub(vch, "VOUCHERNUMBER", voucher_no)
     _sub(vch, "PARTYLEDGERNAME", party_name)
-    _sub(vch, "BASICBASEPARTYNAME", party_name)
-    _sub(vch, "PERSISTEDVIEW", "Invoice Voucher View")
+    # BASICBASEPARTYNAME + PERSISTEDVIEW are invoice-view hints; legacy Tally (9)
+    # opens the voucher interactively (hangs) when they appear on an accounting
+    # voucher, so we omit them in accounting-only mode.
+    if not accounting_only:
+        _sub(vch, "BASICBASEPARTYNAME", party_name)
+        _sub(vch, "PERSISTEDVIEW", _view)
 
-    # Place of supply (state name) for GST
-    if place_of_supply:
+    # Place of supply (state name) for GST — omitted in accounting-only/no-GST mode
+    if place_of_supply and not accounting_only:
         _sub(vch, "PLACEOFSUPPLY", place_of_supply)
 
     # ── Party ledger entry ──────────────────────────────────────────────────
@@ -196,8 +202,8 @@ def _build_voucher_xml(
     _sub(party_entry, "ISPARTYLEDGER", "Yes")
     _sub(party_entry, "AMOUNT", _fmt_amt(grand_total, party_sign))
 
-    # Buyer GSTIN on the party entry (used by Tally for GSTR reports)
-    if party_gstin:
+    # Buyer GSTIN on the party entry (used by Tally for GSTR reports) — omitted in no-GST mode
+    if party_gstin and not accounting_only:
         _sub(party_entry, "GSTREGISTRATIONTYPE", "Regular")
         _sub(party_entry, "PARTYGSTIN", party_gstin)
 
@@ -219,8 +225,21 @@ def _build_voucher_xml(
                               else (voucher_no or str(_uuid.uuid4())[:8])))
     _sub(bill_alloc, "BILLTYPE", bill_type)
     _sub(bill_alloc, "AMOUNT", _fmt_amt(grand_total, party_sign))
-    if credit_days > 0 and bill_type == "New Ref":
+    if credit_days > 0 and bill_type == "New Ref" and not accounting_only:
         _sub(bill_alloc, "CREDITPERIOD", f"{credit_days} Days")
+
+    # ── Accounting-only / no-GST mode (legacy-Tally-safe) ───────────────────
+    # Post the whole bill value straight to the income/expense ledger — no stock
+    # item, no GST, no batch/godown, no "Invoice Voucher View". This is the form
+    # old Tally builds (e.g. Tally 9) accept without crashing. Balances by design
+    # (party total on one side, income/expense ledger on the other).
+    if accounting_only:
+        income_ledger = ledgers.sales if (item_ledger_kind or effective_basis) == "sales" else ledgers.purchase
+        inc = _sub(vch, "ALLLEDGERENTRIES.LIST")
+        _sub(inc, "LEDGERNAME", income_ledger)
+        _sub(inc, "ISDEEMEDPOSITIVE", "No" if is_sale else "Yes")
+        _sub(inc, "AMOUNT", _fmt_amt(grand_total, stock_sign))
+        return _pretty(root)
 
     # ── Inventory entries (one per line item) ───────────────────────────────
     item_ledger = ledgers.sales if (item_ledger_kind or effective_basis) == "sales" else ledgers.purchase
@@ -416,6 +435,51 @@ def build_supplier_master_xml(party, company) -> str:
         email=getattr(party, "email", None),
         tally_company=tally_company,
     )
+
+
+def build_unit_xml(symbol: str, company, decimals: int = 3) -> str:
+    """Build Tally XML to create a simple Unit of Measure (e.g. MT, Nos, Qtl)."""
+    tally_company = getattr(company, "tally_company_name", None) or company.name
+    root = ET.Element("ENVELOPE")
+    _sub(_sub(root, "HEADER"), "TALLYREQUEST", "Import Data")
+    imp = _sub(_sub(root, "BODY"), "IMPORTDATA")
+    rdesc = _sub(imp, "REQUESTDESC")
+    _sub(rdesc, "REPORTNAME", "All Masters")
+    _sub(_sub(rdesc, "STATICVARIABLES"), "SVCURRENTCOMPANY", tally_company)
+    msg = _sub(_sub(imp, "REQUESTDATA"), "TALLYMESSAGE")
+    msg.set("xmlns:UDF", "TallyUDF")
+    unit = _sub(msg, "UNIT")
+    unit.set("NAME", symbol)
+    unit.set("ACTION", "Create")
+    _sub(unit, "NAME", symbol)
+    _sub(unit, "ISSIMPLEUNIT", "Yes")
+    _sub(unit, "DECIMALPLACES", str(decimals))
+    return _pretty(root)
+
+
+def build_stock_item_xml(product, company) -> str:
+    """Build Tally XML to create a Stock Item master (minimal — name + base unit).
+
+    No GST / HSN, so it imports on legacy Tally too. The base unit must already
+    exist in Tally (push build_unit_xml first when seeding a fresh company).
+    """
+    tally_company = getattr(company, "tally_company_name", None) or company.name
+    name = getattr(product, "name", None) or "Item"
+    unit = getattr(product, "unit", None) or "Nos"
+    root = ET.Element("ENVELOPE")
+    _sub(_sub(root, "HEADER"), "TALLYREQUEST", "Import Data")
+    imp = _sub(_sub(root, "BODY"), "IMPORTDATA")
+    rdesc = _sub(imp, "REQUESTDESC")
+    _sub(rdesc, "REPORTNAME", "All Masters")
+    _sub(_sub(rdesc, "STATICVARIABLES"), "SVCURRENTCOMPANY", tally_company)
+    msg = _sub(_sub(imp, "REQUESTDATA"), "TALLYMESSAGE")
+    msg.set("xmlns:UDF", "TallyUDF")
+    item = _sub(msg, "STOCKITEM")
+    item.set("NAME", name)
+    item.set("ACTION", "Create")
+    _sub(item, "NAME", name)
+    _sub(item, "BASEUNITS", unit)
+    return _pretty(root)
 
 
 def build_sales_order_xml(
@@ -636,6 +700,7 @@ def build_sales_xml(
     party,
     ledgers: TallyLedgerMap | None = None,
     narration_opts: NarrationOptions | None = None,
+    accounting_only: bool = False,
 ) -> str:
     """Build Tally XML for a Sales voucher."""
     if ledgers is None:
@@ -654,6 +719,7 @@ def build_sales_xml(
 
     return _build_voucher_xml(
         vch_type="Sales",
+        accounting_only=accounting_only,
         voucher_no=invoice.invoice_no or "",
         voucher_date=invoice.invoice_date,
         due_date=getattr(invoice, "due_date", None),
@@ -684,6 +750,7 @@ def build_purchase_xml(
     party,
     ledgers: TallyLedgerMap | None = None,
     narration_opts: NarrationOptions | None = None,
+    accounting_only: bool = False,
 ) -> str:
     """Build Tally XML for a Purchase voucher."""
     if ledgers is None:
@@ -702,6 +769,7 @@ def build_purchase_xml(
 
     return _build_voucher_xml(
         vch_type="Purchase",
+        accounting_only=accounting_only,
         voucher_no=invoice.invoice_no or "",
         voucher_date=invoice.invoice_date,
         due_date=getattr(invoice, "due_date", None),

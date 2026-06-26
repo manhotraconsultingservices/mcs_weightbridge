@@ -65,6 +65,8 @@ class TallyConfigIn(BaseModel):
     narration_vehicle: bool = True
     narration_token: bool = True
     narration_weight: bool = True
+    # No-GST / accounting-only export (legacy Tally + non-GST demo companies).
+    accounting_only: bool = False
     # Invoice-number prefix filter (comma-separated; blank = sync all). Only
     # invoices whose number starts with one of these prefixes go to Tally.
     sync_invoice_prefix: Optional[str] = None
@@ -94,6 +96,7 @@ class TallyConfigOut(BaseModel):
     narration_vehicle: bool
     narration_token: bool
     narration_weight: bool
+    accounting_only: bool = False
     sync_invoice_prefix: Optional[str] = None
     mode: Optional[str] = None
 
@@ -252,10 +255,11 @@ async def _build_invoice_xml(
         include_token=cfg.narration_token,
         include_weight=cfg.narration_weight,
     )
+    acct_only = bool(getattr(cfg, "accounting_only", False))
     if invoice.invoice_type == "sale":
-        return build_sales_xml(invoice, company, party, ledger_map, narration_opts), ""
+        return build_sales_xml(invoice, company, party, ledger_map, narration_opts, accounting_only=acct_only), ""
     if invoice.invoice_type == "purchase":
-        return build_purchase_xml(invoice, company, party, ledger_map, narration_opts), ""
+        return build_purchase_xml(invoice, company, party, ledger_map, narration_opts, accounting_only=acct_only), ""
     if invoice.invoice_type in ("credit_note", "debit_note"):
         # Settle the note "Agst Ref" the original invoice number (GSTR-1 CDNR link).
         ref_no = None
@@ -374,6 +378,7 @@ async def update_tally_config(
     cfg.narration_vehicle = payload.narration_vehicle
     cfg.narration_token = payload.narration_token
     cfg.narration_weight = payload.narration_weight
+    cfg.accounting_only = payload.accounting_only
     # Invoice prefix filter — normalise blank → NULL (means "sync all")
     cfg.sync_invoice_prefix = (payload.sync_invoice_prefix or "").strip() or None
     # Transport mode is set by provisioning/admin; the normal Settings save omits

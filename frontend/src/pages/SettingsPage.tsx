@@ -979,6 +979,8 @@ interface TallyConfig {
   narration_vehicle: boolean;
   narration_token: boolean;
   narration_weight: boolean;
+  // No-GST / accounting-only export (legacy Tally + non-GST demo companies)
+  accounting_only: boolean;
   // Invoice-number prefix filter (comma-separated; blank = sync all)
   sync_invoice_prefix: string;
   // Transport mode: 'direct' (on-prem) | 'relay' (SaaS, via the Tally Connector)
@@ -1231,6 +1233,7 @@ const DEFAULT_TALLY_CFG: TallyConfig = {
   ledger_freight: 'Freight Outward', ledger_discount: 'Trade Discount',
   ledger_tcs: 'TCS Payable', ledger_roundoff: 'Round Off',
   narration_vehicle: true, narration_token: true, narration_weight: true,
+  accounting_only: false,
 };
 
 function TallyTab() {
@@ -1531,6 +1534,29 @@ function TallyTab() {
               Include Net Weight (e.g. <span className="font-mono text-xs bg-muted px-1 rounded">Net Wt: 15.760 MT</span>)
             </label>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Export format */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold">Export Format</CardTitle>
+          <p className="text-xs text-muted-foreground">How invoices are written to Tally.</p>
+        </CardHeader>
+        <CardContent>
+          <label className="flex items-start gap-2 text-sm cursor-pointer">
+            <input type="checkbox" checked={cfg.accounting_only}
+              onChange={e => setCfg(c => ({ ...c, accounting_only: e.target.checked }))}
+              className="h-4 w-4 mt-0.5 rounded border-gray-300" />
+            <span>
+              <span className="font-medium">No-GST / accounting-only vouchers</span>
+              <span className="block text-xs text-muted-foreground mt-0.5">
+                Posts each invoice as a plain accounting voucher (party + Sales/Purchase ledger only —
+                no stock item, no GST). Use for non-GST companies or older Tally (e.g. Tally 9 /
+                Tally.ERP 9) that can't take stock + GST vouchers. Leave OFF for GST + inventory on TallyPrime.
+              </span>
+            </span>
+          </label>
         </CardContent>
       </Card>
 

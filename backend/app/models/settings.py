@@ -74,6 +74,12 @@ class TallyConfig(Base):
     # 'relay' = enqueue into tally_sync_jobs for the LAN-side Tally Connector.
     mode: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
+    # Accounting-only / no-GST export. When TRUE, invoices are built as plain
+    # accounting vouchers (party + Sales/Purchase ledger only — no stock item,
+    # no GST, "Accounting Voucher View"). Needed for legacy Tally (e.g. Tally 9)
+    # that crashes on inventory/GST vouchers, and for non-GST demo companies.
+    accounting_only: Mapped[bool] = mapped_column(Boolean, default=False)
+
 
 class AuditLog(Base):
     __tablename__ = "audit_log"
