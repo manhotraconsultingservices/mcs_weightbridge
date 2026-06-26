@@ -34,9 +34,11 @@ from app.integrations.tally.xml_builder import (
     build_sales_xml, build_purchase_xml,
     build_credit_note_xml, build_debit_note_xml,
     build_customer_master_xml, build_supplier_master_xml,
+    build_stock_item_xml, build_unit_xml,
     build_sales_order_xml, build_purchase_order_xml,
     TallyLedgerMap, NarrationOptions,
 )
+from app.models.product import Product
 
 router = APIRouter(prefix="/api/v1/tally", tags=["Tally"])
 
@@ -293,6 +295,31 @@ def _merge_voucher_xmls(xmls: list[str]) -> str:
         '<ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>'
         '<BODY><IMPORTDATA>'
         '<REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME></REQUESTDESC>'
+        f'<REQUESTDATA>{body}</REQUESTDATA>'
+        '</IMPORTDATA></BODY></ENVELOPE>'
+    )
+
+
+def _merge_master_xmls(xmls: list[str]) -> str:
+    """Bundle N master ENVELOPEs into one importable Tally 'All Masters' ENVELOPE.
+
+    Order is preserved, so a Unit master can precede the Stock Item that
+    references it (Tally needs the base unit to exist before the item).
+    """
+    from xml.etree import ElementTree as ET
+    messages: list[str] = []
+    for x in xmls:
+        try:
+            root = ET.fromstring(x)
+        except ET.ParseError:
+            continue
+        for tm in root.findall(".//TALLYMESSAGE"):
+            messages.append(ET.tostring(tm, encoding="unicode"))
+    body = "".join(messages)
+    return (
+        '<ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>'
+        '<BODY><IMPORTDATA>'
+        '<REQUESTDESC><REPORTNAME>All Masters</REPORTNAME></REQUESTDESC>'
         f'<REQUESTDATA>{body}</REQUESTDATA>'
         '</IMPORTDATA></BODY></ENVELOPE>'
     )
@@ -626,6 +653,51 @@ async def sync_party_to_tally(
         "party_type": party.party_type,
         "tally_synced": party.tally_synced,
         "tally_sync_at": party.tally_sync_at.isoformat() if party.tally_sync_at else None,
+    }
+
+
+@router.post("/sync/product/{product_id}")
+async def sync_product_to_tally(
+    product_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Push a single Product to Tally as a Stock Item master (with its Unit of Measure).
+
+    Sends the Unit master first (the Stock Item references it), then the item,
+    bundled into one 'All Masters' import. No GST/HSN — imports on legacy Tally too.
+    """
+    product = (await db.execute(
+        select(Product).where(
+            Product.id == product_id,
+            Product.company_id == current_user.company_id,
+        )
+    )).scalar_one_or_none()
+    if not product:
+        raise HTTPException(404, "Product not found")
+
+    cfg = await _get_config(db, current_user.company_id)
+    if not cfg or not cfg.is_enabled:
+        raise HTTPException(400, "Tally integration is not enabled. Enable it in Settings → Tally.")
+
+    company = await _get_company(db, current_user.company_id)
+
+    unit = (getattr(product, "unit", None) or "Nos").strip() or "Nos"
+    xml = _merge_master_xmls([
+        build_unit_xml(unit, company),         # unit must exist before the item
+        build_stock_item_xml(product, company),
+    ])
+
+    company_name = cfg.tally_company_name or getattr(company, "name", "") or ""
+    op_ok, message, _synced = await _dispatch_xml(cfg, "product", product.id, company_name, xml, db)
+    await db.commit()   # persist the relay job (no-op in direct mode)
+
+    return {
+        "success": op_ok,
+        "message": message,
+        "product_id": str(product.id),
+        "product_name": product.name,
+        "unit": unit,
     }
 
 

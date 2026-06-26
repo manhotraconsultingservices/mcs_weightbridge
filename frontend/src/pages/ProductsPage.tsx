@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { Plus, Search, Pencil } from 'lucide-react';
+import { Plus, Search, Pencil, Loader2, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -400,6 +400,31 @@ function ProductsTable({
   onEdit: (p: Product) => void;
 }) {
   const { t } = useTranslation();
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [syncMsg, setSyncMsg] = useState<{ id: string; text: string; ok: boolean } | null>(null);
+  const [tallyEnabled, setTallyEnabled] = useState(false);
+
+  useEffect(() => {
+    api.get<{ is_enabled?: boolean }>('/api/v1/tally/config')
+      .then(({ data }) => setTallyEnabled(!!data?.is_enabled))
+      .catch(() => setTallyEnabled(false));
+  }, []);
+
+  async function syncToTally(p: Product) {
+    setSyncingId(p.id); setSyncMsg(null);
+    try {
+      const { data } = await api.post<{ success: boolean; message?: string }>(
+        `/api/v1/tally/sync/product/${p.id}`);
+      const text = data?.message || 'Sent to Tally';
+      setSyncMsg({ id: p.id, text, ok: data?.success !== false });
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      setSyncMsg({ id: p.id, text: typeof detail === 'string' ? detail : 'Tally sync failed', ok: false });
+    } finally {
+      setSyncingId(null);
+      setTimeout(() => setSyncMsg(m => (m && m.id === p.id ? null : m)), 6000);
+    }
+  }
 
   const columns = useMemo<ColumnDef<Product>[]>(() => ([
     { key: 'name', label: t('product.colProduct'), accessor: p => p.name, className: 'font-medium' },
@@ -458,9 +483,26 @@ function ProductsTable({
       defaultSort={{ key: 'name', direction: 'asc' }}
       emptyMessage={t('product.noProductsFound')}
       rowActions={p => (
-        <Button variant="ghost" size="icon" onClick={() => onEdit(p)} title={t('product.editProductTitle')}>
-          <Pencil className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1 justify-end">
+          {syncMsg?.id === p.id && (
+            <span className={`text-xs mr-1 whitespace-nowrap ${syncMsg.ok ? 'text-emerald-600' : 'text-red-600'}`}>
+              {syncMsg.text}
+            </span>
+          )}
+          <Button
+            variant="ghost" size="icon"
+            onClick={() => syncToTally(p)}
+            disabled={syncingId === p.id || !tallyEnabled}
+            title={tallyEnabled ? 'Sync this item to Tally' : 'Enable Tally Integration in Settings → Tally to sync'}
+          >
+            {syncingId === p.id
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <RefreshCw className={`h-4 w-4 ${tallyEnabled ? 'text-emerald-600' : 'text-muted-foreground'}`} />}
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => onEdit(p)} title={t('product.editProductTitle')}>
+            <Pencil className="h-4 w-4" />
+          </Button>
+        </div>
       )}
     />
   );
