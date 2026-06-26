@@ -425,7 +425,7 @@ class ScaleReader:
         bsz_map = {7: serial.SEVENBITS, 8: serial.EIGHTBITS}
         par_map  = {"N": serial.PARITY_NONE, "E": serial.PARITY_EVEN, "O": serial.PARITY_ODD}
 
-        api_url = f"{self.cfg['cloud_url'].rstrip('/')}/api/v1/weight/external-reading"
+        api_url = f"{_effective_push_base(self.cfg.get('cloud_url', ''), self.cfg.get('tenant_slug', ''))}/api/v1/weight/external-reading"
 
         # ── Non-blocking HTTP push queue ───────────────────────────────────
         push_q: _q.Queue = _q.Queue(maxsize=20)
@@ -804,6 +804,28 @@ class StatusServer:
 
 
 # ── Config helpers ────────────────────────────────────────────────────────────
+
+def _effective_push_base(cloud_url: str, tenant_slug: str) -> str:
+    """Base URL the agent POSTs weight readings to.
+
+    The apex weighbridgesetu.com 301-redirects to www, and a 301 turns the POST
+    into a GET that DROPS the body — so the reading silently never reaches the
+    backend (the agent still sees a 2xx for the redirect and thinks it pushed,
+    while the server's /weight/ping stays scale_connected=false). Route to the
+    tenant's own subdomain (which does NOT redirect) instead. Custom domains /
+    localhost / already-subdomained hosts are left untouched.
+    """
+    from urllib.parse import urlparse
+    base = (cloud_url or "").rstrip("/")
+    try:
+        parts = urlparse(base)
+        host = (parts.hostname or "").lower()
+    except Exception:
+        return base
+    if tenant_slug and host in ("weighbridgesetu.com", "www.weighbridgesetu.com"):
+        return f"{parts.scheme or 'https'}://{tenant_slug}.weighbridgesetu.com"
+    return base
+
 
 def load_config() -> dict:
     if not CONFIG_FILE.exists():

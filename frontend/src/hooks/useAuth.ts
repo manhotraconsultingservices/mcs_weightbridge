@@ -67,6 +67,12 @@ export function getTenantSlug(): string | null {
   return sessionStorage.getItem('tenant_slug');
 }
 
+/** Get the current JWT (for WebSocket query-param auth — the /ws/weight endpoint
+ *  requires it in multi-tenant mode so one tenant can't read another's feed). */
+export function getAuthToken(): string | null {
+  return sessionStorage.getItem('token');
+}
+
 /** Get tenant modules from session storage (for sidebar filtering). */
 export function getTenantModules(): Record<string, boolean> | null {
   const raw = sessionStorage.getItem('tenant_modules');

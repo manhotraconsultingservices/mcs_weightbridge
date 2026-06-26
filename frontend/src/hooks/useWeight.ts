@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { getTenantSlug } from './useAuth';
+import { getTenantSlug, getAuthToken } from './useAuth';
 import { fmtKg } from '@/lib/weightUnit';
 
 export interface WeightReading {
@@ -31,10 +31,15 @@ export function useWeight() {
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const host = window.location.host;
 
-    // Append tenant slug as query param in multi-tenant mode
+    // Multi-tenant: send the tenant slug AND the JWT — the server requires a
+    // token whose `tenant` claim matches, so a tenant can only read its own feed.
     const tenant = getTenantSlug();
-    const tenantParam = tenant ? `?tenant=${encodeURIComponent(tenant)}` : '';
-    const ws = new WebSocket(`${protocol}://${host}/ws/weight${tenantParam}`);
+    const authToken = getAuthToken();
+    const qp = new URLSearchParams();
+    if (tenant) qp.set('tenant', tenant);
+    if (authToken) qp.set('token', authToken);
+    const query = qp.toString() ? `?${qp.toString()}` : '';
+    const ws = new WebSocket(`${protocol}://${host}/ws/weight${query}`);
     wsRef.current = ws;
 
     ws.onopen = () => {

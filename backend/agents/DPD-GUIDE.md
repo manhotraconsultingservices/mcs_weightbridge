@@ -224,6 +224,7 @@ Work top-down — the first rows are the most common.
 | `Status port … NOT listening` after install | Agent crashed at init | `Get-Content C:\weighbridge-agent\logs\service_stderr.log -Tail 30` — usually a missing dep or the COM port held by another app |
 | Service **flaps** (restart loop) | Port busy or detection keeps failing | Re-run Phase D foreground to get a clean read; fix; `Restart-Service` |
 | Worked, then **stopped after re-plugging USB** | COM number changed (e.g. COM6→COM7) | The agent auto-re-detects within one loop — wait ~30 s. If not, `Restart-Service WeighbridgeScaleAgent` |
+| Agent shows **CLOUD ONLINE + rising push count, but the browser dialog shows OFFLINE** | Agent posting to the **apex** (`weighbridgesetu.com`), which 301-redirects and drops the POST body; or the backend runs >1 worker | The agent now auto-routes the apex → the tenant subdomain (keep `scale_agent.py` current). Confirm the **server** actually has readings: `curl https://<slug>.weighbridgesetu.com/api/v1/weight/ping?tenant=<slug>` must show `scale_connected:true`. Backend must run `--workers 1` (the live-weight relay is in-memory per process). |
 
 **Find what holds a port** (when COMx is "denied"):
 ```powershell

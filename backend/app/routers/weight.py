@@ -43,16 +43,32 @@ def _get_manager_for_tenant(slug: str | None = None):
 
 
 @router.websocket("/ws/weight")
-async def ws_weight(websocket: WebSocket, tenant: str = Query("")):
-    """Real-time weight broadcast. No auth token needed (LAN-only use).
-    In multi-tenant mode, ?tenant=<slug> routes to per-tenant manager.
+async def ws_weight(websocket: WebSocket, tenant: str = Query(""), token: str = Query("")):
+    """Real-time weight broadcast.
+
+    Multi-tenant: ?tenant=<slug> routes to the per-tenant manager, AND a valid
+    JWT (?token=) whose `tenant` claim matches is REQUIRED — so one tenant can
+    never subscribe to another tenant's live weight feed (cross-tenant read).
+    Single-tenant (LAN install): open, no token needed.
     """
     from app.config import get_settings
     settings = get_settings()
 
-    if settings.MULTI_TENANT and not tenant:
-        await websocket.close(code=4001, reason="tenant query param required")
-        return
+    if settings.MULTI_TENANT:
+        if not tenant:
+            await websocket.close(code=4001, reason="tenant query param required")
+            return
+        # Authenticate the subscriber: the JWT's tenant claim must equal the
+        # requested tenant. Closes the cross-tenant live-weight read gap.
+        import jwt as _jwt
+        try:
+            claims = _jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        except Exception:
+            await websocket.close(code=4003, reason="invalid or missing token")
+            return
+        if (claims.get("tenant") or "") != tenant:
+            await websocket.close(code=4003, reason="token does not match tenant")
+            return
 
     manager = _get_manager_for_tenant(tenant if settings.MULTI_TENANT else None)
     if manager is None:
