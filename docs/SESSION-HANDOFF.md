@@ -16,15 +16,13 @@ the CLAUDE.md changelog (2026-06-26 Phase 1 + Phase 2 entries).
 |---|---|---|
 | **1** | Transport seam (`integrations/tally/transport.py`) + `tally_sync_jobs` queue + `relay_queue.py` + connector endpoints (`routers/tally_connector.py`) + `tally_config.mode`. On-prem `direct` push unchanged; SaaS auto-`relay`. | ✅ done (`9779986`) — 44 tests green |
 | **2** | LAN-side `backend/agents/tally_connector.py` (Windows service: claim → push to local Tally → report) + `POST /connector/ping` + `DPD-TALLY-CONNECTOR.md`. | ✅ done (`d54fede`) — compile + MockTally round-trip verified |
-| **3** | **PENDING** — see below | ⏳ |
-| **4** | **PENDING (optional)** — Tier-0 "Download Tally XML" route + button; optional combined edge agent | ⏳ |
+| **3** | Settings connector-status card + relay-aware UI (hide host/port + Test, mode badge) + dead-letter/Retry + 30-day `done`-job retention. | ✅ done (`<pending push>`) — 44 tests + tsc green |
+| **4** | **PENDING (optional)** — Tier-0 "Download Tally XML" route + button; optional combined edge agent; optional scoped `tally_agent_key` | ⏳ |
 
-### Phase 3 — to build next (Settings UI + observability)
-- [ ] **Settings → Tally connector-status card** — calls the **already-built** `GET /api/v1/tally/connector/status` (pending/in_progress/done/failed/dead counts + `last_done_at`). Show in `frontend/src/pages/SettingsPage.tsx` `TallyTab`.
-- [ ] **Expose `mode` + relay-aware UI**: add `mode` to the frontend `TallyConfig` interface; when `mode==='relay'` **hide Host/Port + Test-Connection** (cloud can't reach the LAN) and show a "Sync mode: Cloud Connector" badge. (Backend already returns `mode` in `TallyConfigOut`; the PUT preserves it when omitted.)
-- [ ] **Dead-letter / re-queue UI** — list `dead` jobs; a button to re-arm them (set `status='pending', attempts=0, next_attempt_at=now`).
-- [ ] **Retention task** — purge `done` jobs older than ~30d (configurable); keep `dead` for audit. Wire into the existing background-loop scheduler (`main.py` owner-digest/low-stock loop pattern).
+### Phase 4 — remaining (optional)
+- [ ] **Tier-0 "Download Tally XML"** — a cloud route + Settings/Invoices button that streams the same builder output for manual Tally → Import Data (no-install fallback for clients who refuse any local agent).
 - [ ] Optional: a per-tenant scoped `tally_agent_key` (separate from the scale agent's `agent_api_key`) so a leaked key can't drain financial XML — currently both reuse `Tenant.agent_api_key`.
+- [ ] Optional: combined single-process "edge agent" (scale + Tally) for single-PC sites.
 
 ### Live end-to-end smoke still owed (couldn't run from dev box)
 The connector's **live HTTP against a seeded cloud tenant** wasn't exercised here

@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db, get_tenant_session
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_role
 from app.models.user import User
 from app.integrations.tally import relay_queue
 
@@ -107,3 +107,52 @@ async def connector_status(
         "counts": {s: int(counts.get(s, 0)) for s in ("pending", "in_progress", "done", "failed", "dead")},
         "last_done_at": last_done.isoformat() if last_done else None,
     }
+
+
+@router.get("/jobs")
+async def list_jobs(
+    status: str = "",
+    limit: int = 50,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List relay jobs for the Settings UI (filter by comma-separated status)."""
+    clauses = ["company_id = :cid"]
+    params = {"cid": str(current_user.company_id), "lim": max(1, min(int(limit), 200))}
+    statuses = [s.strip() for s in (status or "").split(",") if s.strip()]
+    if statuses:
+        clauses.append("status = ANY(:st)")
+        params["st"] = statuses
+    rows = (await db.execute(text(
+        "SELECT id, entity_type, entity_id, status, attempts, max_attempts, priority, "
+        "last_error, created_at, completed_at, next_attempt_at "
+        f"FROM tally_sync_jobs WHERE {' AND '.join(clauses)} ORDER BY created_at DESC LIMIT :lim"
+    ), params)).fetchall()
+
+    def _iso(d):
+        return d.isoformat() if d else None
+    return {"jobs": [{
+        "id": str(r.id), "entity_type": r.entity_type, "entity_id": str(r.entity_id),
+        "status": r.status, "attempts": r.attempts, "max_attempts": r.max_attempts,
+        "priority": r.priority, "last_error": r.last_error,
+        "created_at": _iso(r.created_at), "completed_at": _iso(r.completed_at),
+        "next_attempt_at": _iso(r.next_attempt_at),
+    } for r in rows]}
+
+
+@router.post("/jobs/{job_id}/requeue")
+async def requeue_job(
+    job_id: uuid.UUID,
+    current_user: User = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-arm a dead/failed (or stuck-pending) job so the connector retries it."""
+    row = (await db.execute(text(
+        "UPDATE tally_sync_jobs SET status='pending', attempts=0, last_error=NULL, "
+        "claim_token=NULL, claimed_until=NULL, next_attempt_at=now() "
+        "WHERE id=:id AND company_id=:cid AND status IN ('dead','failed','pending') RETURNING id"
+    ), {"id": str(job_id), "cid": str(current_user.company_id)})).fetchone()
+    await db.commit()
+    if not row:
+        raise HTTPException(404, "Job not found or not re-queueable")
+    return {"ok": True, "id": str(job_id), "status": "pending"}

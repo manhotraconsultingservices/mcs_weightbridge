@@ -173,6 +173,7 @@ async def _send_inventory_report_for_session(session_factory, label: str) -> Non
 
 # Per-tenant last-sent date keeps us from double-sending on a minute-resolution loop.
 _last_inv_report_dates: dict[str, "date"] = {}   # noqa: F821 — `date` is a typing forward ref
+_last_tally_purge_date = None   # daily retention gate for completed Tally relay jobs
 
 async def _inventory_daily_report_loop():
     """Send inventory Telegram report once per day at configured time (default 20:00).
@@ -548,6 +549,21 @@ async def _send_owner_digest_for_session(session_factory, label: str) -> None:
             logger.warning("anpr_daily_summary send failed [%s]: %s", label, e)
 
 
+async def _purge_old_tally_jobs(factory, label: str = "default") -> None:
+    """Daily retention: delete completed Tally relay jobs older than 30 days
+    (keeps `dead` jobs for audit)."""
+    from sqlalchemy import text as _sql
+    try:
+        async with factory() as db:
+            await db.execute(_sql(
+                "DELETE FROM tally_sync_jobs WHERE status='done' "
+                "AND completed_at < now() - interval '30 days'"
+            ))
+            await db.commit()
+    except Exception as e:
+        logger.warning("tally jobs purge failed [%s]: %s", label, e)
+
+
 async def _owner_digest_loop():
     """Multi-tenant aware: minute-resolution check, sends once per day at configured time."""
     while True:
@@ -566,6 +582,22 @@ async def _owner_digest_loop():
             else:
                 from app.database import async_session
                 await _send_owner_digest_for_session(async_session, label="default")
+
+            # ── Once-a-day retention: purge completed Tally relay jobs > 30 days ──
+            global _last_tally_purge_date
+            _today = _dt.datetime.now().date()
+            if _last_tally_purge_date != _today:
+                _last_tally_purge_date = _today
+                if _gs().MULTI_TENANT:
+                    from app.multitenancy.registry import tenant_registry as _tr
+                    for _t in await _tr.list_active_tenants():
+                        try:
+                            await _purge_old_tally_jobs(await _tr.get_session_factory(_t.slug), _t.slug)
+                        except Exception:
+                            pass
+                else:
+                    from app.database import async_session
+                    await _purge_old_tally_jobs(async_session, "default")
         except asyncio.CancelledError:
             raise
         except Exception as exc:

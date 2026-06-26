@@ -981,6 +981,21 @@ interface TallyConfig {
   narration_weight: boolean;
   // Invoice-number prefix filter (comma-separated; blank = sync all)
   sync_invoice_prefix: string;
+  // Transport mode: 'direct' (on-prem) | 'relay' (SaaS, via the Tally Connector)
+  mode?: string;
+}
+
+interface TallyJob {
+  id: string;
+  entity_type: string;
+  status: string;
+  attempts: number;
+  last_error: string | null;
+}
+
+interface ConnectorStatus {
+  counts: Record<string, number>;
+  last_done_at: string | null;
 }
 
 // ── Weighbridge / Urgency Settings Tab ───────────────────────────────────────
@@ -1225,12 +1240,27 @@ function TallyTab() {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [companies, setCompanies] = useState<string[]>([]);
   const [saveMsg, setSaveMsg] = useState('');
+  const [connStatus, setConnStatus] = useState<ConnectorStatus | null>(null);
+  const [deadJobs, setDeadJobs] = useState<TallyJob[]>([]);
+  const isRelay = cfg.mode === 'relay';
+
+  const loadConnector = useCallback(() => {
+    api.get<ConnectorStatus>('/api/v1/tally/connector/status').then(r => setConnStatus(r.data)).catch(() => {});
+    api.get<{ jobs: TallyJob[] }>('/api/v1/tally/connector/jobs?status=dead,failed&limit=50')
+      .then(r => setDeadJobs(r.data.jobs || [])).catch(() => {});
+  }, []);
 
   useEffect(() => {
     api.get<TallyConfig>('/api/v1/tally/config')
       .then(r => setCfg({ ...DEFAULT_TALLY_CFG, ...r.data, tally_company_name: r.data.tally_company_name || '' }))
       .catch(() => {});
   }, []);
+
+  useEffect(() => { if (isRelay) loadConnector(); }, [isRelay, loadConnector]);
+
+  async function requeue(id: string) {
+    try { await api.post(`/api/v1/tally/connector/jobs/${id}/requeue`); loadConnector(); } catch { /* ignore */ }
+  }
 
   async function save() {
     setSaving(true); setSaveMsg('');
@@ -1265,12 +1295,69 @@ function TallyTab() {
             <Server className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
             <div className="text-sm text-blue-800">
               <p className="font-semibold mb-1">Tally Prime Integration</p>
-              <p>Sends finalised Sales & Purchase invoices to Tally as vouchers. Tally must be running with its HTTP server enabled.</p>
-              <p className="mt-1 text-xs text-blue-600">Gateway of Tally → F12 Config → Advanced → Enable ODBC Server (set port to match below)</p>
+              {isRelay ? (
+                <p>Finalised Sales &amp; Purchase vouchers are delivered to your <b>local Tally</b> by the
+                   Tally Connector running on your network — the cloud never connects to your Tally directly.</p>
+              ) : (
+                <>
+                  <p>Sends finalised Sales &amp; Purchase invoices to Tally as vouchers. Tally must be running with its HTTP server enabled.</p>
+                  <p className="mt-1 text-xs text-blue-600">Gateway of Tally → F12 Config → Advanced → Enable ODBC Server (set port to match below)</p>
+                </>
+              )}
             </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* Connector status — relay (SaaS) mode only */}
+      {isRelay && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Server className="h-4 w-4" /> Cloud Connector
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">Sync mode: Cloud Connector</span>
+              </CardTitle>
+              <Button variant="ghost" size="sm" className="h-7" onClick={loadConnector}>
+                <RefreshCw className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">A lightweight <b>Tally Connector</b> on your network pushes these vouchers to your local Tally. Its host/port and connection test live on the connector, not here.</p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {connStatus ? (
+              <div className="grid grid-cols-5 gap-2 text-center">
+                {([
+                  ['pending', 'Pending', 'text-amber-600'],
+                  ['in_progress', 'In flight', 'text-blue-600'],
+                  ['done', 'Done', 'text-emerald-600'],
+                  ['failed', 'Retrying', 'text-orange-600'],
+                  ['dead', 'Dead', 'text-red-600'],
+                ] as const).map(([k, label, cls]) => (
+                  <div key={k} className="rounded-md border bg-muted/30 py-2">
+                    <div className={`text-lg font-bold ${cls}`}>{connStatus.counts?.[k] ?? 0}</div>
+                    <div className="text-[10px] text-muted-foreground">{label}</div>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="text-xs text-muted-foreground">Loading connector status…</p>}
+            {connStatus?.last_done_at && (
+              <p className="text-[11px] text-muted-foreground">Last voucher delivered to Tally: {new Date(connStatus.last_done_at).toLocaleString('en-IN')}</p>
+            )}
+            {deadJobs.length > 0 && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-2 space-y-1.5">
+                <p className="text-xs font-semibold text-red-800">{deadJobs.length} voucher(s) need attention — fix the cause in Tally (e.g. a missing ledger), then Retry.</p>
+                {deadJobs.slice(0, 12).map(j => (
+                  <div key={j.id} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="truncate text-red-900"><span className="font-mono">{j.entity_type}</span> · {j.status} · {j.last_error || '—'}</span>
+                    <Button variant="outline" size="sm" className="h-6 text-[11px] shrink-0" onClick={() => requeue(j.id)}>Retry</Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Enable toggle */}
       <Card>
@@ -1288,7 +1375,8 @@ function TallyTab() {
             </button>
           </div>
 
-          {/* Connection settings */}
+          {/* Connection settings — only in direct/on-prem mode (cloud can't reach the LAN) */}
+          {!isRelay && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="col-span-2 space-y-1">
               <Label>Tally Server Host</Label>
@@ -1299,6 +1387,7 @@ function TallyTab() {
               <Input type="number" value={cfg.port} onChange={e => setCfg(c => ({ ...c, port: Number(e.target.value) }))} placeholder="9002" />
             </div>
           </div>
+          )}
 
           <div className="space-y-1">
             <Label>Tally Company Name</Label>
@@ -1431,10 +1520,12 @@ function TallyTab() {
 
       {/* Test + Save */}
       <div className="flex gap-2 flex-wrap">
-        <Button variant="outline" onClick={testConnection} disabled={testing}>
-          {testing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-          Test Connection
-        </Button>
+        {!isRelay && (
+          <Button variant="outline" onClick={testConnection} disabled={testing}>
+            {testing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            Test Connection
+          </Button>
+        )}
         <Button onClick={save} disabled={saving}>
           {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
           Save Tally Settings
