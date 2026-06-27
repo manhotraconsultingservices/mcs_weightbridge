@@ -134,6 +134,10 @@ async def weight_ping(tenant: str = Query("")):
         "manager": "active",
         "scale_connected": bool(latest and latest.scale_connected),
         "weight_kg": latest.weight_kg if latest else None,
+        # Last raw indicator frame — diagnostic only (weight data, no secrets).
+        # Lets us see exactly what the indicator is sending without LAN access,
+        # e.g. when parse_weight latches onto a constant non-weight field.
+        "raw": (getattr(latest, "raw", None) if latest else None),
         "last_received_ago_sec": last_ago,
         "hint": (
             "Scale agent is pushing data — check WebSocket / browser console if UI still shows offline."
