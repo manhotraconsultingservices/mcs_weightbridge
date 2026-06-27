@@ -228,17 +228,49 @@ def _build_voucher_xml(
     if credit_days > 0 and bill_type == "New Ref" and not accounting_only:
         _sub(bill_alloc, "CREDITPERIOD", f"{credit_days} Days")
 
-    # ── Accounting-only / no-GST mode (legacy-Tally-safe) ───────────────────
-    # Post the whole bill value straight to the income/expense ledger — no stock
-    # item, no GST, no batch/godown, no "Invoice Voucher View". This is the form
-    # old Tally builds (e.g. Tally 9) accept without crashing. Balances by design
-    # (party total on one side, income/expense ledger on the other).
+    # ── Accounting mode (no stock item / no "Invoice Voucher View") ─────────
+    # Post the income/expense ledger + GST/freight/TCS/round-off as plain ledger
+    # lines — NO inventory entry. This is the form that legacy Tally (e.g. Tally 9)
+    # AND TallyPrime companies that don't accept inventory-in-vouchers ("Integrate
+    # Accounts & Inventory" off) take cleanly, while STILL carrying GST. The income
+    # ledger is posted at the net value (grand_total minus the add-on ledgers) so
+    # the voucher balances by design; a non-GST invoice has zero add-ons → a single
+    # income line, identical to the old behaviour (legacy-safe).
+    _dpos = "No" if is_sale else "Yes"
     if accounting_only:
         income_ledger = ledgers.sales if (item_ledger_kind or effective_basis) == "sales" else ledgers.purchase
+        _gt = grand_total or Decimal("0")
+        _addons = ((cgst_amount or 0) + (sgst_amount or 0) + (igst_amount or 0)
+                   + (freight or 0) + (tcs_amount or 0) + (round_off or 0))
         inc = _sub(vch, "ALLLEDGERENTRIES.LIST")
         _sub(inc, "LEDGERNAME", income_ledger)
-        _sub(inc, "ISDEEMEDPOSITIVE", "No" if is_sale else "Yes")
-        _sub(inc, "AMOUNT", _fmt_amt(grand_total, stock_sign))
+        _sub(inc, "ISDEEMEDPOSITIVE", _dpos)
+        _sub(inc, "AMOUNT", _fmt_amt(_gt - _addons, ledger_sign))
+        if float(freight or 0) > 0:
+            fe = _sub(vch, "ALLLEDGERENTRIES.LIST")
+            _sub(fe, "LEDGERNAME", ledgers.freight); _sub(fe, "ISDEEMEDPOSITIVE", _dpos)
+            _sub(fe, "AMOUNT", _fmt_amt(freight, ledger_sign))
+        if float(igst_amount or 0) > 0:
+            ge = _sub(vch, "ALLLEDGERENTRIES.LIST")
+            _sub(ge, "LEDGERNAME", ledgers.igst); _sub(ge, "ISDEEMEDPOSITIVE", _dpos)
+            _sub(ge, "AMOUNT", _fmt_amt(igst_amount, ledger_sign))
+        else:
+            if float(cgst_amount or 0) > 0:
+                ce = _sub(vch, "ALLLEDGERENTRIES.LIST")
+                _sub(ce, "LEDGERNAME", ledgers.cgst); _sub(ce, "ISDEEMEDPOSITIVE", _dpos)
+                _sub(ce, "AMOUNT", _fmt_amt(cgst_amount, ledger_sign))
+            if float(sgst_amount or 0) > 0:
+                se = _sub(vch, "ALLLEDGERENTRIES.LIST")
+                _sub(se, "LEDGERNAME", ledgers.sgst); _sub(se, "ISDEEMEDPOSITIVE", _dpos)
+                _sub(se, "AMOUNT", _fmt_amt(sgst_amount, ledger_sign))
+        if float(tcs_amount or 0) > 0:
+            te = _sub(vch, "ALLLEDGERENTRIES.LIST")
+            _sub(te, "LEDGERNAME", ledgers.tcs); _sub(te, "ISDEEMEDPOSITIVE", _dpos)
+            _sub(te, "AMOUNT", _fmt_amt(tcs_amount, ledger_sign))
+        if abs(float(round_off or 0)) > 0.001:
+            roe = _sub(vch, "ALLLEDGERENTRIES.LIST")
+            _sub(roe, "LEDGERNAME", ledgers.roundoff); _sub(roe, "ISDEEMEDPOSITIVE", _dpos)
+            _sub(roe, "AMOUNT", _fmt_amt(round_off, ledger_sign))
         return _pretty(root)
 
     # ── Inventory entries (one per line item) ───────────────────────────────

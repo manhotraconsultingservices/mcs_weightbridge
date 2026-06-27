@@ -1566,11 +1566,13 @@ function TallyTab() {
               onChange={e => setCfg(c => ({ ...c, accounting_only: e.target.checked }))}
               className="h-4 w-4 mt-0.5 rounded border-gray-300" />
             <span>
-              <span className="font-medium">No-GST / accounting-only vouchers</span>
+              <span className="font-medium">Accounting vouchers (no inventory) — recommended</span>
               <span className="block text-xs text-muted-foreground mt-0.5">
-                Posts each invoice as a plain accounting voucher (party + Sales/Purchase ledger only —
-                no stock item, no GST). Use for non-GST companies or older Tally (e.g. Tally 9 /
-                Tally.ERP 9) that can't take stock + GST vouchers. Leave OFF for GST + inventory on TallyPrime.
+                Posts each invoice as an accounting voucher (party + Sales/Purchase + GST ledgers —
+                <b> GST is included</b>, just no stock item). Turn this <b>ON</b> if Tally rejects invoices
+                with stock items — i.e. the Tally company has "Integrate Accounts &amp; Inventory" off, or
+                it's a non-GST / legacy Tally. Leave OFF only if your Tally company is configured to accept
+                stock-item (inventory) invoices.
               </span>
             </span>
           </label>
