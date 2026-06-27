@@ -110,13 +110,42 @@ def _count_tag(root, tag: str):
 
 
 # Shared message so the on-prem client and the relay connector report the same
-# actionable hint when Tally silently skips a voucher.
+# actionable hint when Tally accepts the request but imports nothing. The exact
+# reason is only in Tally's own import-exceptions log; we surface the likely
+# causes — GST/inventory validation FIRST because it's the most common one for
+# full-mode invoices on a company that isn't GST-configured.
 ZERO_IMPORT_HINT = (
-    'Tally imported 0 records. Most likely a duplicate-GUID voucher was skipped '
-    'because the company\'s Import Configuration has "Overwrite voucher when a '
-    'voucher with same GUID exists" = No (set it to Yes), or a referenced master '
-    'is missing. Check Tally\'s import exceptions and retry.'
+    "Tally accepted the request but imported 0 records. The exact reason is in "
+    "Tally's import-exceptions log; the usual causes are: (1) the voucher failed "
+    "Tally's GST/inventory validation — the company isn't GST-enabled (F11 > GST "
+    "+ GSTIN) or the stock item has no GST rate (common for full GST/inventory "
+    "invoices; switch to No-GST / accounting-only mode if you don't want GST in "
+    "Tally); (2) a referenced master (ledger / stock item / party) doesn't exist "
+    'yet; (3) a same-GUID voucher was skipped because Import Config "Overwrite '
+    'voucher when same GUID exists" = No (set it to Yes).'
 )
+
+
+def response_summary(xml_text: str) -> str:
+    """Compact one-line digest of Tally's import counts for logging/diagnostics.
+
+    Turns the verbose ``<RESPONSE>`` envelope into e.g.
+    ``created=0 altered=0 ignored=0 errors=0 exceptions=1`` so the actual counts
+    (and any LINEERROR) land in the log instead of being thrown away.
+    """
+    try:
+        root = ET.fromstring(xml_text or "")
+    except ET.ParseError:
+        return (xml_text or "").strip().replace("\n", " ")[:300]
+    parts = []
+    for tag in ("CREATED", "ALTERED", "IGNORED", "ERRORS", "EXCEPTIONS", "CANCELLED"):
+        v = _count_tag(root, tag)
+        if v is not None:
+            parts.append(f"{tag.lower()}={v}")
+    le = [e.text for e in root.findall(".//LINEERROR") if e.text]
+    if le:
+        parts.append("lineerror=" + " | ".join(le)[:200])
+    return " ".join(parts) or (xml_text or "").strip()[:200]
 
 
 def _parse_tally_response(xml_text: str) -> tuple[bool, str]:
@@ -150,14 +179,14 @@ def _parse_tally_response(xml_text: str) -> tuple[bool, str]:
         if (altered or 0) > 0:
             return True, f"Voucher updated in Tally ({altered} record(s))"
 
-        # Nothing landed but Tally flagged exceptions/errors — surface it.
+        # Nothing landed but Tally flagged exceptions/errors — surface it with the
+        # actual counts embedded so the stored error message is self-explanatory.
         if (exceptions or 0) > 0 or (errs or 0) > 0:
-            n = (exceptions or 0) + (errs or 0)
-            return False, f"{ZERO_IMPORT_HINT} ({n} exception(s)/error(s) reported)"
+            return False, f"{ZERO_IMPORT_HINT} [Tally: {response_summary(xml_text)}]"
 
         # Tally returned count tags and they all show zero imported.
         if any(v is not None for v in (created, altered, exceptions, errs)):
-            return False, ZERO_IMPORT_HINT
+            return False, f"{ZERO_IMPORT_HINT} [Tally: {response_summary(xml_text)}]"
 
         # No count tags at all — older Tally returns a bare envelope on success.
         return True, "Sent to Tally successfully"

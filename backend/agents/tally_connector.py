@@ -26,6 +26,7 @@ import sys
 import json
 import copy
 import time
+import re
 import socket
 import logging
 import threading
@@ -123,14 +124,53 @@ def _count_tag(root, tag):
         return None
 
 
-# A skipped duplicate (Import Config "Overwrite voucher when same GUID exists" = No)
-# returns CREATED=0/ALTERED=0/EXCEPTIONS=1 with no LINEERROR. Treating that as
-# success would wrongly flip tally_synced, so we surface it instead.
+# Tally accepted the request but imported nothing (CREATED=0/ALTERED=0 with
+# EXCEPTIONS≥1 and no LINEERROR). Treating that as success would wrongly flip
+# tally_synced, so we surface it — naming the GST/inventory-validation cause first
+# (the most common one for full-mode invoices on a non-GST-configured company).
 _ZERO_IMPORT_HINT = (
-    'Tally imported 0 records. Likely a duplicate-GUID voucher was skipped because '
-    'Import Config "Overwrite voucher when same GUID exists" = No (set it to Yes), '
-    "or a referenced master is missing. Check Tally's import exceptions and retry."
+    "Tally accepted the request but imported 0 records. The exact reason is in "
+    "Tally's import-exceptions log; the usual causes are: (1) the voucher failed "
+    "GST/inventory validation — the company isn't GST-enabled (F11 > GST + GSTIN) "
+    "or the stock item has no GST rate (common for full GST/inventory invoices; "
+    "use No-GST / accounting-only mode if you don't want GST in Tally); (2) a "
+    "referenced master (ledger / stock item / party) doesn't exist yet; (3) a "
+    'same-GUID voucher was skipped because Import Config "Overwrite voucher when '
+    'same GUID exists" = No (set it to Yes).'
 )
+
+
+def _response_summary(xml_text: str) -> str:
+    """Compact one-line digest of Tally's import counts for the log, e.g.
+    ``created=0 altered=0 ignored=0 errors=0 exceptions=1`` — so the actual reply
+    lands in the log instead of being thrown away."""
+    try:
+        root = ET.fromstring(xml_text or "")
+    except ET.ParseError:
+        return (xml_text or "").strip().replace("\n", " ")[:300]
+    parts = []
+    for tag in ("CREATED", "ALTERED", "IGNORED", "ERRORS", "EXCEPTIONS", "CANCELLED"):
+        v = _count_tag(root, tag)
+        if v is not None:
+            parts.append(f"{tag.lower()}={v}")
+    le = [e.text for e in root.findall(".//LINEERROR") if e.text]
+    if le:
+        parts.append("lineerror=" + " | ".join(le)[:200])
+    return " ".join(parts) or (xml_text or "").strip()[:200]
+
+
+def _voucher_label(job: dict) -> str:
+    """Human-friendly id for a job — the voucher number (or master name) parsed
+    from the XML, falling back to the entity_id — so the log says WHICH invoice
+    failed, not just the job UUID."""
+    x = job.get("xml") or ""
+    m = re.search(r"<VOUCHERNUMBER>([^<]+)</VOUCHERNUMBER>", x)
+    if m:
+        return m.group(1).strip()
+    m = re.search(r'NAME="([^"]+)"', x)  # master import: <LEDGER NAME="..."> etc.
+    if m:
+        return m.group(1).strip()
+    return str(job.get("entity_id", "") or "")[:18]
 
 
 def _parse_tally_response(xml_text: str) -> tuple[bool, str]:
@@ -150,10 +190,9 @@ def _parse_tally_response(xml_text: str) -> tuple[bool, str]:
         if (altered or 0) > 0:
             return True, f"Updated in Tally ({altered})"
         if (exceptions or 0) > 0 or (errs or 0) > 0:
-            n = (exceptions or 0) + (errs or 0)
-            return False, f"{_ZERO_IMPORT_HINT} ({n} exception(s)/error(s))"
+            return False, f"{_ZERO_IMPORT_HINT} [Tally: {_response_summary(xml_text)}]"
         if any(v is not None for v in (created, altered, exceptions, errs)):
-            return False, _ZERO_IMPORT_HINT
+            return False, f"{_ZERO_IMPORT_HINT} [Tally: {_response_summary(xml_text)}]"
         return True, "Sent to Tally"
     except ET.ParseError:
         if "<CREATED>" in xml_text:
@@ -251,6 +290,8 @@ def run(cfg: dict, state: State) -> None:
 
             log.info("Claimed %d job(s)", len(jobs))
             for job in jobs:   # already masters-first ordered by the server
+                label = _voucher_label(job)
+                attempt = job.get("attempts")
                 ok, msg, raw = push_to_local_tally(job["xml"], host, port)
                 state.tally_ok, state.tally_msg = ok, msg
                 try:
@@ -263,11 +304,16 @@ def run(cfg: dict, state: State) -> None:
                     log.warning("Could not report result for job %s: %s (will re-lease)", job["id"][:8], e)
                 if ok:
                     state.pushed += 1
-                    log.info("  job %s (%s) → Tally OK: %s", job["id"][:8], job["entity_type"], msg)
+                    log.info("  job %s (%s '%s') → Tally OK: %s",
+                             job["id"][:8], job["entity_type"], label, msg)
                 else:
                     state.errors += 1
-                    log.warning("  job %s (%s) → Tally FAILED: %s", job["id"][:8], job["entity_type"], msg)
-                state.last_result = f"{job['entity_type']}: {'OK' if ok else 'FAIL'} — {msg}"
+                    log.warning("  job %s (%s '%s', attempt %s) → Tally FAILED: %s",
+                                job["id"][:8], job["entity_type"], label, attempt, msg)
+                    # Log Tally's RAW reply digest too — the actual reason, not just our hint.
+                    if raw:
+                        log.warning("     ↳ Tally raw reply: %s", _response_summary(raw))
+                state.last_result = f"{job['entity_type']} '{label}': {'OK' if ok else 'FAIL'} — {msg}"
 
             # Drain fast when a full batch came back (more may be waiting).
             time.sleep(0.5 if len(jobs) >= n else poll)

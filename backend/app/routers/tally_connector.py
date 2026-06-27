@@ -13,6 +13,7 @@ Endpoints:
   POST /api/v1/tally/connector/jobs/{id}/result    — report success/failure
   GET  /api/v1/tally/connector/status              — queue health (user JWT)
 """
+import logging
 import uuid
 from typing import Any
 
@@ -86,6 +87,13 @@ async def report_result(job_id: uuid.UUID, payload: dict[str, Any]):
         )
     if result.get("not_found"):
         raise HTTPException(404, "Job not found")
+    # Mirror failures into the server journal so a stuck job is visible from the
+    # VPS too (the connector log is on the client's LAN PC).
+    if not bool(payload.get("success")):
+        logging.getLogger(__name__).warning(
+            "Tally relay job %s FAILED (tenant=%s → status=%s): %s",
+            job_id, tenant, result.get("status"), (payload.get("message") or "")[:400],
+        )
     return result
 
 
