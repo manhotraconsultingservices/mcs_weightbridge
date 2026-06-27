@@ -932,7 +932,7 @@ def _extract_items(invoice) -> list[dict]:
     items = []
     for it in (invoice.items or []):
         items.append({
-            "name": it.description or getattr(it, "_product_name", "Item"),
+            "name": getattr(it, "_product_name", None) or it.description or "Item",
             "unit": it.unit or "Nos",
             "qty": it.quantity,
             "rate": it.rate,

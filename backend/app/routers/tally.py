@@ -237,9 +237,24 @@ async def _build_invoice_xml(
         )).scalar_one_or_none()
         if inv_with_items:
             invoice = inv_with_items
-    for item in (invoice.items or []):
-        if not item.description:
-            item._product_name = "Item"
+    # Resolve the real product NAME + UNIT for each line so the Tally inventory
+    # entry's STOCKITEMNAME matches the synced Stock Item master. Without this the
+    # builder fell back to the literal "Item", and full-mode (with-qty) invoices
+    # failed in Tally with "Stock Item 'Item' does not exist!".
+    _items = list(invoice.items or [])
+    _pids = {getattr(it, "product_id", None) for it in _items if getattr(it, "product_id", None)}
+    _pmap: dict = {}
+    if _pids:
+        for _pid, _pname, _punit in (await db.execute(
+            select(Product.id, Product.name, Product.unit).where(Product.id.in_(_pids))
+        )).all():
+            _pmap[_pid] = (_pname, _punit)
+    for item in _items:
+        _pname, _punit = _pmap.get(getattr(item, "product_id", None), (None, None))
+        # STOCKITEMNAME = product name (matches the master); description is a fallback.
+        item._product_name = _pname or getattr(item, "description", None) or "Item"
+        if _punit and not getattr(item, "unit", None):
+            item.unit = _punit
 
     ledger_map = TallyLedgerMap(
         sales=cfg.ledger_sales or "Sales",
