@@ -863,6 +863,7 @@ def build_credit_note_xml(
     ledgers: TallyLedgerMap | None = None,
     narration_opts: NarrationOptions | None = None,
     reference_invoice_no: str | None = None,
+    accounting_only: bool = False,
 ) -> str:
     """Build Tally XML for a Credit Note (seller-issued, against a SALE invoice).
 
@@ -876,6 +877,7 @@ def build_credit_note_xml(
     ref_no = reference_invoice_no or invoice.invoice_no or ""
     return _build_voucher_xml(
         vch_type="Credit Note",
+        accounting_only=accounting_only,
         sign_basis="purchase",
         item_ledger_kind="sales",
         bill_type="Agst Ref",
@@ -909,6 +911,7 @@ def build_debit_note_xml(
     ledgers: TallyLedgerMap | None = None,
     narration_opts: NarrationOptions | None = None,
     reference_invoice_no: str | None = None,
+    accounting_only: bool = False,
 ) -> str:
     """Build Tally XML for a Debit Note (seller-issued supplementary, against a
     SALE invoice). A debit note increases the sale: the customer is DEBITED
@@ -920,6 +923,7 @@ def build_debit_note_xml(
     ref_no = reference_invoice_no or invoice.invoice_no or ""
     return _build_voucher_xml(
         vch_type="Debit Note",
+        accounting_only=accounting_only,
         sign_basis="sales",
         item_ledger_kind="sales",
         bill_type="Agst Ref",

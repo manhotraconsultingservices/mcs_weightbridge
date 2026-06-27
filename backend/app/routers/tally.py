@@ -304,7 +304,8 @@ async def _build_invoice_xml(
                 select(Invoice.invoice_no).where(Invoice.id == invoice.reference_invoice_id)
             )).scalar_one_or_none()
         builder = build_credit_note_xml if invoice.invoice_type == "credit_note" else build_debit_note_xml
-        return builder(invoice, company, party, ledger_map, narration_opts, reference_invoice_no=ref_no), ""
+        return builder(invoice, company, party, ledger_map, narration_opts,
+                       reference_invoice_no=ref_no, accounting_only=acct_only), ""
     return None, (
         f"Invoice type '{invoice.invoice_type}' cannot be exported to Tally. "
         "Only sale, purchase, credit_note and debit_note are supported."
