@@ -662,7 +662,7 @@ All endpoints prefixed `/api/v1` unless noted.
 | Hook | File | Purpose |
 |---|---|---|
 | `useAuth` | `hooks/useAuth.ts` | Login, logout, JWT in `sessionStorage`, 401 event listener |
-| `useWeight` | `hooks/useWeight.ts` | WebSocket connection to `/ws/weight`, real-time weight state |
+| `useWeight` | `hooks/useWeight.ts` | WebSocket connection to `/ws/weight`, real-time weight state. **Fast-reconnect + silence watchdog**: reconnect backoff capped at 4 s (was 30 s); a watchdog force-reconnects if no frame arrives for 8 s (catches half-dead sockets that Cloudflare/nginx drop without a close event) — so a live reading recovers in ~1–2 s instead of freezing for ~30 s. Long 15 s backoff only for code 1013 (no scale manager). |
 | `useUsbGuard` | `hooks/useUsbGuard.ts` | Polls `/usb-guard/status` every 10s. Exposes `authorized`, `method`, `expires_at`, `refresh()`, `clientAuth(fileHandle)`, `revokeSession()`, `backupNow()`, `hasBackupDir`. After clientAuth, prompts for USB directory and starts hourly supplement auto-backup. |
 | `useAppSettings` | `hooks/useAppSettings.ts` | Fetches role-permissions + wallpaper/info in parallel. Returns `{ permissions, wallpaperUrl, loading }`. Listens for `appsettings:updated` DOM event to re-fetch without page reload. Exports `DEFAULT_PERMISSIONS` constant (used by PermissionsPage for reset-to-defaults). |
 
