@@ -35,6 +35,7 @@ from app.integrations.tally.xml_builder import (
     build_credit_note_xml, build_debit_note_xml,
     build_customer_master_xml, build_supplier_master_xml,
     build_stock_item_xml, build_unit_xml,
+    build_ledger_master_xml, gl_ledger_specs,
     build_sales_order_xml, build_purchase_order_xml,
     TallyLedgerMap, NarrationOptions,
 )
@@ -714,6 +715,42 @@ async def sync_product_to_tally(
         "product_name": product.name,
         "unit": unit,
     }
+
+
+@router.post("/sync/ledgers")
+async def sync_ledgers_to_tally(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create the GL ledgers Tally needs for vouchers — Sales, Purchase, CGST, SGST,
+    IGST, Round Off, Freight, Trade Discount, TCS — under the right groups (GST
+    ledgers get a duty head). Run ONCE so both GST and no-GST invoices have their
+    ledgers (otherwise GST invoices fail "Ledger 'CGST' does not exist")."""
+    cfg = await _get_config(db, current_user.company_id)
+    if not cfg or not cfg.is_enabled:
+        raise HTTPException(400, "Tally integration is not enabled. Enable it in Settings → Tally.")
+    company = await _get_company(db, current_user.company_id)
+    lmap = TallyLedgerMap(
+        sales=cfg.ledger_sales or "Sales",
+        purchase=cfg.ledger_purchase or "Purchase",
+        cgst=cfg.ledger_cgst or "CGST",
+        sgst=cfg.ledger_sgst or "SGST",
+        igst=cfg.ledger_igst or "IGST",
+        freight=cfg.ledger_freight or "Freight Outward",
+        discount=cfg.ledger_discount or "Trade Discount",
+        tcs=cfg.ledger_tcs or "TCS Payable",
+        roundoff=cfg.ledger_roundoff or "Round Off",
+    )
+    specs = gl_ledger_specs(lmap)
+    xml = _merge_master_xmls([
+        build_ledger_master_xml(n, parent, company, gst_duty_head=duty)
+        for (n, parent, duty) in specs
+    ])
+    company_name = cfg.tally_company_name or getattr(company, "name", "") or ""
+    eid = uuid.uuid5(uuid.NAMESPACE_URL, f"tally-ledgers:{current_user.company_id}")
+    op_ok, message, _synced = await _dispatch_xml(cfg, "ledger", eid, company_name, xml, db)
+    await db.commit()
+    return {"success": op_ok, "message": message, "ledgers": [n for (n, _, _) in specs]}
 
 
 @router.post("/sync/parties")

@@ -1281,6 +1281,18 @@ function TallyTab() {
     } catch { setSaveMsg('Download failed'); }
   }
 
+  async function createLedgers() {
+    setSaveMsg('Creating ledgers in Tally…');
+    try {
+      const { data } = await api.post<{ success: boolean; message?: string; ledgers?: string[] }>('/api/v1/tally/sync/ledgers');
+      setSaveMsg(data?.message ? `Ledgers → Tally: ${data.message}` : 'Ledgers sent to Tally');
+      setTimeout(() => setSaveMsg(''), 6000);
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      setSaveMsg(typeof detail === 'string' ? `Ledgers failed: ${detail}` : 'Could not create ledgers');
+    }
+  }
+
   async function save() {
     setSaving(true); setSaveMsg('');
     try {
@@ -1560,6 +1572,26 @@ function TallyTab() {
               </span>
             </span>
           </label>
+        </CardContent>
+      </Card>
+
+      {/* One-time ledger setup — creates the GL ledgers Tally needs for vouchers */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <RefreshCw className="h-4 w-4" /> Create Tally ledgers (run once)
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Creates the GL ledgers vouchers post to — <span className="font-mono">Sales, Purchase, CGST, SGST,
+            IGST, Round Off, Freight, Trade Discount, TCS</span> — under the right groups (GST ledgers get a
+            duty head). Run this once after enabling Tally so invoices don't fail "Ledger 'CGST' does not exist".
+            (For GST invoices, also enable GST in the Tally company: <span className="font-mono">F11 → GST</span>.)
+          </p>
+        </CardHeader>
+        <CardContent>
+          <Button variant="outline" onClick={createLedgers}>
+            <RefreshCw className="mr-2 h-4 w-4" /> Create ledgers in Tally
+          </Button>
         </CardContent>
       </Card>
 

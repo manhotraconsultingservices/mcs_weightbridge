@@ -437,6 +437,48 @@ def build_supplier_master_xml(party, company) -> str:
     )
 
 
+def build_ledger_master_xml(name: str, parent: str, company, gst_duty_head: str | None = None) -> str:
+    """Build Tally XML for a GL ledger (Sales/Purchase/CGST/SGST/IGST/Round Off…).
+
+    ``parent`` = Tally group (e.g. "Sales Accounts", "Duties & Taxes").
+    ``gst_duty_head`` = "Central Tax" / "State Tax" / "Integrated Tax" for GST
+    ledgers (sets TAXTYPE=GST so TallyPrime treats them as tax ledgers).
+    """
+    tally_company = getattr(company, "tally_company_name", None) or company.name
+    root = ET.Element("ENVELOPE")
+    _sub(_sub(root, "HEADER"), "TALLYREQUEST", "Import Data")
+    imp = _sub(_sub(root, "BODY"), "IMPORTDATA")
+    rdesc = _sub(imp, "REQUESTDESC")
+    _sub(rdesc, "REPORTNAME", "All Masters")
+    _sub(_sub(rdesc, "STATICVARIABLES"), "SVCURRENTCOMPANY", tally_company)
+    msg = _sub(_sub(imp, "REQUESTDATA"), "TALLYMESSAGE")
+    msg.set("xmlns:UDF", "TallyUDF")
+    led = _sub(msg, "LEDGER")
+    led.set("NAME", name)
+    led.set("ACTION", "Create")
+    _sub(led, "NAME", name)
+    _sub(led, "PARENT", parent)
+    if gst_duty_head:
+        _sub(led, "TAXTYPE", "GST")
+        _sub(led, "GSTDUTYHEAD", gst_duty_head)
+    return _pretty(root)
+
+
+def gl_ledger_specs(ledgers: "TallyLedgerMap") -> list[tuple[str, str, str | None]]:
+    """The GL ledgers Tally needs for vouchers → (name, parent_group, gst_duty_head)."""
+    return [
+        (ledgers.sales,    "Sales Accounts",    None),
+        (ledgers.purchase, "Purchase Accounts", None),
+        (ledgers.cgst,     "Duties & Taxes",    "Central Tax"),
+        (ledgers.sgst,     "Duties & Taxes",    "State Tax"),
+        (ledgers.igst,     "Duties & Taxes",    "Integrated Tax"),
+        (ledgers.roundoff, "Indirect Expenses", None),
+        (ledgers.freight,  "Indirect Expenses", None),
+        (ledgers.discount, "Indirect Expenses", None),
+        (ledgers.tcs,      "Duties & Taxes",    None),
+    ]
+
+
 def build_unit_xml(symbol: str, company, decimals: int = 3) -> str:
     """Build Tally XML to create a simple Unit of Measure (e.g. MT, Nos, Qtl)."""
     tally_company = getattr(company, "tally_company_name", None) or company.name
@@ -479,6 +521,9 @@ def build_stock_item_xml(product, company) -> str:
     item.set("ACTION", "Create")
     _sub(item, "NAME", name)
     _sub(item, "BASEUNITS", unit)
+    _hsn = (getattr(product, "hsn_code", None) or "").strip()
+    if _hsn:
+        _sub(item, "HSNCODE", _hsn)          # for GSTR-1 HSN summary (harmless in no-GST)
     return _pretty(root)
 
 
