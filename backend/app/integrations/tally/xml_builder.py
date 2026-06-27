@@ -500,14 +500,23 @@ def build_unit_xml(symbol: str, company, decimals: int = 3) -> str:
 
 
 def build_stock_item_xml(product, company) -> str:
-    """Build Tally XML to create a Stock Item master (minimal — name + base unit).
+    """Build Tally XML to create a Stock Item master.
 
-    No GST / HSN, so it imports on legacy Tally too. The base unit must already
-    exist in Tally (push build_unit_xml first when seeding a fresh company).
+    Minimal by default (name + base unit + HSN) so it imports on legacy Tally too.
+    When the product carries a GST rate, the item is **GST-classified** (HSN +
+    taxability + CGST/SGST/IGST rate split) — TallyPrime validates GST vouchers
+    against the item's own rate, so without this a full GST invoice referencing the
+    item is rejected with EXCEPTIONS=1. The base unit must already exist in Tally
+    (push build_unit_xml first when seeding a fresh company).
     """
     tally_company = getattr(company, "tally_company_name", None) or company.name
     name = getattr(product, "name", None) or "Item"
     unit = getattr(product, "unit", None) or "Nos"
+    _hsn = (getattr(product, "hsn_code", None) or "").strip()
+    try:
+        _gst_rate = float(getattr(product, "gst_rate", None) or 0)
+    except (TypeError, ValueError):
+        _gst_rate = 0.0
     root = ET.Element("ENVELOPE")
     _sub(_sub(root, "HEADER"), "TALLYREQUEST", "Import Data")
     imp = _sub(_sub(root, "BODY"), "IMPORTDATA")
@@ -521,9 +530,25 @@ def build_stock_item_xml(product, company) -> str:
     item.set("ACTION", "Create")
     _sub(item, "NAME", name)
     _sub(item, "BASEUNITS", unit)
-    _hsn = (getattr(product, "hsn_code", None) or "").strip()
     if _hsn:
         _sub(item, "HSNCODE", _hsn)          # for GSTR-1 HSN summary (harmless in no-GST)
+    if _gst_rate > 0:
+        # GST-classify the item so TallyPrime can validate GST vouchers using it.
+        _sub(item, "GSTAPPLICABLE", "Applicable")
+        _sub(item, "GSTTYPEOFSUPPLY", "Goods")
+        gd = _sub(item, "GSTDETAILS.LIST")
+        _sub(gd, "APPLICABLEFROM", "20170701")     # GST rollout — a safe floor date
+        _sub(gd, "CALCULATIONTYPE", "On Value")
+        _sub(gd, "TAXABILITY", "Taxable")
+        if _hsn:
+            _sub(gd, "HSNCODE", _hsn)
+        sw = _sub(gd, "STATEWISEDETAILS.LIST")
+        _sub(sw, "STATENAME", "Any")
+        half = _gst_rate / 2.0
+        for head, rate in (("CGST", half), ("SGST/UTGST", half), ("IGST", _gst_rate)):
+            rd = _sub(sw, "RATEDETAILS.LIST")
+            _sub(rd, "GSTRATEDUTYHEAD", head)
+            _sub(rd, "GSTRATE", f"{rate:g}")
     return _pretty(root)
 
 
