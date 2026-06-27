@@ -361,6 +361,53 @@ async def update_vehicle_types(
     return cleaned
 
 
+# ── Units of Measure ──────────────────────────────────────────────────────────
+# Admin-managed list of units shown in invoice / quotation / product line items.
+# Case is PRESERVED (e.g. "MT", "Quintal", "Kg") — only de-duplicated case-
+# insensitively. Stored in app_settings under key "units".
+
+UNITS_KEY = "units"
+UNITS_DEFAULTS = ["MT", "QUINTAL", "KG", "CFT", "BRASS", "CUM", "PCS", "NOS"]
+
+
+@router.get("/units")
+async def get_units(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Return the list of units of measure. Any authenticated user."""
+    raw = await _get_raw(db, UNITS_KEY)
+    if raw:
+        try:
+            val = json.loads(raw)
+            if isinstance(val, list) and val:
+                return val
+        except Exception:
+            pass
+    return UNITS_DEFAULTS
+
+
+@router.put("/units")
+async def update_units(
+    payload: list[str],
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Save the custom units-of-measure list. Admin only. Preserves case;
+    de-duplicates case-insensitively; strips blanks."""
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for u in (payload or []):
+        s = (u or "").strip()
+        if s and s.lower() not in seen:
+            seen.add(s.lower())
+            cleaned.append(s)
+    if not cleaned:
+        raise HTTPException(400, "At least one unit is required")
+    await _upsert(db, UNITS_KEY, json.dumps(cleaned))
+    return cleaned
+
+
 @router.delete("/wallpaper")
 async def delete_wallpaper(
     db: AsyncSession = Depends(get_db),

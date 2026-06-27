@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
+import { fetchUnits, DEFAULT_UNITS, withUnit } from '@/lib/units';
 import type { Quotation, QuotationListResponse, Party, Product } from '@/types';
 
 const INR = (v: number) => '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2 });
@@ -63,6 +64,7 @@ function CreateQuotationDialog({ open, onClose, onCreated }: CreateQuotationDial
     terms_and_conditions: '',
   });
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
+  const [units, setUnits] = useState<string[]>(DEFAULT_UNITS);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -71,6 +73,7 @@ function CreateQuotationDialog({ open, onClose, onCreated }: CreateQuotationDial
     setForm(prev => ({ ...prev, quotation_date: new Date().toISOString().split('T')[0], valid_to: '', party_id: '' }));
     setLines([emptyLine()]);
     setError('');
+    fetchUnits().then(setUnits);
     Promise.all([
       api.get<Party[]>('/api/v1/parties'),
       api.get<Product[]>('/api/v1/products'),
@@ -228,7 +231,7 @@ function CreateQuotationDialog({ open, onClose, onCreated }: CreateQuotationDial
                       <Select value={line.unit} onValueChange={v => setLine(i, 'unit', v)}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          {['MT','QUINTAL','KG','CFT','BRASS','CUM','PCS','NOS'].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                          {withUnit(units, line.unit).map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </td>

@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import api from '@/services/api';
+import { fetchUnits, saveUnits } from '@/lib/units';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
 
 interface Company {
@@ -3121,6 +3122,92 @@ const BARRIER_DEFAULT: BarrierCfg = {
   timeout_sec: 3,
 };
 
+function MeasurementUnitsTab() {
+  const [units, setUnitsState] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [newUnit, setNewUnit] = useState('');
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    fetchUnits().then(setUnitsState).finally(() => setLoading(false));
+  }, []);
+
+  function add() {
+    const u = newUnit.trim();
+    if (!u) return;
+    if (units.some(x => x.toLowerCase() === u.toLowerCase())) { setNewUnit(''); return; }
+    setUnitsState([...units, u]);
+    setNewUnit('');
+    setMsg(null);
+  }
+  function remove(u: string) { setUnitsState(units.filter(x => x !== u)); setMsg(null); }
+
+  async function save() {
+    if (!units.length) { setMsg({ kind: 'err', text: 'At least one unit is required' }); return; }
+    setSaving(true); setMsg(null);
+    try {
+      const saved = await saveUnits(units);
+      setUnitsState(saved);
+      setMsg({ kind: 'ok', text: 'Units saved.' });
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setMsg({ kind: 'err', text: typeof detail === 'string' ? detail : 'Failed to save (admin only).' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="pt-6 flex items-center justify-center text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Units of Measure</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Units shown in the Invoice, Quotation and Product line items. Admins can add or remove them.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {units.map(u => (
+            <span key={u} className="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-3 py-1 text-sm">
+              {u}
+              <button type="button" onClick={() => remove(u)} title="Remove"
+                className="text-muted-foreground hover:text-red-600">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          ))}
+          {units.length === 0 && (
+            <span className="text-sm text-muted-foreground">No units yet — add at least one below.</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Input value={newUnit} onChange={e => setNewUnit(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+            placeholder="Add a unit (e.g. MT, Kg, Quintal, Bag)…" className="max-w-xs h-9" />
+          <Button type="button" variant="outline" size="sm" onClick={add}>
+            <Plus className="h-4 w-4 mr-1" /> Add
+          </Button>
+        </div>
+        {msg && <p className={`text-sm ${msg.kind === 'ok' ? 'text-green-600' : 'text-red-600'}`}>{msg.text}</p>}
+        <Button onClick={save} disabled={saving}>
+          {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Saving…</> : 'Save Units'}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 function VolumeUnitSettingsTab() {
   const [unit, setUnit] = useState<'m3' | 'cft'>('m3');
   const [loading, setLoading] = useState(true);
@@ -3736,7 +3823,8 @@ export default function SettingsPage() {
         </TabsContent>
 
         {/* Volume Unit settings */}
-        <TabsContent value="units" className="mt-4">
+        <TabsContent value="units" className="mt-4 space-y-4">
+          <MeasurementUnitsTab />
           <VolumeUnitSettingsTab />
         </TabsContent>
 

@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 import { moduleEnabled } from '@/hooks/useAuth';
+import { fetchUnits, withUnit } from '@/lib/units';
 import type { Product, ProductCategory } from '@/types';
 
 // Bulk density (volume→weight) + raw-material (production input) are crusher-only
@@ -55,8 +56,11 @@ interface ProductDialogProps {
 function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductDialogProps) {
   const { t } = useTranslation();
   const [form, setForm] = useState<ProductForm>(emptyForm());
+  const [units, setUnits] = useState<string[]>(UNITS);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => { fetchUnits().then(setUnits); }, []);
 
   useEffect(() => {
     if (open) {
@@ -164,7 +168,7 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
             <Select value={form.unit} onValueChange={v => set('unit', v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {UNITS.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                {withUnit(units, form.unit).map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>

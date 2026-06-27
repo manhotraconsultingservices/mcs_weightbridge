@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { downloadCsv } from '@/components/DataTable';
 import api from '@/services/api';
+import { fetchUnits, DEFAULT_UNITS, withUnit } from '@/lib/units';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
 import { useAuth } from '@/hooks/useAuth';
 import type { Invoice, InvoiceListResponse, Party, Product, Token } from '@/types';
@@ -151,6 +152,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
   });
   const [showTransport, setShowTransport] = useState(false);
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
+  const [units, setUnits] = useState<string[]>(DEFAULT_UNITS);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -172,6 +174,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
     setWalkIn(false);
     setCustomerName('');
     setError('');
+    fetchUnits().then(setUnits);
     Promise.all([
       api.get<Party[]>('/api/v1/parties'),
       api.get<Product[]>('/api/v1/products'),
@@ -398,10 +401,10 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
               </Button>
             </div>
             <div className="overflow-x-auto -mx-4 sm:mx-0 pb-1">
-              <div className="min-w-[540px] space-y-2">
+              <div className="min-w-[620px] space-y-2">
               {lines.map((line, idx) => (
                 <div key={idx} className="grid gap-2 items-end"
-                  style={{ gridTemplateColumns: 'minmax(0,2fr) minmax(80px,1.1fr) minmax(100px,1.4fr) minmax(70px,0.9fr) minmax(90px,1fr) 36px' }}>
+                  style={{ gridTemplateColumns: 'minmax(0,1.7fr) minmax(60px,0.8fr) minmax(72px,0.8fr) minmax(84px,1.1fr) minmax(58px,0.7fr) minmax(80px,1fr) 36px' }}>
                   <div className="space-y-1">
                     {idx === 0 && <Label className="text-sm font-medium">{t('invoice.productCol')}</Label>}
                     <Select value={line.product_id || undefined}
@@ -422,6 +425,15 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
                     {idx === 0 && <Label className="text-sm font-medium">{t('invoice.qtyCol')}</Label>}
                     <Input className="h-10 text-sm font-semibold text-center w-full" type="number" min="0" step="0.001"
                       value={line.quantity} onChange={e => updateLine(idx, { quantity: e.target.value })} />
+                  </div>
+                  <div className="space-y-1 min-w-0">
+                    {idx === 0 && <Label className="text-sm font-medium">{t('invoice.unitCol', { defaultValue: 'Unit' })}</Label>}
+                    <Select value={line.unit || undefined} onValueChange={v => updateLine(idx, { unit: v ?? '' })}>
+                      <SelectTrigger className="h-10 text-sm w-full"><SelectValue placeholder="Unit" /></SelectTrigger>
+                      <SelectContent>
+                        {withUnit(units, line.unit).map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-1 min-w-0">
                     {idx === 0 && <Label className="text-sm font-medium">{t('invoice.rateCol')}</Label>}
@@ -599,6 +611,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
   });
   const [showTransport, setShowTransport] = useState(false);
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
+  const [units, setUnits] = useState<string[]>(DEFAULT_UNITS);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -606,6 +619,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
   useEffect(() => {
     if (!open || !invoice) return;
     setError('');
+    fetchUnits().then(setUnits);
     const isWalkIn = !invoice.party && !!invoice.customer_name;
     setWalkIn(isWalkIn);
     setCustomerName(invoice.customer_name ?? '');
@@ -832,10 +846,10 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
               </Button>
             </div>
             <div className="overflow-x-auto -mx-4 sm:mx-0 pb-1">
-              <div className="min-w-[540px] space-y-2">
+              <div className="min-w-[620px] space-y-2">
               {lines.map((line, idx) => (
                 <div key={idx} className="grid gap-2 items-end"
-                  style={{ gridTemplateColumns: 'minmax(0,2fr) minmax(80px,1.1fr) minmax(100px,1.4fr) minmax(70px,0.9fr) minmax(90px,1fr) 36px' }}>
+                  style={{ gridTemplateColumns: 'minmax(0,1.7fr) minmax(60px,0.8fr) minmax(72px,0.8fr) minmax(84px,1.1fr) minmax(58px,0.7fr) minmax(80px,1fr) 36px' }}>
                   <div className="space-y-1">
                     {idx === 0 && <Label className="text-sm font-medium">{t('invoice.productCol')}</Label>}
                     <Select value={line.product_id || undefined}
@@ -856,6 +870,15 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
                     {idx === 0 && <Label className="text-sm font-medium">{t('invoice.qtyCol')}</Label>}
                     <Input className="h-10 text-sm font-semibold text-center w-full" type="number" min="0" step="0.001"
                       value={line.quantity} onChange={e => updateLine(idx, { quantity: e.target.value })} />
+                  </div>
+                  <div className="space-y-1 min-w-0">
+                    {idx === 0 && <Label className="text-sm font-medium">{t('invoice.unitCol', { defaultValue: 'Unit' })}</Label>}
+                    <Select value={line.unit || undefined} onValueChange={v => updateLine(idx, { unit: v ?? '' })}>
+                      <SelectTrigger className="h-10 text-sm w-full"><SelectValue placeholder="Unit" /></SelectTrigger>
+                      <SelectContent>
+                        {withUnit(units, line.unit).map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-1 min-w-0">
                     {idx === 0 && <Label className="text-sm font-medium">{t('invoice.rateCol')}</Label>}
