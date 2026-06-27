@@ -70,6 +70,8 @@ class TallyConfigIn(BaseModel):
     narration_weight: bool = True
     # No-GST / accounting-only export (legacy Tally + non-GST demo companies).
     accounting_only: bool = False
+    # Also sync non-GST (Bill of Supply) invoices to Tally.
+    sync_non_gst: bool = False
     # Invoice-number prefix filter (comma-separated; blank = sync all). Only
     # invoices whose number starts with one of these prefixes go to Tally.
     sync_invoice_prefix: Optional[str] = None
@@ -100,6 +102,7 @@ class TallyConfigOut(BaseModel):
     narration_token: bool
     narration_weight: bool
     accounting_only: bool = False
+    sync_non_gst: bool = False
     sync_invoice_prefix: Optional[str] = None
     mode: Optional[str] = None
 
@@ -139,6 +142,21 @@ async def _get_config(db: AsyncSession, company_id: uuid.UUID) -> TallyConfig:
 
 async def _get_company(db: AsyncSession, company_id: uuid.UUID) -> Company:
     return (await db.execute(select(Company).where(Company.id == company_id))).scalar_one()
+
+
+async def _allow_non_gst(db: AsyncSession, company_id: uuid.UUID) -> bool:
+    """Whether non-GST (Bill of Supply) invoices are eligible for Tally sync."""
+    row = (await db.execute(
+        select(TallyConfig.sync_non_gst).where(TallyConfig.company_id == company_id)
+    )).scalar_one_or_none()
+    return bool(row)
+
+
+def _tax_filter(allow_non_gst: bool):
+    """SQL clause for which invoice tax_types flow to Tally."""
+    if allow_non_gst:
+        return Invoice.tax_type.in_(["gst", "non_gst"])
+    return Invoice.tax_type == "gst"
 
 
 def _make_client(cfg: TallyConfig) -> TallyClient:
@@ -422,6 +440,7 @@ async def update_tally_config(
     cfg.narration_token = payload.narration_token
     cfg.narration_weight = payload.narration_weight
     cfg.accounting_only = payload.accounting_only
+    cfg.sync_non_gst = payload.sync_non_gst
     # Invoice prefix filter — normalise blank → NULL (means "sync all")
     cfg.sync_invoice_prefix = (payload.sync_invoice_prefix or "").strip() or None
     # Transport mode is set by provisioning/admin; the normal Settings save omits
@@ -473,7 +492,7 @@ async def list_pending_invoices(
     q = select(Invoice).where(
         Invoice.company_id == current_user.company_id,
         Invoice.status == "final",
-        Invoice.tax_type == "gst",
+        _tax_filter(await _allow_non_gst(db, current_user.company_id)),
         Invoice.tally_synced == False,  # noqa: E712
     )
     if invoice_type:
@@ -526,11 +545,11 @@ async def sync_invoice_to_tally(
         raise HTTPException(400, "Only finalised invoices can be synced to Tally")
     # Block non-GST invoices (Bill of Supply) — these are cash-mode and
     # shouldn't appear in the GST books that Tally is sync'd to.
-    if invoice.tax_type != "gst":
+    if invoice.tax_type != "gst" and not await _allow_non_gst(db, current_user.company_id):
         raise HTTPException(
             400,
-            f"Invoice {invoice.invoice_no} is non-GST (Bill of Supply) and "
-            f"cannot be synced to Tally. Tally sync is only for GST invoices.",
+            f"Invoice {invoice.invoice_no} is non-GST (Bill of Supply). Enable "
+            f"'Also sync non-GST invoices' in Settings → Tally to sync it.",
         )
 
     company = await _get_company(db, current_user.company_id)
@@ -939,7 +958,7 @@ async def bulk_sync_to_tally(
     q = select(Invoice).options(selectinload(Invoice.items)).where(
         Invoice.company_id == current_user.company_id,
         Invoice.status == "final",
-        Invoice.tax_type == "gst",        # only GST invoices go to Tally
+        _tax_filter(await _allow_non_gst(db, current_user.company_id)),  # GST + (opt) non-GST
     )
     if payload.invoice_type:
         q = q.where(Invoice.invoice_type == payload.invoice_type)
@@ -1012,8 +1031,8 @@ async def download_invoice_xml(
         raise HTTPException(404, "Invoice not found")
     if invoice.status != "final":
         raise HTTPException(400, "Only finalised invoices can be exported to Tally")
-    if invoice.tax_type != "gst":
-        raise HTTPException(400, "Non-GST (Bill of Supply) invoices are not exported to Tally")
+    if invoice.tax_type != "gst" and not await _allow_non_gst(db, current_user.company_id):
+        raise HTTPException(400, "Non-GST (Bill of Supply) invoices are not exported. Enable 'Also sync non-GST invoices' in Settings → Tally.")
 
     cfg = await _get_config(db, current_user.company_id)
     company = await _get_company(db, current_user.company_id)
@@ -1047,7 +1066,7 @@ async def export_vouchers_xml(
     q = select(Invoice).options(selectinload(Invoice.items)).where(
         Invoice.company_id == current_user.company_id,
         Invoice.status == "final",
-        Invoice.tax_type == "gst",
+        _tax_filter(await _allow_non_gst(db, current_user.company_id)),
     )
     if invoice_type:
         q = q.where(Invoice.invoice_type == invoice_type)

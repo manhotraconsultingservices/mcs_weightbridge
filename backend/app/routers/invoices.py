@@ -769,13 +769,15 @@ async def finalise_invoice(
     # tenant-routed session and never blocks or rolls back the finalisation; on
     # failure tally_synced stays False so the invoice remains in /tally/pending
     # for the accountant to retry manually.
-    if inv.invoice_type in ("sale", "purchase") and inv.tax_type == "gst":
+    if inv.invoice_type in ("sale", "purchase", "credit_note", "debit_note"):
         try:
             from app.models.settings import TallyConfig
             _tcfg = (await db.execute(
                 select(TallyConfig).where(TallyConfig.company_id == co.id)
             )).scalar_one_or_none()
-            if _tcfg and _tcfg.is_enabled and _tcfg.auto_sync:
+            # GST invoices always; non-GST only when the tenant opted in.
+            _tax_ok = inv.tax_type == "gst" or bool(_tcfg and getattr(_tcfg, "sync_non_gst", False))
+            if _tcfg and _tcfg.is_enabled and _tcfg.auto_sync and _tax_ok:
                 # Honour the invoice-number prefix filter — don't spawn a task for
                 # an invoice that the chokepoint would reject anyway.
                 from app.routers.tally import _invoice_matches_prefix
@@ -1124,10 +1126,16 @@ async def _auto_sync_tally_bg(
             if (
                 inv is None
                 or inv.status != "final"
-                or inv.tax_type != "gst"
-                or inv.invoice_type not in ("sale", "purchase")
+                or inv.invoice_type not in ("sale", "purchase", "credit_note", "debit_note")
             ):
                 return
+            if inv.tax_type != "gst":
+                from app.models.settings import TallyConfig as _TC
+                _tc = (await db.execute(
+                    select(_TC).where(_TC.company_id == company_id)
+                )).scalar_one_or_none()
+                if not (_tc and getattr(_tc, "sync_non_gst", False)):
+                    return
             company = (await db.execute(
                 select(_Company).where(_Company.id == company_id)
             )).scalar_one_or_none()

@@ -79,6 +79,10 @@ class TallyConfig(Base):
     # no GST, "Accounting Voucher View"). Needed for legacy Tally (e.g. Tally 9)
     # that crashes on inventory/GST vouchers, and for non-GST demo companies.
     accounting_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    # When True, non-GST invoices (Bill of Supply, tax_type='non_gst') are ALSO
+    # eligible for Tally sync (pending list / auto-sync / manual). Default False
+    # keeps the historical GST-only behaviour (cash sales stay out of the books).
+    sync_non_gst: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class AuditLog(Base):

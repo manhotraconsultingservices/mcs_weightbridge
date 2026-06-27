@@ -981,6 +981,7 @@ interface TallyConfig {
   narration_weight: boolean;
   // No-GST / accounting-only export (legacy Tally + non-GST demo companies)
   accounting_only: boolean;
+  sync_non_gst: boolean;
   // Invoice-number prefix filter (comma-separated; blank = sync all)
   sync_invoice_prefix: string;
   // Transport mode: 'direct' (on-prem) | 'relay' (SaaS, via the Tally Connector)
@@ -1234,6 +1235,7 @@ const DEFAULT_TALLY_CFG: TallyConfig = {
   ledger_tcs: 'TCS Payable', ledger_roundoff: 'Round Off',
   narration_vehicle: true, narration_token: true, narration_weight: true,
   accounting_only: false,
+  sync_non_gst: false,
 };
 
 function TallyTab() {
@@ -1569,6 +1571,19 @@ function TallyTab() {
                 Posts each invoice as a plain accounting voucher (party + Sales/Purchase ledger only —
                 no stock item, no GST). Use for non-GST companies or older Tally (e.g. Tally 9 /
                 Tally.ERP 9) that can't take stock + GST vouchers. Leave OFF for GST + inventory on TallyPrime.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm cursor-pointer mt-3">
+            <input type="checkbox" checked={cfg.sync_non_gst}
+              onChange={e => setCfg(c => ({ ...c, sync_non_gst: e.target.checked }))}
+              className="h-4 w-4 mt-0.5 rounded border-gray-300" />
+            <span>
+              <span className="font-medium">Also sync non-GST (Bill of Supply) invoices</span>
+              <span className="block text-xs text-muted-foreground mt-0.5">
+                By default only GST invoices flow to Tally. Turn this ON to also send non-GST
+                (cash / Bill of Supply) invoices — they then sync manually, appear in the Pending
+                list, and auto-sync on finalise.
               </span>
             </span>
           </label>
