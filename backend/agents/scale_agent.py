@@ -428,7 +428,26 @@ class ScaleReader:
         api_url = f"{_effective_push_base(self.cfg.get('cloud_url', ''), self.cfg.get('tenant_slug', ''))}/api/v1/weight/external-reading"
 
         # ── Non-blocking HTTP push queue ───────────────────────────────────
+        # A live weight gauge only cares about the LATEST value, so the queue is
+        # latest-biased: on overflow drop the OLDEST (not the newest), and the
+        # sender COALESCES a backlog down to the freshest reading before POSTing.
+        # Without this, a slow network makes the worker stream a backlog of stale
+        # readings one-by-one and the on-screen weight runs seconds behind.
         push_q: _q.Queue = _q.Queue(maxsize=20)
+        _session = requests.Session()   # keep-alive: skip a TLS handshake per POST
+
+        def _enqueue(payload: dict) -> None:
+            try:
+                push_q.put_nowait(payload)
+            except _q.Full:
+                try:
+                    push_q.get_nowait()        # drop the stalest, keep the freshest
+                except _q.Empty:
+                    pass
+                try:
+                    push_q.put_nowait(payload)
+                except _q.Full:
+                    pass
 
         def _push_worker():
             while self.running or not push_q.empty():
@@ -436,8 +455,16 @@ class ScaleReader:
                     payload = push_q.get(timeout=2)
                 except _q.Empty:
                     continue
+                # Coalesce: if readings piled up while a slow POST was in flight,
+                # skip straight to the newest and discard the stale backlog. Keeps
+                # the on-screen weight ~1 round-trip behind the scale, not seconds.
                 try:
-                    resp = requests.post(api_url, json=payload, timeout=5)
+                    while True:
+                        payload = push_q.get_nowait()
+                except _q.Empty:
+                    pass
+                try:
+                    resp = _session.post(api_url, json=payload, timeout=5)
                     if resp.status_code == 403:
                         self.error_count += 1
                         self.cloud_online = False
@@ -555,15 +582,12 @@ class ScaleReader:
                             self.last_weight    = weight
                             self._last_push_time = now
                             last_weight_time    = now
-                            try:
-                                push_q.put_nowait({
-                                    "weight_kg": weight,
-                                    "tenant":    self.cfg["tenant_slug"],
-                                    "agent_key": self.cfg["agent_key"],
-                                    "raw": raw_str,
-                                })
-                            except _q.Full:
-                                pass  # cloud lagging; drop oldest, keep reading
+                            _enqueue({
+                                "weight_kg": weight,
+                                "tenant":    self.cfg["tenant_slug"],
+                                "agent_key": self.cfg["agent_key"],
+                                "raw": raw_str,
+                            })
 
                     # ── Delimiter-free fallback (Leo FSD-501 continuous) ───
                     if len(buffer) >= 16:
@@ -579,15 +603,12 @@ class ScaleReader:
                                     now - self._last_push_time >= push_interval):
                                 self.last_weight    = weight
                                 self._last_push_time = now
-                                try:
-                                    push_q.put_nowait({
-                                        "weight_kg": weight,
-                                        "tenant":    self.cfg["tenant_slug"],
-                                        "agent_key": self.cfg["agent_key"],
-                                        "raw": raw_str,
-                                    })
-                                except _q.Full:
-                                    pass
+                                _enqueue({
+                                    "weight_kg": weight,
+                                    "tenant":    self.cfg["tenant_slug"],
+                                    "agent_key": self.cfg["agent_key"],
+                                    "raw": raw_str,
+                                })
                         buffer = buffer[-16:]
 
                     # Overflow guard
