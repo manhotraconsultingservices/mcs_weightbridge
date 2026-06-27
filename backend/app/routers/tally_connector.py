@@ -72,19 +72,60 @@ async def claim_jobs(payload: dict[str, Any]):
     return {"jobs": jobs}
 
 
+async def _rebuild_invoice_job_xml(db, job) -> bool:
+    """Rebuild a queued invoice/CN/DN job's voucher XML from the CURRENT Tally
+    config. Lets a job queued before a config change (e.g. before "Accounting
+    vouchers (no inventory)" was switched on) self-heal instead of replaying the
+    stale, rejected voucher forever. Returns True if rebuilt. Swallows errors and
+    falls back to the stored XML."""
+    if job is None or job.entity_type not in ("invoice", "credit_note", "debit_note"):
+        return False
+    try:
+        from sqlalchemy import select as _select
+        from app.routers.tally import _get_config, _get_company, _build_invoice_xml
+        from app.models.invoice import Invoice
+        inv = (await db.execute(
+            _select(Invoice).where(Invoice.id == job.entity_id)
+        )).scalar_one_or_none()
+        if inv is None:
+            return False
+        cfg = await _get_config(db, job.company_id)
+        company = await _get_company(db, job.company_id)
+        new_xml, _err = await _build_invoice_xml(inv, company, cfg, db)
+        if new_xml and new_xml != job.xml:
+            job.xml = new_xml
+            job.company_name = (getattr(cfg, "tally_company_name", None)
+                                or getattr(company, "name", None) or job.company_name)
+            return True
+    except Exception as e:
+        logging.getLogger(__name__).warning("rebuild job %s failed: %s", getattr(job, "id", "?"), e)
+    return False
+
+
 @router.post("/jobs/{job_id}/result")
 async def report_result(job_id: uuid.UUID, payload: dict[str, Any]):
     """Report the outcome of pushing one job's XML to the local Tally."""
     tenant = await _authed_tenant(payload)
+    success = bool(payload.get("success"))
     async with await get_tenant_session(tenant) as db:
         result = await relay_queue.report_result(
             db,
             job_id=job_id,
             connector_id=str(payload.get("connector_id") or ""),
-            success=bool(payload.get("success")),
+            success=success,
             message=payload.get("message") or "",
             tally_response=payload.get("tally_response"),
         )
+        # On a retryable failure, rebuild the voucher from CURRENT config so a
+        # stale invoice job (queued before a config change) heals on its next try.
+        if not success and result.get("status") == "pending":
+            from sqlalchemy import select
+            from app.models.tally_job import TallySyncJob
+            job = (await db.execute(
+                select(TallySyncJob).where(TallySyncJob.id == job_id)
+            )).scalar_one_or_none()
+            if job is not None and await _rebuild_invoice_job_xml(db, job):
+                await db.commit()
     if result.get("not_found"):
         raise HTTPException(404, "Job not found")
     # Mirror failures into the server journal so a stuck job is visible from the
@@ -177,25 +218,7 @@ async def requeue_job(
     if not job:
         raise HTTPException(404, "Job not found or not re-queueable")
 
-    rebuilt = False
-    if job.entity_type in ("invoice", "credit_note", "debit_note"):
-        try:
-            from app.routers.tally import _get_config, _get_company, _build_invoice_xml
-            from app.models.invoice import Invoice
-            inv = (await db.execute(
-                select(Invoice).where(Invoice.id == job.entity_id)
-            )).scalar_one_or_none()
-            if inv is not None:
-                cfg = await _get_config(db, current_user.company_id)
-                company = await _get_company(db, current_user.company_id)
-                new_xml, _err = await _build_invoice_xml(inv, company, cfg, db)
-                if new_xml:
-                    job.xml = new_xml
-                    job.company_name = (getattr(cfg, "tally_company_name", None)
-                                        or getattr(company, "name", None) or job.company_name)
-                    rebuilt = True
-        except Exception as e:
-            logging.getLogger(__name__).warning("requeue rebuild failed for job %s: %s", job_id, e)
+    rebuilt = await _rebuild_invoice_job_xml(db, job)
 
     job.status = "pending"
     job.attempts = 0
