@@ -938,14 +938,19 @@ async def _try_generate_irn(db: AsyncSession, inv, co):
         if not config or not config.is_enabled or not config.auto_generate_on_finalize:
             return
 
+        # IRN is ONLY for a GST tax invoice issued to a registered (B2B) party.
+        # NEVER for a Bill of Supply / cash (non_gst) invoice, and never for a B2C
+        # party with no GSTIN. Checked BEFORE the demo branch so a demo IRN is
+        # never stamped on a non-GST / cash invoice either.
+        if getattr(inv, "tax_type", None) != "gst":
+            return
+        if not inv.party or not getattr(inv.party, "gstin", None):
+            return
+
         # Demo mode — generate fake IRN+QR for PDF preview, no NIC API call
         if config.demo_mode:
             _generate_demo_irn(inv, co)
             _log.getLogger(__name__).info("Demo IRN generated for invoice %s", inv.invoice_no)
-            return
-
-        # Only B2B invoices with party GSTIN get IRN
-        if not inv.party or not inv.party.gstin:
             return
 
         from app.integrations.einvoice import EInvoiceClient, build_einvoice_payload
@@ -1003,6 +1008,13 @@ async def generate_irn(
     if not config or not config.is_enabled:
         raise HTTPException(400, "eInvoice is not configured or not enabled")
 
+    # IRN only applies to a GST tax invoice issued to a registered (B2B) party —
+    # never a Bill of Supply / cash invoice, never a B2C party with no GSTIN.
+    if getattr(inv, "tax_type", None) != "gst":
+        raise HTTPException(400, "IRN applies only to GST tax invoices, not a Bill of Supply / cash invoice")
+    if not inv.party or not inv.party.gstin:
+        raise HTTPException(400, "eInvoice requires a party with GSTIN (B2B)")
+
     co, _ = await _get_company_fy(db)
 
     # Demo mode — generate fake IRN+QR for PDF preview
@@ -1010,9 +1022,6 @@ async def generate_irn(
         _generate_demo_irn(inv, co)
         await db.commit()
         return await _load_invoice(db, invoice_id)
-
-    if not inv.party or not inv.party.gstin:
-        raise HTTPException(400, "eInvoice requires a party with GSTIN (B2B)")
 
     from app.integrations.einvoice import EInvoiceClient, build_einvoice_payload
 
