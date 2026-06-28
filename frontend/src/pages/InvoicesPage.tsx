@@ -231,15 +231,22 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
     setLines(prev => prev.map((l, i) => i === idx ? { ...l, ...patch } : l));
   }
 
+  // Tax Type drives whether GST is shown/charged at all. Cash / Bill of Supply
+  // (non_gst) → no GST column, no GST in totals; GST (Tax Invoice) → GST applies.
+  const isGst = form.tax_type === 'gst';
+  function lineBase(l: LineItem) {
+    return (parseFloat(l.quantity) || 0) * (parseFloat(l.rate) || 0);
+  }
+  function lineGstAmt(l: LineItem) {
+    return isGst ? lineBase(l) * (parseFloat(l.gst_rate) || 0) / 100 : 0;
+  }
   function lineTotal(l: LineItem) {
-    const qty = parseFloat(l.quantity) || 0;
-    const rate = parseFloat(l.rate) || 0;
-    const gst = parseFloat(l.gst_rate) || 0;
-    const amt = qty * rate;
-    return amt + (amt * gst / 100);
+    return lineBase(l) + lineGstAmt(l);
   }
 
-  const grandEstimate = lines.reduce((s, l) => s + lineTotal(l), 0);
+  const subTotalEst = lines.reduce((s, l) => s + lineBase(l), 0);
+  const gstTotalEst = lines.reduce((s, l) => s + lineGstAmt(l), 0);
+  const grandEstimate = subTotalEst + gstTotalEst;
 
   async function handleSubmit() {
     if (!walkIn && !form.party_id) { setError('Select a party or use Walk-in mode'); return; }
@@ -284,7 +291,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
           quantity: parseFloat(l.quantity),
           unit: l.unit,
           rate: parseFloat(l.rate),
-          gst_rate: parseFloat(l.gst_rate) || 0,
+          gst_rate: form.tax_type === 'gst' ? (parseFloat(l.gst_rate) || 0) : 0,
           sort_order: i,
         })),
       });
@@ -320,7 +327,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="gst">{t('invoice.gst')}</SelectItem>
-                  {usbAuthorized && <SelectItem value="non_gst">{t('invoice.nonGst')}</SelectItem>}
+                  {(usbAuthorized || form.tax_type === 'non_gst') && <SelectItem value="non_gst">{t('invoice.nonGst')}</SelectItem>}
                 </SelectContent>
               </Select>
             </div>
@@ -370,7 +377,13 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
                   autoFocus
                 />
               ) : (
-                <Select value={form.party_id || undefined} onValueChange={v => setForm(f => ({ ...f, party_id: v ?? '' }))}>
+                <Select value={form.party_id || undefined} onValueChange={v => {
+                  const pid = v ?? '';
+                  const p = parties.find(x => x.id === pid);
+                  // Cash party → Bill of Supply (non-GST); online party → GST tax invoice.
+                  setForm(f => ({ ...f, party_id: pid,
+                    ...(p ? { tax_type: p.default_payment_mode === 'cash' ? 'non_gst' : 'gst' } : {}) }));
+                }}>
                   <SelectTrigger>
                     <span className="truncate text-left flex-1">
                       {form.party_id
@@ -404,7 +417,9 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
               <div className="min-w-[620px] space-y-2">
               {lines.map((line, idx) => (
                 <div key={idx} className="grid gap-2 items-end"
-                  style={{ gridTemplateColumns: 'minmax(0,1.7fr) minmax(60px,0.8fr) minmax(72px,0.8fr) minmax(84px,1.1fr) minmax(58px,0.7fr) minmax(80px,1fr) 36px' }}>
+                  style={{ gridTemplateColumns: isGst
+                    ? 'minmax(0,1.7fr) minmax(60px,0.8fr) minmax(72px,0.8fr) minmax(84px,1.1fr) minmax(58px,0.7fr) minmax(80px,1fr) 36px'
+                    : 'minmax(0,1.9fr) minmax(70px,0.9fr) minmax(80px,0.9fr) minmax(96px,1.2fr) minmax(96px,1fr) 36px' }}>
                   <div className="space-y-1">
                     {idx === 0 && <Label className="text-sm font-medium">{t('invoice.productCol')}</Label>}
                     <Select value={line.product_id || undefined}
@@ -440,6 +455,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
                     <Input className="h-10 text-sm font-semibold w-full" type="number" min="0" step="0.01"
                       value={line.rate} onChange={e => updateLine(idx, { rate: e.target.value })} />
                   </div>
+                  {isGst && (
                   <div className="space-y-1 min-w-0">
                     {idx === 0 && <Label className="text-sm font-medium">{t('invoice.gstCol')}</Label>}
                     <Select value={line.gst_rate} onValueChange={v => updateLine(idx, { gst_rate: v ?? '0' })}>
@@ -449,6 +465,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
                       </SelectContent>
                     </Select>
                   </div>
+                  )}
                   <div className="text-right space-y-1">
                     {idx === 0 && <Label className="text-sm font-medium">{t('invoice.totalCol')}</Label>}
                     <p className="text-sm font-semibold font-mono h-10 flex items-center justify-end pr-1">
@@ -464,8 +481,10 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
               ))}
               </div>
             </div>
-            <div className="text-right mt-2 text-sm font-semibold">
-              {t('invoice.estTotal')} {INR(grandEstimate)}
+            <div className="text-right mt-2 space-y-0.5 text-sm">
+              {isGst && <div className="text-muted-foreground">{t('invoice.taxable', { defaultValue: 'Taxable' })}: {INR(subTotalEst)}</div>}
+              {isGst && <div className="text-muted-foreground">{t('invoice.gstAmount', { defaultValue: 'GST' })}: {INR(gstTotalEst)}</div>}
+              <div className="font-semibold">{t('invoice.estTotal')} {INR(grandEstimate)}</div>
             </div>
           </div>
 
@@ -688,15 +707,22 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
     setLines(prev => prev.map((l, i) => i === idx ? { ...l, ...patch } : l));
   }
 
+  // Tax Type drives whether GST is shown/charged at all. Cash / Bill of Supply
+  // (non_gst) → no GST column, no GST in totals; GST (Tax Invoice) → GST applies.
+  const isGst = form.tax_type === 'gst';
+  function lineBase(l: LineItem) {
+    return (parseFloat(l.quantity) || 0) * (parseFloat(l.rate) || 0);
+  }
+  function lineGstAmt(l: LineItem) {
+    return isGst ? lineBase(l) * (parseFloat(l.gst_rate) || 0) / 100 : 0;
+  }
   function lineTotal(l: LineItem) {
-    const qty = parseFloat(l.quantity) || 0;
-    const rate = parseFloat(l.rate) || 0;
-    const gst = parseFloat(l.gst_rate) || 0;
-    const amt = qty * rate;
-    return amt + (amt * gst / 100);
+    return lineBase(l) + lineGstAmt(l);
   }
 
-  const grandEstimate = lines.reduce((s, l) => s + lineTotal(l), 0);
+  const subTotalEst = lines.reduce((s, l) => s + lineBase(l), 0);
+  const gstTotalEst = lines.reduce((s, l) => s + lineGstAmt(l), 0);
+  const grandEstimate = subTotalEst + gstTotalEst;
 
   async function handleSave() {
     if (!walkIn && !form.party_id) { setError('Select a party or use Walk-in mode'); return; }
@@ -739,7 +765,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
           quantity: parseFloat(l.quantity),
           unit: l.unit,
           rate: parseFloat(l.rate),
-          gst_rate: parseFloat(l.gst_rate) || 0,
+          gst_rate: form.tax_type === 'gst' ? (parseFloat(l.gst_rate) || 0) : 0,
           sort_order: i,
         })),
       });
@@ -781,7 +807,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="gst">{t('invoice.gst')}</SelectItem>
-                  {usbAuthorized && <SelectItem value="non_gst">{t('invoice.nonGst')}</SelectItem>}
+                  {(usbAuthorized || form.tax_type === 'non_gst') && <SelectItem value="non_gst">{t('invoice.nonGst')}</SelectItem>}
                 </SelectContent>
               </Select>
             </div>
@@ -815,7 +841,13 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
                   autoFocus
                 />
               ) : (
-                <Select value={form.party_id || undefined} onValueChange={v => setForm(f => ({ ...f, party_id: v ?? '' }))}>
+                <Select value={form.party_id || undefined} onValueChange={v => {
+                  const pid = v ?? '';
+                  const p = parties.find(x => x.id === pid);
+                  // Cash party → Bill of Supply (non-GST); online party → GST tax invoice.
+                  setForm(f => ({ ...f, party_id: pid,
+                    ...(p ? { tax_type: p.default_payment_mode === 'cash' ? 'non_gst' : 'gst' } : {}) }));
+                }}>
                   <SelectTrigger>
                     <span className="truncate text-left flex-1">
                       {form.party_id
@@ -849,7 +881,9 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
               <div className="min-w-[620px] space-y-2">
               {lines.map((line, idx) => (
                 <div key={idx} className="grid gap-2 items-end"
-                  style={{ gridTemplateColumns: 'minmax(0,1.7fr) minmax(60px,0.8fr) minmax(72px,0.8fr) minmax(84px,1.1fr) minmax(58px,0.7fr) minmax(80px,1fr) 36px' }}>
+                  style={{ gridTemplateColumns: isGst
+                    ? 'minmax(0,1.7fr) minmax(60px,0.8fr) minmax(72px,0.8fr) minmax(84px,1.1fr) minmax(58px,0.7fr) minmax(80px,1fr) 36px'
+                    : 'minmax(0,1.9fr) minmax(70px,0.9fr) minmax(80px,0.9fr) minmax(96px,1.2fr) minmax(96px,1fr) 36px' }}>
                   <div className="space-y-1">
                     {idx === 0 && <Label className="text-sm font-medium">{t('invoice.productCol')}</Label>}
                     <Select value={line.product_id || undefined}
@@ -885,6 +919,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
                     <Input className="h-10 text-sm font-semibold w-full" type="number" min="0" step="0.01"
                       value={line.rate} onChange={e => updateLine(idx, { rate: e.target.value })} />
                   </div>
+                  {isGst && (
                   <div className="space-y-1 min-w-0">
                     {idx === 0 && <Label className="text-sm font-medium">{t('invoice.gstCol')}</Label>}
                     <Select value={line.gst_rate} onValueChange={v => updateLine(idx, { gst_rate: v ?? '0' })}>
@@ -894,6 +929,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
                       </SelectContent>
                     </Select>
                   </div>
+                  )}
                   <div className="text-right space-y-1">
                     {idx === 0 && <Label className="text-sm font-medium">{t('invoice.totalCol')}</Label>}
                     <p className="text-sm font-semibold font-mono h-10 flex items-center justify-end pr-1">
@@ -909,8 +945,10 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
               ))}
               </div>
             </div>
-            <div className="text-right mt-2 text-sm font-semibold">
-              {t('invoice.estTotal')} {INR(grandEstimate)}
+            <div className="text-right mt-2 space-y-0.5 text-sm">
+              {isGst && <div className="text-muted-foreground">{t('invoice.taxable', { defaultValue: 'Taxable' })}: {INR(subTotalEst)}</div>}
+              {isGst && <div className="text-muted-foreground">{t('invoice.gstAmount', { defaultValue: 'GST' })}: {INR(gstTotalEst)}</div>}
+              <div className="font-semibold">{t('invoice.estTotal')} {INR(grandEstimate)}</div>
             </div>
           </div>
 
