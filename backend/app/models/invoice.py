@@ -136,3 +136,7 @@ class InvoiceItem(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
     invoice: Mapped["Invoice"] = relationship(back_populates="items")
+    # noload by default (never lazy-load in async); eager-loaded where the product
+    # name/HSN is needed (e.g. the PDF query) so the invoice "Particulars" column
+    # falls back to the product name when the line has no explicit description.
+    product: Mapped["Product"] = relationship("Product", lazy="noload")

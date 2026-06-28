@@ -111,7 +111,7 @@ async def _load_invoice(db: AsyncSession, invoice_id: uuid.UUID) -> Invoice:
     result = await db.execute(
         select(Invoice)
         .options(
-            selectinload(Invoice.items),
+            selectinload(Invoice.items).selectinload(InvoiceItem.product),
             selectinload(Invoice.party),
         )
         .where(Invoice.id == invoice_id)
