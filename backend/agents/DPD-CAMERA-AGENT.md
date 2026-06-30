@@ -1,33 +1,49 @@
-# DPD — Camera Agent (Local-First / Cloudflare Tunnel Mode)
+# DPD — Camera Agent (Weighbridge Snapshots + Gate Camera Live Feed)
 
-Deployment guide for the Weighbridge Camera Agent using **Option 1: Local-First storage**.
+Deployment guide for the Weighbridge Camera Agent.
 
-Images are saved on the **client PC** and served via Cloudflare Tunnel.
-The VPS only stores the URL — no image data ever touches the VPS disk.
+The agent runs on the **client LAN PC** and serves two distinct purposes:
+
+1. **Weighbridge snapshots** — captures JPEGs from `cameras.front` / `cameras.top`
+   on each weighment event and notifies the cloud (Local-First via Cloudflare Tunnel,
+   or binary-upload fallback).
+2. **Gate Camera Live Feed** — continuously captures from `gate_cameras.entry` /
+   `gate_cameras.exit` every 3 s and pushes frames to the cloud so the
+   _Operations → Gate Cameras → Live_ page shows a live CCTV view.
+
+Both run inside the **same `WeighbridgeCameraAgent` service** from the same
+`camera_config.json`. No second agent, no second config file.
 
 ---
 
 ## Architecture
 
+### Weighbridge snapshots (event-driven)
 ```
-IP Camera (LAN)
-      │ HTTP snapshot
+Token 2nd weight → VPS backend
+  → BackgroundTask → POST /api/v1/gate/agent-pending
+  → Agent polls every 5 s → captures JPEG → saves locally → POSTs URL to cloud
+  → Stored in token_snapshots.file_path
+  → Owner browser loads via Cloudflare Tunnel (cam-{slug}.weighbridgesetu.com)
+```
+
+### Gate Camera Live Feed (continuous push, 3 s)
+```
+gate_cameras.entry/exit (LAN IPs)
+      │ HTTP snapshot every 3 s
       ▼
-Camera Agent (client PC)
-  ├── saves JPEG to D:\weighbridge\snapshots\{date}\{token_id}\{cam}_{stage}.jpg
-  ├── HTTP file server on :9005 (LocalSnapshotServer)
-  └── POSTs URL to cloud (/api/v1/cameras/agent-notify)
+GateLiveFeedPusher (inside camera_agent.py)
+  └── POST /api/v1/gate/push-snapshot/{entry|exit}
+        X-Agent-Key: <same agent_key from camera_config.json>
+        tenant_slug: <tenant>
               │
               ▼
-        VPS (weighbridgesetu.com)
-          stores URL in token_snapshots.file_path
+  VPS writes uploads/gate/latest/{slug}/{entry|exit}.jpg
               │
               ▼
-  Owner's browser (any location)
-    loads image from https://cam-{slug}.weighbridgesetu.com/{path}
-              │
-              ▼
-    Cloudflare Edge ──tunnel──► client PC :9005 ──► local JPEG file
+  GateCameraLivePage polls GET /api/v1/gate/latest-snapshot/{position} every 3 s
+  → serves the JPEG via /uploads static mount
+  → shows ● LIVE / ◑ LAST FRAME / ✕ OFFLINE status
 ```
 
 ---
@@ -131,6 +147,76 @@ Check it started:
 nssm status WeighbridgeCameraAgent
 # Expected: SERVICE_RUNNING
 ```
+
+---
+
+## Step 4a — Gate Camera Live Feed (entry + exit cameras)
+
+The Gate Camera Live Feed page (_Operations → Gate Cameras → Live_) shows a
+real-time CCTV view of the entry and exit lanes. It is powered by the **same
+`WeighbridgeCameraAgent` service** — no second agent is required.
+
+### Add gate cameras to `camera_config.json`
+
+Open `C:\weighbridge-agent\camera_config.json` and add a `gate_cameras` block:
+
+```json
+{
+  "cloud_url": "https://acme.weighbridgesetu.com",
+  "tenant_slug": "acme-minerals",
+  "agent_key": "...",
+  "cameras": { "front": {...}, "top": {...} },
+  "gate_cameras": {
+    "entry": {
+      "url": "http://192.168.0.223/cgi-bin/snapshot.cgi",
+      "username": "admin",
+      "password": "admin123"
+    },
+    "exit": {
+      "url": "http://192.168.0.224/cgi-bin/snapshot.cgi",
+      "username": "admin",
+      "password": "admin123"
+    }
+  }
+}
+```
+
+> If the client only has one gate camera, set `exit.url` to the same IP as
+> `entry.url` (or leave it `""` to show only the entry feed).
+
+### Restart the service
+
+```powershell
+nssm restart WeighbridgeCameraAgent
+```
+
+### Verify
+
+```powershell
+Get-Content C:\weighbridge-agent\logs\camera_agent.log -Tail 10
+```
+
+Expected lines:
+```
+[INFO] Gate Entry: http://192.168.0.223/cgi-bin/snapshot.cgi (live feed)
+[INFO] Gate Exit : http://192.168.0.224/cgi-bin/snapshot.cgi (live feed)
+[INFO] Gate live feed pusher started (every 3s per camera)
+```
+
+After ~3 s the Gate Camera Live page shows `● ENTRY LIVE` / `● EXIT LIVE`.
+
+### Updating an existing install
+
+If the agent is already running and you only need to add gate cameras, use the
+one-click updater instead of the full deploy script:
+
+```powershell
+cd C:\path\to\weighbridge-source\backend\agents
+.\Update-CameraAgent.ps1
+```
+
+This stops the service, replaces `camera_agent.py`, adds the `gate_cameras`
+section interactively, and restarts — takes under a minute.
 
 ---
 

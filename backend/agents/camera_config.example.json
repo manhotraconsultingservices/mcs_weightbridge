@@ -18,5 +18,17 @@
       "username": "",
       "password": ""
     }
+  },
+  "gate_cameras": {
+    "entry": {
+      "url": "http://192.168.0.223/cgi-bin/snapshot.cgi",
+      "username": "",
+      "password": ""
+    },
+    "exit": {
+      "url": "http://192.168.0.224/cgi-bin/snapshot.cgi",
+      "username": "",
+      "password": ""
+    }
   }
 }

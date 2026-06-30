@@ -28,6 +28,14 @@
 .PARAMETER TopCameraUrl
     Top camera snapshot URL (e.g., http://192.168.0.103/cgi-bin/snapshot.cgi)
 
+.PARAMETER EntryCameraUrl
+    Gate ENTRY camera snapshot URL (e.g., http://192.168.0.223/cgi-bin/snapshot.cgi).
+    Leave blank if there is no dedicated entry camera.
+
+.PARAMETER ExitCameraUrl
+    Gate EXIT camera snapshot URL (e.g., http://192.168.0.224/cgi-bin/snapshot.cgi).
+    Leave blank if there is no dedicated exit camera.
+
 .PARAMETER CameraUser
     Camera authentication username
 
@@ -71,12 +79,14 @@ param(
     [string]$CloudUrl     = "https://weighbridgesetu.com",
     [string]$TenantSlug   = "",
     [string]$AgentKey     = "",
-    [string]$FrontCameraUrl = "",
-    [string]$TopCameraUrl   = "",
-    [string]$CameraUser     = "",
-    [string]$CameraPass     = "",
-    [string]$ComPort        = "",
-    [int]$BaudRate          = 9600,
+    [string]$FrontCameraUrl  = "",
+    [string]$TopCameraUrl    = "",
+    [string]$EntryCameraUrl  = "",
+    [string]$ExitCameraUrl   = "",
+    [string]$CameraUser      = "",
+    [string]$CameraPass      = "",
+    [string]$ComPort         = "",
+    [int]$BaudRate           = 9600,
     [switch]$Uninstall
 )
 
@@ -314,10 +324,11 @@ if ($deployCamera) {
         Write-Info "  Hikvision:        http://IP/Streaming/channels/1/picture"
         Write-Info "  Generic:          http://IP/snap.jpg"
         Write-Host ""
+        Write-Info "── Weighbridge cameras (captured at each weighment) ──"
         $FrontCameraUrl = Prompt-Value "Front camera URL" "http://192.168.0.101/cgi-bin/snapshot.cgi"
     }
     if ([string]::IsNullOrWhiteSpace($TopCameraUrl)) {
-        $TopCameraUrl = Prompt-Value "Top camera URL" "http://192.168.0.103/cgi-bin/snapshot.cgi"
+        $TopCameraUrl = Prompt-Value "Top camera URL  " "http://192.168.0.103/cgi-bin/snapshot.cgi"
     }
     if ([string]::IsNullOrWhiteSpace($CameraUser)) {
         $CameraUser = Prompt-Value "Camera username (enter for none)" ""
@@ -325,6 +336,19 @@ if ($deployCamera) {
     if ([string]::IsNullOrWhiteSpace($CameraPass) -and -not [string]::IsNullOrWhiteSpace($CameraUser)) {
         $CameraPass = Prompt-Value "Camera password" ""
     }
+
+    Write-Host ""
+    Write-Info "── Gate cameras (live feed on Gate Camera Live page) ──"
+    Write-Info "   Leave blank to skip — gate live feed will not show images."
+    if ([string]::IsNullOrWhiteSpace($EntryCameraUrl)) {
+        $EntryCameraUrl = Prompt-Value "Entry camera URL (blank to skip)" ""
+    }
+    if ([string]::IsNullOrWhiteSpace($ExitCameraUrl)) {
+        $ExitCameraUrl  = Prompt-Value "Exit  camera URL (blank to skip)" ""
+    }
+    # Gate cameras may share the same credentials as weighbridge cameras (same brand / same LAN)
+    $GateCameraUser = $CameraUser
+    $GateCameraPass = $CameraPass
 
     $cameraConfig = @{
         cloud_url         = $CloudUrl
@@ -347,6 +371,18 @@ if ($deployCamera) {
                 password = $CameraPass
             }
         }
+        gate_cameras      = @{
+            entry = @{
+                url      = $EntryCameraUrl
+                username = $GateCameraUser
+                password = $GateCameraPass
+            }
+            exit  = @{
+                url      = $ExitCameraUrl
+                username = $GateCameraUser
+                password = $GateCameraPass
+            }
+        }
     }
 
     # Write UTF-8 without BOM. `Set-Content -Encoding UTF8` on Windows PowerShell
@@ -356,8 +392,10 @@ if ($deployCamera) {
     $cameraJson = $cameraConfig | ConvertTo-Json -Depth 4
     [System.IO.File]::WriteAllText($cameraConfigPath, $cameraJson, [System.Text.UTF8Encoding]::new($false))
     Write-OK "camera_config.json saved"
-    Write-Info "Front: $FrontCameraUrl"
-    Write-Info "Top:   $TopCameraUrl"
+    Write-Info "Front (weighbridge): $FrontCameraUrl"
+    Write-Info "Top   (weighbridge): $TopCameraUrl"
+    if ($EntryCameraUrl) { Write-Info "Entry (gate live):   $EntryCameraUrl" }
+    if ($ExitCameraUrl)  { Write-Info "Exit  (gate live):   $ExitCameraUrl" }
 }
 
 # ── Step 7: Configure Scale Agent ───────────────────────────────────────────
@@ -568,11 +606,15 @@ Write-Host ""
 
 if ($deployCamera) {
     Write-Host "  Camera Agent:" -ForegroundColor Cyan
-    Write-Host "    Task:       WeighbridgeCameraAgent" -ForegroundColor Gray
-    Write-Host "    Status API: http://localhost:9003" -ForegroundColor Gray
-    Write-Host "    Live Feed:  ws://localhost:9004/live/front" -ForegroundColor Gray
-    Write-Host "                ws://localhost:9004/live/top" -ForegroundColor Gray
-    Write-Host "    Config:     $InstallDir\camera_config.json" -ForegroundColor Gray
+    Write-Host "    Task:         WeighbridgeCameraAgent" -ForegroundColor Gray
+    Write-Host "    Status API:   http://localhost:9003" -ForegroundColor Gray
+    Write-Host "    Live Feed:    ws://localhost:9004/live/front" -ForegroundColor Gray
+    Write-Host "                  ws://localhost:9004/live/top" -ForegroundColor Gray
+    Write-Host "    Config:       $InstallDir\camera_config.json" -ForegroundColor Gray
+    if ($EntryCameraUrl -or $ExitCameraUrl) {
+        Write-Host "    Gate Live:    entry + exit cameras push frames every 3 s" -ForegroundColor Gray
+        Write-Host "                  → visible on app: Operations → Gate Cameras → Live" -ForegroundColor Gray
+    }
     Write-Host ""
 }
 
