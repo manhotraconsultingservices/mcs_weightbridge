@@ -232,7 +232,8 @@ export default function GatePassRegisterPage() {
       .then(r => setData(r.data))
       .catch(e => {
         setData(null);
-        setErr((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to load gate pass data. Check the console for details.');
+        const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+        setErr(typeof detail === 'string' ? detail : 'Failed to load gate pass data. Check the date range.');
       })
       .finally(() => setLoading(false));
   }, [fromDate, toDate, status, purpose, vehicleNo]);

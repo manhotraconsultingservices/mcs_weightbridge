@@ -156,3 +156,6 @@ nssm.exe
 *.cache
 .cache/
 *.swp
+
+# Local-only reference materials (sales/marketing, demo, test scripts) — never pushed
+/Reference Documents/

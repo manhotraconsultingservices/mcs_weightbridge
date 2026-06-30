@@ -1,7 +1,7 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
@@ -89,7 +89,10 @@ async def list_products(
     if is_raw_material is not None:
         base_q = base_q.where(Product.is_raw_material == is_raw_material)
     if search:
-        base_q = base_q.where(Product.name.ilike(f"%{search}%"))
+        base_q = base_q.where(or_(
+            Product.name.ilike(f"%{search}%"),
+            Product.hsn_code.ilike(f"%{search}%"),
+        ))
 
     total = (await db.execute(
         select(func.count()).select_from(base_q.subquery())

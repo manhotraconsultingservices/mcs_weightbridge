@@ -399,6 +399,13 @@ export function DataTable<T>({
                           <option key={o} value={o}>{o}</option>
                         ))}
                       </select>
+                    ) : c.type === 'date' ? (
+                      <Input
+                        type="date"
+                        className="h-7 text-xs px-2"
+                        value={filters[c.key] ?? ''}
+                        onChange={e => setFilter(c.key, e.target.value)}
+                      />
                     ) : (
                       <Input
                         className="h-7 text-xs px-2"
