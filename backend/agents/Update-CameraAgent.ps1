@@ -103,6 +103,10 @@ if ($taskExists) {
     if ($nssm) {
         & $nssm.Source stop WeighbridgeCameraAgent 2>$null
         Write-OK "NSSM service stopped"
+    } else {
+        # NSSM not in PATH -- use built-in Stop-Service (works for NSSM-registered services too)
+        Stop-Service -Name "WeighbridgeCameraAgent" -Force -ErrorAction SilentlyContinue
+        Write-OK "Service stopped (via Stop-Service)"
     }
 } else {
     Write-Warn "No running WeighbridgeCameraAgent found -- continuing"
@@ -233,6 +237,10 @@ if ($taskExists) {
     if ($nssm) {
         & $nssm.Source start WeighbridgeCameraAgent 2>$null
         Write-OK "NSSM service started"
+    } else {
+        # NSSM not in PATH -- use built-in Start-Service
+        Start-Service -Name "WeighbridgeCameraAgent" -ErrorAction SilentlyContinue
+        Write-OK "Service started (via Start-Service)"
     }
 } else {
     Write-Warn "Service not found -- start it manually:"
