@@ -1313,12 +1313,24 @@ async def gate_pass_register(
             gp.token_id,
             t.token_no,
             t.net_weight,
-            pr.name AS product_name,
-            u.username AS created_by_name
+            COALESCE(pr.name, tp.name) AS product_name,
+            u.username AS created_by_name,
+            inv.id   AS invoice_id,
+            inv.invoice_no
         FROM gate_passes gp
-        LEFT JOIN tokens t ON t.id = gp.token_id
-        LEFT JOIN products pr ON pr.id = gp.product_id
-        LEFT JOIN users u ON u.id = gp.created_by
+        LEFT JOIN tokens t       ON t.id  = gp.token_id
+        LEFT JOIN products pr    ON pr.id = gp.product_id
+        LEFT JOIN products tp    ON tp.id = t.product_id
+        LEFT JOIN users u        ON u.id  = gp.created_by
+        LEFT JOIN LATERAL (
+            SELECT id, invoice_no FROM invoices
+            WHERE token_id     = gp.token_id
+              AND invoice_type = 'sale'
+              AND status       = 'final'
+              AND company_id   = gp.company_id
+            ORDER BY revision_no DESC
+            LIMIT 1
+        ) inv ON gp.token_id IS NOT NULL
         WHERE {where}
         ORDER BY gp.pass_date DESC, gp.entry_time DESC
     """)
@@ -1356,6 +1368,8 @@ async def gate_pass_register(
             "exit_photo_path": r["exit_photo_path"],
             "notes": r["notes"],
             "created_by": r["created_by_name"],
+            "invoice_id": str(r["invoice_id"]) if r["invoice_id"] else None,
+            "invoice_no": r["invoice_no"],
         })
 
     return {

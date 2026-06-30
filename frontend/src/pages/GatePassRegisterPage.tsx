@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { DoorOpen, RefreshCw, Camera, ImageOff, X, ExternalLink } from 'lucide-react';
+import { DoorOpen, RefreshCw, Camera, ImageOff, X, ExternalLink, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -31,6 +31,8 @@ interface GatePassRow {
   exit_photo_path: string | null;
   notes: string | null;
   created_by: string | null;
+  invoice_id: string | null;
+  invoice_no: string | null;
 }
 
 interface GatePassRegister {
@@ -221,6 +223,19 @@ export default function GatePassRegisterPage() {
   const [selectedPass, setSelectedPass] = useState<GatePassRow | null>(null);
   const [tokenModalId, setTokenModalId] = useState<string | null>(null);
 
+  const handleInvoicePdf = useCallback((invoiceId: string, invoiceNo: string) => {
+    api.get(`/api/v1/invoices/${invoiceId}/pdf`, { responseType: 'blob' })
+      .then(res => {
+        const url = URL.createObjectURL(res.data as Blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${invoiceNo}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      })
+      .catch(() => alert('Failed to download invoice PDF'));
+  }, []);
+
   const fetch = useCallback(() => {
     setLoading(true);
     setErr('');
@@ -286,6 +301,18 @@ export default function GatePassRegisterPage() {
         </button>
       ) : <span className="text-muted-foreground">—</span>,
       exportValue: r => r.token_no ?? '' },
+    { key: 'invoice_no', label: 'Invoice', accessor: r => r.invoice_no ?? '',
+      format: (v, row) => v ? (
+        <button
+          className="text-primary underline hover:opacity-75 font-mono flex items-center gap-1"
+          onClick={() => row.invoice_id && handleInvoicePdf(row.invoice_id, String(v))}
+          title="Download invoice PDF"
+        >
+          <FileText className="h-3 w-3" />
+          {String(v)}
+        </button>
+      ) : <span className="text-muted-foreground">—</span>,
+      exportValue: r => r.invoice_no ?? '' },
     { key: 'net_weight_mt', label: 'Net (MT)', type: 'number', align: 'right',
       accessor: r => r.net_weight_mt ?? '',
       format: v => v !== '' ? `${Number(v).toFixed(3)} MT` : '—' },
