@@ -975,6 +975,10 @@ async def gate_agent_pending(
     from app.database import get_tenant_session
     _session_cm = await get_tenant_session(tenant_slug if settings.MULTI_TENANT else None)
     async with _session_cm as db:
+        gate_cfg = await _get_gate_cam_cfg(db)
+        if not gate_cfg.get("capture_enabled", False):
+            return {"events": [], "count": 0}
+
         rows = (await db.execute(text("""
             SELECT id, gate_pass_no, vehicle_no,
                    CASE

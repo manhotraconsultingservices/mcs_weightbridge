@@ -12,6 +12,7 @@ import {
   ChevronDown, ChevronUp, Eye, FileText, Link2, Loader2, LogIn, LogOut,
   Pencil, RefreshCw, Search, Truck,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -583,7 +584,7 @@ function TruckOutDialog({ gp, open, onClose, onExited }: {
 }
 
 // ── Inside card — big, visual ─────────────────────────────────────────────────
-function InsideCard({ gp, onRefresh, isGuard }: { gp: GatePass; onRefresh: () => void; isGuard: boolean }) {
+function InsideCard({ gp, onRefresh, isGuard, captureEnabled }: { gp: GatePass; onRefresh: () => void; isGuard: boolean; captureEnabled: boolean }) {
   const { t } = useTranslation();
   const [exitOpen, setExitOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -662,7 +663,11 @@ function InsideCard({ gp, onRefresh, isGuard }: { gp: GatePass; onRefresh: () =>
           gp={gp}
           open={exitOpen}
           onClose={() => setExitOpen(false)}
-          onExited={() => { setExitOpen(false); onRefresh(); }}
+          onExited={() => {
+            setExitOpen(false);
+            onRefresh();
+            if (captureEnabled) toast.info('Gate pass closed. Camera capturing exit photo…');
+          }}
         />
       )}
       {editOpen && (
@@ -678,7 +683,7 @@ function InsideCard({ gp, onRefresh, isGuard }: { gp: GatePass; onRefresh: () =>
 }
 
 // ── History row (all-today compact) ──────────────────────────────────────────
-function HistoryRow({ gp, onRefresh, isGuard }: { gp: GatePass; onRefresh: () => void; isGuard: boolean }) {
+function HistoryRow({ gp, onRefresh, isGuard, captureEnabled }: { gp: GatePass; onRefresh: () => void; isGuard: boolean; captureEnabled: boolean }) {
   const { t } = useTranslation();
   const [exitOpen, setExitOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -751,7 +756,11 @@ function HistoryRow({ gp, onRefresh, isGuard }: { gp: GatePass; onRefresh: () =>
           gp={gp}
           open={exitOpen}
           onClose={() => setExitOpen(false)}
-          onExited={() => { setExitOpen(false); onRefresh(); }}
+          onExited={() => {
+            setExitOpen(false);
+            onRefresh();
+            if (captureEnabled) toast.info('Gate pass closed. Camera capturing exit photo…');
+          }}
         />
       )}
       {editOpen && (
@@ -776,8 +785,15 @@ export default function GatePassPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [newOpen, setNewOpen] = useState(false);
+  const [captureEnabled, setCaptureEnabled] = useState(false);
 
   const todayRef = useRef(new Date().toISOString().split('T')[0]);
+
+  useEffect(() => {
+    api.get<{ capture_enabled?: boolean }>('/api/v1/app-settings/gate-camera-config')
+      .then(r => setCaptureEnabled(r.data.capture_enabled ?? false))
+      .catch(() => { /* feature off when config unavailable */ });
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -895,7 +911,7 @@ export default function GatePassPage() {
               <p className="text-lg">{search ? 'No matching vehicles' : t('gate.noPassesInside')}</p>
             </div>
           ) : (
-            filtered.map(gp => <InsideCard key={gp.id} gp={gp} onRefresh={load} isGuard={isGuard} />)
+            filtered.map(gp => <InsideCard key={gp.id} gp={gp} onRefresh={load} isGuard={isGuard} captureEnabled={captureEnabled} />)
           )}
         </TabsContent>
 
@@ -907,7 +923,7 @@ export default function GatePassPage() {
           ) : filtered.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">{t('gate.noPassesToday')}</div>
           ) : (
-            filtered.map(gp => <HistoryRow key={gp.id} gp={gp} onRefresh={load} isGuard={isGuard} />)
+            filtered.map(gp => <HistoryRow key={gp.id} gp={gp} onRefresh={load} isGuard={isGuard} captureEnabled={captureEnabled} />)
           )}
         </TabsContent>
       </Tabs>
@@ -915,7 +931,11 @@ export default function GatePassPage() {
       <TruckInDialog
         open={newOpen}
         onClose={() => setNewOpen(false)}
-        onCreated={() => { setNewOpen(false); load(); }}
+        onCreated={() => {
+          setNewOpen(false);
+          load();
+          if (captureEnabled) toast.info('Gate pass created. Camera capturing entry photo…');
+        }}
       />
     </div>
   );

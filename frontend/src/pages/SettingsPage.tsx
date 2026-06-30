@@ -3045,6 +3045,7 @@ interface GateCameraCfg {
   agent_key: string;
   eod_alert_time: string;
   eod_alert_enabled: boolean;
+  capture_enabled: boolean;
 }
 const GATE_CAM_DEFAULT: GateCameraCfg = {
   entry: { enabled: false, label: 'Entry Gate Camera', snapshot_url: '', username: 'admin', password: '' },
@@ -3053,6 +3054,7 @@ const GATE_CAM_DEFAULT: GateCameraCfg = {
   agent_key: '',
   eod_alert_time: '20:00',
   eod_alert_enabled: true,
+  capture_enabled: false,
 };
 
 function GateCameraSlotEditor({
@@ -3149,6 +3151,20 @@ function GateCameraSettingsTab() {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center gap-4 rounded-lg border p-4">
+        <Switch
+          checked={cfg.capture_enabled ?? false}
+          onCheckedChange={v => setCfg(c => ({ ...c, capture_enabled: v }))}
+        />
+        <div>
+          <p className="font-medium text-sm">Automatic gate photo capture</p>
+          <p className="text-xs text-muted-foreground">
+            Camera agent captures an entry photo when a gate pass is created and an exit photo when it is closed.
+            Requires Gate Camera Agent running on-site.
+          </p>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <GateCameraSlotEditor pos="entry" slot={cfg.entry}
           onChange={s => setCfg(c => ({ ...c, entry: s }))} />

@@ -803,6 +803,7 @@ _GATE_CAM_DEFAULT: dict = {
     "agent_key": "",
     "eod_alert_time": "20:00",
     "eod_alert_enabled": True,
+    "capture_enabled": False,
 }
 
 
@@ -822,7 +823,7 @@ def _mask_gate_cam(cfg: dict) -> dict:
 @router.get("/gate-camera-config")
 async def get_gate_camera_config(
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_role("admin")),
+    current_user=Depends(get_current_user),
 ):
     raw = await _get_raw(db, GATE_CAM_CFG_KEY)
     cfg = json.loads(raw) if raw else _GATE_CAM_DEFAULT
@@ -849,7 +850,7 @@ async def update_gate_camera_config(
         merged["webhook_secret"] = payload["webhook_secret"]
     if "agent_key" in payload and payload["agent_key"] != "***":
         merged["agent_key"] = payload["agent_key"]
-    for k in ("eod_alert_time", "eod_alert_enabled"):
+    for k in ("eod_alert_time", "eod_alert_enabled", "capture_enabled"):
         if k in payload:
             merged[k] = payload[k]
     await _upsert(db, GATE_CAM_CFG_KEY, json.dumps(merged))
