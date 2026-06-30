@@ -63,6 +63,15 @@ DEFAULT_CONFIG = {
     "poll_interval_sec": 5,
     "status_port": 9003,
     "ws_port": 9004,
+    # ── Local-first snapshot storage (Cloudflare Tunnel) ──────────────────────
+    # Set snapshot_serve_url to enable local-first mode.  The agent saves JPEGs
+    # to local_save_dir and serves them via file_serve_port.  The Cloudflare
+    # Tunnel exposes that port as snapshot_serve_url so the owner can view
+    # images from anywhere — no binary upload to the VPS.
+    # Leave snapshot_serve_url empty to fall back to the original upload mode.
+    "local_save_dir": "D:\\weighbridge\\snapshots",
+    "snapshot_serve_url": "",   # e.g. https://cam-acme.weighbridgesetu.com
+    "file_serve_port": 9005,
     "cameras": {
         "front": {
             "label": "Front View",
@@ -156,6 +165,46 @@ def setup_wizard():
         cfg["gate_cameras"]["exit"]["url"] = gate_exit_url
         cfg["gate_cameras"]["exit"]["username"] = cam_user
         cfg["gate_cameras"]["exit"]["password"] = cam_pass
+
+    print("\n--- Snapshot Storage Mode ---")
+    print("Option 1 (recommended): Local-first via Cloudflare Tunnel")
+    print("  Images saved on THIS PC.  Cloudflare Tunnel exposes them remotely.")
+    print("  The server only stores the URL — no image data uploaded to VPS.")
+    print()
+    print("Option 2 (legacy): Upload binary to VPS")
+    print("  Leave snapshot_serve_url blank to keep the old upload behaviour.")
+    print()
+
+    serve_url = input("Snapshot serve URL (e.g. https://cam-acme.weighbridgesetu.com) [leave blank for upload mode]: ").strip()
+    cfg["snapshot_serve_url"] = serve_url
+
+    if serve_url:
+        default_dir = cfg["local_save_dir"]
+        save_dir = input(f"Local snapshot save directory [{default_dir}]: ").strip() or default_dir
+        cfg["local_save_dir"] = save_dir
+        file_port = input(f"Local file server port [{cfg['file_serve_port']}]: ").strip()
+        if file_port.isdigit():
+            cfg["file_serve_port"] = int(file_port)
+
+        print()
+        print("  ┌─────────────────────────────────────────────────────────┐")
+        print("  │  Cloudflare Tunnel setup (one-time, ~5 min)             │")
+        print("  │                                                         │")
+        print(f"  │  1. Edit: C:\\cloudflared\\config.yml                     │")
+        print(f"  │     Add these lines:                                    │")
+        print(f"  │       - hostname: {serve_url.replace('https://',''):<37}│")
+        print(f"  │         service: http://localhost:{cfg['file_serve_port']:<24}│")
+        print(f"  │                                                         │")
+        print(f"  │  2. Restart the Cloudflare Tunnel service:              │")
+        print(f"  │       nssm restart cloudflared                          │")
+        print(f"  │                                                         │")
+        print(f"  │  3. Verify: open {serve_url}/test in a browser  │")
+        print(f"  │     (after first snapshot is captured)                  │")
+        print(f"  └─────────────────────────────────────────────────────────┘")
+        print()
+    else:
+        print("  Upload mode selected — images will be uploaded to the VPS.")
+        print()
 
     save_config(cfg)
     print(f"\n  Config saved: {CONFIG_FILE}")
@@ -316,6 +365,95 @@ class CameraCapturer:
 
         return results
 
+    def capture_local(self, token_id: str, weight_stage: str = "second_weight") -> dict:
+        """Capture from all cameras, save to local disk, notify cloud with URL.
+
+        Local-first mode (Option 1 — Cloudflare Tunnel):
+          - JPEG saved to  {local_save_dir}/{YYYYMMDD}/{token_id}/{camera}_{stage}.jpg
+          - Local file server (port file_serve_port) serves the file
+          - Cloudflare Tunnel exposes the file server as snapshot_serve_url
+          - Only the URL is POSTed to the cloud (/cameras/agent-notify) — no binary upload
+
+        Falls back gracefully to capture_and_upload() if snapshot_serve_url is not set.
+        """
+        import requests
+
+        serve_url = self.cfg.get("snapshot_serve_url", "").rstrip("/")
+        if not serve_url:
+            return self.capture_and_upload(token_id, weight_stage)
+
+        save_dir_root = Path(self.cfg.get("local_save_dir", "D:\\weighbridge\\snapshots"))
+        date_str = datetime.now().strftime("%Y%m%d")
+        save_dir = save_dir_root / date_str / token_id
+        try:
+            save_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            log.error("Cannot create snapshot dir %s: %s — falling back to upload", save_dir, e)
+            return self.capture_and_upload(token_id, weight_stage)
+
+        notify_url = f"{self.cfg['cloud_url'].rstrip('/')}/api/v1/cameras/agent-notify"
+        results = {}
+
+        for camera_id in ("front", "top"):
+            cam = self.cfg.get("cameras", {}).get(camera_id, {})
+            cam_url = cam.get("url", "")
+            if not cam_url:
+                continue
+
+            log.info("Capturing %s: %s", camera_id, cam_url)
+
+            image_data = self._capture_single(cam_url, cam, camera_id)
+            if image_data is None:
+                log.warning("Camera %s FAILED after 3 retries", camera_id)
+                results[camera_id] = {"success": False, "error": "Capture failed after retries"}
+                self.error_count += 1
+                continue
+
+            # Save to local disk
+            ts = datetime.now().strftime("%H%M%S")
+            filename = f"{camera_id}_{weight_stage}_{ts}.jpg"
+            filepath = save_dir / filename
+            try:
+                filepath.write_bytes(image_data)
+            except Exception as e:
+                log.error("Failed to save %s: %s", filepath, e)
+                results[camera_id] = {"success": False, "error": str(e)}
+                self.error_count += 1
+                continue
+
+            log.info("Saved %s: %d bytes → %s", camera_id, len(image_data), filepath)
+
+            # Build the publicly accessible URL (via Cloudflare Tunnel)
+            rel_path = f"{date_str}/{token_id}/{filename}"
+            file_url = f"{serve_url}/{rel_path}"
+
+            # Notify cloud with URL only (no binary)
+            try:
+                resp = requests.post(notify_url, data={
+                    "token_id": token_id,
+                    "camera_id": camera_id,
+                    "weight_stage": weight_stage,
+                    "file_url": file_url,
+                    "tenant_slug": self.cfg["tenant_slug"],
+                    "agent_key": self.cfg["agent_key"],
+                }, timeout=15)
+                if resp.status_code == 200:
+                    log.info("Notified cloud: %s → %s", camera_id, file_url)
+                    results[camera_id] = {"success": True, "url": file_url}
+                    self.capture_count += 1
+                else:
+                    log.warning("Notify %s failed: HTTP %d", camera_id, resp.status_code)
+                    results[camera_id] = {"success": False, "error": f"Notify HTTP {resp.status_code}"}
+                    self.error_count += 1
+            except requests.RequestException as e:
+                log.warning("Notify %s failed: %s — image saved locally at %s", camera_id, e, filepath)
+                results[camera_id] = {"success": False, "error": str(e), "local_path": str(filepath)}
+                self.error_count += 1
+
+            time.sleep(0.5)
+
+        return results
+
 
 # ── Event Listener ───────────────────────────────────────────────────────────
 
@@ -366,7 +504,12 @@ class EventListener:
                                  evt.get("token_no", "?"), evt.get("vehicle_no", "?"),
                                  evt["weight_stage"])
 
-                        self.capturer.capture_and_upload(evt["token_id"], evt["weight_stage"])
+                        # Local-first (Tunnel) mode when snapshot_serve_url is set;
+                        # fall back to binary upload when it's not configured.
+                        if self.cfg.get("snapshot_serve_url"):
+                            self.capturer.capture_local(evt["token_id"], evt["weight_stage"])
+                        else:
+                            self.capturer.capture_and_upload(evt["token_id"], evt["weight_stage"])
                         self._processed[key] = time.time()
 
                         while len(self._processed) > 1000:
@@ -608,6 +751,92 @@ class StatusServer:
         log.info("Status API: http://127.0.0.1:%d", self.port)
 
 
+# ── Local Snapshot File Server ───────────────────────────────────────────────
+
+class LocalSnapshotServer:
+    """Serves locally-saved snapshot JPEGs over HTTP (port 9005 by default).
+
+    The Cloudflare Tunnel exposes this port as the tenant's snapshot hostname
+    (e.g. https://cam-acme.weighbridgesetu.com).  Browsers — on-site or
+    outside the plant — load images directly from this server via the tunnel
+    without any binary data touching the VPS.
+
+    URL pattern:
+      http://localhost:9005/{YYYYMMDD}/{token_id}/{camera}_{stage}_{HHmmss}.jpg
+
+    Security:
+      - Directory traversal blocked: all requests are resolved against
+        save_dir; any path that escapes is rejected with 403.
+      - Files are served read-only; no PUT/DELETE accepted.
+      - CORS headers allow any origin (the cloud-hosted frontend loads images
+        cross-origin; the Tunnel terminates TLS so only it sees this HTTP).
+    """
+
+    def __init__(self, save_dir: str, port: int = 9005):
+        self.save_dir = Path(save_dir)
+        self.port = port
+
+    def start(self):
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+
+        save_dir = self.save_dir
+        port = self.port
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                url_path = self.path.split("?")[0].lstrip("/")
+
+                # Prevent directory traversal
+                try:
+                    target = (save_dir / url_path).resolve()
+                    target.relative_to(save_dir.resolve())
+                except (ValueError, Exception):
+                    self.send_response(403)
+                    self.end_headers()
+                    return
+
+                # Health-check: GET / → 200 OK
+                if url_path == "" or url_path == "/":
+                    body = b"snapshot server ok"
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/plain")
+                    self.send_header("Content-Length", str(len(body)))
+                    self._cors()
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+
+                if not target.is_file():
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+
+                data = target.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self._cors()
+                self.end_headers()
+                self.wfile.write(data)
+
+            def _cors(self):
+                self.send_header("Access-Control-Allow-Origin", "*")
+
+            def log_message(self, *args):
+                pass  # suppress per-request noise; errors surface elsewhere
+
+        def _serve():
+            try:
+                HTTPServer(("0.0.0.0", port), Handler).serve_forever()
+            except OSError as e:
+                log.warning("Snapshot file server port %d: %s", port, e)
+
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+        threading.Thread(target=_serve, daemon=True).start()
+        log.info("Snapshot file server: http://0.0.0.0:%d/ (save dir: %s)", port, self.save_dir)
+
+
 # ── WebSocket Live Server ────────────────────────────────────────────────────
 
 class WebSocketLiveServer:
@@ -806,7 +1035,7 @@ def main():
         sys.exit(1)
 
     print()
-    print("=" * 50)
+    print("=" * 56)
     print("  Weighbridge Camera Agent")
     print(f"  Cloud:  {cfg['cloud_url']}")
     print(f"  Tenant: {cfg['tenant_slug']}")
@@ -814,7 +1043,16 @@ def main():
     for cid in ("front", "top"):
         if cid in cams and cams[cid].get("url"):
             print(f"  {cid.capitalize():6s}: {cams[cid]['url']}")
-    print("=" * 50)
+    if cfg.get("snapshot_serve_url"):
+        _save_dir = cfg.get("local_save_dir", "D:\\weighbridge\\snapshots")
+        _file_port = cfg.get("file_serve_port", 9005)
+        print("  Mode:   Local-first (Cloudflare Tunnel)")
+        print(f"  SaveTo: {_save_dir}")
+        print(f"  Serve:  http://localhost:{_file_port}/")
+        print(f"  Public: {cfg['snapshot_serve_url']}")
+    else:
+        print("  Mode:   Upload to VPS (legacy)")
+    print("=" * 56)
     print()
 
     # Verify cloud
@@ -838,6 +1076,13 @@ def main():
     # Start gate pass photo listener
     gate_listener = GatePassListener(cfg, capturer)
     gate_listener.start()
+
+    # Local snapshot file server (Cloudflare Tunnel mode only)
+    if cfg.get("snapshot_serve_url"):
+        LocalSnapshotServer(
+            save_dir=cfg.get("local_save_dir", "D:\\weighbridge\\snapshots"),
+            port=cfg.get("file_serve_port", 9005),
+        ).start()
 
     # Status API (HTTP — for direct browser access & health checks)
     StatusServer(capturer, port=cfg.get("status_port", 9003)).start()

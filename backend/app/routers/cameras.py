@@ -260,6 +260,90 @@ async def agent_upload_snapshot(
     return {"success": True, "url": url, "token_id": token_id, "camera_id": camera_id}
 
 
+# ── Agent URL notification (local-first / Cloudflare Tunnel mode) ─────────────
+
+@router.post("/agent-notify")
+async def agent_notify_snapshot(
+    token_id: str = Form(...),
+    camera_id: str = Form(...),
+    weight_stage: str = Form("second_weight"),
+    file_url: str = Form(...),
+    camera_label: str = Form(""),
+    tenant_slug: str = Form(""),
+    agent_key: str = Form(""),
+    x_gate_agent_key: str | None = Header(None, alias="X-Gate-Agent-Key"),
+):
+    """
+    Agent notifies the server of a locally-saved snapshot (no binary upload).
+
+    Local-first mode (Option 1 — Cloudflare Tunnel):
+      The camera agent saves the JPEG to local disk, serves it via a local
+      HTTP server exposed through a Cloudflare Tunnel, and POSTs only the
+      public URL here.  No image data is stored on the VPS.
+
+    The URL stored in token_snapshots.file_path must start with https://
+    so _build_url() passes it through unchanged and the frontend loads it
+    directly from the agent's local server via the Cloudflare Tunnel.
+    """
+    from app.config import get_settings
+    settings = get_settings()
+
+    # ── Auth (mirrors agent-upload) ───────────────────────────────────────────
+    if settings.MULTI_TENANT:
+        if not tenant_slug:
+            raise HTTPException(400, "tenant_slug required")
+        if x_gate_agent_key:
+            from app.database import get_tenant_session as _gts
+            _cfg_cm = await _gts(tenant_slug)
+            async with _cfg_cm as _db:
+                _row = await _db.execute(text("SELECT value FROM app_settings WHERE key = 'gate_camera_config'"))
+                _val = _row.scalar()
+                _stored_key = ""
+                if _val:
+                    try:
+                        _stored_key = json.loads(_val).get("agent_key", "")
+                    except Exception:
+                        pass
+            if not _stored_key or x_gate_agent_key != _stored_key:
+                raise HTTPException(403, "Invalid agent key")
+        elif agent_key:
+            from app.multitenancy.registry import tenant_registry
+            if not await tenant_registry.validate_agent_key(tenant_slug, agent_key):
+                raise HTTPException(403, "Invalid agent key for tenant")
+        else:
+            raise HTTPException(400, "Authentication required: X-Gate-Agent-Key header or agent_key")
+
+    if camera_id not in ("front", "top"):
+        raise HTTPException(400, "camera_id must be 'front' or 'top'")
+    if weight_stage not in ("first_weight", "second_weight"):
+        raise HTTPException(400, "weight_stage must be 'first_weight' or 'second_weight'")
+    if not file_url.startswith("http"):
+        raise HTTPException(400, "file_url must be a full https:// URL served by the local agent")
+
+    label = camera_label or (camera_id.capitalize() + " View")
+
+    # ── Upsert URL into token_snapshots (no file written on VPS) ─────────────
+    from app.database import get_tenant_session
+    _session_cm = await get_tenant_session(tenant_slug if settings.MULTI_TENANT else None)
+    async with _session_cm as db:
+        await db.execute(
+            text("""
+                INSERT INTO token_snapshots
+                    (token_id, camera_id, camera_label, file_path, capture_status, attempts, weight_stage, captured_at)
+                VALUES (:tid, :cid, :label, :fp, 'captured', 1, :ws, NOW())
+                ON CONFLICT (token_id, camera_id, weight_stage) DO UPDATE
+                    SET file_path = :fp, capture_status = 'captured', captured_at = NOW()
+            """),
+            {"tid": token_id, "cid": camera_id, "label": label,
+             "fp": file_url, "ws": weight_stage},
+        )
+        await db.commit()
+
+    logger.info("Agent notified snapshot (local): token=%s camera=%s stage=%s url=%s",
+                token_id, camera_id, weight_stage, file_url)
+    return {"success": True, "token_id": token_id, "camera_id": camera_id, "url": file_url}
+
+
 # ── Agent polling: pending camera events ─────────────────────────────────────
 
 @router.get("/agent-pending")
