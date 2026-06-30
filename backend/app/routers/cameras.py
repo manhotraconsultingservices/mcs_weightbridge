@@ -432,9 +432,9 @@ async def agent_pending_events(
             FROM tokens t
             CROSS JOIN (VALUES ('first_weight'), ('second_weight')) AS s(stage)
             WHERE t.updated_at > NOW() - INTERVAL '2 hours'
-              AND t.status IN ('IN_PROGRESS', 'COMPLETED')
+              AND t.status IN ('FIRST_WEIGHT', 'LOADING', 'IN_PROGRESS', 'COMPLETED')
               AND (
-                  (s.stage = 'first_weight' AND (t.gross_weight IS NOT NULL OR t.tare_weight IS NOT NULL))
+                  (s.stage = 'first_weight' AND (t.first_weight IS NOT NULL OR t.gross_weight IS NOT NULL OR t.tare_weight IS NOT NULL))
                   OR
                   (s.stage = 'second_weight' AND t.gross_weight IS NOT NULL AND t.tare_weight IS NOT NULL)
               )
