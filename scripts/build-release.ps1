@@ -120,7 +120,13 @@ $ScriptFiles = @(
     "install-services.ps1",
     "manage-services.ps1",
     "Get-Fingerprint.ps1",
-    "Get-Fingerprint.bat"
+    "Get-Fingerprint.bat",
+    "Deploy-Full.ps1",
+    "Setup-CloudflareTunnel.ps1",
+    "Setup-CloudBackup.ps1",
+    "Backup-ToCloud.ps1",
+    "Verify-Deployment.ps1",
+    "Generate-DeploymentConfig.ps1"
 )
 foreach ($s in $ScriptFiles) {
     $src = Join-Path $RootDir "scripts\$s"

@@ -1389,17 +1389,16 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
 interface CameraPanelProps {
   cameraId: 'front' | 'top';
   label: string;
+  wsPort: string;
 }
 
-function CameraPanel({ cameraId, label }: CameraPanelProps) {
+function CameraPanel({ cameraId, label, wsPort }: CameraPanelProps) {
   const [status, setStatus] = useState<'connecting' | 'live' | 'error'>('connecting');
   const [imgSrc, setImgSrc] = useState('');
   const wsRef = useRef<WebSocket | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const prevBlobRef = useRef('');
-
-  const wsPort = localStorage.getItem('camera_agent_ws_port') || '9004';
 
   useEffect(() => {
     mountedRef.current = true;
@@ -1619,6 +1618,24 @@ export default function TokenPageV1() {
   const isAdmin = user?.role === 'admin';
   const isMobile = useIsMobile();
 
+  // Camera agent WebSocket port — probe the local status server on mount so we
+  // always connect to the actual port (the scale agent can bump its own status
+  // onto 9004 via _find_free_port, causing camera_agent's WS bind to fail on
+  // 9004 and auto-move to 9005; the status server advertises the real ws_port).
+  const [wsPort, setWsPort] = useState(() => localStorage.getItem('camera_agent_ws_port') || '9004');
+  useEffect(() => {
+    fetch('http://localhost:9003/')
+      .then(r => r.json())
+      .then((s: { ws_port?: number }) => {
+        if (s.ws_port) {
+          const port = String(s.ws_port);
+          localStorage.setItem('camera_agent_ws_port', port);
+          setWsPort(port);
+        }
+      })
+      .catch(() => {}); // camera agent not running is fine
+  }, []);
+
   const [tokens, setTokens] = useState<Token[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -1764,8 +1781,8 @@ export default function TokenPageV1() {
         <CreateTokenForm onCreated={handleTokenCreated} />
         {camerasEnabled && (
           <div className="grid grid-cols-2 gap-2 h-36">
-            <CameraPanel cameraId="front" label={t('token.frontCamera')} />
-            <CameraPanel cameraId="top" label={t('token.topCamera')} />
+            <CameraPanel cameraId="front" label={t('token.frontCamera')} wsPort={wsPort} />
+            <CameraPanel cameraId="top" label={t('token.topCamera')} wsPort={wsPort} />
           </div>
         )}
         {/* Compact token list */}
@@ -1852,8 +1869,8 @@ export default function TokenPageV1() {
             {/* ---- Live Cameras — only when the camera module is enabled ---- */}
             {camerasEnabled && (
               <div className="grid grid-cols-2 gap-3 h-44 shrink-0 mb-1">
-                <CameraPanel cameraId="front" label={t('token.frontCamera')} />
-                <CameraPanel cameraId="top" label={t('token.topCamera')} />
+                <CameraPanel cameraId="front" label={t('token.frontCamera')} wsPort={wsPort} />
+                <CameraPanel cameraId="top" label={t('token.topCamera')} wsPort={wsPort} />
               </div>
             )}
 

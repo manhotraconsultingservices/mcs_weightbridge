@@ -29,9 +29,10 @@ interface CameraPanelProps {
   subtitle?: string;
   snapshotUrl: string;
   enabled?: boolean;
+  wsPort: string;
 }
 
-function CameraPanel({ cameraId, label, subtitle, snapshotUrl, enabled }: CameraPanelProps) {
+function CameraPanel({ cameraId, label, subtitle, snapshotUrl, enabled, wsPort }: CameraPanelProps) {
   const [status, setStatus] = useState<'connecting' | 'live' | 'error' | 'off'>('connecting');
   const [fullscreen, setFullscreen] = useState(false);
   const [imgSrc, setImgSrc] = useState('');
@@ -39,10 +40,6 @@ function CameraPanel({ cameraId, label, subtitle, snapshotUrl, enabled }: Camera
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const prevBlobRef = useRef('');
-
-  const [wsPort] = useState(() => {
-    return localStorage.getItem('camera_agent_ws_port') || '9004';
-  });
 
   useEffect(() => {
     mountedRef.current = true;
@@ -385,6 +382,7 @@ interface LiveCamInfo {
 export default function CameraScalePage() {
   const [frontCam, setFrontCam] = useState<LiveCamInfo>({ label: 'Front Camera', url: '', enabled: false });
   const [topCam, setTopCam] = useState<LiveCamInfo>({ label: 'Top Camera', url: '', enabled: false });
+  const [wsPort, setWsPort] = useState(() => localStorage.getItem('camera_agent_ws_port') || '9004');
 
   // Fetch camera live URLs (with embedded credentials)
   useEffect(() => {
@@ -394,6 +392,21 @@ export default function CameraScalePage() {
         if (data.top) setTopCam(data.top);
       })
       .catch(() => {});
+  }, []);
+
+  // Probe camera agent status to discover the actual WebSocket port
+  // (it auto-increments if 9004 is taken by the scale agent or another service)
+  useEffect(() => {
+    fetch('http://localhost:9003/')
+      .then(r => r.json())
+      .then((s: { ws_port?: number }) => {
+        if (s.ws_port) {
+          const port = String(s.ws_port);
+          localStorage.setItem('camera_agent_ws_port', port);
+          setWsPort(port);
+        }
+      })
+      .catch(() => {}); // camera agent not running is normal
   }, []);
 
   return (
@@ -433,6 +446,7 @@ export default function CameraScalePage() {
           subtitle="Camera 1 · Entry"
           snapshotUrl={frontCam.url}
           enabled={frontCam.enabled}
+          wsPort={wsPort}
         />
         <CameraPanel
           cameraId="top"
@@ -440,6 +454,7 @@ export default function CameraScalePage() {
           subtitle="Camera 2 · Overhead"
           snapshotUrl={topCam.url}
           enabled={topCam.enabled}
+          wsPort={wsPort}
         />
         <WeightPanel />
       </div>

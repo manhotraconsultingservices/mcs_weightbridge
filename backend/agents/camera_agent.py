@@ -712,15 +712,18 @@ class StatusServer:
                     return
 
                 # Status JSON
+                status_port = capturer.cfg.get('status_port', 9003)
+                ws_port = capturer.cfg.get('_actual_ws_port', capturer.cfg.get('ws_port', 9004))
                 body = json.dumps({
                     "service": "camera_agent",
                     "status": "running",
                     "timestamp": datetime.now().isoformat(),
                     "capture_count": capturer.capture_count,
                     "error_count": capturer.error_count,
+                    "ws_port": ws_port,
                     "live_snapshot_urls": {
-                        "front": f"http://localhost:{capturer.cfg.get('status_port', 9003)}/snapshot/front",
-                        "top": f"http://localhost:{capturer.cfg.get('status_port', 9003)}/snapshot/top",
+                        "front": f"http://localhost:{status_port}/snapshot/front",
+                        "top": f"http://localhost:{status_port}/snapshot/top",
                     },
                 })
                 self.send_response(200)
@@ -956,12 +959,40 @@ class WebSocketLiveServer:
             except Exception as e:
                 log.warning("Live stream error for %s: %s", camera_id, e)
 
-        try:
-            async with websockets.serve(handler, "0.0.0.0", self.port):
-                log.info("WebSocket live server ready on port %d", self.port)
-                await asyncio.Future()  # run forever
-        except Exception as e:
-            log.error("WebSocket server failed to start on port %d: %s", self.port, e)
+        # Try the configured port and up to 4 fallbacks in case it's busy
+        # (e.g. the scale agent's StatusServer auto-incremented onto this port)
+        start_port = self.port
+        for candidate in range(start_port, start_port + 5):
+            try:
+                async with websockets.serve(handler, "0.0.0.0", candidate):
+                    if candidate != start_port:
+                        log.warning(
+                            "WebSocket port %d was busy — using port %d instead",
+                            start_port, candidate,
+                        )
+                    self.port = candidate
+                    # Store the actual port so StatusServer can advertise it
+                    self.capturer.cfg['_actual_ws_port'] = candidate
+                    log.info("WebSocket live server ready on port %d", candidate)
+                    await asyncio.Future()  # run forever
+                break  # clean exit (never reached, but for clarity)
+            except OSError as bind_err:
+                in_use = bind_err.errno in (98, 10048) or \
+                    'address already in use' in str(bind_err).lower() or \
+                    'winerror 10048' in str(bind_err).lower()
+                if in_use and candidate < start_port + 4:
+                    log.warning("WebSocket port %d in use, trying %d", candidate, candidate + 1)
+                    continue
+                log.error("WebSocket server failed to start on port %d: %s", candidate, bind_err)
+                break
+            except Exception as e:
+                log.error("WebSocket server failed to start on port %d: %s", candidate, e)
+                break
+        else:
+            log.error(
+                "WebSocket server: no free port found in range %d–%d",
+                start_port, start_port + 4,
+            )
 
 
 # ── Windows Service Install ──────────────────────────────────────────────────
