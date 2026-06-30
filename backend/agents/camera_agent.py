@@ -655,6 +655,96 @@ class GatePassListener:
             time.sleep(poll_sec)
 
 
+# ── Gate Live Feed Pusher ────────────────────────────────────────────────────
+
+class GateLiveFeedPusher:
+    """Continuously pushes gate camera frames so GateCameraLivePage shows a live view.
+
+    GateCameraLivePage polls GET /api/v1/gate/latest-snapshot/{position} every 3 s.
+    This pusher populates that endpoint by POSTing JPEGs to
+    POST /api/v1/gate/push-snapshot/{position} every PUSH_INTERVAL seconds.
+
+    Camera source: gate_cameras.entry / gate_cameras.exit from camera_config.json.
+    Falls back to cameras.front when a gate_cameras URL is empty.
+    Auth: X-Agent-Key header = same agent_key already in camera_config.json.
+    No separate gate agent key required.
+    """
+
+    PUSH_INTERVAL = 3  # seconds between frame pushes per camera
+
+    def __init__(self, config: dict, capturer: "CameraCapturer"):
+        self.cfg = config
+        self.capturer = capturer
+        self.running = False
+        self._thread = None
+        self._last_push: dict[str, float] = {"entry": 0.0, "exit": 0.0}
+
+    def _resolve_gate_cam(self, position: str) -> dict:
+        gate_cams = self.cfg.get("gate_cameras", {})
+        cam = gate_cams.get(position, {})
+        if cam.get("url"):
+            return cam
+        return self.cfg.get("cameras", {}).get("front", {})
+
+    def _has_gate_cameras(self) -> bool:
+        for pos in ("entry", "exit"):
+            if self._resolve_gate_cam(pos).get("url"):
+                return True
+        return False
+
+    def _push_one(self, position: str) -> bool:
+        import requests
+
+        cam = self._resolve_gate_cam(position)
+        cam_url = cam.get("url", "")
+        if not cam_url:
+            return False
+
+        image_data = self.capturer._capture_single(cam_url, cam, f"gate_live_{position}")
+        if image_data is None:
+            return False
+
+        push_url = f"{self.cfg['cloud_url'].rstrip('/')}/api/v1/gate/push-snapshot/{position}"
+        try:
+            resp = requests.post(
+                push_url,
+                headers={"X-Agent-Key": self.cfg["agent_key"]},
+                files={"image": (f"{position}.jpg", image_data, "image/jpeg")},
+                data={"tenant_slug": self.cfg.get("tenant_slug", "")},
+                timeout=10,
+            )
+            return resp.status_code == 200
+        except requests.RequestException:
+            return False
+
+    def start(self):
+        if not self._has_gate_cameras():
+            log.info("Gate live feed: no gate camera URLs — skipping live push")
+            return
+        self.running = True
+        self._thread = threading.Thread(target=self._push_loop, daemon=True, name="GateLiveFeedPusher")
+        self._thread.start()
+        for pos in ("entry", "exit"):
+            cam = self._resolve_gate_cam(pos)
+            if cam.get("url"):
+                log.info("Gate live feed (%s): %s", pos, cam["url"])
+        log.info("Gate live feed pusher started (every %ds per camera)", self.PUSH_INTERVAL)
+
+    def stop(self):
+        self.running = False
+        if self._thread:
+            self._thread.join(timeout=5)
+
+    def _push_loop(self):
+        while self.running:
+            now = time.time()
+            for position in ("entry", "exit"):
+                if now - self._last_push[position] >= self.PUSH_INTERVAL:
+                    self._push_one(position)
+                    self._last_push[position] = time.time()
+            time.sleep(0.5)
+
+
 # ── Status API ───────────────────────────────────────────────────────────────
 
 class StatusServer:
@@ -1085,6 +1175,10 @@ def main():
     for cid in ("front", "top"):
         if cid in cams and cams[cid].get("url"):
             print(f"  {cid.capitalize():6s}: {cams[cid]['url']}")
+    gate_cams = cfg.get("gate_cameras", {})
+    for gid in ("entry", "exit"):
+        if gid in gate_cams and gate_cams[gid].get("url"):
+            print(f"  Gate {gid.capitalize():5s}: {gate_cams[gid]['url']} (live feed)")
     if cfg.get("snapshot_serve_url"):
         _save_dir = cfg.get("local_save_dir", "D:\\weighbridge\\snapshots")
         _file_port = cfg.get("file_serve_port", 9005)
@@ -1115,9 +1209,13 @@ def main():
     listener = EventListener(cfg, capturer)
     listener.start()
 
-    # Start gate pass photo listener
+    # Start gate pass photo listener (triggered capture on gate pass create/exit)
     gate_listener = GatePassListener(cfg, capturer)
     gate_listener.start()
+
+    # Start gate live feed pusher (continuous frames → GateCameraLivePage)
+    gate_live_pusher = GateLiveFeedPusher(cfg, capturer)
+    gate_live_pusher.start()
 
     # Local snapshot file server (Cloudflare Tunnel mode only)
     if cfg.get("snapshot_serve_url"):
@@ -1139,6 +1237,7 @@ def main():
         log.info("Shutting down...")
         listener.stop()
         gate_listener.stop()
+        gate_live_pusher.stop()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, _shutdown)

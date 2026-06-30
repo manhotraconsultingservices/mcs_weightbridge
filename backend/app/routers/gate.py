@@ -715,23 +715,50 @@ async def capture_photo(
 async def agent_push_snapshot(
     position: str,
     image: UploadFile = File(...),
+    tenant_slug: str = Form(""),
     x_gate_agent_key: str | None = Header(None, alias="X-Gate-Agent-Key"),
+    x_agent_key: str | None = Header(None, alias="X-Agent-Key"),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Called by gate_camera_agent.py running on-site.
-    Accepts JPEG from local CP Plus camera, stores as the latest live frame.
-    No user JWT — authenticates via X-Gate-Agent-Key header.
+    Called by camera_agent.py (GateLiveFeedPusher) or gate_camera_agent.py running on-site.
+    Accepts JPEG, stores as the latest live frame for GateCameraLivePage.
+
+    Auth (multi-tenant, tenant_slug form field provided):
+      - X-Gate-Agent-Key matching gate_camera_config.agent_key, OR
+      - X-Agent-Key matching the tenant registry key (same key in camera_config.json)
+    Auth (single-tenant): X-Gate-Agent-Key matching gate_camera_config.agent_key.
     """
+    from app.config import get_settings
+    settings = get_settings()
+
     if position not in ("entry", "exit"):
         raise HTTPException(400, "position must be 'entry' or 'exit'")
 
-    cfg = await _get_gate_cam_cfg(db)
-    stored_key = cfg.get("agent_key", "")
-    if not stored_key:
-        raise HTTPException(403, "Agent key not configured. Go to Settings → Gate Cameras to generate one.")
-    if x_gate_agent_key != stored_key:
-        raise HTTPException(403, "Invalid agent key")
+    if settings.MULTI_TENANT and tenant_slug:
+        from app.database import get_tenant_session
+        _cm = await get_tenant_session(tenant_slug)
+        async with _cm as tenant_db:
+            cfg = await _get_gate_cam_cfg(tenant_db)
+        if x_gate_agent_key:
+            stored = cfg.get("agent_key", "")
+            if not stored or x_gate_agent_key != stored:
+                raise HTTPException(403, "Invalid gate agent key")
+        elif x_agent_key:
+            from app.multitenancy.registry import tenant_registry
+            if not await tenant_registry.validate_agent_key(tenant_slug, x_agent_key):
+                raise HTTPException(403, "Invalid agent key")
+        else:
+            raise HTTPException(400, "X-Gate-Agent-Key or X-Agent-Key header required")
+        latest_subdir: str | None = tenant_slug
+    else:
+        cfg = await _get_gate_cam_cfg(db)
+        stored_key = cfg.get("agent_key", "")
+        if not stored_key:
+            raise HTTPException(403, "Agent key not configured. Go to Settings → Gate Cameras to generate one.")
+        if x_gate_agent_key != stored_key:
+            raise HTTPException(403, "Invalid agent key")
+        latest_subdir = None
 
     content_type = image.content_type or ""
     if "image" not in content_type:
@@ -739,13 +766,14 @@ async def agent_push_snapshot(
 
     img_bytes = await image.read()
 
-    # Always overwrite the "latest" frame for this position
-    latest_dir = os.path.join(_uploads_base(), "gate", "latest")
+    if latest_subdir:
+        latest_dir = os.path.join(_uploads_base(), "gate", "latest", latest_subdir)
+    else:
+        latest_dir = os.path.join(_uploads_base(), "gate", "latest")
     os.makedirs(latest_dir, exist_ok=True)
     with open(os.path.join(latest_dir, f"{position}.jpg"), "wb") as f:
         f.write(img_bytes)
 
-    # Update metadata (timestamp used for stale detection)
     import json as _json
     with open(os.path.join(latest_dir, f"{position}_meta.json"), "w") as f:
         _json.dump({"last_updated_at": datetime.now(timezone.utc).isoformat()}, f)
@@ -759,14 +787,28 @@ async def get_latest_snapshot(
     current_user=Depends(get_current_user),
 ):
     """
-    Returns metadata for the latest frame pushed by the on-site gate_camera_agent.
+    Returns metadata for the latest frame pushed by the on-site camera agent.
     Used by GateCameraLivePage to display the live feed.
     is_stale=True when no push received in the last 30 seconds.
     """
+    from app.config import get_settings
+    settings = get_settings()
+
     if position not in ("entry", "exit"):
         raise HTTPException(400, "position must be 'entry' or 'exit'")
 
-    latest_dir = os.path.join(_uploads_base(), "gate", "latest")
+    if settings.MULTI_TENANT:
+        slug = _ctx_tenant_slug()
+        if slug:
+            latest_dir = os.path.join(_uploads_base(), "gate", "latest", slug)
+            url_prefix = f"/uploads/gate/latest/{slug}"
+        else:
+            latest_dir = os.path.join(_uploads_base(), "gate", "latest")
+            url_prefix = "/uploads/gate/latest"
+    else:
+        latest_dir = os.path.join(_uploads_base(), "gate", "latest")
+        url_prefix = "/uploads/gate/latest"
+
     img_file = os.path.join(latest_dir, f"{position}.jpg")
     meta_file = os.path.join(latest_dir, f"{position}_meta.json")
 
@@ -790,7 +832,7 @@ async def get_latest_snapshot(
 
     return {
         "configured": True,
-        "url": f"/uploads/gate/latest/{position}.jpg",
+        "url": f"{url_prefix}/{position}.jpg",
         "last_updated_at": last_updated_at,
         "is_stale": is_stale,
     }
