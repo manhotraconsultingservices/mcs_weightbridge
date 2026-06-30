@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 
 from app.database import get_db
 from app.dependencies import get_current_user
@@ -222,6 +222,9 @@ async def _send_notification_bg(
 @router.get("/receipts", response_model=PaymentReceiptListResponse)
 async def list_receipts(
     party_id: uuid.UUID | None = None,
+    search: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -231,9 +234,22 @@ async def list_receipts(
     filters = [PaymentReceipt.company_id == co.id]
     if party_id:
         filters.append(PaymentReceipt.party_id == party_id)
+    if search:
+        like = f"%{search}%"
+        filters.append(or_(
+            PaymentReceipt.receipt_no.ilike(like),
+            Party.name.ilike(like),
+        ))
+    if date_from:
+        filters.append(PaymentReceipt.receipt_date >= date_from)
+    if date_to:
+        filters.append(PaymentReceipt.receipt_date <= date_to)
 
     total = (await db.execute(
-        select(func.count()).select_from(PaymentReceipt).where(and_(*filters))
+        select(func.count())
+        .select_from(PaymentReceipt)
+        .join(Party, PaymentReceipt.party_id == Party.id)
+        .where(and_(*filters))
     )).scalar()
 
     rows = (await db.execute(
@@ -320,6 +336,9 @@ async def create_voucher(
 @router.get("/vouchers", response_model=PaymentVoucherListResponse)
 async def list_vouchers(
     party_id: uuid.UUID | None = None,
+    search: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -329,9 +348,22 @@ async def list_vouchers(
     filters = [PaymentVoucher.company_id == co.id]
     if party_id:
         filters.append(PaymentVoucher.party_id == party_id)
+    if search:
+        like = f"%{search}%"
+        filters.append(or_(
+            PaymentVoucher.voucher_no.ilike(like),
+            Party.name.ilike(like),
+        ))
+    if date_from:
+        filters.append(PaymentVoucher.voucher_date >= date_from)
+    if date_to:
+        filters.append(PaymentVoucher.voucher_date <= date_to)
 
     total = (await db.execute(
-        select(func.count()).select_from(PaymentVoucher).where(and_(*filters))
+        select(func.count())
+        .select_from(PaymentVoucher)
+        .join(Party, PaymentVoucher.party_id == Party.id)
+        .where(and_(*filters))
     )).scalar()
 
     rows = (await db.execute(

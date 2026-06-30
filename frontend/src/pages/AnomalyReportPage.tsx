@@ -214,6 +214,8 @@ export default function AnomalyReportPage() {
   }), [t]);
 
   const load = useCallback(async () => {
+    // Skip if either date is empty or incomplete (prevents false errors while typing)
+    if (!range.from || !range.to || range.from.length !== 10 || range.to.length !== 10) return;
     setLoading(true);
     try {
       const r = await api.get('/api/v1/reports/anomalies', {

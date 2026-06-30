@@ -369,11 +369,11 @@ export default function VehiclesPage() {
     setLoading(true);
     try {
       const vParams = new URLSearchParams({ page: String(vehiclePage), page_size: String(VEH_PAGE_SIZE) });
-      if (search) vParams.set('search', search);
+      if (search && tab === 'vehicles') vParams.set('search', search);
       const dParams = new URLSearchParams({ page: String(driverPage), page_size: String(VEH_PAGE_SIZE) });
-      if (search) dParams.set('search', search);
+      if (search && tab === 'drivers') dParams.set('search', search);
       const tParams = new URLSearchParams({ page: String(transporterPage), page_size: String(VEH_PAGE_SIZE) });
-      if (search) tParams.set('search', search);
+      if (search && tab === 'transporters') tParams.set('search', search);
       const [vRes, dRes, tRes] = await Promise.all([
         api.get<{ items: Vehicle[]; total: number } | Vehicle[]>(`/api/v1/vehicles?${vParams}`),
         api.get<{ items: Driver[]; total: number } | Driver[]>(`/api/v1/drivers?${dParams}`),
@@ -386,7 +386,7 @@ export default function VehiclesPage() {
       if (Array.isArray(tRes.data)) { setTransporters(tRes.data); setTransporterTotal(tRes.data.length); }
       else { setTransporters(tRes.data.items ?? []); setTransporterTotal(tRes.data.total ?? 0); }
     } catch { } finally { setLoading(false); }
-  }, [search, vehiclePage, driverPage, transporterPage]);
+  }, [search, vehiclePage, driverPage, transporterPage, tab]);
 
   useEffect(() => { fetch(); }, [fetch]);
   useEffect(() => { setVehiclePage(1); setDriverPage(1); setTransporterPage(1); }, [search]);
