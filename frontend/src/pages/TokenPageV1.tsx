@@ -1121,45 +1121,39 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
         : `/api/v1/tokens/${token!.id}/second-weight`;
       const { data } = await api.post<Token>(endpoint, { weight_kg: weight, is_manual: isManual });
 
-      const isCaptureStage =
-        (token!.token_type === 'sale'     && weightStage === 'second') ||
-        (token!.token_type === 'purchase' && weightStage === 'first');
+      onDone(data);
+      // No camera module for this tenant → no snapshot capture; just close.
+      if (!camerasEnabled) { onClose(); return; }
+      setCapturePhase('capturing');
+      const tokenId = token!.id;
+      // Filter display to only the current weight stage — avoids duplicate camera
+      // rows when both first_weight and second_weight snapshots exist on the token.
+      const currentStage: SnapshotResult['weight_stage'] = weightStage === 'first' ? 'first_weight' : 'second_weight';
+      const deadline = Date.now() + 20_000;
 
-      if (isCaptureStage) {
-        onDone(data);
-        // No camera module for this tenant → no snapshot capture; just close.
-        if (!camerasEnabled) { onClose(); return; }
-        setCapturePhase('capturing');
-        const tokenId = token!.id;
-        const deadline = Date.now() + 20_000;
-
-        const poll = async () => {
-          if (Date.now() > deadline) {
+      const poll = async () => {
+        if (Date.now() > deadline) {
+          setCapturePhase('done');
+          pollTimerRef.current = setTimeout(onClose, 1000);
+          return;
+        }
+        try {
+          const { data: snaps } = await api.get<TokenSnapshotsResponse>(
+            `/api/v1/tokens/${tokenId}/snapshots`
+          );
+          setSnapshots(snaps.snapshots.filter(s => s.weight_stage === currentStage));
+          if (snaps.all_done) {
             setCapturePhase('done');
-            pollTimerRef.current = setTimeout(onClose, 1000);
-            return;
+            pollTimerRef.current = setTimeout(onClose, 2500);
+          } else {
+            pollTimerRef.current = setTimeout(poll, 2000);
           }
-          try {
-            const { data: snaps } = await api.get<TokenSnapshotsResponse>(
-              `/api/v1/tokens/${tokenId}/snapshots`
-            );
-            setSnapshots(snaps.snapshots);
-            if (snaps.all_done) {
-              setCapturePhase('done');
-              pollTimerRef.current = setTimeout(onClose, 2500);
-            } else {
-              pollTimerRef.current = setTimeout(poll, 2000);
-            }
-          } catch {
-            setCapturePhase('done');
-            pollTimerRef.current = setTimeout(onClose, 500);
-          }
-        };
-        pollTimerRef.current = setTimeout(poll, 2000);
-      } else {
-        onDone(data);
-        onClose();
-      }
+        } catch {
+          setCapturePhase('done');
+          pollTimerRef.current = setTimeout(onClose, 500);
+        }
+      };
+      pollTimerRef.current = setTimeout(poll, 2000);
     } catch {
       setError('Failed to record weight. Please try again.');
     } finally {
