@@ -431,7 +431,7 @@ async def agent_pending_events(
             SELECT t.id AS token_id, t.token_no, t.vehicle_no, s.stage AS weight_stage
             FROM tokens t
             CROSS JOIN (VALUES ('first_weight'), ('second_weight')) AS s(stage)
-            WHERE t.updated_at > NOW() - INTERVAL '5 minutes'
+            WHERE t.updated_at > NOW() - INTERVAL '2 hours'
               AND t.status IN ('IN_PROGRESS', 'COMPLETED')
               AND (
                   (s.stage = 'first_weight' AND (t.gross_weight IS NOT NULL OR t.tare_weight IS NOT NULL))
