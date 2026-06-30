@@ -146,6 +146,25 @@ ehthumbs.db
 # ── Claude Code / AI Tooling ──────────────────────────────────────────────
 .claude/
 
+# ── Deployment Packages (generated ZIP bundles, not source) ───────────────
+deploy/
+
+# ── Agent Config Files (contain secrets — never commit) ───────────────────
+backend/agents/tally_connector.json
+backend/agents/scale_config.json
+backend/agents/camera_config.json
+backend/agents/gate_camera_config.json
+
+# ── Build Crash Reports ───────────────────────────────────────────────────
+backend/nuitka-crash-report.xml
+
+# ── Cloudflare Wrangler local state ──────────────────────────────────────
+.wrangler/
+
+# ── Scratch / temp files ──────────────────────────────────────────────────
+image/
+frontend/=*
+
 # ── NSSM (Windows service manager binary) ─────────────────────────────────
 tools/nssm.exe
 nssm.exe
