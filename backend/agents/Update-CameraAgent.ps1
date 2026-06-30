@@ -27,7 +27,7 @@
     Gate camera password. Defaults to the weighbridge camera password already in config.
 
 .EXAMPLE
-    # Interactive — prompts for gate camera URLs
+    # Interactive -- prompts for gate camera URLs
     .\Update-CameraAgent.ps1
 
 .EXAMPLE
@@ -50,11 +50,11 @@ $ErrorActionPreference = "Stop"
 function Write-Step($num, $msg) {
     Write-Host ""
     Write-Host "  [$num] $msg" -ForegroundColor Cyan
-    Write-Host "  $('─' * 52)" -ForegroundColor DarkGray
+    Write-Host "  $('-' * 52)" -ForegroundColor DarkGray
 }
-function Write-OK($msg)   { Write-Host "    ✓ $msg" -ForegroundColor Green }
-function Write-Warn($msg) { Write-Host "    ⚠ $msg" -ForegroundColor Yellow }
-function Write-Info($msg) { Write-Host "    $msg"   -ForegroundColor Gray }
+function Write-OK($msg)   { Write-Host "  [OK]   $msg" -ForegroundColor Green  }
+function Write-Warn($msg) { Write-Host "  [WARN] $msg" -ForegroundColor Yellow }
+function Write-Info($msg) { Write-Host "         $msg" -ForegroundColor Gray   }
 function Prompt-Value($prompt, $default) {
     $val = Read-Host "    $prompt [$default]"
     if ([string]::IsNullOrWhiteSpace($val)) { return $default }
@@ -62,10 +62,10 @@ function Prompt-Value($prompt, $default) {
 }
 
 Write-Host ""
-Write-Host "  ╔════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "  ║   Weighbridge Camera Agent — Updater               ║" -ForegroundColor Cyan
-Write-Host "  ║   Adds Gate Camera Live Feed support               ║" -ForegroundColor Cyan
-Write-Host "  ╚════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "  +====================================================+" -ForegroundColor Cyan
+Write-Host "  |   Weighbridge Camera Agent -- Updater              |" -ForegroundColor Cyan
+Write-Host "  |   Adds Gate Camera Live Feed support               |" -ForegroundColor Cyan
+Write-Host "  +====================================================+" -ForegroundColor Cyan
 Write-Host ""
 
 # ── Step 1: Validate install directory ──────────────────────────────────────
@@ -76,13 +76,13 @@ $agentScript = Join-Path $InstallDir "camera_agent.py"
 $configFile  = Join-Path $InstallDir "camera_config.json"
 
 if (-not (Test-Path $InstallDir)) {
-    Write-Host "    ✗ Install directory not found: $InstallDir" -ForegroundColor Red
-    Write-Host "      Re-run with -InstallDir pointing to your agent folder." -ForegroundColor Yellow
+    Write-Host "  [ERR] Install directory not found: $InstallDir" -ForegroundColor Red
+    Write-Host "        Re-run with -InstallDir pointing to your agent folder." -ForegroundColor Yellow
     exit 1
 }
 if (-not (Test-Path $configFile)) {
-    Write-Host "    ✗ camera_config.json not found in $InstallDir" -ForegroundColor Red
-    Write-Host "      This script updates an existing install. Run deploy-agents.ps1 for a fresh install." -ForegroundColor Yellow
+    Write-Host "  [ERR] camera_config.json not found in $InstallDir" -ForegroundColor Red
+    Write-Host "        This script updates an existing install. Run deploy-agents.ps1 for a fresh install." -ForegroundColor Yellow
     exit 1
 }
 Write-OK "Install dir: $InstallDir"
@@ -105,7 +105,7 @@ if ($taskExists) {
         Write-OK "NSSM service stopped"
     }
 } else {
-    Write-Warn "No running WeighbridgeCameraAgent found — continuing"
+    Write-Warn "No running WeighbridgeCameraAgent found -- continuing"
 }
 
 Start-Sleep -Seconds 2
@@ -116,8 +116,8 @@ Write-Step 3 "Replacing camera_agent.py"
 
 $srcAgent = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "camera_agent.py"
 if (-not (Test-Path $srcAgent)) {
-    Write-Host "    ✗ camera_agent.py not found next to this script ($srcAgent)" -ForegroundColor Red
-    Write-Host "      Run this script from the weighbridge-source\backend\agents\ folder." -ForegroundColor Yellow
+    Write-Host "  [ERR] camera_agent.py not found next to this script ($srcAgent)" -ForegroundColor Red
+    Write-Host "        Run this script from the weighbridge-source\backend\agents\ folder." -ForegroundColor Yellow
     exit 1
 }
 
@@ -185,9 +185,8 @@ if (-not $existingEntry -and -not $existingExit) {
         $CameraPass = Prompt-Value "Camera password" $defaultPass
     }
 
-    # Build gate_cameras as a PowerShell hashtable, then merge into the parsed JSON
-    # ConvertFrom-Json returns PSCustomObject; we rebuild the whole object as a hashtable
-    # to guarantee clean serialization.
+    # Build gate_cameras as a hashtable, merge into the parsed JSON.
+    # ConvertFrom-Json returns PSCustomObject; rebuild as hashtable for clean serialization.
 
     function ConvertPSObjectToHashtable($obj) {
         if ($null -eq $obj) { return $null }
@@ -211,6 +210,7 @@ if (-not $existingEntry -and -not $existingExit) {
     }
 
     $newJson = $cfgHt | ConvertTo-Json -Depth 6
+    # Write BOM-free UTF-8 so Python's json.load() can read it without errors
     [System.IO.File]::WriteAllText($configFile, $newJson, [System.Text.UTF8Encoding]::new($false))
 
     Write-OK "camera_config.json updated"
@@ -235,7 +235,7 @@ if ($taskExists) {
         Write-OK "NSSM service started"
     }
 } else {
-    Write-Warn "Service not found — start it manually:"
+    Write-Warn "Service not found -- start it manually:"
     Write-Info "  python $agentScript"
 }
 
@@ -257,7 +257,7 @@ if (Test-Path $logFile) {
     } elseif ($running) {
         Write-OK "Agent running (gate live log line may appear in a few seconds)"
     } else {
-        Write-Warn "No log lines yet — check manually:"
+        Write-Warn "No log lines yet -- check manually:"
         Write-Info "  Get-Content '$logFile' -Tail 20"
     }
 } else {
@@ -267,19 +267,19 @@ if (Test-Path $logFile) {
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 Write-Host ""
-Write-Host "  ╔════════════════════════════════════════════════════╗" -ForegroundColor Green
-Write-Host "  ║   Update Complete!                                  ║" -ForegroundColor Green
-Write-Host "  ╚════════════════════════════════════════════════════╝" -ForegroundColor Green
+Write-Host "  +====================================================+" -ForegroundColor Green
+Write-Host "  |   Update Complete!                                  |" -ForegroundColor Green
+Write-Host "  +====================================================+" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Agent dir:  $InstallDir" -ForegroundColor White
-Write-Host "  Config:     $configFile" -ForegroundColor White
+Write-Host "  Agent dir : $InstallDir" -ForegroundColor White
+Write-Host "  Config    : $configFile" -ForegroundColor White
 Write-Host ""
-Write-Host "  What's new in this update:" -ForegroundColor Yellow
-Write-Host "    • Gate Camera Live Feed — the agent now pushes frames from" -ForegroundColor Gray
+Write-Host "  What is new in this update:" -ForegroundColor Yellow
+Write-Host "    - Gate Camera Live Feed: the agent now pushes frames from" -ForegroundColor Gray
 Write-Host "      gate_cameras.entry + .exit to the cloud every 3 s." -ForegroundColor Gray
-Write-Host "    • Open app → Operations → Gate Cameras → Live to see frames." -ForegroundColor Gray
+Write-Host "    - Open app -> Operations -> Gate Cameras -> Live to see frames." -ForegroundColor Gray
 Write-Host ""
 Write-Host "  Useful commands:" -ForegroundColor Yellow
-Write-Host "    View logs:   Get-Content '$logFile' -Tail 30" -ForegroundColor Gray
-Write-Host "    Restart:     Stop-ScheduledTask WeighbridgeCameraAgent; Start-ScheduledTask WeighbridgeCameraAgent" -ForegroundColor Gray
+Write-Host "    View logs : Get-Content '$logFile' -Tail 30" -ForegroundColor Gray
+Write-Host "    Restart   : Stop-ScheduledTask WeighbridgeCameraAgent; Start-ScheduledTask WeighbridgeCameraAgent" -ForegroundColor Gray
 Write-Host ""
