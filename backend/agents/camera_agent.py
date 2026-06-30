@@ -1010,7 +1010,17 @@ def install_service():
     script = str(Path(__file__).resolve())
     name = "WeighbridgeCameraAgent"
 
-    subprocess.run([nssm, "install", name, python, script], check=True)
+    # Check if service already exists; if so, stop it and update parameters
+    status = subprocess.run([nssm, "status", name], capture_output=True, text=True)
+    already_exists = status.returncode == 0 or "does not exist" not in status.stdout + status.stderr
+    if already_exists:
+        print(f"  Service '{name}' already exists — updating parameters...")
+        subprocess.run([nssm, "stop", name], check=False)
+    else:
+        subprocess.run([nssm, "install", name, python, script], check=True)
+
+    subprocess.run([nssm, "set", name, "Application", python], check=True)
+    subprocess.run([nssm, "set", name, "AppParameters", script], check=True)
     subprocess.run([nssm, "set", name, "AppDirectory", str(Path(__file__).parent)], check=True)
     subprocess.run([nssm, "set", name, "AppStdout", str(LOG_DIR / "camera_service_stdout.log")], check=True)
     subprocess.run([nssm, "set", name, "AppStderr", str(LOG_DIR / "camera_service_stderr.log")], check=True)
@@ -1018,7 +1028,8 @@ def install_service():
     subprocess.run([nssm, "set", name, "AppRotateBytes", "10485760"], check=True)
     subprocess.run([nssm, "set", name, "Description", "Weighbridge Camera Agent - captures and uploads snapshots"], check=True)
     subprocess.run([nssm, "start", name], check=True)
-    print(f"\n  Service '{name}' installed and started.")
+    verb = "updated and restarted" if already_exists else "installed and started"
+    print(f"\n  Service '{name}' {verb}.")
     print(f"  Check: nssm status {name}")
     print(f"  Logs:  {LOG_DIR}")
 
