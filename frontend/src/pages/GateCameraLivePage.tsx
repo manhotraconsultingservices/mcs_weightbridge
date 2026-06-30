@@ -1,8 +1,8 @@
 /**
  * GateCameraLivePage — Live view of entry and exit gate cameras.
  * Same dark CCTV-monitor aesthetic as CameraScalePage.
- * Uses HTTP polling (not WebSocket) — gate_camera_agent.py pushes snapshots
- * to the server every few seconds; we poll GET /gate/latest-snapshot/{position}.
+ * Uses HTTP polling (not WebSocket) — camera_agent.py (GateLiveFeedPusher)
+ * pushes snapshots every 3 s; we poll GET /gate/latest-snapshot/{position}.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -206,10 +206,13 @@ function CameraPanel({ position, label, refreshInterval = 3000 }: CameraPanelPro
           {status === 'off' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950">
               <WifiOff className="h-10 w-10 text-slate-600" />
-              <p className="text-slate-500 text-sm font-medium">Camera Not Configured</p>
-              <p className="text-slate-600 text-xs text-center max-w-xs">
-                Run <code className="bg-slate-800 px-1 rounded">gate_camera_agent.py</code> on
-                the on-site PC and set up in Settings → Gate Cameras.
+              <p className="text-slate-500 text-sm font-medium">No frames received yet</p>
+              <p className="text-slate-600 text-xs text-center max-w-xs leading-relaxed">
+                Add{' '}
+                <code className="bg-slate-800 px-1 rounded">gate_cameras.{position}</code>{' '}
+                URL to <code className="bg-slate-800 px-1 rounded">camera_config.json</code>{' '}
+                on the site PC, then restart{' '}
+                <code className="bg-slate-800 px-1 rounded">WeighbridgeCameraAgent</code>.
               </p>
             </div>
           )}
