@@ -34,6 +34,31 @@ from app.integrations.camera.capture import capture_and_save, capture_test_snaps
 
 logger = logging.getLogger(__name__)
 
+
+async def _maybe_upload_gdrive(content: bytes, filename: str, tenant_slug: str | None) -> str | None:
+    """Upload to Google Drive if configured for this tenant. Returns URL or None."""
+    try:
+        from app.database import get_tenant_session
+        session_cm = await get_tenant_session(tenant_slug)
+        async with session_cm as db:
+            row = await db.execute(text("SELECT value FROM app_settings WHERE key = 'google_drive_config'"))
+            val = row.scalar()
+        if not val:
+            return None
+        cfg = json.loads(val)
+        if not (cfg.get("enabled") and cfg.get("folder_id") and cfg.get("service_account_json")):
+            return None
+        from app.utils.google_drive import upload_image
+        loop = asyncio.get_event_loop()
+        url = await loop.run_in_executor(None, upload_image,
+            cfg["service_account_json"], cfg["folder_id"], filename, content)
+        logger.info("Snapshot uploaded to Google Drive: %s", filename)
+        return url
+    except Exception as exc:
+        logger.warning("Google Drive upload failed for %s: %s", filename, exc)
+        return None
+
+
 # Two separate routers so we get clean URL prefixes
 router = APIRouter(prefix="/api/v1/cameras", tags=["Cameras"])
 router_tokens = APIRouter(prefix="/api/v1/tokens", tags=["Cameras"])
@@ -209,29 +234,36 @@ async def agent_upload_snapshot(
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{camera_id}_{weight_stage}_{ts}.jpg"
 
-    # ── Upload to R2 (cloud) or save locally (fallback) ──
-    from app.utils.r2_storage import is_r2_configured, upload_to_r2
+    # ── Storage: Google Drive > Cloudflare R2 > local disk ──
+    gdrive_url = await _maybe_upload_gdrive(
+        content, filename, tenant_slug if settings.MULTI_TENANT else None
+    )
 
-    if is_r2_configured():
-        # Upload to Cloudflare R2
-        r2_key = f"camera/{tenant_slug}/{token_id}/{filename}"
-        r2_url = upload_to_r2(content, r2_key)
-        if r2_url:
-            file_path_or_url = r2_url
-            logger.info("Snapshot uploaded to R2: %s", r2_key)
-        else:
-            raise HTTPException(500, "Failed to upload to cloud storage")
+    if gdrive_url:
+        file_path_or_url = gdrive_url
     else:
-        # Local fallback
-        from pathlib import Path as _Path
-        base_dir = _Path(__file__).parent.parent.parent / "uploads" / "camera" / token_id
-        base_dir.mkdir(parents=True, exist_ok=True)
-        filepath = base_dir / filename
-        rel_path = f"uploads/camera/{token_id}/{filename}"
-        with open(filepath, "wb") as f:
-            f.write(content)
-        file_path_or_url = rel_path
-        logger.info("Snapshot saved locally: %s", rel_path)
+        from app.utils.r2_storage import is_r2_configured, upload_to_r2
+
+        if is_r2_configured():
+            # Upload to Cloudflare R2
+            r2_key = f"camera/{tenant_slug}/{token_id}/{filename}"
+            r2_url = upload_to_r2(content, r2_key)
+            if r2_url:
+                file_path_or_url = r2_url
+                logger.info("Snapshot uploaded to R2: %s", r2_key)
+            else:
+                raise HTTPException(500, "Failed to upload to cloud storage")
+        else:
+            # Local fallback
+            from pathlib import Path as _Path
+            base_dir = _Path(__file__).parent.parent.parent / "uploads" / "camera" / token_id
+            base_dir.mkdir(parents=True, exist_ok=True)
+            filepath = base_dir / filename
+            rel_path = f"uploads/camera/{token_id}/{filename}"
+            with open(filepath, "wb") as f:
+                f.write(content)
+            file_path_or_url = rel_path
+            logger.info("Snapshot saved locally: %s", rel_path)
 
     # ── Upsert into token_snapshots ──
     from app.database import get_tenant_session
@@ -1169,3 +1201,90 @@ async def trigger_snapshot_capture(
 
     except Exception as exc:
         logger.error("Unexpected error in trigger_snapshot_capture(token=%s): %s", token_id, exc, exc_info=True)
+
+
+# ── Google Drive config endpoints ─────────────────────────────────────────────
+
+@router.get("/google-drive-config")
+async def get_google_drive_config(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return Google Drive storage config (service_account_json is always masked)."""
+    row = await db.execute(text("SELECT value FROM app_settings WHERE key = 'google_drive_config'"))
+    val = row.scalar()
+    cfg: dict = {}
+    if val:
+        try:
+            cfg = json.loads(val)
+        except Exception:
+            pass
+
+    sa_email = None
+    if cfg.get("service_account_json"):
+        try:
+            sa_email = cfg["service_account_json"].get("client_email")
+        except Exception:
+            pass
+
+    return {
+        "enabled": cfg.get("enabled", False),
+        "service_account_email": sa_email,
+        "folder_id": cfg.get("folder_id", ""),
+        "archive_folder_id": cfg.get("archive_folder_id", ""),
+        "retention_days": cfg.get("retention_days", 90),
+        "retention_action": cfg.get("retention_action", "archive"),
+    }
+
+
+@router.put("/google-drive-config")
+async def put_google_drive_config(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Save Google Drive config. Omit service_account_json to preserve the stored one."""
+    row = await db.execute(text("SELECT value FROM app_settings WHERE key = 'google_drive_config'"))
+    val = row.scalar()
+    existing: dict = {}
+    if val:
+        try:
+            existing = json.loads(val)
+        except Exception:
+            pass
+
+    # If new service_account_json provided, replace it; otherwise keep the stored one
+    if body.get("service_account_json"):
+        existing["service_account_json"] = body["service_account_json"]
+
+    for key in ("enabled", "folder_id", "archive_folder_id", "retention_days", "retention_action"):
+        if key in body:
+            existing[key] = body[key]
+
+    await db.execute(
+        text("INSERT INTO app_settings (key, value) VALUES ('google_drive_config', :v) "
+             "ON CONFLICT (key) DO UPDATE SET value = :v"),
+        {"v": json.dumps(existing)},
+    )
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/google-drive-config/test")
+async def test_google_drive_config(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Test Google Drive connection using the saved service account credentials."""
+    row = await db.execute(text("SELECT value FROM app_settings WHERE key = 'google_drive_config'"))
+    val = row.scalar()
+    if not val:
+        raise HTTPException(400, "Google Drive not configured")
+    cfg = json.loads(val)
+    if not cfg.get("service_account_json") or not cfg.get("folder_id"):
+        raise HTTPException(400, "service_account_json and folder_id are required")
+
+    from app.utils.google_drive import test_connection as _gd_test
+    loop = asyncio.get_event_loop()
+    ok, msg = await loop.run_in_executor(None, _gd_test, cfg["service_account_json"], cfg["folder_id"])
+    return {"ok": ok, "message": msg}

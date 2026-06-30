@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Save, Loader2, Plus, CheckCircle2, Usb, Shield, Trash2, Mail, Phone, MessageSquare, TestTube, Send, RefreshCw, CheckCircle, XCircle, Server, Scale, ScanLine, Play, RotateCcw, Camera, Truck, X, Download } from 'lucide-react';
+import { Save, Loader2, Plus, CheckCircle2, Usb, Shield, Trash2, Mail, Phone, MessageSquare, TestTube, Send, RefreshCw, CheckCircle, XCircle, Server, Scale, ScanLine, Play, RotateCcw, Camera, Truck, X, Download, HardDrive, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -2023,12 +2023,38 @@ function CameraSettingsTab() {
   const [frontError, setFrontError] = useState('');
   const [topError, setTopError] = useState('');
 
+  // Google Drive storage state
+  const [gdrive, setGdrive] = useState({
+    enabled: false,
+    folder_id: '',
+    archive_folder_id: '',
+    retention_days: 90,
+    retention_action: 'archive' as 'archive' | 'delete',
+    sa_email: null as string | null,
+    sa_json: null as Record<string, unknown> | null,
+  });
+  const [savingDrive, setSavingDrive] = useState(false);
+  const [gdriveMsg, setGdriveMsg] = useState('');
+  const [testingDrive, setTestingDrive] = useState(false);
+  const [driveTestResult, setDriveTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
   useEffect(() => {
     api.get<{ front: CameraCfg; top: CameraCfg }>('/api/v1/cameras/config')
       .then(r => {
         if (r.data.front) setFront(r.data.front);
         if (r.data.top) setTop(r.data.top);
       })
+      .catch(() => {});
+    api.get<{ enabled: boolean; service_account_email: string | null; folder_id: string; archive_folder_id: string; retention_days: number; retention_action: string }>('/api/v1/cameras/google-drive-config')
+      .then(r => setGdrive(g => ({
+        ...g,
+        enabled: r.data.enabled,
+        folder_id: r.data.folder_id,
+        archive_folder_id: r.data.archive_folder_id,
+        retention_days: r.data.retention_days,
+        retention_action: r.data.retention_action as 'archive' | 'delete',
+        sa_email: r.data.service_account_email,
+      })))
       .catch(() => {});
   }, []);
 
@@ -2042,6 +2068,58 @@ function CameraSettingsTab() {
       setSaveMsg('Failed to save');
     } finally {
       setSaving(false);
+    }
+  }
+
+  function handleSaFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target?.result as string);
+        setGdrive(g => ({ ...g, sa_json: parsed, sa_email: parsed.client_email || null }));
+        setGdriveMsg('Service account JSON loaded — save to apply');
+      } catch {
+        setGdriveMsg('Invalid JSON file');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+  async function saveGDrive() {
+    setSavingDrive(true); setGdriveMsg('');
+    try {
+      const payload: Record<string, unknown> = {
+        enabled: gdrive.enabled,
+        folder_id: gdrive.folder_id,
+        archive_folder_id: gdrive.archive_folder_id,
+        retention_days: gdrive.retention_days,
+        retention_action: gdrive.retention_action,
+      };
+      if (gdrive.sa_json) payload.service_account_json = gdrive.sa_json;
+      await api.put('/api/v1/cameras/google-drive-config', payload);
+      setGdriveMsg('Google Drive settings saved');
+      setGdrive(g => ({ ...g, sa_json: null }));
+      setTimeout(() => setGdriveMsg(''), 4000);
+    } catch {
+      setGdriveMsg('Failed to save');
+    } finally {
+      setSavingDrive(false);
+    }
+  }
+
+  async function testGDrive() {
+    setTestingDrive(true); setDriveTestResult(null);
+    try {
+      const { data } = await api.post<{ ok: boolean; message: string }>('/api/v1/cameras/google-drive-config/test');
+      setDriveTestResult({ ok: data.ok, message: data.message });
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setDriveTestResult({ ok: false, message: typeof detail === 'string' ? detail : 'Connection failed' });
+    } finally {
+      setTestingDrive(false);
     }
   }
 
@@ -2258,6 +2336,126 @@ function CameraSettingsTab() {
           </p>
         )}
       </div>
+
+      {/* ── Google Drive Storage ─────────────────────────────────────────── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <HardDrive className="h-4 w-4 text-primary" />
+            Google Drive Storage
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Store camera snapshots in Google Drive instead of local disk.
+            Uses a service account — no user login required.
+            Snapshots older than the retention period are automatically moved to the archive folder.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3">
+            <input
+              id="gdrive-enabled"
+              type="checkbox"
+              checked={gdrive.enabled}
+              onChange={e => setGdrive(g => ({ ...g, enabled: e.target.checked }))}
+              className="h-4 w-4 rounded border-input"
+            />
+            <Label htmlFor="gdrive-enabled" className="text-sm font-medium">Enable Google Drive Storage</Label>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Service Account JSON</Label>
+            <div className="flex items-center gap-2">
+              <label className="cursor-pointer">
+                <span className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-input bg-background text-xs font-medium hover:bg-accent hover:text-accent-foreground transition-colors">
+                  <Upload className="h-3.5 w-3.5" />
+                  {gdrive.sa_json ? 'JSON loaded (unsaved)' : gdrive.sa_email ? 'Replace JSON file' : 'Upload JSON file'}
+                </span>
+                <input type="file" accept=".json,application/json" className="hidden" onChange={handleSaFile} />
+              </label>
+              {(gdrive.sa_email || gdrive.sa_json) && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+                  {gdrive.sa_json
+                    ? (gdrive.sa_json as Record<string, string>).client_email || 'Loaded'
+                    : gdrive.sa_email}
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Download from Google Cloud Console → Service Accounts → Keys → Add Key (JSON).
+              Share your Drive folder with the service account email.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <Label className="text-xs">Primary Folder ID</Label>
+              <Input
+                value={gdrive.folder_id}
+                onChange={e => setGdrive(g => ({ ...g, folder_id: e.target.value }))}
+                placeholder="1BxiM…"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                The folder ID from the Drive URL: /folders/<b>ID</b>
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Archive Folder ID (for old snapshots)</Label>
+              <Input
+                value={gdrive.archive_folder_id}
+                onChange={e => setGdrive(g => ({ ...g, archive_folder_id: e.target.value }))}
+                placeholder="Leave blank to delete instead"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <Label className="text-xs">Retention (days)</Label>
+              <Input
+                type="number"
+                min={1}
+                value={gdrive.retention_days}
+                onChange={e => setGdrive(g => ({ ...g, retention_days: Number(e.target.value) || 90 }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Action on old files</Label>
+              <select
+                className="w-full h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                value={gdrive.retention_action}
+                onChange={e => setGdrive(g => ({ ...g, retention_action: e.target.value as 'archive' | 'delete' }))}
+              >
+                <option value="archive">Move to archive folder</option>
+                <option value="delete">Delete permanently</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pt-1">
+            <Button onClick={saveGDrive} disabled={savingDrive} size="sm">
+              {savingDrive ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
+              Save Drive Settings
+            </Button>
+            <Button variant="outline" size="sm" onClick={testGDrive} disabled={testingDrive}>
+              {testingDrive ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <TestTube className="h-3.5 w-3.5 mr-1.5" />}
+              Test Connection
+            </Button>
+            {gdriveMsg && (
+              <span className={`text-xs ${gdriveMsg.includes('Failed') || gdriveMsg.includes('Invalid') ? 'text-destructive' : 'text-muted-foreground'}`}>
+                {gdriveMsg}
+              </span>
+            )}
+          </div>
+
+          {driveTestResult && (
+            <div className={`flex items-center gap-2 text-sm rounded-md px-3 py-2 ${driveTestResult.ok ? 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300' : 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300'}`}>
+              {driveTestResult.ok ? <CheckCircle className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}
+              {driveTestResult.message}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

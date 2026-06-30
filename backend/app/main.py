@@ -346,6 +346,102 @@ async def _low_stock_alert_loop():
             logger.warning("low-stock alert loop error: %s", exc)
 
 
+# ── Google Drive snapshot cleanup loop ────────────────────────────────────────
+# Runs daily at 02:00. For each tenant with Drive configured, moves (or deletes)
+# camera snapshot files older than `retention_days` from the primary folder.
+
+_last_gdrive_cleanup_dates: dict[str, "date"] = {}  # noqa: F821
+
+
+async def _gdrive_cleanup_loop():
+    """Daily scan at 02:00: archive/delete old camera snapshots from Google Drive."""
+    import datetime as _dt
+    from datetime import date as _date_cls
+
+    while True:
+        await asyncio.sleep(3600)  # check hourly
+        try:
+            now = _dt.datetime.now()
+            if now.hour != 2:
+                continue
+
+            today = _date_cls.today()
+
+            async def _cleanup_one(session_factory, label: str = "default"):
+                if _last_gdrive_cleanup_dates.get(label) == today:
+                    return
+                from sqlalchemy import text as _sql
+
+                async with session_factory() as db:
+                    row = (await db.execute(
+                        _sql("SELECT value FROM app_settings WHERE key = 'google_drive_config'")
+                    )).scalar()
+                if not row:
+                    return
+                import json
+                cfg = json.loads(row)
+                if not (cfg.get("enabled") and cfg.get("service_account_json") and cfg.get("folder_id")):
+                    return
+
+                retention_days = int(cfg.get("retention_days") or 90)
+                action = cfg.get("retention_action", "archive")
+                archive_folder_id = cfg.get("archive_folder_id", "")
+
+                _last_gdrive_cleanup_dates[label] = today
+
+                from app.utils.google_drive import list_old_files, move_to_folder, delete_file as gd_delete
+                loop = asyncio.get_event_loop()
+                try:
+                    old_files = await loop.run_in_executor(
+                        None, list_old_files, cfg["service_account_json"], cfg["folder_id"], retention_days
+                    )
+                except Exception as e:
+                    logger.warning("GDrive cleanup list failed [%s]: %s", label, e)
+                    return
+
+                moved = deleted = errors = 0
+                for f in old_files:
+                    try:
+                        if action == "archive" and archive_folder_id:
+                            await loop.run_in_executor(
+                                None, move_to_folder,
+                                cfg["service_account_json"], f["id"], archive_folder_id, cfg["folder_id"],
+                            )
+                            moved += 1
+                        else:
+                            await loop.run_in_executor(
+                                None, gd_delete, cfg["service_account_json"], f["id"]
+                            )
+                            deleted += 1
+                    except Exception as e:
+                        errors += 1
+                        logger.warning("GDrive cleanup file %s failed [%s]: %s", f["id"], label, e)
+
+                logger.info(
+                    "GDrive cleanup [%s]: %d moved to archive, %d deleted, %d errors (retention=%dd, action=%s)",
+                    label, moved, deleted, errors, retention_days, action,
+                )
+
+            from app.config import get_settings as _gs
+            if _gs().MULTI_TENANT:
+                from app.multitenancy.registry import tenant_registry
+                tenants = await tenant_registry.list_active_tenants()
+                for t in tenants:
+                    try:
+                        factory = await tenant_registry.get_session_factory(t.slug)
+                        await _cleanup_one(factory, label=t.slug)
+                    except Exception as e:
+                        logger.warning("GDrive cleanup failed for tenant %s: %s", t.slug, e)
+            else:
+                from app.database import async_session
+                await _cleanup_one(async_session, label="default")
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("GDrive cleanup loop error: %s", exc)
+
+
 # ── Owner daily Telegram digest (Sprint 2) ─────────────────────────────────
 # Single message at 20:00 (configurable) summarising the day, sent to every
 # notification_recipient subscribed to event `owner_digest`. Multi-tenant aware.
@@ -639,6 +735,9 @@ async def lifespan(app: FastAPI):
     )
     owner_digest_task = asyncio.create_task(
         _supervised("owner-digest", _owner_digest_loop(), restart_delay=120)
+    )
+    gdrive_cleanup_task = asyncio.create_task(
+        _supervised("gdrive-cleanup", _gdrive_cleanup_loop(), restart_delay=300)
     )
 
     # ── Startup ─────────────────────────────────────────────────────────────
