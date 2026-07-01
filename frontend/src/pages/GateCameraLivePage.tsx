@@ -206,14 +206,7 @@ function CameraPanel({ position, label, refreshInterval = 3000 }: CameraPanelPro
           {status === 'off' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950">
               <WifiOff className="h-10 w-10 text-slate-600" />
-              <p className="text-slate-500 text-sm font-medium">No frames received yet</p>
-              <p className="text-slate-600 text-xs text-center max-w-xs leading-relaxed">
-                Add{' '}
-                <code className="bg-slate-800 px-1 rounded">gate_cameras.{position}</code>{' '}
-                URL to <code className="bg-slate-800 px-1 rounded">camera_config.json</code>{' '}
-                on the site PC, then restart{' '}
-                <code className="bg-slate-800 px-1 rounded">WeighbridgeCameraAgent</code>.
-              </p>
+              <p className="text-slate-500 text-sm font-medium">No Signal</p>
             </div>
           )}
 
