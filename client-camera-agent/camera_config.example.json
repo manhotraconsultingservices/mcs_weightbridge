@@ -1,0 +1,34 @@
+{
+  "cloud_url": "https://weighbridgesetu.com",
+  "tenant_slug": "",
+  "agent_key": "",
+  "poll_interval_sec": 5,
+  "status_port": 9003,
+  "ws_port": 9004,
+  "cameras": {
+    "front": {
+      "label": "Front View",
+      "url": "http://192.168.0.101/cgi-bin/snapshot.cgi",
+      "username": "",
+      "password": ""
+    },
+    "top": {
+      "label": "Top View",
+      "url": "http://192.168.0.103/cgi-bin/snapshot.cgi",
+      "username": "",
+      "password": ""
+    }
+  },
+  "gate_cameras": {
+    "entry": {
+      "url": "http://192.168.0.223/cgi-bin/snapshot.cgi",
+      "username": "",
+      "password": ""
+    },
+    "exit": {
+      "url": "http://192.168.0.224/cgi-bin/snapshot.cgi",
+      "username": "",
+      "password": ""
+    }
+  }
+}
