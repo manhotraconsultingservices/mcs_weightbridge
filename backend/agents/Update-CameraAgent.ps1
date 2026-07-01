@@ -125,13 +125,32 @@ if (-not (Test-Path $srcAgent)) {
     exit 1
 }
 
-$backupPath = "$agentScript.bak"
-if (Test-Path $agentScript) {
-    Copy-Item $agentScript $backupPath -Force
-    Write-Info "Backup: $backupPath"
+$srcResolved = if (Test-Path $srcAgent) { (Resolve-Path $srcAgent).Path } else { $srcAgent }
+$dstResolved = if (Test-Path $agentScript) { (Resolve-Path $agentScript).Path } else { $agentScript }
+
+if ($srcResolved -eq $dstResolved) {
+    Write-Warn "Script is inside the install directory -- cannot self-copy."
+    Write-Info "Downloading latest camera_agent.py from GitHub..."
+    $rawUrl = "https://raw.githubusercontent.com/manhotraconsultingservices/mcs_weightbridge/main/backend/agents/camera_agent.py"
+    try {
+        $backupPath = "$agentScript.bak"
+        if (Test-Path $agentScript) { Copy-Item $agentScript $backupPath -Force; Write-Info "Backup: $backupPath" }
+        Invoke-WebRequest -Uri $rawUrl -OutFile $agentScript -UseBasicParsing
+        Write-OK "camera_agent.py downloaded from GitHub"
+    } catch {
+        Write-Host "  [ERR] Download failed: $_" -ForegroundColor Red
+        Write-Host "        Download manually from: $rawUrl" -ForegroundColor Yellow
+        exit 1
+    }
+} else {
+    $backupPath = "$agentScript.bak"
+    if (Test-Path $agentScript) {
+        Copy-Item $agentScript $backupPath -Force
+        Write-Info "Backup: $backupPath"
+    }
+    Copy-Item $srcAgent $agentScript -Force
+    Write-OK "camera_agent.py updated"
 }
-Copy-Item $srcAgent $agentScript -Force
-Write-OK "camera_agent.py updated"
 
 # ── Step 4: Add gate_cameras to config if missing ────────────────────────────
 
