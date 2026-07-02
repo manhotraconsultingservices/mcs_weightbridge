@@ -150,7 +150,7 @@ async def _seed_platform_defaults():
         # Upsert default branding (always keeps canonical values current)
         await db.execute(text("""
             INSERT INTO platform_branding (id, company_name, website, email)
-            VALUES (1, 'Manhotra Consulting', 'https://manhotraconsulting.in', 'contact@manhotraconsulting.in')
+            VALUES (1, 'Manhotra Consulting', 'https://manhotraconsulting.in', 'contacts@manhotraconsulting.in')
             ON CONFLICT (id) DO UPDATE SET
                 website = EXCLUDED.website,
                 email   = EXCLUDED.email
