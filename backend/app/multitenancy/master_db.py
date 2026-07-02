@@ -147,14 +147,15 @@ async def _seed_platform_defaults():
     settings = get_settings()
 
     async with _master_session_factory() as db:
-        # Seed default branding
-        row = (await db.execute(text("SELECT id FROM platform_branding WHERE id = 1"))).fetchone()
-        if not row:
-            await db.execute(text("""
-                INSERT INTO platform_branding (id, company_name, website, email)
-                VALUES (1, 'Manhotra Consulting', 'https://manhotraconsulting.in', 'contact@manhotraconsulting.in')
-            """))
-            logger.info("Seeded default platform branding")
+        # Upsert default branding (always keeps canonical values current)
+        await db.execute(text("""
+            INSERT INTO platform_branding (id, company_name, website, email)
+            VALUES (1, 'Manhotra Consulting', 'https://manhotraconsulting.in', 'contact@manhotraconsulting.in')
+            ON CONFLICT (id) DO UPDATE SET
+                website = EXCLUDED.website,
+                email   = EXCLUDED.email
+        """))
+        logger.info("Upserted default platform branding")
 
         # Seed default platform admin
         admin_user = getattr(settings, "PLATFORM_ADMIN_USER", "platform_admin")
