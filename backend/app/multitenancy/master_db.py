@@ -152,7 +152,7 @@ async def _seed_platform_defaults():
         if not row:
             await db.execute(text("""
                 INSERT INTO platform_branding (id, company_name, website, email)
-                VALUES (1, 'Manhotra Consulting', 'https://manhotraconsulting.com', 'info@manhotraconsulting.com')
+                VALUES (1, 'Manhotra Consulting', 'https://manhotraconsulting.in', 'contact@manhotraconsulting.in')
             """))
             logger.info("Seeded default platform branding")
 

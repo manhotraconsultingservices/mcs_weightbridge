@@ -162,7 +162,10 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         </Card>
         {/* Powered by footer will show if we have branding (from a fallback fetch) */}
         <p className="mt-6 text-xs text-muted-foreground">
-          Powered by Manhotra Consulting
+          Powered by{' '}
+          <a href="https://manhotraconsulting.in" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground transition-colors">
+            Manhotra Consulting
+          </a>
         </p>
       </div>
     );
