@@ -132,38 +132,38 @@ function GatePassDetailDialog({
               </div>
             )}
 
-            {/* Photos */}
-            {(entryUrl || exitUrl) && (
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
-                  <Camera className="h-3.5 w-3.5" /> Gate Photos
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  {(['entry', 'exit'] as const).map(pos => {
-                    const url = pos === 'entry' ? entryUrl : exitUrl;
-                    return (
-                      <div key={pos}>
-                        <p className="text-xs text-muted-foreground capitalize mb-1">{pos} Photo</p>
-                        {url ? (
-                          <img
-                            src={url}
-                            alt={`${pos} photo`}
-                            className="w-full rounded border object-cover cursor-zoom-in"
-                            style={{ maxHeight: 160 }}
-                            onClick={() => setLightbox({ src: url, label: `${pass.gate_pass_no} — ${pos} photo` })}
-                          />
-                        ) : (
-                          <div className="flex items-center justify-center h-32 rounded border bg-muted text-muted-foreground gap-1">
-                            <ImageOff className="h-4 w-4" />
-                            <span className="text-xs">No photo</span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+            {/* Photos — always show both slots with timestamps */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+                <Camera className="h-3.5 w-3.5" /> Gate Photos
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                {(['entry', 'exit'] as const).map(pos => {
+                  const url = pos === 'entry' ? entryUrl : exitUrl;
+                  const ts  = pos === 'entry' ? pass.entry_time : pass.exit_time;
+                  return (
+                    <div key={pos}>
+                      <p className="text-xs font-medium capitalize mb-0.5">{pos} Photo</p>
+                      <p className="text-[10px] text-muted-foreground mb-1">{fmtIST(ts)}</p>
+                      {url ? (
+                        <img
+                          src={url}
+                          alt={`${pos} photo`}
+                          className="w-full rounded border object-cover cursor-zoom-in hover:opacity-90 transition-opacity"
+                          style={{ maxHeight: 160 }}
+                          onClick={() => setLightbox({ src: url, label: `${pass.gate_pass_no} — ${pos} · ${fmtIST(ts)}` })}
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-32 rounded border bg-muted text-muted-foreground gap-1">
+                          <ImageOff className="h-4 w-4" />
+                          <span className="text-xs">No photo</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            )}
+            </div>
 
             {/* View Token */}
             {pass.token_id && (
@@ -291,6 +291,26 @@ export default function GatePassRegisterPage() {
     { key: 'dwell_minutes', label: 'Dwell (min)', type: 'number', align: 'right',
       accessor: r => r.dwell_minutes ?? '',
       format: v => v !== '' ? `${v} min` : '—' },
+    { key: 'photos', label: 'Photos', accessor: r => (r.entry_photo_path ? 1 : 0) + (r.exit_photo_path ? 1 : 0),
+      format: (_, row) => (
+        <button
+          onClick={() => setSelectedPass(row)}
+          className="flex items-center gap-1"
+          title="Click to view photos"
+        >
+          <span className={`inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded font-medium ${
+            row.entry_photo_path ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' : 'bg-muted text-muted-foreground border'
+          }`}>
+            <Camera className="h-2.5 w-2.5" /> IN
+          </span>
+          <span className={`inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded font-medium ${
+            row.exit_photo_path ? 'bg-blue-100 text-blue-700 border border-blue-300' : 'bg-muted text-muted-foreground border'
+          }`}>
+            <Camera className="h-2.5 w-2.5" /> OUT
+          </span>
+        </button>
+      ),
+      exportValue: r => [r.entry_photo_path ? 'Entry' : '', r.exit_photo_path ? 'Exit' : ''].filter(Boolean).join(', ') || 'None' },
     { key: 'token_no', label: 'Token #', type: 'number', accessor: r => r.token_no ?? '',
       format: (v, row) => v !== '' ? (
         <button
