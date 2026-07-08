@@ -82,6 +82,7 @@
     "crm": "CRM",
     "procurement": "Procurement",
     "catalog": "Item Catalog",
+    "pricing": "Pricing",
     "inventoryProduction": "Inventory",
     "productionHub": "Production",
     "vehicleMaster": "Vehicle Master",

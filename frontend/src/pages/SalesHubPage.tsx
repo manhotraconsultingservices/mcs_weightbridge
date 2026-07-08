@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { FileText, Receipt, Truck, FileMinus, IndianRupee } from 'lucide-react';
+import { FileText, Receipt, Truck, FileMinus } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -16,9 +16,8 @@ import InvoicesPage from './InvoicesPage';
 import QuotationsPage from './QuotationsPage';
 import DeliveryChallansPage from './DeliveryChallansPage';
 import CreditDebitNotesPage from './CreditDebitNotesPage';
-import PricingMatrixPage from './PricingMatrixPage';
 
-type Tab = 'bills' | 'estimates' | 'challans' | 'notes' | 'pricing';
+type Tab = 'bills' | 'estimates' | 'challans' | 'notes';
 
 export default function SalesHubPage() {
   const { t } = useTranslation();
@@ -27,11 +26,10 @@ export default function SalesHubPage() {
   const { isTabAllowed } = usePermissions();
 
   const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-    { value: 'bills',     label: t('hubs.sales.bills'),          icon: FileText },
-    { value: 'estimates', label: t('hubs.sales.estimates'),       icon: Receipt },
-    { value: 'challans',  label: t('hubs.sales.challans'),        icon: Truck },
-    { value: 'notes',     label: t('hubs.sales.creditNotes'),     icon: FileMinus },
-    { value: 'pricing',   label: t('hubs.materials.customerRates'), icon: IndianRupee },
+    { value: 'bills',     label: t('hubs.sales.bills'),      icon: FileText },
+    { value: 'estimates', label: t('hubs.sales.estimates'),   icon: Receipt },
+    { value: 'challans',  label: t('hubs.sales.challans'),    icon: Truck },
+    { value: 'notes',     label: t('hubs.sales.creditNotes'), icon: FileMinus },
   ];
   const visibleTabs = TABS.filter(t => isTabAllowed('/sales', t.value));
   const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'bills';
@@ -72,9 +70,6 @@ export default function SalesHubPage() {
         </TabsContent>
         <TabsContent value="notes" className="mt-4">
           <CreditDebitNotesPage />
-        </TabsContent>
-        <TabsContent value="pricing" className="mt-4">
-          <PricingMatrixPage />
         </TabsContent>
       </Tabs>
     </div>
