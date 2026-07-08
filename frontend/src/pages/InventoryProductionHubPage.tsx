@@ -7,16 +7,15 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Boxes, Warehouse, Package, IndianRupee } from 'lucide-react';
+import { Boxes, Warehouse, Package } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import ProductInventoryPage from './ProductInventoryPage';
 import InventoryPage from './InventoryPage';
 import ProductsPage from './ProductsPage';
-import PricingMatrixPage from './PricingMatrixPage';
 
-type Tab = 'stock' | 'store' | 'catalog' | 'rates';
+type Tab = 'stock' | 'store' | 'catalog';
 
 export default function InventoryProductionHubPage() {
   const { t } = useTranslation();
@@ -28,11 +27,10 @@ export default function InventoryProductionHubPage() {
     { value: 'stock',   label: t('hubs.materials.stockOnHand'),          icon: Boxes },
     { value: 'store',   label: t('hubs.inventoryProduction.storeInventory'), icon: Warehouse },
     { value: 'catalog', label: t('hubs.materials.catalog'),               icon: Package },
-    { value: 'rates',   label: t('hubs.materials.customerRates'),         icon: IndianRupee },
   ];
   const visibleTabs = TABS.filter(t => isTabAllowed('/inventory-hub', t.value));
   const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'stock';
-  const initial = (visibleTabs.find(t => t.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'stock') as Tab;
+  const initial = (visibleTabs.find(tab => tab.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'stock') as Tab;
   const [tab, setTab] = useState<Tab>(initial);
 
   useEffect(() => {
@@ -60,7 +58,6 @@ export default function InventoryProductionHubPage() {
         <TabsContent value="stock"   className="mt-4"><ProductInventoryPage /></TabsContent>
         <TabsContent value="store"   className="mt-4"><InventoryPage /></TabsContent>
         <TabsContent value="catalog" className="mt-4"><ProductsPage /></TabsContent>
-        <TabsContent value="rates"   className="mt-4"><PricingMatrixPage /></TabsContent>
       </Tabs>
     </div>
   );

@@ -35,10 +35,10 @@ import type { User } from '@/types';
 const HUB_CHILDREN: Record<string, string[]> = {
   '/weighbridge':      ['/gate', '/tokens-v1', '/tokens', '/anpr/trips'],
   '/cameras-anpr':     ['/camera-scale', '/snapshot-search', '/anpr/events', '/anpr/live', '/anpr/review', '/anpr/trips'],
-  '/sales':            ['/invoices', '/quotations', '/delivery-challans', '/credit-debit-notes'],
+  '/sales':            ['/invoices', '/quotations', '/delivery-challans', '/credit-debit-notes', '/pricing-matrix'],
   '/crm':              ['/customers', '/parties'],
   '/procurement':      ['/purchase-invoices', '/royalty'],
-  '/inventory-hub':    ['/products', '/pricing-matrix', '/product-inventory', '/inventory'],
+  '/inventory-hub':    ['/products', '/product-inventory', '/inventory'],
   '/production-hub':   ['/production', '/production/dashboard', '/production/settings'],
   '/accounts':         ['/payments', '/ledger', '/audit'],
   '/gst-compliance':   ['/gst-reports', '/compliance'],
