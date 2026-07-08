@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
-import { Plus, Search, FileText, Loader2, Download, CheckCircle, XCircle, Banknote, Send, CheckCircle2, Ticket, Lock, Pencil, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, RotateCcw, GitFork, History, ArrowUpCircle } from 'lucide-react';
+import { Plus, Search, FileText, Loader2, Download, CheckCircle, XCircle, Banknote, Send, CheckCircle2, Ticket, Lock, Pencil, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, RotateCcw, GitFork, History, ArrowUpCircle, Scissors } from 'lucide-react';
 import { TokenDetailModal } from '@/components/TokenDetailModal';
 import { PrintButton } from '@/components/PrintButton';
 import { InvoiceRevisionDialog } from '@/components/InvoiceRevisionDialog';
@@ -1238,6 +1238,143 @@ function RecordPaymentDialog({ open, invoice, onClose, onSaved }: RecordPaymentD
 }
 
 // ------------------------------------------------------------------ //
+// Split Invoice Dialog — split ONE draft sale bill into a cash Bill of
+// Supply (non-GST) + a UPI/online GST Tax Invoice, by quantity percentage.
+// ------------------------------------------------------------------ //
+interface SplitInvoiceDialogProps {
+  open: boolean;
+  invoice: Invoice | null;
+  onClose: () => void;
+  onSplit: () => void;
+}
+
+function SplitInvoiceDialog({ open, invoice, onClose, onSplit }: SplitInvoiceDialogProps) {
+  const { t } = useTranslation();
+  const [cashPct, setCashPct] = useState(50);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (open) { setCashPct(50); setError(''); }
+  }, [open, invoice]);
+
+  const upiPct = 100 - cashPct;
+
+  // Live preview from line items (qty × rate for the base, gst_rate for tax on
+  // the GST/UPI part only). Invoice-level discount/freight are ignored in the
+  // preview — the server recomputes authoritatively on save.
+  const preview = useMemo(() => {
+    const items = invoice?.items ?? [];
+    const cr = cashPct / 100, ur = upiPct / 100;
+    let cashBase = 0, upiBase = 0, upiGst = 0;
+    for (const it of items) {
+      const base = (Number(it.quantity) || 0) * (Number(it.rate) || 0);
+      cashBase += base * cr;
+      const uBase = base * ur;
+      upiBase += uBase;
+      upiGst += uBase * (Number(it.gst_rate) || 0) / 100;
+    }
+    return {
+      cashBase, cashTotal: cashBase,
+      upiBase, upiGst, upiTotal: upiBase + upiGst,
+    };
+  }, [invoice, cashPct, upiPct]);
+
+  const validSplit = cashPct > 0 && cashPct < 100;
+
+  async function handleSplit() {
+    if (!invoice) return;
+    if (!validSplit) { setError('Each part must be between 1% and 99%.'); return; }
+    setSaving(true); setError('');
+    try {
+      await api.post(`/api/v1/invoices/${invoice.id}/split`, {
+        parts: [
+          { tax_type: 'non_gst', ratio: cashPct / 100, payment_mode: 'cash' },
+          { tax_type: 'gst',     ratio: upiPct / 100,  payment_mode: 'upi' },
+        ],
+      });
+      toast.success('Invoice split into a Cash bill + a GST invoice — finalise each and record its payment.');
+      onSplit();
+      onClose();
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof detail === 'string' ? detail : 'Failed to split invoice');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            Split invoice by payment
+            {invoice && <span className="ml-2 font-mono text-sm text-muted-foreground">{invoice.invoice_no || 'DRAFT'}</span>}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {error && <p className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
+
+          <p className="text-xs text-muted-foreground">
+            Splits this one sale into <b>two invoices</b> by quantity — a Cash <b>Bill of Supply</b> (no GST)
+            and a UPI/Online <b>GST Tax Invoice</b>. Each becomes a draft you finalise separately, then record
+            its matching payment against.
+          </p>
+
+          <div className="space-y-1">
+            <div className="flex justify-between text-sm">
+              <Label>Cash share (Bill of Supply) — {cashPct}%</Label>
+              <span className="text-muted-foreground">UPI/Online (GST) — {upiPct}%</span>
+            </div>
+            <input
+              type="range" min={5} max={95} step={5} value={cashPct}
+              onChange={e => setCashPct(Number(e.target.value))}
+              className="w-full accent-primary"
+            />
+            <div className="flex items-center gap-2 pt-1">
+              <Label className="text-xs">Cash %</Label>
+              <Input type="number" min={1} max={99} value={cashPct}
+                onChange={e => setCashPct(Math.max(1, Math.min(99, Number(e.target.value) || 0)))}
+                className="h-8 w-24" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm space-y-1">
+              <p className="font-medium text-amber-800">Cash · Bill of Supply</p>
+              <p className="text-[11px] text-muted-foreground">CINV · no GST</p>
+              <div className="flex justify-between"><span className="text-muted-foreground">Amount</span><span>{INR(preview.cashBase)}</span></div>
+              <div className="flex justify-between border-t pt-1 font-semibold"><span>Total</span><span>{INR(preview.cashTotal)}</span></div>
+            </div>
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 text-sm space-y-1">
+              <p className="font-medium text-emerald-800">UPI/Online · GST Invoice</p>
+              <p className="text-[11px] text-muted-foreground">INV · GST applies</p>
+              <div className="flex justify-between"><span className="text-muted-foreground">Taxable</span><span>{INR(preview.upiBase)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">GST</span><span>{INR(preview.upiGst)}</span></div>
+              <div className="flex justify-between border-t pt-1 font-semibold"><span>Total</span><span>{INR(preview.upiTotal)}</span></div>
+            </div>
+          </div>
+
+          <p className="text-[11px] text-muted-foreground">
+            Preview excludes any invoice-level discount/freight; final amounts are computed on save.
+          </p>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button onClick={handleSplit} disabled={saving || !validSplit}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Split into 2 invoices
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ------------------------------------------------------------------ //
 // Main Page
 // ------------------------------------------------------------------ //
 interface InvoicesPageProps {
@@ -1257,6 +1394,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
   const [createOpen, setCreateOpen] = useState(false);
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null);
   const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
+  const [splitInvoice, setSplitInvoice] = useState<Invoice | null>(null);
   const [tokenModalId, setTokenModalId] = useState<string | null>(null);
   const [movingToSupp, setMovingToSupp] = useState<string | null>(null);
   const { authorized: usbAuthorized } = useUsbGuard();
@@ -2007,6 +2145,16 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                                     : <ArrowUpCircle className="h-3.5 w-3.5 text-blue-500" />}
                                 </Button>
                               )}
+                              {/* Split a draft sale into a Cash (non-GST) + UPI (GST) invoice */}
+                              {inv.invoice_type === 'sale' && canEditDraft && (!isSalesExec && !isPurchaseExec || isSalesExec) && (
+                                <Button
+                                  size="icon" variant="ghost" className="h-7 w-7"
+                                  title="Split into Cash + UPI invoices"
+                                  onClick={() => setSplitInvoice(inv)}
+                                >
+                                  <Scissors className="h-3.5 w-3.5 text-amber-600" />
+                                </Button>
+                              )}
                               {canMoveToSupplement && usbAuthorized && (
                                 <Button
                                   size="icon" variant="ghost" className="h-7 w-7"
@@ -2071,6 +2219,13 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
         invoice={paymentInvoice}
         onClose={() => setPaymentInvoice(null)}
         onSaved={() => { fetchInvoices(); setPaymentInvoice(null); }}
+      />
+
+      <SplitInvoiceDialog
+        open={splitInvoice !== null}
+        invoice={splitInvoice}
+        onClose={() => setSplitInvoice(null)}
+        onSplit={() => { fetchInvoices(); setSplitInvoice(null); }}
       />
 
       <TokenDetailModal

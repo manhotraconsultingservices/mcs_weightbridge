@@ -11,7 +11,7 @@ Move-to-Supplement:
 """
 import uuid
 from datetime import date, datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
@@ -32,7 +32,7 @@ from app.models.user import User
 from app.schemas.invoice import (
     InvoiceCreate, InvoiceUpdate, InvoiceResponse, InvoiceListResponse,
     CreateRevisionRequest, InvoiceRevisionChain, InvoiceCompare,
-    WriteOffRequest,
+    WriteOffRequest, InvoiceSplitRequest,
 )
 from app.services.gst_service import calculate_invoice_totals, is_intra_state, party_place_of_supply
 from app.utils.pdf_generator import generate_pdf, invoice_context, render_html
@@ -394,6 +394,198 @@ async def issue_note(
                      details={"type": inv_type, "reason": payload.reason, "against": src.invoice_no})
     await db.commit()
     return await _load_invoice(db, note.id)
+
+
+def _round2(v: Decimal) -> Decimal:
+    return v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+async def _create_split_child(
+    db: AsyncSession, src: Invoice, co: Company, fy: FinancialYear,
+    tax_type: str, item_qtys: list[Decimal], freight: Decimal,
+    discount_value, payment_mode: str | None, user_id: uuid.UUID,
+) -> Invoice:
+    """Create one DRAFT child invoice from a source draft, using per-item split
+    quantities and an explicit tax_type.
+
+    item_qtys is aligned with src.items (this child's share of each line). Lines
+    with a zero share are dropped. tax_type is set EXPLICITLY here — this path
+    intentionally bypasses the party default_payment_mode → tax_type lock so a
+    single sale can produce one GST Tax Invoice + one non-GST Bill of Supply.
+    Everything else (GST math, round-off, numbering at finalise) reuses the
+    normal invoice machinery, so the child behaves like any other invoice.
+    """
+    intra = is_intra_state(
+        co.state_code,
+        party_place_of_supply(src.party) if src.party else co.state_code,
+    )
+    items_data = []
+    for it, q in zip(src.items, item_qtys):
+        if q <= 0:
+            continue
+        items_data.append({
+            "product_id": it.product_id, "description": it.description,
+            "hsn_code": it.hsn_code, "quantity": float(q), "unit": it.unit,
+            "rate": float(it.rate), "gst_rate": float(it.gst_rate or 0),
+            "sort_order": it.sort_order,
+        })
+    if not items_data:
+        raise HTTPException(400, "Split ratio produces an empty invoice — adjust the split.")
+
+    totals = calculate_invoice_totals(
+        items=items_data,
+        discount_type=src.discount_type,
+        discount_value=(discount_value or Decimal("0")),
+        freight=(freight or Decimal("0")),
+        tcs_rate=(src.tcs_rate or Decimal("0")),
+        intra_state=intra,
+        tax_type=tax_type,
+    )
+
+    child = Invoice(
+        company_id=co.id,
+        branch_id=src.branch_id,
+        fy_id=fy.id,
+        invoice_type=src.invoice_type,
+        tax_type=tax_type,
+        invoice_no=None,                 # gap-free: assigned at finalise
+        invoice_date=src.invoice_date,
+        due_date=src.due_date,
+        party_id=src.party_id,
+        customer_name=src.customer_name,
+        token_id=src.token_id,           # both children keep the same token link
+        quotation_id=src.quotation_id,
+        vehicle_no=src.vehicle_no,
+        transporter_name=src.transporter_name,
+        gross_weight=src.gross_weight,
+        tare_weight=src.tare_weight,
+        net_weight=src.net_weight,
+        discount_type=src.discount_type,
+        discount_value=(discount_value if discount_value is not None else src.discount_value),
+        payment_mode=(payment_mode or src.payment_mode),
+        notes=src.notes,
+        tcs_rate=src.tcs_rate,
+        # Transport & dispatch metadata carried over
+        royalty_no=src.royalty_no,
+        delivery_note=src.delivery_note,
+        supplier_ref=src.supplier_ref,
+        buyer_order_no=src.buyer_order_no,
+        buyer_order_date=src.buyer_order_date,
+        dispatch_doc_no=src.dispatch_doc_no,
+        dispatch_through=src.dispatch_through,
+        destination=src.destination,
+        lr_rr_no=src.lr_rr_no,
+        terms_of_delivery=src.terms_of_delivery,
+        driver_name=src.driver_name,
+        created_by=user_id,
+        status="draft",
+        payment_status="unpaid",
+        amount_paid=Decimal("0"),
+        **{k: v for k, v in totals.items() if k != "computed_items"},
+    )
+    db.add(child)
+    await db.flush()
+
+    for i, item_data in enumerate(totals["computed_items"]):
+        db.add(InvoiceItem(
+            invoice_id=child.id,
+            product_id=item_data["product_id"],
+            description=item_data.get("description"),
+            hsn_code=item_data.get("hsn_code"),
+            quantity=Decimal(str(item_data["quantity"])),
+            unit=item_data["unit"],
+            rate=Decimal(str(item_data["rate"])),
+            amount=item_data["amount"],
+            gst_rate=Decimal(str(item_data.get("gst_rate", 0))),
+            cgst_amount=item_data["cgst_amount"],
+            sgst_amount=item_data["sgst_amount"],
+            igst_amount=item_data["igst_amount"],
+            total_amount=item_data["total_amount"],
+            sort_order=item_data.get("sort_order", i),
+        ))
+    return child
+
+
+@router.post("/{invoice_id}/split", response_model=list[InvoiceResponse], status_code=201)
+async def split_invoice(
+    invoice_id: uuid.UUID,
+    payload: InvoiceSplitRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Split ONE draft sale invoice into two child drafts by quantity ratio.
+
+    Use case: a load paid part cash / part UPI where the client wants the cash
+    share billed as a non-GST Bill of Supply (CINV) and the UPI share as a GST
+    Tax Invoice (INV). The split is by QUANTITY — each line's qty is apportioned
+    by the part ratios (last part gets the exact remainder so qty re-sums), the
+    same rate applies on both, and GST is charged only on the GST part. Both
+    children keep the source token link; the source draft is deleted. Each child
+    is a normal draft — finalise assigns its number and drives Tally/GSTR-1 from
+    its tax_type exactly as any other invoice.
+    """
+    src = await _load_invoice(db, invoice_id)
+    if src.invoice_type != "sale":
+        raise HTTPException(400, "Only sale invoices can be split")
+    if src.status != "draft":
+        raise HTTPException(400, "Only draft invoices can be split (finalise each child afterwards)")
+    if not src.items:
+        raise HTTPException(400, "Invoice has no line items to split")
+
+    parts = payload.parts or []
+    if len(parts) != 2:
+        raise HTTPException(400, "Provide exactly two parts to split into")
+    for p in parts:
+        if p.tax_type not in ("gst", "non_gst"):
+            raise HTTPException(400, "Each part's tax_type must be 'gst' or 'non_gst'")
+        if not (0 < p.ratio < 1):
+            raise HTTPException(400, "Each part ratio must be between 0 and 1 (exclusive)")
+    if abs(sum(p.ratio for p in parts) - 1.0) > 0.001:
+        raise HTTPException(400, "Part ratios must sum to 1.0")
+
+    co, fy = await _get_company_fy(db)
+
+    # Per-item split quantities: first part rounded to 3dp, second = remainder
+    # (so qty_part0 + qty_part1 == original qty exactly per line).
+    r0 = Decimal(str(parts[0].ratio))
+    qtys_0, qtys_1 = [], []
+    for it in src.items:
+        q_total = Decimal(str(it.quantity))
+        q0 = (q_total * r0).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+        qtys_0.append(q0)
+        qtys_1.append(q_total - q0)
+
+    # Apportion freight + flat discount by ratio (percentage discount scales
+    # automatically per child, so it's passed through unchanged).
+    freight = src.freight or Decimal("0")
+    f0 = _round2(freight * r0)
+    f1 = freight - f0
+    if src.discount_type == "flat":
+        dv = src.discount_value or Decimal("0")
+        d0 = _round2(dv * r0)
+        d1 = dv - d0
+    else:
+        d0 = d1 = src.discount_value
+
+    child0 = await _create_split_child(
+        db, src, co, fy, parts[0].tax_type, qtys_0, f0, d0, parts[0].payment_mode, current_user.id)
+    child1 = await _create_split_child(
+        db, src, co, fy, parts[1].tax_type, qtys_1, f1, d1, parts[1].payment_mode, current_user.id)
+
+    # Remove the source draft (children now carry the token link + amounts)
+    for it in list(src.items):
+        await db.delete(it)
+    await db.flush()
+    await db.delete(src)
+
+    from app.routers.audit import log_action
+    await log_action(db, co.id, current_user.id, "split", "invoice", entity_id=str(invoice_id),
+                     details={
+                         "parts": [{"tax_type": p.tax_type, "ratio": p.ratio} for p in parts],
+                         "children": [str(child0.id), str(child1.id)],
+                     })
+    await db.commit()
+    return [await _load_invoice(db, child0.id), await _load_invoice(db, child1.id)]
 
 
 class GenerateEwbRequest(BaseModel):

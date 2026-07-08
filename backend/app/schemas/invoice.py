@@ -226,6 +226,29 @@ class WriteOffRequest(BaseModel):
     reason: str
 
 
+class SplitPart(BaseModel):
+    """One share of a split sale invoice.
+
+    ratio = fraction of each line's quantity that goes to this part (0<r<1).
+    tax_type = 'gst' (Tax Invoice, INV series) or 'non_gst' (Bill of Supply,
+    CINV series). payment_mode is stored on the child invoice for reference
+    (the actual payment receipt is recorded separately after finalise).
+    """
+    tax_type: str                       # 'gst' | 'non_gst'
+    ratio: float                        # 0 < ratio < 1
+    payment_mode: Optional[str] = None  # e.g. 'cash' | 'upi' — informational
+
+
+class InvoiceSplitRequest(BaseModel):
+    """Split ONE draft sale invoice into two child invoices by quantity ratio.
+
+    Typical use: a load paid part cash / part UPI where the client wants the
+    cash share as a non-GST Bill of Supply and the UPI share as a GST Tax
+    Invoice. Exactly two parts; ratios must sum to 1.0.
+    """
+    parts: list[SplitPart]
+
+
 class CreateRevisionRequest(BaseModel):
     reason: Optional[str] = None  # Optional reason/notes for this revision
 
