@@ -14,6 +14,8 @@ import PartiesPage from '@/pages/PartiesPage';
 import CustomerProfilePage from '@/pages/CustomerProfilePage';
 import CustomerPickerPage from '@/pages/CustomerPickerPage';
 import PartyBalancesPage from '@/pages/PartyBalancesPage';
+import AgentsPage from '@/pages/AgentsPage';
+import AgentReportPage from '@/pages/AgentReportPage';
 import OperatorKioskPage from '@/pages/OperatorKioskPage';
 import GatePassPage from '@/pages/GatePassPage';
 import ErrorBoundary from '@/components/ErrorBoundary';
@@ -249,6 +251,8 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/payments" element={<PaymentsPage />} />
             <Route path="/ledger" element={<LedgerPage />} />
             <Route path="/party-balances" element={<PartyBalancesPage />} />
+            <Route path="/agents" element={<AgentsPage />} />
+            <Route path="/agents/:id" element={<AgentReportPage />} />
             {/* /reports now serves the hub (with old ReportsPage as a tab). */}
             <Route path="/reports" element={<ReportsHubPage />} />
             <Route path="/reports-classic" element={<ReportsPage />} />

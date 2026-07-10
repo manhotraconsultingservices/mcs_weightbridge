@@ -254,6 +254,7 @@ async def create_invoice(
         customer_name=payload.customer_name,
         token_id=payload.token_id,
         quotation_id=payload.quotation_id,
+        agent_id=payload.agent_id,
         vehicle_no=vehicle_no,
         transporter_name=payload.transporter_name,
         eway_bill_no=payload.eway_bill_no,
@@ -988,6 +989,23 @@ async def finalise_invoice(
             inv.invoice_no = await _next_invoice_no(db, co.id, fy.id, inv.invoice_type, _invoice_prefix(inv.invoice_type, inv.tax_type), branch_id=inv.branch_id)
 
     inv.status = "final"
+
+    # ── Snapshot agent commission (locks the number against later rate changes) ─
+    # Only for the invoice types that earn commission (sale by default; see
+    # agents.COMMISSION_INVOICE_TYPES). Skip revisions (share the original's no.).
+    if inv.agent_id and not (inv.revision_no and inv.revision_no > 1):
+        try:
+            from app.routers.agents import COMMISSION_INVOICE_TYPES
+            if inv.invoice_type in COMMISSION_INVOICE_TYPES:
+                from app.models.agent import Agent
+                from app.services.commission import compute_commission
+                agent = (await db.execute(
+                    select(Agent).where(Agent.id == inv.agent_id)
+                )).scalar_one_or_none()
+                inv.commission_amount = compute_commission(agent, inv)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Commission snapshot failed for invoice %s: %s", inv.id, e)
 
     # ── Auto-post product stock movements (finished goods inventory) ──────────
     # Sale finalise → stock down; purchase finalise → stock up. Skip for revisions

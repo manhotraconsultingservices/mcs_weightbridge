@@ -28,6 +28,9 @@ class Invoice(Base):
     customer_name: Mapped[str | None] = mapped_column(String(200))  # for B2C walk-in
     token_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tokens.id"))
     quotation_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("quotations.id"))
+    # Agent (broker) association + commission snapshot (computed at finalise)
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agents.id"), nullable=True)
+    commission_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
 
     # Vehicle/transport info (denormalized from token for quick access)
     vehicle_no: Mapped[str | None] = mapped_column(String(20))

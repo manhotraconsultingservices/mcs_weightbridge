@@ -644,6 +644,67 @@ export interface Party360Stats {
   lifetime_tonnage: number;
 }
 
+// ── Agents (brokers/dalals) + commission ──────────────────────────────────────
+export type CommissionType = 'per_mt' | 'pct_of_taxable' | 'pct_of_grand_total' | 'flat_per_invoice';
+
+export interface Agent {
+  id: string;
+  name: string;
+  phone: string | null;
+  gstin: string | null;
+  pan: string | null;
+  address: string | null;
+  commission_type: CommissionType;
+  commission_rate: number;
+  notes: string | null;
+  is_active: boolean;
+}
+
+export interface AgentPayout {
+  id: string;
+  agent_id: string;
+  amount: number;
+  paid_on: string;
+  payment_mode: string | null;
+  reference_no: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface AgentReportInvoice {
+  invoice_id: string;
+  invoice_no: string | null;
+  invoice_date: string;
+  invoice_type: string;
+  party_name: string | null;
+  net_weight_mt: number;
+  taxable_amount: number;
+  grand_total: number;
+  commission_amount: number;
+}
+
+export interface AgentReport {
+  agent: Agent;
+  earned: number;
+  paid: number;
+  due: number;
+  invoice_count: number;
+  total_sale_value: number;
+  invoices: AgentReportInvoice[];
+  payouts: AgentPayout[];
+}
+
+export interface AgentSummaryRow {
+  agent_id: string;
+  name: string;
+  commission_type: CommissionType;
+  commission_rate: number;
+  invoice_count: number;
+  earned: number;
+  paid: number;
+  due: number;
+}
+
 export interface Party360Invoice {
   id: string;
   invoice_no: string | null;

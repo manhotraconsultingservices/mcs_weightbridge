@@ -26,6 +26,7 @@ class Token(Base):
     vehicle_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("vehicles.id"))
     driver_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("drivers.id"))
     transporter_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("transporters.id"))
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agents.id"))
     party_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("parties.id"))
     product_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("products.id"))
 

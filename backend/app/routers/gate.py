@@ -206,14 +206,14 @@ async def create_gate_pass(
                  vehicle_no, vehicle_name, vehicle_id, vehicle_type,
                  driver_name, driver_phone, driver_id,
                  material, product_id, purpose,
-                 token_id, entry_time, status, notes,
+                 token_id, agent_id, entry_time, status, notes,
                  created_by, updated_by)
             VALUES
                 (:cid, :gpno, CURRENT_DATE, :seq,
                  :vno, :vname, :vid, :vtype,
                  :dname, :dphone, :did,
                  :mat, :pid, :purpose,
-                 :tid, COALESCE(CAST(:etime AS TIMESTAMPTZ), NOW()), 'inside', :notes,
+                 :tid, :aid, COALESCE(CAST(:etime AS TIMESTAMPTZ), NOW()), 'inside', :notes,
                  :uid, :uid)
             RETURNING id, gate_pass_no, seq_no, entry_time
         """),
@@ -232,6 +232,7 @@ async def create_gate_pass(
             "pid": body.get("product_id"),
             "purpose": body.get("purpose", "weighbridge"),
             "tid": body.get("token_id"),
+            "aid": body.get("agent_id"),
             "etime": body.get("entry_time"),
             "notes": body.get("notes"),
             "uid": str(current_user.id),

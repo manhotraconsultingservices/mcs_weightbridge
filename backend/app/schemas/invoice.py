@@ -23,6 +23,7 @@ class InvoiceCreate(BaseModel):
     party_id: Optional[UUID] = None     # None for B2C walk-in customers
     customer_name: Optional[str] = None # used when party_id is None
     token_id: Optional[UUID] = None
+    agent_id: Optional[UUID] = None     # broker/dalal — earns commission on this invoice
     quotation_id: Optional[UUID] = None
     vehicle_no: Optional[str] = None
     transporter_name: Optional[str] = None
@@ -122,6 +123,8 @@ class InvoiceResponse(BaseModel):
     token_id: Optional[UUID]
     token_no: Optional[int] = None       # denormalized from linked token
     token_date: Optional[date] = None    # denormalized from linked token
+    agent_id: Optional[UUID] = None      # broker/dalal association
+    commission_amount: Optional[Decimal] = None   # snapshot at finalise
     vehicle_no: Optional[str]
     transporter_name: Optional[str]
     eway_bill_no: Optional[str]

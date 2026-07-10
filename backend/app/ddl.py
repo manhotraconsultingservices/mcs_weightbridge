@@ -369,12 +369,53 @@ def get_runtime_ddl() -> list[str]:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_tally_jobs_claim ON tally_sync_jobs (status, priority, next_attempt_at, created_at)",
+        # Agents (brokers/dalals) master + commission payouts
+        """
+        CREATE TABLE IF NOT EXISTS agents (
+            id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id        UUID REFERENCES companies(id),
+            name              VARCHAR(200) NOT NULL,
+            phone             VARCHAR(15),
+            gstin             VARCHAR(15),
+            pan               VARCHAR(10),
+            address           VARCHAR(500),
+            commission_type   VARCHAR(20) NOT NULL DEFAULT 'pct_of_taxable',
+            commission_rate   NUMERIC(12,3) NOT NULL DEFAULT 0,
+            notes             VARCHAR(500),
+            is_active         BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_agents_company ON agents (company_id, is_active)",
+        """
+        CREATE TABLE IF NOT EXISTS agent_commission_payments (
+            id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id    UUID REFERENCES companies(id),
+            agent_id      UUID REFERENCES agents(id),
+            amount        NUMERIC(14,2) NOT NULL,
+            paid_on       DATE NOT NULL,
+            payment_mode  VARCHAR(20),
+            reference_no  VARCHAR(50),
+            notes         VARCHAR(500),
+            created_by    UUID REFERENCES users(id),
+            created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_agent_payments ON agent_commission_payments (company_id, agent_id)",
     ]
 
 
 def get_column_migrations() -> list[str]:
     """Return column migration ALTER TABLE statements."""
     return [
+        # Agents (brokers/dalals) — nullable FK on tokens/invoices/gate_passes
+        # + commission snapshot on invoices. Additive → existing rows stay NULL.
+        # (The `agents` table is created in get_runtime_ddl, which runs first.)
+        "ALTER TABLE tokens      ADD COLUMN IF NOT EXISTS agent_id UUID REFERENCES agents(id)",
+        "ALTER TABLE invoices    ADD COLUMN IF NOT EXISTS agent_id UUID REFERENCES agents(id)",
+        "ALTER TABLE invoices    ADD COLUMN IF NOT EXISTS commission_amount NUMERIC(14,2)",
+        "ALTER TABLE gate_passes ADD COLUMN IF NOT EXISTS agent_id UUID REFERENCES agents(id)",
         # Custom-attribute values (owner-defined fields) per weighment.
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS custom_fields JSONB",
         "ALTER TABLE compliance_items ADD COLUMN IF NOT EXISTS policy_holder VARCHAR(200)",

@@ -18,6 +18,7 @@ class TokenCreate(BaseModel):
     tyre_count: Optional[int] = None     # 4/6/8/10/12 — for slip + truck-class label
     driver_id: Optional[UUID] = None
     transporter_id: Optional[UUID] = None
+    agent_id: Optional[UUID] = None      # broker/dalal — carried to the invoice for commission
     gate_pass: Optional[str] = None
     gate_pass_id: Optional[UUID] = None  # link to gate_passes record (uses its GP number)
     remarks: Optional[str] = None
@@ -52,6 +53,7 @@ class TokenVolumeCreate(BaseModel):
     tyre_count: Optional[int] = None     # 4/6/8/10/12 — also drives default volume in UI
     driver_id: Optional[UUID] = None
     transporter_id: Optional[UUID] = None
+    agent_id: Optional[UUID] = None      # broker/dalal — carried to the invoice for commission
     volume_cft: Decimal                  # cubic feet — canonical unit stored in DB
     gate_pass: Optional[str] = None
     gate_pass_id: Optional[UUID] = None  # link to gate_passes record
@@ -70,6 +72,7 @@ class TokenUpdate(BaseModel):
     tyre_count: Optional[int] = None
     driver_id: Optional[UUID] = None
     transporter_id: Optional[UUID] = None
+    agent_id: Optional[UUID] = None
     remarks: Optional[str] = None
     custom_fields: Optional[dict[str, Any]] = None
 
@@ -150,6 +153,7 @@ class TokenResponse(BaseModel):
     anpr_entry_at: Optional[datetime] = None
     anpr_exit_at: Optional[datetime] = None
     transit_pass_id: Optional[UUID] = None
+    agent_id: Optional[UUID] = None
     vehicle_rent: Optional[Decimal] = None
     remarks: Optional[str] = None
     custom_fields: Optional[dict[str, Any]] = None   # owner-defined attribute values

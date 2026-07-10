@@ -32,7 +32,7 @@ import { useWeight } from '@/hooks/useWeight';
 import { useAuth, moduleEnabled, getTenantIndustry } from '@/hooks/useAuth';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import api from '@/services/api';
-import type { Token, TokenListResponse, Party, Product, Vehicle, GatePass, SnapshotResult, TokenSnapshotsResponse, CustomFieldDefinition } from '@/types';
+import type { Token, TokenListResponse, Party, Product, Vehicle, GatePass, SnapshotResult, TokenSnapshotsResponse, CustomFieldDefinition, Agent } from '@/types';
 import CustomFieldsInput from '@/components/CustomFieldsInput';
 import { cn } from '@/lib/utils';
 import { TokenDetailModal } from '@/components/TokenDetailModal';
@@ -153,6 +153,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     remarks: '',
     transit_pass_id: '',   // P1: link purchase token to its royalty/transit pass
     vehicle_rent: '',      // optional payment to truck owner per trip
+    agent_id: '',          // broker/dalal — carried to the invoice for commission
   });
   // Volume-based weighment (skips the bridge)
   const [weightMethod, setWeightMethod] = useState<'weighbridge' | 'volume'>('weighbridge');
@@ -199,6 +200,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const [parties, setParties] = useState<Party[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [vehicleTypes, setVehicleTypes] = useState<string[]>([]);
   const [vehicleSearch, setVehicleSearch] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
@@ -263,11 +265,13 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       setVehicles(Array.isArray(vData) ? vData : (vData as { items: Vehicle[] }).items ?? []);
       setVehicleTypes(Array.isArray(vt.data) ? vt.data : []);
     }).catch(() => {});
+    api.get<{ items: Agent[] }>('/api/v1/agents?page_size=500')
+      .then(r => setAgents(r.data.items ?? [])).catch(() => setAgents([]));
     loadGatePasses();
   }, [loadGatePasses]);
 
   function resetForm() {
-    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '' });
+    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', agent_id: '' });
     setCustomValues({});
     setVehicleSearch('');
     setSelectedVehicle(null);
@@ -386,6 +390,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           vehicle_id: form.vehicle_id || undefined,
           volume_cft: Number(volumeCft.toFixed(3)),
           transit_pass_id: form.transit_pass_id || undefined,
+          agent_id: form.agent_id || undefined,
           gate_pass_id: form.gate_pass_id || undefined,
           vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
           remarks: form.remarks
@@ -432,6 +437,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       product_id: form.product_id || undefined,
       vehicle_id: form.vehicle_id || undefined,
       transit_pass_id: form.transit_pass_id || undefined,
+      agent_id: form.agent_id || undefined,
       gate_pass_id: form.gate_pass_id || undefined,
       vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
       remarks: form.remarks || undefined,
@@ -685,6 +691,30 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
                     <span className="text-muted-foreground text-xs ml-2">bal {Number(p.balance_mt).toFixed(2)} MT</span>
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* Agent (broker/dalal) — carried to the invoice for commission. Only
+            shown when the tenant has agents configured. */}
+        {agents.length > 0 && (
+          <div className="space-y-1">
+            <Label className="text-xs">Agent (broker)</Label>
+            <Select
+              value={form.agent_id || '__none__'}
+              onValueChange={v => setForm(f => ({ ...f, agent_id: v === '__none__' ? '' : (v ?? '') }))}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <span className="truncate text-left flex-1">
+                  {form.agent_id
+                    ? (agents.find(a => a.id === form.agent_id)?.name ?? '…')
+                    : <span className="text-muted-foreground">None</span>}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__"><span className="text-muted-foreground">None</span></SelectItem>
+                {agents.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>

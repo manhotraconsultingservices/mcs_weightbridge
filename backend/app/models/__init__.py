@@ -12,6 +12,7 @@ from app.models.settings import NumberSequence, SerialPortConfig, TallyConfig, A
 from app.models.notification import NotificationConfig, NotificationTemplate, NotificationLog
 from app.models.compliance import ComplianceItem
 from app.models.custom_field import CustomFieldDefinition
+from app.models.agent import Agent, AgentCommissionPayment
 
 __all__ = [
     "Company", "FinancialYear",
@@ -28,4 +29,5 @@ __all__ = [
     "NotificationConfig", "NotificationTemplate", "NotificationLog",
     "ComplianceItem",
     "CustomFieldDefinition",
+    "Agent", "AgentCommissionPayment",
 ]

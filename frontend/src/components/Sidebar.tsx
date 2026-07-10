@@ -20,7 +20,7 @@ import {
   BookOpen, TrendingUp, Package,
   LogOut, Usb, Settings,
   Bell, HardDrive, Upload, UserCog, Lock, ImageIcon, Building2,
-  Camera, Cog, FileBarChart, ShieldAlert, FileCheck2, Tags, Users, Truck, IndianRupee,
+  Camera, Cog, FileBarChart, ShieldAlert, FileCheck2, Tags, Users, Truck, IndianRupee, Handshake,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getTenantModules } from '@/hooks/useAuth';
@@ -97,6 +97,7 @@ const NAV_SECTIONS: NavSection[] = [
       { to: '/procurement',     icon: ShoppingCart, labelKey: 'sidebar.procurement' },
       { to: '/products',        icon: Package,      labelKey: 'sidebar.catalog' },
       { to: '/pricing-matrix',  icon: IndianRupee,  labelKey: 'sidebar.pricing' },
+      { to: '/agents',          icon: Handshake,    labelKey: 'sidebar.agents' },
     ],
   },
   {
