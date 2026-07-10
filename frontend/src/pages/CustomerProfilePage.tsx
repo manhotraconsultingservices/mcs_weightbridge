@@ -15,7 +15,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Phone, Mail, MapPin, IndianRupee, FileText, Banknote,
   Receipt, Clock, TrendingUp, AlertCircle, Loader2, Truck, Tag,
-  Calendar, Edit, CheckCircle2, XCircle,
+  Calendar, Edit, CheckCircle2, XCircle, Wallet,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -268,7 +268,7 @@ export default function CustomerProfilePage() {
     invoice_count: 0, avg_order_value: 0,
     last_invoice_date: null, days_since_last_order: null,
     last_payment_date: null, days_since_last_payment: null,
-    total_outstanding: 0, total_overdue: 0,
+    total_outstanding: 0, total_overdue: 0, advance_balance: 0,
     aging: { current: 0, bucket_1_30: 0, bucket_31_60: 0, bucket_61_90: 0, bucket_90_plus: 0 },
     token_count: 0, lifetime_tonnage: 0,
   } as Party360Response['stats']);
@@ -359,6 +359,15 @@ export default function CustomerProfilePage() {
               : 'No overdue'
           }
           tone={outstandingTone}
+        />
+        <KpiCard
+          icon={Wallet}
+          label={isSupplier ? 'Advance Paid' : 'Advance on Account'}
+          value={INR(Number(stats.advance_balance ?? 0))}
+          sub={(stats.advance_balance ?? 0) > 0
+            ? 'Credit — auto-applied to new bills'
+            : 'No advance'}
+          tone={(stats.advance_balance ?? 0) > 0 ? 'good' : 'default'}
         />
         <KpiCard
           icon={TrendingUp}

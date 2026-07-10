@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
-import { Plus, Search, FileText, Loader2, Download, CheckCircle, XCircle, Banknote, Send, CheckCircle2, Ticket, Lock, Pencil, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, RotateCcw, GitFork, History, ArrowUpCircle, Scissors } from 'lucide-react';
+import { Plus, Search, FileText, Loader2, Download, CheckCircle, XCircle, Banknote, Send, CheckCircle2, Ticket, Lock, Pencil, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, RotateCcw, GitFork, History, ArrowUpCircle, Scissors, Wallet } from 'lucide-react';
 import { TokenDetailModal } from '@/components/TokenDetailModal';
 import { PrintButton } from '@/components/PrintButton';
 import { InvoiceRevisionDialog } from '@/components/InvoiceRevisionDialog';
@@ -1576,6 +1576,17 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
     }
   }
 
+  async function applyAdvance(inv: Invoice) {
+    try {
+      const { data } = await api.post<Invoice>(`/api/v1/invoices/${inv.id}/apply-advance`);
+      setInvoices(prev => prev.map(i => i.id === inv.id ? data : i));
+      toast.success(`Advance applied — invoice is now ${data.payment_status}`);
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Failed to apply advance');
+    }
+  }
+
   async function convertToGst(id: string) {
     if (!confirm('Convert this CINV cash invoice to a GST invoice (INV)? GST amounts will be recalculated. This cannot be undone.')) return;
     setConvertingIds(prev => new Set(prev).add(id));
@@ -2079,6 +2090,11 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                           {inv.status === 'final' && canRecordPayment && inv.payment_status !== 'paid' && inv.party && (
                             <Button size="icon" variant="ghost" className="h-7 w-7" title={t('invoice.recordPayment')} onClick={() => setPaymentInvoice(inv)}>
                               <Banknote className="h-3.5 w-3.5 text-blue-600" />
+                            </Button>
+                          )}
+                          {inv.status === 'final' && canRecordPayment && inv.payment_status !== 'paid' && inv.party && (
+                            <Button size="icon" variant="ghost" className="h-7 w-7" title="Apply advance / on-account credit" onClick={() => applyAdvance(inv)}>
+                              <Wallet className="h-3.5 w-3.5 text-emerald-600" />
                             </Button>
                           )}
                           {inv.status === 'final' && canWriteOff && inv.invoice_type === 'sale' && inv.payment_status !== 'paid' && (

@@ -173,6 +173,7 @@ class Party360Stats(BaseModel):
     # Outstanding snapshot
     total_outstanding: Decimal = Decimal("0")
     total_overdue: Decimal = Decimal("0")
+    advance_balance: Decimal = Decimal("0")      # unallocated advance the party has on account (credit)
     aging: Party360AgingBuckets = Party360AgingBuckets()
     # Operations
     token_count: int = 0

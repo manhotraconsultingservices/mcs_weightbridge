@@ -638,6 +638,7 @@ export interface Party360Stats {
   days_since_last_payment: number | null;
   total_outstanding: number;
   total_overdue: number;
+  advance_balance: number;
   aging: Party360AgingBuckets;
   token_count: number;
   lifetime_tonnage: number;

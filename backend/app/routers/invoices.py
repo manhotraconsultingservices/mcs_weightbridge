@@ -840,6 +840,120 @@ async def update_invoice(
     return await _load_invoice(db, invoice_id)
 
 
+# ------------------------------------------------------------------ #
+# Advances / prepayments — auto-exhaust against finalised invoices
+# ------------------------------------------------------------------ #
+async def _advance_auto_apply_enabled(db: AsyncSession) -> bool:
+    """Company setting `advance.auto_apply` (app_settings). Default True."""
+    try:
+        row = (await db.execute(
+            text("SELECT value FROM app_settings WHERE key = 'advance.auto_apply'")
+        )).scalar()
+    except Exception:
+        return True
+    if row is None:
+        return True
+    return str(row).strip().lower() not in ("false", "0", "no", "off")
+
+
+async def _apply_party_advances(db: AsyncSession, inv: Invoice, respect_setting: bool = True) -> Decimal:
+    """Exhaust a party's UNALLOCATED advances against `inv` (FIFO, oldest first).
+
+    Sale invoice  → consume the customer's unallocated RECEIPTS.
+    Purchase invoice → consume the supplier's unallocated VOUCHERS.
+
+    Reuses the existing settlement primitives verbatim: one InvoicePayment row
+    per draw + `_settle_invoice`. Returns the total amount applied. No-op when
+    auto-apply is disabled (unless respect_setting=False — the manual path),
+    there's no party, the doc isn't sale/purchase, or the invoice is already
+    settled. The party's balance is unchanged by this (money moves from receipt
+    remainder into amount_paid), so the caller still recomputes once after.
+    """
+    if not inv.party_id or inv.invoice_type not in ("sale", "purchase"):
+        return Decimal("0")
+    if respect_setting and not await _advance_auto_apply_enabled(db):
+        return Decimal("0")
+
+    from app.models.payment import PaymentReceipt, PaymentVoucher, InvoicePayment
+    from app.routers.payments import _settle_invoice
+
+    outstanding = (
+        (inv.grand_total or Decimal("0"))
+        - (inv.amount_paid or Decimal("0"))
+        - (inv.write_off_amount or Decimal("0"))
+    )
+    if outstanding <= Decimal("0.01"):
+        return Decimal("0")
+
+    if inv.invoice_type == "sale":
+        Model, link_col, date_col = PaymentReceipt, InvoicePayment.receipt_id, PaymentReceipt.receipt_date
+    else:
+        Model, link_col, date_col = PaymentVoucher, InvoicePayment.voucher_id, PaymentVoucher.voucher_date
+
+    pays = (await db.execute(
+        select(Model)
+        .where(Model.party_id == inv.party_id)
+        .order_by(date_col.asc(), Model.created_at.asc())
+        .with_for_update()
+    )).scalars().all()
+    if not pays:
+        return Decimal("0")
+
+    alloc_rows = (await db.execute(
+        select(link_col, func.coalesce(func.sum(InvoicePayment.amount), 0))
+        .where(link_col.in_([p.id for p in pays]))
+        .group_by(link_col)
+    )).all()
+    allocated = {r[0]: Decimal(str(r[1] or 0)) for r in alloc_rows}
+
+    applied_total = Decimal("0")
+    for p in pays:
+        if outstanding <= Decimal("0.01"):
+            break
+        remaining = (p.amount or Decimal("0")) - allocated.get(p.id, Decimal("0"))
+        if remaining <= Decimal("0.01"):
+            continue
+        amt = min(remaining, outstanding)
+        if inv.invoice_type == "sale":
+            db.add(InvoicePayment(invoice_id=inv.id, receipt_id=p.id, amount=amt))
+        else:
+            db.add(InvoicePayment(invoice_id=inv.id, voucher_id=p.id, amount=amt))
+        _settle_invoice(inv, amt)
+        outstanding -= amt
+        applied_total += amt
+    return applied_total
+
+
+@router.post("/{invoice_id}/apply-advance", response_model=InvoiceResponse)
+async def apply_advance(
+    invoice_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Manually apply the party's advance balance to one finalised invoice."""
+    inv = await _load_invoice(db, invoice_id)
+    if inv.status != "final":
+        raise HTTPException(400, "Advances can only be applied to a finalised invoice")
+    if inv.invoice_type not in ("sale", "purchase"):
+        raise HTTPException(400, "Advances apply only to sale/purchase invoices")
+    if inv.payment_status == "paid":
+        raise HTTPException(400, "Invoice is already fully paid")
+
+    applied = await _apply_party_advances(db, inv, respect_setting=False)
+    if applied <= 0:
+        raise HTTPException(400, "No advance balance available for this party")
+
+    from app.services.balances import recompute_party_balance
+    await recompute_party_balance(db, inv.party_id)
+
+    co, _ = await _get_company_fy(db)
+    from app.routers.audit import log_action
+    await log_action(db, co.id, current_user.id, "apply_advance", "invoice",
+                     entity_id=str(invoice_id), details={"applied": str(applied)})
+    await db.commit()
+    return await _load_invoice(db, invoice_id)
+
+
 @router.post("/{invoice_id}/finalise", response_model=InvoiceResponse)
 async def finalise_invoice(
     invoice_id: uuid.UUID,
@@ -908,9 +1022,12 @@ async def finalise_invoice(
 
     # Finalising creates a receivable/payable (or a note adjustment) → recompute
     # the party's stored balance from source. Covers sale/purchase + credit/debit
-    # notes (all finalise through here).
+    # notes (all finalise through here). First exhaust any advance the party has
+    # on account against this new invoice (FIFO) — "advance consumed as they take
+    # material". The balance is invariant under this, so recompute runs once after.
     if inv.party_id:
         from app.services.balances import recompute_party_balance
+        await _apply_party_advances(db, inv)
         await recompute_party_balance(db, inv.party_id)
 
     from app.routers.audit import log_action

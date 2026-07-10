@@ -22,6 +22,18 @@ Signed convention (matches the validated credit-status / Customer-360 logic):
 Using (grand_total − amount_paid − write_off_amount) handles both full and
 partial write-offs correctly: a fully written-off invoice nets to 0; a partial
 one nets to the still-collectable remainder.
+
+Advances / prepayments:
+  A payment recorded with no (or partial) invoice allocation leaves an
+  *unallocated remainder* = receipt.amount − Σ its InvoicePayment.amount. That
+  remainder is an advance the party has paid us (customer) or we've prepaid the
+  party (supplier). It reduces the net balance:
+      − Σ unallocated RECEIPT remainder   (customer advance → they owe us less / credit)
+      + Σ unallocated VOUCHER remainder   (supplier prepayment → we owe them less)
+  This nets to zero double-counting: once an advance is later allocated to an
+  invoice, that amount moves into Invoice.amount_paid (raising the invoice's paid
+  portion) while the receipt remainder drops by the same amount — the balance is
+  invariant under allocation.
 """
 from decimal import Decimal
 
@@ -30,6 +42,48 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.invoice import Invoice
 from app.models.party import Party
+from app.models.payment import PaymentReceipt, PaymentVoucher, InvoicePayment
+
+
+async def party_advance_remaining(db: AsyncSession, party_id) -> dict:
+    """Return a party's unallocated advance remainders.
+
+    {"receipt_adv": <customer advance ₹>, "voucher_adv": <supplier prepayment ₹>}
+
+    receipt_adv = Σ receipts.amount − Σ InvoicePayment.amount(receipt side).
+    voucher_adv = Σ vouchers.amount − Σ InvoicePayment.amount(voucher side).
+    Both clamped ≥ 0 (allocations can never exceed the payment amount — enforced
+    by _validate_allocations — so a negative here would be a data error).
+    """
+    if not party_id:
+        return {"receipt_adv": Decimal("0"), "voucher_adv": Decimal("0")}
+
+    rec_total = (await db.execute(
+        select(func.coalesce(func.sum(PaymentReceipt.amount), 0))
+        .where(PaymentReceipt.party_id == party_id)
+    )).scalar() or 0
+    rec_alloc = (await db.execute(
+        select(func.coalesce(func.sum(InvoicePayment.amount), 0))
+        .join(PaymentReceipt, InvoicePayment.receipt_id == PaymentReceipt.id)
+        .where(PaymentReceipt.party_id == party_id)
+    )).scalar() or 0
+    receipt_adv = Decimal(str(rec_total)) - Decimal(str(rec_alloc))
+
+    vou_total = (await db.execute(
+        select(func.coalesce(func.sum(PaymentVoucher.amount), 0))
+        .where(PaymentVoucher.party_id == party_id)
+    )).scalar() or 0
+    vou_alloc = (await db.execute(
+        select(func.coalesce(func.sum(InvoicePayment.amount), 0))
+        .join(PaymentVoucher, InvoicePayment.voucher_id == PaymentVoucher.id)
+        .where(PaymentVoucher.party_id == party_id)
+    )).scalar() or 0
+    voucher_adv = Decimal(str(vou_total)) - Decimal(str(vou_alloc))
+
+    return {
+        "receipt_adv": max(Decimal("0"), receipt_adv).quantize(Decimal("0.01")),
+        "voucher_adv": max(Decimal("0"), voucher_adv).quantize(Decimal("0.01")),
+    }
 
 
 async def recompute_party_balance(db: AsyncSession, party_id) -> Decimal | None:
@@ -83,6 +137,13 @@ async def recompute_party_balance(db: AsyncSession, party_id) -> Decimal | None:
     for r in note_rows:
         tot = Decimal(str(r.tot or 0))
         bal += tot if r.invoice_type == "debit_note" else -tot
+
+    # Advances / prepayments — the unallocated remainder of receipts/vouchers.
+    #   customer receipt advance → they owe us less (credit): subtract
+    #   supplier voucher prepayment → we owe them less: add
+    adv = await party_advance_remaining(db, party_id)
+    bal -= adv["receipt_adv"]
+    bal += adv["voucher_adv"]
 
     party.current_balance = bal.quantize(Decimal("0.01"))
     return party.current_balance

@@ -7,15 +7,16 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { CreditCard, BookOpen, Shield } from 'lucide-react';
+import { CreditCard, BookOpen, Shield, Wallet } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import PaymentsPage from './PaymentsPage';
 import LedgerPage from './LedgerPage';
 import AuditPage from './AuditPage';
+import PartyBalancesPage from './PartyBalancesPage';
 
-type Tab = 'payments' | 'statement' | 'activity';
+type Tab = 'payments' | 'statement' | 'balances' | 'activity';
 
 export default function AccountsHubPage() {
   const { t } = useTranslation();
@@ -26,6 +27,7 @@ export default function AccountsHubPage() {
   const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
     { value: 'payments',  label: t('hubs.accounts.payments'),  icon: CreditCard },
     { value: 'statement', label: t('hubs.accounts.ledger'),    icon: BookOpen },
+    { value: 'balances',  label: 'Balances',                   icon: Wallet },
     { value: 'activity',  label: t('hubs.accounts.activity'),  icon: Shield },
   ];
   const visibleTabs = TABS.filter(t => isTabAllowed('/accounts', t.value));
@@ -57,6 +59,7 @@ export default function AccountsHubPage() {
         </TabsList>
         <TabsContent value="payments"  className="mt-4"><PaymentsPage /></TabsContent>
         <TabsContent value="statement" className="mt-4"><LedgerPage /></TabsContent>
+        <TabsContent value="balances"  className="mt-4"><PartyBalancesPage /></TabsContent>
         <TabsContent value="activity"  className="mt-4"><AuditPage /></TabsContent>
       </Tabs>
     </div>

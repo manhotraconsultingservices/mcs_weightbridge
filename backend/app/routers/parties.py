@@ -16,6 +16,7 @@ from app.models.product import Product
 from app.models.invoice import Invoice
 from app.models.payment import PaymentReceipt, PaymentVoucher
 from app.models.token import Token
+from app.services.balances import recompute_party_balance, party_advance_remaining
 from app.schemas.party import (
     PartyCreate, PartyUpdate, PartyResponse,
     PartyRateCreate, PartyRateResponse,
@@ -491,6 +492,18 @@ async def party_360(
     # net_weight stored in kg → MT
     lifetime_tonnage = (tonnage_kg / Decimal("1000")).quantize(Decimal("0.001"))
 
+    # ── Advance / prepayment on account (unallocated receipts/vouchers) ─────
+    #   customer → money they've prepaid us (receipt remainder)
+    #   supplier → money we've prepaid them (voucher remainder)
+    #   both     → either side's remainder
+    adv = await party_advance_remaining(db, party_id)
+    if party.party_type == "supplier":
+        advance_balance = adv["voucher_adv"]
+    elif party.party_type == "both":
+        advance_balance = adv["receipt_adv"] + adv["voucher_adv"]
+    else:
+        advance_balance = adv["receipt_adv"]
+
     stats = Party360Stats(
         lifetime_sales=lifetime_sales,
         lifetime_paid=lifetime_paid,
@@ -504,6 +517,7 @@ async def party_360(
         days_since_last_payment=days_since_last_payment,
         total_outstanding=total_outstanding,
         total_overdue=total_overdue,
+        advance_balance=advance_balance,
         aging=aging,
         token_count=int(token_count),
         lifetime_tonnage=lifetime_tonnage,
@@ -533,6 +547,26 @@ async def party_360(
         recent_payments=recent_payments,
         custom_rates=custom_rates,
     )
+
+
+@router.post("/recompute-balances")
+async def recompute_all_balances(
+    current_user: User = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """One-shot admin backfill: recompute current_balance for EVERY party.
+
+    Safe + idempotent (recompute_party_balance reads from source). Useful once
+    after the advance-aware balance change so pre-existing unallocated advances
+    are reflected without waiting for each party's next event.
+    """
+    ids = (await db.execute(
+        select(Party.id).where(Party.company_id == current_user.company_id)
+    )).scalars().all()
+    for pid in ids:
+        await recompute_party_balance(db, pid)
+    await db.commit()
+    return {"recomputed": len(ids)}
 
 
 # --- Credit status (advisory — never blocks) ----------------------------------

@@ -21,6 +21,7 @@ from app.models.invoice import Invoice, InvoiceItem
 from app.models.token import Token
 from app.models.party import Party
 from app.models.product import Product
+from app.models.payment import PaymentReceipt, PaymentVoucher, InvoicePayment
 from app.models.user import User
 
 router = APIRouter(prefix="/api/v1/reports", tags=["Reports"])
@@ -33,6 +34,113 @@ def _f(v) -> float:
 
 def _r2(v) -> float:
     return round(float(v or 0), 2)
+
+
+# ── Party Balances (customer + supplier, advance-aware) ───────────────────────
+
+@router.get("/party-balances")
+async def party_balances(
+    party_type: str = Query("all"),   # all | customer | supplier
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Current balance by party — bills outstanding, advance on account, and net.
+
+    Computed independently from source (same formula as recompute_party_balance),
+    so it is correct even if a party's denormalised current_balance is stale.
+    Signed net: POSITIVE = party owes us (Dr) · NEGATIVE = we owe them (Cr).
+    """
+    cid = current_user.company_id
+
+    pq = select(Party).where(Party.company_id == cid, Party.is_active == True)
+    if party_type == "customer":
+        pq = pq.where(Party.party_type.in_(["customer", "both"]))
+    elif party_type == "supplier":
+        pq = pq.where(Party.party_type.in_(["supplier", "both"]))
+    parties = (await db.execute(pq)).scalars().all()
+
+    # Invoice net (sale/purchase) + note totals, grouped by (party, type)
+    inv_map: dict = {}
+    for r in (await db.execute(
+        select(Invoice.party_id, Invoice.invoice_type, func.coalesce(func.sum(
+            func.coalesce(Invoice.grand_total, 0) - func.coalesce(Invoice.amount_paid, 0)
+            - func.coalesce(Invoice.write_off_amount, 0)), 0))
+        .where(Invoice.company_id == cid, Invoice.status == "final",
+               Invoice.invoice_type.in_(("sale", "purchase")))
+        .group_by(Invoice.party_id, Invoice.invoice_type)
+    )).all():
+        inv_map[(r[0], r[1])] = Decimal(str(r[2] or 0))
+    note_map: dict = {}
+    for r in (await db.execute(
+        select(Invoice.party_id, Invoice.invoice_type,
+               func.coalesce(func.sum(func.coalesce(Invoice.grand_total, 0)), 0))
+        .where(Invoice.company_id == cid, Invoice.status == "final",
+               Invoice.invoice_type.in_(("credit_note", "debit_note")))
+        .group_by(Invoice.party_id, Invoice.invoice_type)
+    )).all():
+        note_map[(r[0], r[1])] = Decimal(str(r[2] or 0))
+
+    async def _sum_map(stmt):
+        return {r[0]: Decimal(str(r[1] or 0)) for r in (await db.execute(stmt)).all()}
+
+    rec_total = await _sum_map(select(PaymentReceipt.party_id, func.coalesce(func.sum(PaymentReceipt.amount), 0))
+                               .where(PaymentReceipt.company_id == cid).group_by(PaymentReceipt.party_id))
+    rec_alloc = await _sum_map(select(PaymentReceipt.party_id, func.coalesce(func.sum(InvoicePayment.amount), 0))
+                               .join(PaymentReceipt, InvoicePayment.receipt_id == PaymentReceipt.id)
+                               .where(PaymentReceipt.company_id == cid).group_by(PaymentReceipt.party_id))
+    vou_total = await _sum_map(select(PaymentVoucher.party_id, func.coalesce(func.sum(PaymentVoucher.amount), 0))
+                               .where(PaymentVoucher.company_id == cid).group_by(PaymentVoucher.party_id))
+    vou_alloc = await _sum_map(select(PaymentVoucher.party_id, func.coalesce(func.sum(InvoicePayment.amount), 0))
+                               .join(PaymentVoucher, InvoicePayment.voucher_id == PaymentVoucher.id)
+                               .where(PaymentVoucher.company_id == cid).group_by(PaymentVoucher.party_id))
+
+    Z = Decimal("0")
+    rows = []
+    tot_bills = tot_adv = tot_net = Z
+    for p in parties:
+        sale_net = inv_map.get((p.id, "sale"), Z)
+        pur_net = inv_map.get((p.id, "purchase"), Z)
+        deb = note_map.get((p.id, "debit_note"), Z)
+        cred = note_map.get((p.id, "credit_note"), Z)
+        receipt_adv = max(Z, rec_total.get(p.id, Z) - rec_alloc.get(p.id, Z))
+        voucher_adv = max(Z, vou_total.get(p.id, Z) - vou_alloc.get(p.id, Z))
+        opening = Decimal(str(p.opening_balance or 0))
+
+        bills = opening + sale_net - pur_net + deb - cred        # invoice/notes component (signed)
+        if p.party_type == "supplier":
+            advance = voucher_adv
+        elif p.party_type == "both":
+            advance = receipt_adv + voucher_adv
+        else:
+            advance = receipt_adv
+        net = bills - receipt_adv + voucher_adv                  # = current_balance
+
+        if bills == 0 and advance == 0 and net == 0:
+            continue
+        rows.append({
+            "id": str(p.id),
+            "name": p.name,
+            "party_type": p.party_type,
+            "phone": p.phone,
+            "city": p.billing_city,
+            "bills_balance": _r2(bills),
+            "advance": _r2(advance),
+            "net_balance": _r2(net),
+        })
+        tot_bills += bills
+        tot_adv += advance
+        tot_net += net
+
+    rows.sort(key=lambda r: abs(r["net_balance"]), reverse=True)
+    return {
+        "rows": rows,
+        "count": len(rows),
+        "totals": {
+            "bills_balance": _r2(tot_bills),
+            "advance": _r2(tot_adv),
+            "net_balance": _r2(tot_net),
+        },
+    }
 
 
 # ── Sales Register ───────────────────────────────────────────────────────────

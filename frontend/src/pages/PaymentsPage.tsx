@@ -223,6 +223,19 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
               </div>
             </div>
           )}
+
+          {/* Unallocated → advance / on-account credit */}
+          {(parseFloat(amount) || 0) - totalAllocated > 0.05 && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-2.5 text-xs">
+              <span className="font-semibold text-emerald-700">
+                ₹{((parseFloat(amount) || 0) - totalAllocated).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </span>{' '}
+              <span className="text-emerald-800">
+                will be recorded as an {type === 'receipt' ? 'advance from this customer' : 'advance to this supplier'} (on account)
+                — auto-applied to their next {type === 'receipt' ? 'sale' : 'purchase'} bills.
+              </span>
+            </div>
+          )}
         </div>
 
         <DialogFooter>

@@ -13,6 +13,7 @@ import TokenPage from '@/pages/TokenPage';
 import PartiesPage from '@/pages/PartiesPage';
 import CustomerProfilePage from '@/pages/CustomerProfilePage';
 import CustomerPickerPage from '@/pages/CustomerPickerPage';
+import PartyBalancesPage from '@/pages/PartyBalancesPage';
 import OperatorKioskPage from '@/pages/OperatorKioskPage';
 import GatePassPage from '@/pages/GatePassPage';
 import ErrorBoundary from '@/components/ErrorBoundary';
@@ -247,6 +248,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/vehicles" element={<VehiclesPage />} />
             <Route path="/payments" element={<PaymentsPage />} />
             <Route path="/ledger" element={<LedgerPage />} />
+            <Route path="/party-balances" element={<PartyBalancesPage />} />
             {/* /reports now serves the hub (with old ReportsPage as a tab). */}
             <Route path="/reports" element={<ReportsHubPage />} />
             <Route path="/reports-classic" element={<ReportsPage />} />
