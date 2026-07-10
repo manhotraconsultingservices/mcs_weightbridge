@@ -46,6 +46,17 @@ class ProductUpdate(BaseModel):
     is_active: bool | None = None
 
 
+class ProductRateBulkItem(BaseModel):
+    product_id: uuid.UUID
+    default_rate: Decimal | None = None
+    gst_rate: Decimal | None = None
+
+
+class ProductRatesBulkRequest(BaseModel):
+    """Bulk-set default_rate (and optionally gst_rate) for many products at once."""
+    items: list[ProductRateBulkItem]
+
+
 class ProductResponse(BaseModel):
     id: uuid.UUID
     category_id: uuid.UUID | None

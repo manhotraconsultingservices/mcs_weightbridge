@@ -10,6 +10,7 @@ from app.models.product import Product, ProductCategory
 from app.schemas.product import (
     ProductCreate, ProductUpdate, ProductResponse,
     ProductCategoryCreate, ProductCategoryResponse,
+    ProductRatesBulkRequest,
 )
 
 router = APIRouter()
@@ -115,6 +116,48 @@ async def create_product(
     await db.commit()
     await db.refresh(product)
     return ProductResponse.model_validate(product)
+
+
+# NOTE: must be defined BEFORE `PUT /products/{product_id}` so the literal
+# "default-rates" path isn't swallowed as a {product_id} UUID.
+@router.put("/products/default-rates")
+async def bulk_update_default_rates(
+    data: ProductRatesBulkRequest,
+    current_user: User = Depends(require_role("admin", "operator")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk-set default_rate (and optionally gst_rate) for many products at once.
+
+    Powers the Pricing → Default Rates editor (avoids editing products one by
+    one). Company-scoped; unknown/foreign product ids are skipped. Only the
+    fields provided per item are updated.
+    """
+    if not data.items:
+        return {"updated": 0}
+    ids = [i.product_id for i in data.items]
+    prods = {p.id: p for p in (await db.execute(
+        select(Product).where(Product.id.in_(ids), Product.company_id == current_user.company_id)
+    )).scalars().all()}
+    updated = 0
+    for it in data.items:
+        p = prods.get(it.product_id)
+        if not p:
+            continue
+        changed = False
+        if it.default_rate is not None:
+            if it.default_rate < 0:
+                raise HTTPException(400, f"Rate cannot be negative for '{p.name}'")
+            p.default_rate = it.default_rate
+            changed = True
+        if it.gst_rate is not None:
+            if it.gst_rate < 0:
+                raise HTTPException(400, f"GST rate cannot be negative for '{p.name}'")
+            p.gst_rate = it.gst_rate
+            changed = True
+        if changed:
+            updated += 1
+    await db.commit()
+    return {"updated": updated}
 
 
 @router.get("/products/{product_id}", response_model=ProductResponse)
