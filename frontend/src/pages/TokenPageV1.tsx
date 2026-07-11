@@ -17,7 +17,7 @@ import ResizableSplit from '@/components/ResizableSplit';
 import CreditStatusBanner from '@/components/CreditStatusBanner';
 import { toast } from 'sonner';
 import { enqueueToken } from '@/lib/offlineQueue';
-import { fmtKg, displayToKg, weightUnitLabel } from '@/lib/weightUnit';
+import { fmtKg, displayToKg, weightUnitLabel, weightUnit } from '@/lib/weightUnit';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -139,6 +139,24 @@ const TYRE_VOLUME_CFT: Record<number, number> = {
 };
 const TYRE_OPTIONS = [4, 6, 8, 10, 12];
 
+// Volume billing units the operator can choose (canonical storage stays CFT).
+const CFT_PER_M3 = 35.3147;
+const CFT_PER_BRASS = 100;
+const VOLUME_UNITS = ['CFT', 'CBM', 'BRASS'] as const;
+const VOLUME_UNIT_LABEL: Record<string, string> = { CFT: 'Cubic Feet (CFT)', CBM: 'Cubic Meter (CBM)', BRASS: 'Brass' };
+const UNIT_SHORT: Record<string, string> = { CFT: 'CFT', CBM: 'CBM', BRASS: 'Brass' };
+function toCft(qty: number, unit: string): number {
+  if (unit === 'CBM') return qty * CFT_PER_M3;
+  if (unit === 'BRASS') return qty * CFT_PER_BRASS;
+  return qty;
+}
+function fromCft(cft: number, unit: string): number {
+  if (unit === 'CBM') return cft / CFT_PER_M3;
+  if (unit === 'BRASS') return cft / CFT_PER_BRASS;
+  return cft;
+}
+const round3 = (n: number) => Number(n.toFixed(3));
+
 function CreateTokenForm({ onCreated }: CreateFormProps) {
   const { t } = useTranslation();
   const [form, setForm] = useState({
@@ -187,7 +205,29 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   // Picking a tyre count auto-fills the volume field with the standard capacity.
   function pickTyreCount(n: number) {
     setTyreCount(n);
-    setVolumeValue(String(TYRE_VOLUME_CFT[n] ?? 0));
+    // Auto-fill the quantity in the currently-selected volume unit (operator can still overwrite).
+    const u = form.billing_unit || 'CFT';
+    setVolumeValue(String(round3(fromCft(TYRE_VOLUME_CFT[n] ?? 0, u))));
+  }
+
+  // Weighbridge bills in the tenant's weight unit (MT for crushers, Qtl for
+  // maize); Volume defaults to CFT (operator can switch to CBM / Brass). Keeps
+  // billing_unit in step with the measurement method.
+  const weighUnit = weightUnit().code; // 'MT' | 'QUINTAL'
+  useEffect(() => {
+    setForm(f => {
+      if (weightMethod === 'weighbridge') return f.billing_unit === weighUnit ? f : { ...f, billing_unit: weighUnit };
+      return (VOLUME_UNITS as readonly string[]).includes(f.billing_unit) ? f : { ...f, billing_unit: 'CFT' };
+    });
+  }, [weightMethod, weighUnit]);
+
+  // When the operator switches volume unit, convert the entered quantity so the
+  // physical volume stays the same (e.g. 600 CFT ⇄ 6 Brass).
+  function changeVolumeUnit(next: string) {
+    const cur = form.billing_unit || 'CFT';
+    const q = parseFloat(volumeValue || '0');
+    if (q > 0 && cur !== next) setVolumeValue(String(round3(fromCft(toCft(q, cur), next))));
+    setForm(f => ({ ...f, billing_unit: next }));
   }
 
   // Today's open gate passes — optional link before token creation
@@ -272,7 +312,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   }, [loadGatePasses]);
 
   function resetForm() {
-    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', agent_id: '', billing_unit: '' });
+    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', agent_id: '', billing_unit: weightMethod === 'weighbridge' ? weightUnit().code : 'CFT' });
     setCustomValues({});
     setVehicleSearch('');
     setSelectedVehicle(null);
@@ -286,8 +326,10 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   // Selected product (used for volume mode). bulk_density is kg/CFT.
   const selectedProduct = form.product_id ? products.find(p => p.id === form.product_id) ?? null : null;
   const volumeInput = parseFloat(volumeValue || '0');
-  // Canonical DB unit is CFT — input is already in CFT.
-  const volumeCft = volumeInput;
+  // The operator enters the quantity in the chosen volume unit; convert to the
+  // canonical CFT for storage + weight computation.
+  const volUnit = form.billing_unit || 'CFT';
+  const volumeCft = weightMethod === 'volume' ? toCft(volumeInput, volUnit) : volumeInput;
   // weight_kg = volume_cft × bulk_density(kg/CFT)
   const computedWeightKg = selectedProduct?.bulk_density && volumeCft > 0
     ? volumeCft * Number(selectedProduct.bulk_density)
@@ -723,26 +765,24 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           </div>
         )}
 
-        {/* Billing unit — which unit + rate this truck is billed in. '' = the
-            product's own unit. Weighbridge trucks can only bill in weight units;
-            volume units need the Volume method. */}
+        {/* Units — which unit the truck is billed in. Weighbridge is always MT;
+            Volume lets the operator pick Cubic Feet / Cubic Meter / Brass. */}
         <div className="space-y-1">
-          <Label className="text-xs">Bill in</Label>
-          <Select
-            value={form.billing_unit || '__auto__'}
-            onValueChange={v => setForm(f => ({ ...f, billing_unit: v === '__auto__' ? '' : (v ?? '') }))}
-          >
-            <SelectTrigger className="h-8 text-xs">
-              <span className="truncate text-left flex-1">
-                {form.billing_unit || <span className="text-muted-foreground">Auto (product unit)</span>}
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__auto__"><span className="text-muted-foreground">Auto (product unit)</span></SelectItem>
-              {['MT', 'QUINTAL', 'KG'].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-              {weightMethod === 'volume' && ['CFT', 'CBM', 'BRASS'].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <Label className="text-xs">Units</Label>
+          {weightMethod === 'weighbridge' ? (
+            <div className="flex h-8 items-center rounded-md border bg-muted/40 px-3 text-xs font-medium text-muted-foreground">
+              {weightUnitLabel()} <span className="ml-1.5 text-[10px]">(auto — weighbridge)</span>
+            </div>
+          ) : (
+            <Select value={form.billing_unit || 'CFT'} onValueChange={v => changeVolumeUnit(v ?? 'CFT')}>
+              <SelectTrigger className="h-8 text-xs">
+                <span className="truncate text-left flex-1">{VOLUME_UNIT_LABEL[form.billing_unit] ?? 'Cubic Feet (CFT)'}</span>
+              </SelectTrigger>
+              <SelectContent>
+                {VOLUME_UNITS.map(u => <SelectItem key={u} value={u}>{VOLUME_UNIT_LABEL[u]}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {/* Material */}
@@ -814,32 +854,32 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
                     <div className="text-xs font-bold leading-none">{n}</div>
                     <div className="text-[9px] text-muted-foreground leading-tight mt-0.5">
                       tyre<br/>
-                      {TYRE_VOLUME_CFT[n]} CFT
+                      {round3(fromCft(TYRE_VOLUME_CFT[n] ?? 0, volUnit))} {UNIT_SHORT[volUnit]}
                     </div>
                   </button>
                 ))}
               </div>
               {tyreCount !== null && (
                 <p className="text-[10px] text-amber-700">
-                  Defaulted to {TYRE_VOLUME_CFT[tyreCount]} CFT for a {tyreCount}-tyre truck. Adjust below if needed.
+                  Defaulted to {round3(fromCft(TYRE_VOLUME_CFT[tyreCount] ?? 0, volUnit))} {UNIT_SHORT[volUnit]} for a {tyreCount}-tyre truck. Adjust below if needed.
                 </p>
               )}
             </div>
 
-            {/* Step 2: Editable volume (auto-filled from tyre count, can override) */}
+            {/* Step 2: Editable quantity (auto-filled from tyre count, can override) */}
             <div className="space-y-1">
-              <Label className="text-xs">Volume (CFT) <span className="text-destructive">*</span></Label>
+              <Label className="text-xs">Quantity ({UNIT_SHORT[volUnit]}) <span className="text-destructive">*</span></Label>
               <div className="flex gap-2 items-center">
                 <Input
                   type="number"
                   className="h-8 text-xs flex-1"
                   value={volumeValue}
                   onChange={e => { setVolumeValue(e.target.value); setTyreCount(null); }}
-                  placeholder="Pick a tyre count above, or type CFT here"
+                  placeholder={`Pick a tyre count above, or type ${UNIT_SHORT[volUnit]} here`}
                   min="0"
                   step="0.1"
                 />
-                <span className="text-xs font-semibold text-muted-foreground px-2">CFT</span>
+                <span className="text-xs font-semibold text-muted-foreground px-2">{UNIT_SHORT[volUnit]}</span>
               </div>
             </div>
 
@@ -855,8 +895,8 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             ) : (
               <div className="rounded-md bg-white px-2.5 py-2 text-[10px] border">
                 <div className="flex justify-between text-muted-foreground">
-                  <span>Volume</span>
-                  <span>{volumeCft.toFixed(2)} CFT</span>
+                  <span>Quantity</span>
+                  <span>{volumeInput} {UNIT_SHORT[volUnit]}{volUnit !== 'CFT' ? ` = ${volumeCft.toFixed(2)} CFT` : ''}</span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
                   <span>× Density ({selectedProduct.name})</span>
