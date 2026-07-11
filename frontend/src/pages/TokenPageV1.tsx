@@ -242,7 +242,6 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [vehicleTypes, setVehicleTypes] = useState<string[]>([]);
   const [vehicleSearch, setVehicleSearch] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [saving, setSaving] = useState(false);
@@ -298,13 +297,11 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       api.get<{ items: Party[] }>('/api/v1/parties?page_size=200'),
       api.get<Product[]>('/api/v1/products'),
       api.get<{ items: Vehicle[] } | Vehicle[]>('/api/v1/vehicles?page_size=200'),
-      api.get<string[]>('/api/v1/app-settings/vehicle-types'),
-    ]).then(([p, pr, v, vt]) => {
+    ]).then(([p, pr, v]) => {
       setParties(Array.isArray(p.data) ? p.data : (p.data.items ?? []));
       setProducts(Array.isArray(pr.data) ? pr.data : (pr.data as { items: Product[] }).items ?? []);
       const vData = v.data;
       setVehicles(Array.isArray(vData) ? vData : (vData as { items: Vehicle[] }).items ?? []);
-      setVehicleTypes(Array.isArray(vt.data) ? vt.data : []);
     }).catch(() => {});
     api.get<{ items: Agent[] }>('/api/v1/agents?page_size=500')
       .then(r => setAgents(r.data.items ?? [])).catch(() => setAgents([]));
@@ -637,21 +634,21 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           )}
         </div>
 
-        {/* Vehicle Type */}
+        {/* Material — placed right after the vehicle number for fast entry. */}
         <div className="space-y-1">
-          <Label className="text-xs">{t('token.vehicleType')}</Label>
-          <Select value={form.vehicle_type || undefined} onValueChange={v => setForm(f => ({ ...f, vehicle_type: v ?? '' }))}>
+          <Label className="text-xs">{t('token.product')}</Label>
+          <Select value={form.product_id || undefined} onValueChange={v => setForm(f => ({ ...f, product_id: v ?? '' }))}>
             <SelectTrigger className="h-8 text-xs">
               <span className="truncate text-left flex-1">
-                {form.vehicle_type
-                  ? <span className="capitalize">{form.vehicle_type.replace(/_/g, ' ')}</span>
-                  : <span className="text-muted-foreground">Select type…</span>}
+                {form.product_id
+                  ? (() => { const p = products.find(x => x.id === form.product_id); return p ? p.name : '…'; })()
+                  : <span className="text-muted-foreground">Select material…</span>}
               </span>
             </SelectTrigger>
             <SelectContent>
-              {vehicleTypes.map(vt => (
-                <SelectItem key={vt} value={vt}>
-                  <span className="capitalize">{vt.replace(/_/g, ' ')}</span>
+              {products.map(p => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name} <span className="text-muted-foreground text-xs">({p.unit})</span>
                 </SelectItem>
               ))}
             </SelectContent>
@@ -741,71 +738,6 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           </div>
         )}
 
-        {/* Agent (broker/dalal) — carried to the invoice for commission. Only
-            shown when the tenant has agents configured. */}
-        {agents.length > 0 && (
-          <div className="space-y-1">
-            <Label className="text-xs">Agent (broker)</Label>
-            <Select
-              value={form.agent_id || '__none__'}
-              onValueChange={v => setForm(f => ({ ...f, agent_id: v === '__none__' ? '' : (v ?? '') }))}
-            >
-              <SelectTrigger className="h-8 text-xs">
-                <span className="truncate text-left flex-1">
-                  {form.agent_id
-                    ? (agents.find(a => a.id === form.agent_id)?.name ?? '…')
-                    : <span className="text-muted-foreground">None</span>}
-                </span>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__"><span className="text-muted-foreground">None</span></SelectItem>
-                {agents.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-
-        {/* Units — which unit the truck is billed in. Weighbridge is always MT;
-            Volume lets the operator pick Cubic Feet / Cubic Meter / Brass. */}
-        <div className="space-y-1">
-          <Label className="text-xs">Units</Label>
-          {weightMethod === 'weighbridge' ? (
-            <div className="flex h-8 items-center rounded-md border bg-muted/40 px-3 text-xs font-medium text-muted-foreground">
-              {weightUnitLabel()} <span className="ml-1.5 text-[10px]">(auto — weighbridge)</span>
-            </div>
-          ) : (
-            <Select value={form.billing_unit || 'CFT'} onValueChange={v => changeVolumeUnit(v ?? 'CFT')}>
-              <SelectTrigger className="h-8 text-xs">
-                <span className="truncate text-left flex-1">{VOLUME_UNIT_LABEL[form.billing_unit] ?? 'Cubic Feet (CFT)'}</span>
-              </SelectTrigger>
-              <SelectContent>
-                {VOLUME_UNITS.map(u => <SelectItem key={u} value={u}>{VOLUME_UNIT_LABEL[u]}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
-
-        {/* Material */}
-        <div className="space-y-1">
-          <Label className="text-xs">{t('token.product')}</Label>
-          <Select value={form.product_id || undefined} onValueChange={v => setForm(f => ({ ...f, product_id: v ?? '' }))}>
-            <SelectTrigger className="h-8 text-xs">
-              <span className="truncate text-left flex-1">
-                {form.product_id
-                  ? (() => { const p = products.find(x => x.id === form.product_id); return p ? p.name : '…'; })()
-                  : <span className="text-muted-foreground">Select material…</span>}
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              {products.map(p => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name} <span className="text-muted-foreground text-xs">({p.unit})</span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
         {/* Weighment method */}
         <div className="space-y-1">
           <Label className="text-xs">{t('token.weightMethod')}</Label>
@@ -830,6 +762,26 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Units — right after the measurement method. Weighbridge locks to the
+            tenant's weight unit; Volume lets the operator pick CFT / CBM / Brass. */}
+        <div className="space-y-1">
+          <Label className="text-xs">Units</Label>
+          {weightMethod === 'weighbridge' ? (
+            <div className="flex h-8 items-center rounded-md border bg-muted/40 px-3 text-xs font-medium text-muted-foreground">
+              {weightUnitLabel()} <span className="ml-1.5 text-[10px]">(auto — weighbridge)</span>
+            </div>
+          ) : (
+            <Select value={form.billing_unit || 'CFT'} onValueChange={v => changeVolumeUnit(v ?? 'CFT')}>
+              <SelectTrigger className="h-8 text-xs">
+                <span className="truncate text-left flex-1">{VOLUME_UNIT_LABEL[form.billing_unit] ?? 'Cubic Feet (CFT)'}</span>
+              </SelectTrigger>
+              <SelectContent>
+                {VOLUME_UNITS.map(u => <SelectItem key={u} value={u}>{VOLUME_UNIT_LABEL[u]}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {/* Volume input (only in volume mode) */}
@@ -885,7 +837,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
             {/* Step 3: Live calculation preview */}
             {!form.product_id ? (
-              <p className="text-[10px] text-muted-foreground">Select a material below to compute weight.</p>
+              <p className="text-[10px] text-muted-foreground">Select a material above to compute weight.</p>
             ) : !selectedProduct?.bulk_density ? (
               <p className="text-[10px] text-destructive">
                 Bulk density (kg/CFT) not set for {selectedProduct?.name}. Open Products → edit this product → set Bulk Density (typical: aggregate 1.5, sand 1.71, GSB 1.91).
@@ -1023,6 +975,30 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             </div>
           );
         })()}
+
+        {/* Agent (broker/dalal) — after the gate pass; carried to the invoice for
+            commission. Only shown when the tenant has agents configured. */}
+        {agents.length > 0 && (
+          <div className="space-y-1">
+            <Label className="text-xs">Agent (broker)</Label>
+            <Select
+              value={form.agent_id || '__none__'}
+              onValueChange={v => setForm(f => ({ ...f, agent_id: v === '__none__' ? '' : (v ?? '') }))}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <span className="truncate text-left flex-1">
+                  {form.agent_id
+                    ? (agents.find(a => a.id === form.agent_id)?.name ?? '…')
+                    : <span className="text-muted-foreground">None</span>}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__"><span className="text-muted-foreground">None</span></SelectItem>
+                {agents.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Vehicle Rent */}
         <div className="space-y-1">
