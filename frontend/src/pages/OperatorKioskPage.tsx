@@ -38,6 +38,26 @@ const TYRE_VOLUME_CFT: Record<number, number> = {
 };
 const TYRE_OPTIONS = [4, 6, 8, 10, 12];
 
+// Volume billing units the operator can pick (canonical storage stays CFT).
+// Mirrors the New Trip form so kiosk volume tokens bill by the chosen unit's rate.
+const CFT_PER_M3 = 35.3147;
+const CFT_PER_BRASS = 100;
+const VOLUME_UNITS = ['CFT', 'CBM', 'BRASS'] as const;
+const VOLUME_UNIT_LABEL: Record<string, string> = { CFT: 'Cubic Feet', CBM: 'Cubic Meter', BRASS: 'Brass' };
+const UNIT_SHORT: Record<string, string> = { CFT: 'CFT', CBM: 'CBM', BRASS: 'Brass' };
+const VOLUME_UNIT_SPOKEN: Record<string, string> = { CFT: 'cubic feet', CBM: 'cubic meter', BRASS: 'brass' };
+function toCft(qty: number, unit: string): number {
+  if (unit === 'CBM') return qty * CFT_PER_M3;
+  if (unit === 'BRASS') return qty * CFT_PER_BRASS;
+  return qty;
+}
+function fromCft(cft: number, unit: string): number {
+  if (unit === 'CBM') return cft / CFT_PER_M3;
+  if (unit === 'BRASS') return cft / CFT_PER_BRASS;
+  return cft;
+}
+const round3 = (n: number) => Number(n.toFixed(3));
+
 // Colors for the avatar circles (consistent per name via hash)
 const AVATAR_COLORS = [
   'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500',
@@ -115,6 +135,8 @@ interface ArrivalDraft {
   party: Party | null;
   product: Product | null;
   tyre_count: number | null;     // null → weighbridge mode; number → volume mode
+  volume_unit: string;           // volume billing unit (CFT/CBM/BRASS) — volume mode only
+  volume_qty: string;            // operator-entered quantity in volume_unit (editable)
   gate_pass_id: string | null;   // required before token creation
   gate_pass_no: string | null;   // display only
 }
@@ -132,6 +154,7 @@ export default function OperatorKioskPage({ user, onLogout }: OperatorKioskPageP
   const [stage, setStage] = useState<Stage>('arrival');
   const [draft, setDraft] = useState<ArrivalDraft>({
     vehicle_no: '', token_type: 'sale', party: null, product: null, tyre_count: null,
+    volume_unit: 'CFT', volume_qty: '',
     gate_pass_id: null, gate_pass_no: null,
   });
   const [activeToken, setActiveToken] = useState<Token | null>(null);
@@ -163,7 +186,7 @@ export default function OperatorKioskPage({ user, onLogout }: OperatorKioskPageP
 
   // Reset to start a brand-new token (also refreshes pending strip)
   const reset = useCallback(() => {
-    setDraft({ vehicle_no: '', token_type: 'sale', party: null, product: null, tyre_count: null, gate_pass_id: null, gate_pass_no: null });
+    setDraft({ vehicle_no: '', token_type: 'sale', party: null, product: null, tyre_count: null, volume_unit: 'CFT', volume_qty: '', gate_pass_id: null, gate_pass_no: null });
     setActiveToken(null);
     setStage('arrival');
     fetchPending();
@@ -380,18 +403,43 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
     }));
   }
 
+  // ── Volume mode helpers (skip-the-bridge) ─────────────────────────────────
+  // Picking a tyre class switches to volume mode and auto-fills the quantity in
+  // the current unit; the operator can still overwrite it below.
+  function pickTyre(n: number) {
+    setDraft(d => ({ ...d, tyre_count: n, volume_qty: String(round3(fromCft(TYRE_VOLUME_CFT[n] ?? 0, d.volume_unit))) }));
+  }
+  function pickWeigh() {
+    setDraft(d => ({ ...d, tyre_count: null, volume_qty: '' }));
+  }
+  // Switching unit converts the entered quantity so the physical volume is kept
+  // (e.g. 600 CFT ⇄ 6 Brass).
+  function changeVolumeUnit(next: string) {
+    setDraft(d => {
+      const q = parseFloat(d.volume_qty || '0');
+      const nextQty = q > 0 && d.volume_unit !== next ? String(round3(fromCft(toCft(q, d.volume_unit), next))) : d.volume_qty;
+      return { ...d, volume_unit: next, volume_qty: nextQty };
+    });
+  }
+  const isVolume = draft.tyre_count != null;
+  const volQty = parseFloat(draft.volume_qty || '0');
+  const volCft = isVolume ? toCft(volQty, draft.volume_unit) : 0;
+  // Live weight preview: volume_cft × bulk_density(kg/CFT)
+  const volWeightKg = draft.product?.bulk_density && volCft > 0 ? volCft * Number(draft.product.bulk_density) : 0;
+
   // Gate pass is informational — shown when found, but NOT a blocker.
   // The backend auto-creates a gate pass at token creation for any truck
   // that doesn't already have one, so we never need to block on this.
   const canProceed =
-    draft.vehicle_no.trim().length >= 4 && draft.party && draft.product;
+    draft.vehicle_no.trim().length >= 4 && !!draft.party && !!draft.product && (!isVolume || volQty > 0);
 
   // What's missing? Shown below the START button so operator knows why
-  // it's disabled. Order: vehicle → product → party.
+  // it's disabled. Order: vehicle → product → party → quantity.
   const missingItems: string[] = [];
   if (draft.vehicle_no.trim().length < 4) missingItems.push('Vehicle number');
   if (!draft.product) missingItems.push('Material');
   if (!draft.party) missingItems.push('Customer');
+  if (isVolume && volQty <= 0) missingItems.push('Quantity');
 
   // Create the token (either /tokens or /tokens/volume)
   async function handleStart() {
@@ -400,9 +448,11 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
     setSaving(true);
     try {
       const today = new Date().toISOString().split('T')[0];
-      // Volume path: tyre_count selected → one-shot create+complete+invoice
+      // Volume path: tyre_count selected → one-shot create+complete+invoice.
+      // The operator's chosen unit + quantity drive billing; we convert to the
+      // canonical CFT for storage and send billing_unit so the per-unit rate applies.
       if (draft.tyre_count != null) {
-        const cft = TYRE_VOLUME_CFT[draft.tyre_count] ?? 0;
+        const cft = round3(toCft(parseFloat(draft.volume_qty || '0'), draft.volume_unit));
         const { data } = await api.post<Token>('/api/v1/tokens/volume', {
           token_date: today,
           vehicle_no: draft.vehicle_no.trim().toUpperCase(),
@@ -411,16 +461,17 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
           party_id: draft.party.id,
           product_id: draft.product.id,
           volume_cft: cft,
+          billing_unit: draft.volume_unit,
           tyre_count: draft.tyre_count,
           gate_pass_id: draft.gate_pass_id,
         });
         speak(
-          `Volume token created. ${draft.product.name}, ${cft} cubic feet, for ${draft.party.name}. Bill will print.`,
+          `Volume token created. ${draft.product.name}, ${draft.volume_qty} ${VOLUME_UNIT_SPOKEN[draft.volume_unit] ?? ''}, for ${draft.party.name}. Bill will print.`,
         );
         onProceed(data);
         return;
       }
-      // Weighbridge path
+      // Weighbridge path — bill in the tenant weight unit (MT, or Qtl for maize).
       const { data } = await api.post<Token>('/api/v1/tokens', {
         token_date: today,
         vehicle_no: draft.vehicle_no.trim().toUpperCase(),
@@ -428,6 +479,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
         direction: draft.token_type === 'sale' ? 'outbound' : 'inbound',
         party_id: draft.party.id,
         product_id: draft.product.id,
+        billing_unit: weightUnit().code,
         tyre_count: draft.tyre_count,    // null when "Weigh" is chosen — that's fine
         gate_pass_id: draft.gate_pass_id,
       });
@@ -705,7 +757,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
         </label>
         <div className="grid grid-cols-6 gap-2">
           <button
-            onClick={() => setDraft(d => ({ ...d, tyre_count: null }))}
+            onClick={pickWeigh}
             className={`h-16 rounded-xl border-2 font-bold transition-all ${
               draft.tyre_count == null
                 ? 'border-blue-500 bg-blue-50 text-blue-900 ring-2 ring-blue-100'
@@ -719,7 +771,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
             return (
               <button
                 key={n}
-                onClick={() => setDraft(d => ({ ...d, tyre_count: n }))}
+                onClick={() => pickTyre(n)}
                 className={`h-16 rounded-xl border-2 font-bold transition-all ${
                   selected
                     ? 'border-amber-500 bg-amber-50 text-amber-900 ring-2 ring-amber-100'
@@ -727,11 +779,65 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
                 }`}
               >
                 <div className="text-xl">{n} 🛞</div>
-                <div className="text-[10px] text-slate-500 mt-0.5">{TYRE_VOLUME_CFT[n]} CFT</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">{round3(fromCft(TYRE_VOLUME_CFT[n] ?? 0, draft.volume_unit))} {UNIT_SHORT[draft.volume_unit]}</div>
               </button>
             );
           })}
         </div>
+
+        {/* Volume mode → unit toggle + editable quantity + live weight preview */}
+        {isVolume && (
+          <div className="mt-3 rounded-2xl border-2 border-amber-200 bg-amber-50/50 p-4 space-y-3">
+            {/* Unit toggle */}
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">Unit</div>
+              <div className="grid grid-cols-3 gap-2">
+                {VOLUME_UNITS.map(u => (
+                  <button
+                    key={u}
+                    onClick={() => changeVolumeUnit(u)}
+                    className={`h-12 rounded-xl border-2 text-sm font-bold transition-all ${
+                      draft.volume_unit === u
+                        ? 'border-amber-500 bg-amber-100 text-amber-900 ring-2 ring-amber-100'
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-amber-300'
+                    }`}
+                  >
+                    {VOLUME_UNIT_LABEL[u]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Editable quantity — auto-filled from the tyre class, overwritable */}
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">Quantity</div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={draft.volume_qty}
+                  onChange={e => setDraft(d => ({ ...d, volume_qty: e.target.value }))}
+                  placeholder="0"
+                  className="flex-1 h-16 text-3xl font-mono font-bold text-center rounded-xl border-2 border-slate-300 focus:border-amber-500 focus:outline-none focus:ring-4 focus:ring-amber-100 bg-white"
+                />
+                <span className="w-24 text-center text-xl font-bold text-slate-500">{UNIT_SHORT[draft.volume_unit]}</span>
+              </div>
+            </div>
+            {/* Live weight preview */}
+            {!draft.product ? (
+              <div className="text-xs text-slate-500">Pick a material above to see the weight.</div>
+            ) : !draft.product.bulk_density ? (
+              <div className="text-xs text-rose-600">Set bulk density for {draft.product.name} in Products to compute weight.</div>
+            ) : volWeightKg > 0 ? (
+              <div className="flex items-center justify-between rounded-xl border bg-white px-4 py-2.5">
+                <span className="text-sm text-slate-600">
+                  {draft.volume_qty} {UNIT_SHORT[draft.volume_unit]} × {Number(draft.product.bulk_density).toFixed(2)} kg/CFT
+                </span>
+                <span className="text-xl font-mono font-black text-amber-700">≈ {fmtKg(volWeightKg, 3)}</span>
+              </div>
+            ) : null}
+          </div>
+        )}
       </section>
 
       {/* Error banner */}
