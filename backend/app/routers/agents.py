@@ -5,7 +5,7 @@ routers/invoices.py). The report card just aggregates those snapshots minus
 recorded payouts, so it is stable against later rate changes.
 """
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -184,6 +184,97 @@ async def report_summary(
             invoice_count=cnt, earned=earned, paid=paid, due=earned - paid,
         ))
     return out
+
+
+# ── Trend (daily / weekly / monthly commission) ───────────────────────────────
+
+def _period_key(d: date, gran: str) -> date:
+    if gran == "month":
+        return date(d.year, d.month, 1)
+    if gran == "week":
+        return d - timedelta(days=d.weekday())   # Monday of that week
+    return d
+
+
+def _period_label(pk: date, gran: str) -> str:
+    return pk.strftime("%b %y") if gran == "month" else pk.strftime("%d %b")
+
+
+def _iter_periods(start: date, end: date, gran: str) -> list[date]:
+    keys, cur, guard = [], _period_key(start, gran), 0
+    endk = _period_key(end, gran)
+    while cur <= endk and guard < 2000:
+        keys.append(cur)
+        guard += 1
+        if gran == "month":
+            cur = date(cur.year + (1 if cur.month == 12 else 0), (cur.month % 12) + 1, 1)
+        elif gran == "week":
+            cur = cur + timedelta(days=7)
+        else:
+            cur = cur + timedelta(days=1)
+    return keys
+
+
+@router.get("/trend")
+async def agent_trend(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    granularity: str = "day",
+    agent_id: uuid.UUID | None = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Commission earned (by invoice date) vs paid (by payout date), bucketed by
+    day / week / month, gap-filled across the range. `agent_id` omitted → all
+    sales partners combined. Powers the agent dashboard trend chart."""
+    gran = granularity if granularity in ("day", "week", "month") else "day"
+    cid = current_user.company_id
+    end = date_to or date.today()
+    start = date_from or (end - timedelta(days=90))
+    if start > end:
+        start = end
+
+    iq = select(Invoice.invoice_date, Invoice.commission_amount).where(
+        Invoice.company_id == cid, Invoice.status == "final",
+        Invoice.invoice_type.in_(COMMISSION_INVOICE_TYPES), Invoice.agent_id.isnot(None),
+        Invoice.invoice_date >= start, Invoice.invoice_date <= end)
+    if agent_id:
+        iq = iq.where(Invoice.agent_id == agent_id)
+    inv_rows = (await db.execute(iq)).all()
+
+    pq = select(AgentCommissionPayment.paid_on, AgentCommissionPayment.amount).where(
+        AgentCommissionPayment.company_id == cid,
+        AgentCommissionPayment.paid_on >= start, AgentCommissionPayment.paid_on <= end)
+    if agent_id:
+        pq = pq.where(AgentCommissionPayment.agent_id == agent_id)
+    pay_rows = (await db.execute(pq)).all()
+
+    earned: dict = {}
+    count: dict = {}
+    paid: dict = {}
+    for d, amt in inv_rows:
+        k = _period_key(d, gran)
+        earned[k] = earned.get(k, Decimal("0")) + Decimal(str(amt or 0))
+        count[k] = count.get(k, 0) + 1
+    for d, amt in pay_rows:
+        k = _period_key(d, gran)
+        paid[k] = paid.get(k, Decimal("0")) + Decimal(str(amt or 0))
+
+    series = [{
+        "period": pk.isoformat(), "label": _period_label(pk, gran),
+        "earned": float(earned.get(pk, 0)), "paid": float(paid.get(pk, 0)),
+        "invoice_count": count.get(pk, 0),
+    } for pk in _iter_periods(start, end, gran)]
+
+    return {
+        "granularity": gran, "date_from": start.isoformat(), "date_to": end.isoformat(),
+        "series": series,
+        "totals": {
+            "earned": float(sum(earned.values(), Decimal("0"))),
+            "paid": float(sum(paid.values(), Decimal("0"))),
+            "invoice_count": sum(count.values()),
+        },
+    }
 
 
 @router.get("/{agent_id}/report", response_model=AgentReport)

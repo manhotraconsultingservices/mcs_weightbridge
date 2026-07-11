@@ -1,98 +1,52 @@
 /**
- * Agent report card — earned / paid / due + invoice drilldown + payouts.
+ * Sales Partner / Agent dashboard — date-filterable, with daily/weekly/monthly
+ * commission trends, earned/paid/due KPIs, invoice drilldown, and payouts.
  *
- *   GET  /api/v1/agents/{id}/report?date_from&date_to
+ *   GET  /api/v1/agents/{id}/report                 (all-time KPIs + drilldown + payouts)
+ *   GET  /api/v1/agents/{id}/trend?date_from&date_to&granularity
  *   POST /api/v1/agents/{id}/payouts
  */
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, IndianRupee, Wallet, Scale, Loader2, Plus, Receipt } from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from 'recharts';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
+import { AgentPayoutDialog } from '@/components/AgentPayoutDialog';
 import api from '@/services/api';
-import type { AgentReport, AgentReportInvoice } from '@/types';
+import type { AgentReport, AgentReportInvoice, AgentTrendResponse } from '@/types';
 import { commissionLabel } from './AgentsPage';
 
 const INR = (v: number) => '₹' + Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+const INR0 = (v: number) => '₹' + Number(v ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
 const fmtDate = (s: string | null | undefined) =>
   s ? new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-const PAYOUT_MODES = ['cash', 'upi', 'bank_transfer', 'cheque', 'neft'];
 
-function PayoutDialog({ open, agentId, due, onClose, onSaved }: {
-  open: boolean; agentId: string; due: number; onClose: () => void; onSaved: () => void;
-}) {
-  const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [mode, setMode] = useState('cash');
-  const [ref, setRef] = useState('');
-  const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+const today = () => new Date().toISOString().slice(0, 10);
+const daysAgo = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+const monthStart = () => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); };
+const fyStart = () => { const d = new Date(); const y = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1; return `${y}-04-01`; };
 
-  useEffect(() => {
-    if (open) { setAmount(due > 0 ? String(due) : ''); setDate(new Date().toISOString().slice(0, 10)); setMode('cash'); setRef(''); setNotes(''); setError(''); }
-  }, [open, due]);
-
-  async function save() {
-    if (!amount || parseFloat(amount) <= 0) { setError('Enter a valid amount'); return; }
-    setSaving(true); setError('');
-    try {
-      await api.post(`/api/v1/agents/${agentId}/payouts`, {
-        amount: parseFloat(amount), paid_on: date, payment_mode: mode,
-        reference_no: ref || null, notes: notes || null,
-      });
-      onSaved(); onClose();
-    } catch (e: unknown) {
-      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(typeof detail === 'string' ? detail : 'Failed to record payout');
-    } finally { setSaving(false); }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Record commission payout</DialogTitle></DialogHeader>
-        <div className="space-y-3">
-          {error && <p className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1"><Label>Amount (₹) *</Label>
-              <Input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} /></div>
-            <div className="space-y-1"><Label>Date *</Label>
-              <Input type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
-          </div>
-          <div className="space-y-1"><Label>Mode</Label>
-            <Select value={mode} onValueChange={v => setMode(v ?? 'cash')}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{PAYOUT_MODES.map(m => <SelectItem key={m} value={m}>{m.replace(/_/g, ' ').toUpperCase()}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1"><Label>Reference</Label>
-            <Input value={ref} onChange={e => setRef(e.target.value)} placeholder="UTR / cheque no" /></div>
-          <div className="space-y-1"><Label>Notes</Label>
-            <Input value={notes} onChange={e => setNotes(e.target.value)} /></div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={save} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Record payout</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
+type Gran = 'day' | 'week' | 'month';
+const EARN = '#3b82f6';   // blue
+const PAID = '#10b981';   // emerald
 
 export default function AgentReportPage() {
   const { id = '' } = useParams();
   const nav = useNavigate();
   const [report, setReport] = useState<AgentReport | null>(null);
+  const [trend, setTrend] = useState<AgentTrendResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [payoutOpen, setPayoutOpen] = useState(false);
+  const [from, setFrom] = useState(fyStart());
+  const [to, setTo] = useState(today());
+  const [gran, setGran] = useState<Gran>('month');
 
-  const load = useCallback(async () => {
+  const loadReport = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     try {
@@ -100,7 +54,21 @@ export default function AgentReportPage() {
       setReport(data);
     } catch { setReport(null); } finally { setLoading(false); }
   }, [id]);
-  useEffect(() => { load(); }, [load]);
+
+  const loadTrend = useCallback(async () => {
+    if (!id) return;
+    try {
+      const { data } = await api.get<AgentTrendResponse>(`/api/v1/agents/${id}/trend`, {
+        params: { date_from: from, date_to: to, granularity: gran },
+      });
+      setTrend(data);
+    } catch { setTrend(null); }
+  }, [id, from, to, gran]);
+
+  useEffect(() => { loadReport(); }, [loadReport]);
+  useEffect(() => { loadTrend(); }, [loadTrend]);
+
+  const rangeTotals = trend?.totals ?? { earned: 0, paid: 0, invoice_count: 0 };
 
   const invColumns = useMemo<ColumnDef<AgentReportInvoice>[]>(() => [
     { key: 'invoice_no', label: 'Invoice', accessor: r => r.invoice_no ?? '—' },
@@ -108,8 +76,7 @@ export default function AgentReportPage() {
     { key: 'party_name', label: 'Customer', accessor: r => r.party_name ?? '—' },
     { key: 'net_weight_mt', label: 'Net (MT)', type: 'number', align: 'right', accessor: r => r.net_weight_mt, format: v => Number(v).toFixed(3) },
     { key: 'grand_total', label: 'Bill Total', type: 'number', align: 'right', accessor: r => r.grand_total, format: v => INR(Number(v)), exportValue: r => r.grand_total },
-    { key: 'commission_amount', label: 'Commission', type: 'number', align: 'right', accessor: r => r.commission_amount,
-      format: v => <span className="font-semibold text-blue-600">{INR(Number(v))}</span>, exportValue: r => r.commission_amount },
+    { key: 'commission_amount', label: 'Commission', type: 'number', align: 'right', accessor: r => r.commission_amount, format: v => <span className="font-semibold text-blue-600">{INR(Number(v))}</span>, exportValue: r => r.commission_amount },
   ], []);
 
   if (loading && !report) {
@@ -118,82 +85,115 @@ export default function AgentReportPage() {
   if (!report) {
     return (
       <div className="py-16 text-center">
-        <p className="text-sm text-muted-foreground">Agent not found.</p>
-        <Button variant="outline" className="mt-4" onClick={() => nav('/agents')}><ArrowLeft className="mr-2 h-4 w-4" /> Back to Agents</Button>
+        <p className="text-sm text-muted-foreground">Sales partner not found.</p>
+        <Button variant="outline" className="mt-4" onClick={() => nav('/agents')}><ArrowLeft className="mr-2 h-4 w-4" /> Back</Button>
       </div>
     );
   }
   const a = report.agent;
 
+  const PRESETS: { label: string; f: () => void }[] = [
+    { label: 'This month', f: () => { setFrom(monthStart()); setTo(today()); setGran('day'); } },
+    { label: 'Last 30d', f: () => { setFrom(daysAgo(30)); setTo(today()); setGran('day'); } },
+    { label: 'Last 90d', f: () => { setFrom(daysAgo(90)); setTo(today()); setGran('week'); } },
+    { label: 'This FY', f: () => { setFrom(fyStart()); setTo(today()); setGran('month'); } },
+  ];
+
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-start gap-3">
           <Button variant="ghost" size="icon" onClick={() => nav('/agents')} title="Back"><ArrowLeft className="h-4 w-4" /></Button>
           <div>
             <h1 className="text-xl font-bold text-slate-900">{a.name}</h1>
             <p className="text-xs text-muted-foreground">
-              Commission: {commissionLabel(a.commission_type, a.commission_rate)}
-              {a.phone ? ` · ${a.phone}` : ''}
+              Sales Partner / Agent · {commissionLabel(a.commission_type, a.commission_rate)}{a.phone ? ` · ${a.phone}` : ''}
             </p>
           </div>
         </div>
         <Button size="sm" onClick={() => setPayoutOpen(true)}><Plus className="mr-1.5 h-4 w-4" /> Record payout</Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Card><CardContent className="flex items-center gap-3 p-4">
-          <div className="rounded-lg bg-blue-50 p-2"><IndianRupee className="h-5 w-5 text-blue-600" /></div>
-          <div><p className="text-xs text-muted-foreground">Earned</p><p className="text-lg font-bold">{INR(report.earned)}</p></div>
-        </CardContent></Card>
-        <Card><CardContent className="flex items-center gap-3 p-4">
-          <div className="rounded-lg bg-emerald-50 p-2"><Wallet className="h-5 w-5 text-emerald-600" /></div>
-          <div><p className="text-xs text-muted-foreground">Paid</p><p className="text-lg font-bold text-emerald-600">{INR(report.paid)}</p></div>
-        </CardContent></Card>
-        <Card><CardContent className="flex items-center gap-3 p-4">
-          <div className="rounded-lg bg-rose-50 p-2"><Scale className="h-5 w-5 text-rose-600" /></div>
-          <div><p className="text-xs text-muted-foreground">Due</p><p className="text-lg font-bold text-rose-600">{INR(report.due)}</p></div>
-        </CardContent></Card>
-        <Card><CardContent className="flex items-center gap-3 p-4">
-          <div className="rounded-lg bg-slate-100 p-2"><Receipt className="h-5 w-5 text-slate-600" /></div>
-          <div><p className="text-xs text-muted-foreground">Bills</p><p className="text-lg font-bold">{report.invoice_count}</p>
-            <p className="text-[10px] text-muted-foreground">{INR(report.total_sale_value)} value</p></div>
-        </CardContent></Card>
+      {/* Filters */}
+      <div className="flex flex-wrap items-end gap-2">
+        {PRESETS.map(p => <Button key={p.label} variant="outline" size="sm" className="h-8 text-xs" onClick={p.f}>{p.label}</Button>)}
+        <Input type="date" value={from} onChange={e => setFrom(e.target.value)} className="h-8 w-36 text-xs" />
+        <span className="text-muted-foreground text-xs pb-2">→</span>
+        <Input type="date" value={to} onChange={e => setTo(e.target.value)} className="h-8 w-36 text-xs" />
+        <div className="flex gap-0.5 rounded-lg border p-0.5 ml-auto">
+          {(['day', 'week', 'month'] as Gran[]).map(g => (
+            <Button key={g} size="sm" variant={gran === g ? 'default' : 'ghost'} className="h-7 px-2.5 text-xs capitalize" onClick={() => setGran(g)}>{g}</Button>
+          ))}
+        </div>
       </div>
 
+      {/* KPIs */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="rounded-xl border bg-gradient-to-br from-rose-50 to-white p-4">
+          <div className="flex items-center gap-2 text-rose-600"><Scale className="h-4 w-4" /><span className="text-xs font-medium">Due (all-time)</span></div>
+          <p className="mt-1 text-2xl font-bold text-rose-700">{INR0(report.due)}</p>
+          <p className="text-[10px] text-muted-foreground">earned {INR0(report.earned)} · paid {INR0(report.paid)}</p>
+        </div>
+        <div className="rounded-xl border bg-gradient-to-br from-blue-50 to-white p-4">
+          <div className="flex items-center gap-2 text-blue-600"><IndianRupee className="h-4 w-4" /><span className="text-xs font-medium">Earned (range)</span></div>
+          <p className="mt-1 text-2xl font-bold text-blue-700">{INR0(rangeTotals.earned)}</p>
+        </div>
+        <div className="rounded-xl border bg-gradient-to-br from-emerald-50 to-white p-4">
+          <div className="flex items-center gap-2 text-emerald-600"><Wallet className="h-4 w-4" /><span className="text-xs font-medium">Paid (range)</span></div>
+          <p className="mt-1 text-2xl font-bold text-emerald-700">{INR0(rangeTotals.paid)}</p>
+        </div>
+        <div className="rounded-xl border bg-gradient-to-br from-slate-50 to-white p-4">
+          <div className="flex items-center gap-2 text-slate-600"><Receipt className="h-4 w-4" /><span className="text-xs font-medium">Bills (range)</span></div>
+          <p className="mt-1 text-2xl font-bold text-slate-700">{rangeTotals.invoice_count}</p>
+        </div>
+      </div>
+
+      {/* Trend */}
+      <Card><CardContent className="p-4">
+        <p className="mb-2 text-sm font-medium">Commission trend — earned vs paid <span className="text-muted-foreground">({gran})</span></p>
+        {trend && trend.series.length > 0 ? (
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={trend.series} margin={{ top: 8, right: 8, left: 8, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.4} />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => INR0(Number(v))} width={64} />
+              <Tooltip formatter={(v: number, n) => [INR(Number(v)), n === 'earned' ? 'Earned' : 'Paid']} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="earned" name="Earned" fill={EARN} radius={[3, 3, 0, 0]} />
+              <Bar dataKey="paid" name="Paid" fill={PAID} radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="py-16 text-center text-sm text-muted-foreground">No commission in this range</div>
+        )}
+      </CardContent></Card>
+
+      {/* Drilldown */}
       <div>
-        <p className="mb-2 text-sm font-medium">Commission-earning invoices</p>
+        <p className="mb-2 text-sm font-medium">Commission-earning invoices (all-time)</p>
         <DataTable<AgentReportInvoice>
-          id="agent.report.invoices"
-          data={report.invoices}
-          columns={invColumns}
-          rowKey={r => r.invoice_id}
-          exportFilename={`agent-${a.name}-commission`}
-          defaultSort={{ key: 'invoice_date', direction: 'desc' }}
-          emptyMessage="No commission-earning invoices yet"
-        />
+          id="agent.report.invoices" data={report.invoices} columns={invColumns} rowKey={r => r.invoice_id}
+          exportFilename={`agent-${a.name}-commission`} defaultSort={{ key: 'invoice_date', direction: 'desc' }}
+          emptyMessage="No commission-earning invoices yet" />
       </div>
 
       {report.payouts.length > 0 && (
         <div>
           <p className="mb-2 text-sm font-medium">Payouts</p>
-          <Card><CardContent className="p-0">
-            <div className="divide-y">
-              {report.payouts.map(p => (
-                <div key={p.id} className="flex items-center justify-between px-4 py-2 text-sm">
-                  <div>
-                    <span className="font-medium">{INR(p.amount)}</span>
-                    <span className="ml-2 text-xs text-muted-foreground">{fmtDate(p.paid_on)} · {(p.payment_mode ?? '').replace(/_/g, ' ')}</span>
-                  </div>
-                  <span className="text-xs text-muted-foreground">{p.reference_no ?? ''}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent></Card>
+          <Card><CardContent className="p-0"><div className="divide-y">
+            {report.payouts.map(p => (
+              <div key={p.id} className="flex items-center justify-between px-4 py-2 text-sm">
+                <div><span className="font-medium">{INR(p.amount)}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">{fmtDate(p.paid_on)} · {(p.payment_mode ?? '').replace(/_/g, ' ')}</span></div>
+                <span className="text-xs text-muted-foreground">{p.reference_no ?? ''}</span>
+              </div>
+            ))}
+          </div></CardContent></Card>
         </div>
       )}
 
-      <PayoutDialog open={payoutOpen} agentId={a.id} due={report.due} onClose={() => setPayoutOpen(false)} onSaved={load} />
+      <AgentPayoutDialog open={payoutOpen} agentId={a.id} agentName={a.name} due={report.due}
+        onClose={() => setPayoutOpen(false)} onSaved={() => { loadReport(); loadTrend(); }} />
     </div>
   );
 }

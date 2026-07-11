@@ -706,6 +706,21 @@ export interface AgentSummaryRow {
   due: number;
 }
 
+export interface AgentTrendPoint {
+  period: string;
+  label: string;
+  earned: number;
+  paid: number;
+  invoice_count: number;
+}
+export interface AgentTrendResponse {
+  granularity: 'day' | 'week' | 'month';
+  date_from: string;
+  date_to: string;
+  series: AgentTrendPoint[];
+  totals: { earned: number; paid: number; invoice_count: number };
+}
+
 export interface Party360Invoice {
   id: string;
   invoice_no: string | null;
