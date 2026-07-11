@@ -403,6 +403,20 @@ def get_runtime_ddl() -> list[str]:
         )
         """,
         "CREATE INDEX IF NOT EXISTS ix_agent_payments ON agent_commission_payments (company_id, agent_id)",
+        # Per-unit default rates for a product (₹/MT, ₹/CFT, ₹/CBM, ₹/Brass…)
+        """
+        CREATE TABLE IF NOT EXISTS product_unit_rates (
+            id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id  UUID REFERENCES companies(id),
+            product_id  UUID REFERENCES products(id),
+            unit        VARCHAR(20) NOT NULL,
+            rate        NUMERIC(12,2) NOT NULL,
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_product_unit_rate UNIQUE (product_id, unit)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_product_unit_rates ON product_unit_rates (company_id, product_id)",
     ]
 
 
@@ -416,6 +430,9 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE invoices    ADD COLUMN IF NOT EXISTS agent_id UUID REFERENCES agents(id)",
         "ALTER TABLE invoices    ADD COLUMN IF NOT EXISTS commission_amount NUMERIC(14,2)",
         "ALTER TABLE gate_passes ADD COLUMN IF NOT EXISTS agent_id UUID REFERENCES agents(id)",
+        # Per-unit rates: unit on customer rates + operator-chosen billing unit on tokens.
+        "ALTER TABLE party_rates ADD COLUMN IF NOT EXISTS unit VARCHAR(20)",
+        "ALTER TABLE tokens      ADD COLUMN IF NOT EXISTS billing_unit VARCHAR(20)",
         # Custom-attribute values (owner-defined fields) per weighment.
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS custom_fields JSONB",
         "ALTER TABLE compliance_items ADD COLUMN IF NOT EXISTS policy_holder VARCHAR(200)",

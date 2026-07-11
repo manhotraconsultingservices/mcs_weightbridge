@@ -57,6 +57,17 @@ class ProductRatesBulkRequest(BaseModel):
     items: list[ProductRateBulkItem]
 
 
+class ProductUnitRateItem(BaseModel):
+    product_id: uuid.UUID
+    unit: str
+    rate: Decimal | None = None   # None → clear that (product, unit) rate
+
+
+class ProductUnitRatesBulkRequest(BaseModel):
+    """Bulk-set per-unit default rates (₹/MT, ₹/CFT, ₹/CBM, ₹/Brass…)."""
+    items: list[ProductUnitRateItem]
+
+
 class ProductResponse(BaseModel):
     id: uuid.UUID
     category_id: uuid.UUID | None

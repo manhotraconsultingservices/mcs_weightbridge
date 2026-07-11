@@ -239,32 +239,12 @@ def _compute_weights(token: Token):
 
 
 async def _fetch_rate(db: AsyncSession, party_id: uuid.UUID | None,
-                      product_id: uuid.UUID | None) -> Decimal:
-    """
-    Fetch the best applicable rate for a party+product combination.
-    Priority: party_rates (most recent effective_from) → product.default_rate → 0
-    """
-    if party_id and product_id:
-        result = await db.execute(
-            select(PartyRate)
-            .where(
-                PartyRate.party_id == party_id,
-                PartyRate.product_id == product_id,
-                PartyRate.effective_from <= date.today(),
-            )
-            .order_by(PartyRate.effective_from.desc())
-            .limit(1)
-        )
-        pr = result.scalar_one_or_none()
-        if pr:
-            return pr.rate
-
-    if product_id:
-        product = (await db.execute(select(Product).where(Product.id == product_id))).scalar_one_or_none()
-        if product and product.default_rate:
-            return product.default_rate
-
-    return Decimal("0")
+                      product_id: uuid.UUID | None, unit: str | None = None) -> Decimal:
+    """Unit-aware rate for a party+product+unit. Thin wrapper over the shared
+    resolver (services/pricing.resolve_rate). `unit=None` → the product's base
+    unit (legacy priority: party rate → product.default_rate → 0)."""
+    from app.services.pricing import resolve_rate
+    return await resolve_rate(db, party_id, product_id, unit)
 
 
 async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
@@ -283,12 +263,12 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
     if not product:
         return
 
-    rate = await _fetch_rate(db, token.party_id, token.product_id)
-
-    # Convert scale weight (kg) to the product's billing unit:
-    #   MT → ÷1000 · QUINTAL → ÷100 · KG/other → as-is (kg)
-    _div = {"MT": Decimal("1000"), "QUINTAL": Decimal("100")}.get((product.unit or "").upper(), Decimal("1"))
-    qty = (Decimal(str(token.net_weight)) / _div) if token.net_weight else Decimal("0")
+    # Bill in the unit the operator chose for this truck (falls back to the
+    # product's own unit for tokens created before per-unit billing).
+    from app.services.pricing import token_quantity
+    bill_unit = token.billing_unit or product.unit
+    rate = await _fetch_rate(db, token.party_id, token.product_id, bill_unit)
+    qty = token_quantity(token, bill_unit, product)
 
     amount = (qty * rate).quantize(Decimal("0.01"))
     gst_rate = product.gst_rate or Decimal("0")
@@ -309,7 +289,7 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
         "description": product.name,
         "hsn_code": product.hsn_code,
         "quantity": qty,         # keep as Decimal — float() loses precision on .toFixed() boundary
-        "unit": product.unit,
+        "unit": bill_unit,
         "rate": rate,            # Decimal
         "gst_rate": gst_rate,    # Decimal
         "sort_order": 0,
@@ -399,6 +379,12 @@ async def create_token(
 ):
     company, fy = await _get_company_and_fy(db)
 
+    # Per-unit billing guard: a weighbridge (weighed) truck can only bill in a
+    # weight unit — a volume unit (CFT/CBM/Brass) needs a volume-measured token.
+    if payload.billing_unit:
+        from app.services.pricing import validate_billing_unit
+        validate_billing_unit(payload.billing_unit, "weighbridge")
+
     # Block if this vehicle already has an active (in-progress) weighbridge token.
     # Prevents 2 trucks with the same plate from being processed simultaneously.
     vno_upper = (payload.vehicle_no or "").upper().strip()
@@ -472,6 +458,7 @@ async def create_token(
         driver_id=payload.driver_id,
         transporter_id=payload.transporter_id,
         agent_id=payload.agent_id,
+        billing_unit=payload.billing_unit,
         gate_pass=payload.gate_pass,
         gate_pass_no=resolved_gate_pass_no,
         transit_pass_id=payload.transit_pass_id,
@@ -609,6 +596,7 @@ async def create_volume_token(
         driver_id=payload.driver_id,
         transporter_id=payload.transporter_id,
         agent_id=payload.agent_id,
+        billing_unit=payload.billing_unit,
         gate_pass=payload.gate_pass,
         gate_pass_no=resolved_vol_gate_pass_no,
         transit_pass_id=payload.transit_pass_id,
@@ -1078,15 +1066,16 @@ async def print_token(
             rate = float(item_row.rate)
             amount = float(item_row.amount)
 
-    # Fallback: derive from party_rates / product.default_rate
+    # Fallback: derive from unit-aware party_rates / product.default_rate
     if rate == 0.0:
-        fetched = await _fetch_rate(db, token.party_id, token.product_id)
+        from app.models.product import Product as _Prod
+        _prod = (await db.execute(select(_Prod).where(_Prod.id == token.product_id))).scalar_one_or_none() if token.product_id else None
+        _bunit = token.billing_unit or (_prod.unit if _prod else None)
+        fetched = await _fetch_rate(db, token.party_id, token.product_id, _bunit)
         rate = float(fetched)
-        if rate > 0 and token.net_weight:
-            from app.models.product import Product as _Prod
-            _u = (await db.execute(select(_Prod.unit).where(_Prod.id == token.product_id))).scalar() if token.product_id else None
-            _div = {"MT": 1000.0, "QUINTAL": 100.0}.get((_u or "").upper(), 1.0)
-            amount = rate * float(token.net_weight) / _div
+        if rate > 0 and _prod:
+            from app.services.pricing import token_quantity
+            amount = rate * float(token_quantity(token, _bunit, _prod))
 
     # Royalty: look up the consumption linked to this token
     royalty_amount: float = 0.0

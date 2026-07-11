@@ -154,6 +154,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     transit_pass_id: '',   // P1: link purchase token to its royalty/transit pass
     vehicle_rent: '',      // optional payment to truck owner per trip
     agent_id: '',          // broker/dalal — carried to the invoice for commission
+    billing_unit: '',      // operator-chosen billing unit ('' = auto = product's unit)
   });
   // Volume-based weighment (skips the bridge)
   const [weightMethod, setWeightMethod] = useState<'weighbridge' | 'volume'>('weighbridge');
@@ -271,7 +272,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   }, [loadGatePasses]);
 
   function resetForm() {
-    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', agent_id: '' });
+    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', agent_id: '', billing_unit: '' });
     setCustomValues({});
     setVehicleSearch('');
     setSelectedVehicle(null);
@@ -391,6 +392,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           volume_cft: Number(volumeCft.toFixed(3)),
           transit_pass_id: form.transit_pass_id || undefined,
           agent_id: form.agent_id || undefined,
+          billing_unit: form.billing_unit || undefined,
           gate_pass_id: form.gate_pass_id || undefined,
           vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
           remarks: form.remarks
@@ -438,6 +440,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       vehicle_id: form.vehicle_id || undefined,
       transit_pass_id: form.transit_pass_id || undefined,
       agent_id: form.agent_id || undefined,
+      billing_unit: form.billing_unit || undefined,
       gate_pass_id: form.gate_pass_id || undefined,
       vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
       remarks: form.remarks || undefined,
@@ -719,6 +722,28 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             </Select>
           </div>
         )}
+
+        {/* Billing unit — which unit + rate this truck is billed in. '' = the
+            product's own unit. Weighbridge trucks can only bill in weight units;
+            volume units need the Volume method. */}
+        <div className="space-y-1">
+          <Label className="text-xs">Bill in</Label>
+          <Select
+            value={form.billing_unit || '__auto__'}
+            onValueChange={v => setForm(f => ({ ...f, billing_unit: v === '__auto__' ? '' : (v ?? '') }))}
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <span className="truncate text-left flex-1">
+                {form.billing_unit || <span className="text-muted-foreground">Auto (product unit)</span>}
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__auto__"><span className="text-muted-foreground">Auto (product unit)</span></SelectItem>
+              {['MT', 'QUINTAL', 'KG'].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+              {weightMethod === 'volume' && ['CFT', 'CBM', 'BRASS'].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
 
         {/* Material */}
         <div className="space-y-1">

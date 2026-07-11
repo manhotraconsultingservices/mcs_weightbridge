@@ -7,10 +7,11 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_role
 from app.models.user import User
 from app.models.product import Product, ProductCategory
+from app.models.product_unit_rate import ProductUnitRate
 from app.schemas.product import (
     ProductCreate, ProductUpdate, ProductResponse,
     ProductCategoryCreate, ProductCategoryResponse,
-    ProductRatesBulkRequest,
+    ProductRatesBulkRequest, ProductUnitRatesBulkRequest,
 )
 
 router = APIRouter()
@@ -156,6 +157,85 @@ async def bulk_update_default_rates(
             changed = True
         if changed:
             updated += 1
+    await db.commit()
+    return {"updated": updated}
+
+
+@router.get("/products/unit-rates")
+async def get_product_unit_rates(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Per-unit default rates for every active product (powers Pricing → Default
+    Rates by unit). Returns each product's base `unit` + `default_rate` plus its
+    `product_unit_rates` cells as `{ "MT": 500, "CFT": 42, … }`."""
+    prods = (await db.execute(
+        select(Product).where(Product.company_id == current_user.company_id, Product.is_active == True)
+        .order_by(Product.name)
+    )).scalars().all()
+    cells = (await db.execute(
+        select(ProductUnitRate).where(ProductUnitRate.company_id == current_user.company_id)
+    )).scalars().all()
+    by_prod: dict = {}
+    for c in cells:
+        by_prod.setdefault(c.product_id, {})[(c.unit or "").upper()] = float(c.rate)
+    rows = []
+    for p in prods:
+        rates = dict(by_prod.get(p.id, {}))
+        # Mirror the legacy single default_rate onto the base unit if not overridden.
+        base = (p.unit or "").upper()
+        if base and base not in rates and p.default_rate:
+            rates[base] = float(p.default_rate)
+        rows.append({
+            "product_id": str(p.id), "name": p.name, "hsn_code": p.hsn_code,
+            "base_unit": p.unit, "gst_rate": float(p.gst_rate or 0), "rates": rates,
+        })
+    return {"rows": rows}
+
+
+@router.put("/products/unit-rates")
+async def bulk_update_unit_rates(
+    data: ProductUnitRatesBulkRequest,
+    current_user: User = Depends(require_role("admin", "operator")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upsert per-unit default rates. When a unit == the product's base unit, the
+    value is mirrored into `products.default_rate` so legacy single-rate readers
+    stay correct. `rate=None` clears that (product, unit) cell."""
+    if not data.items:
+        return {"updated": 0}
+    ids = {i.product_id for i in data.items}
+    prods = {p.id: p for p in (await db.execute(
+        select(Product).where(Product.id.in_(ids), Product.company_id == current_user.company_id)
+    )).scalars().all()}
+    updated = 0
+    for it in data.items:
+        p = prods.get(it.product_id)
+        if not p:
+            continue
+        unit = (it.unit or "").strip().upper()
+        if not unit:
+            continue
+        existing = (await db.execute(
+            select(ProductUnitRate).where(
+                ProductUnitRate.product_id == it.product_id,
+                func.upper(ProductUnitRate.unit) == unit,
+            )
+        )).scalar_one_or_none()
+        if it.rate is None:
+            if existing:
+                await db.delete(existing)
+                updated += 1
+            continue
+        if it.rate < 0:
+            raise HTTPException(400, f"Rate cannot be negative for '{p.name}' ({unit})")
+        if existing:
+            existing.rate = it.rate
+        else:
+            db.add(ProductUnitRate(company_id=current_user.company_id, product_id=it.product_id, unit=unit, rate=it.rate))
+        if unit == (p.unit or "").upper():   # keep legacy default_rate in sync
+            p.default_rate = it.rate
+        updated += 1
     await db.commit()
     return {"updated": updated}
 

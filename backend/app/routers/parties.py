@@ -179,44 +179,31 @@ async def delete_party_rate(
 async def get_effective_rate(
     party_id: uuid.UUID,
     product_id: uuid.UUID,
+    unit: str | None = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return the rate that would apply for this (party, product) combo today.
+    """Rate that applies for (party, product, unit) today — unit-aware.
 
-    Priority: party_rates (most recent effective_from <= today)
-              → product.default_rate
-              → 0
-
-    Response shape includes the *source* so the UI can render badges like
-    "Customer rate" vs "Default rate".
+    Priority (services/pricing.resolve_rate): customer rate for this unit →
+    customer legacy rate (base unit) → product per-unit default → product
+    default_rate (base unit) → 0. `unit` omitted → the product's base unit.
+    Returns `source` for the UI badge.
     """
-    party_rate = (await db.execute(
-        select(PartyRate)
-        .where(
-            PartyRate.party_id == party_id,
-            PartyRate.product_id == product_id,
+    from app.services.pricing import resolve_rate, norm_unit
+    rate = await resolve_rate(db, party_id, product_id, unit)
+    prod = (await db.execute(select(Product).where(Product.id == product_id))).scalar_one_or_none()
+    eff_u = norm_unit(unit) or (norm_unit(prod.unit) if prod else "")
+    base = norm_unit(prod.unit) if prod else ""
+    prows = (await db.execute(
+        select(PartyRate).where(
+            PartyRate.party_id == party_id, PartyRate.product_id == product_id,
             PartyRate.effective_from <= date.today(),
         )
-        .order_by(PartyRate.effective_from.desc())
-        .limit(1)
-    )).scalar_one_or_none()
-
-    if party_rate:
-        return {
-            "rate": float(party_rate.rate),
-            "source": "party_rate",
-            "effective_from": party_rate.effective_from.isoformat(),
-        }
-
-    product = (await db.execute(select(Product).where(Product.id == product_id))).scalar_one_or_none()
-    if product:
-        return {
-            "rate": float(product.default_rate),
-            "source": "product_default",
-            "effective_from": None,
-        }
-    return {"rate": 0, "source": "none", "effective_from": None}
+    )).scalars().all()
+    is_party = any(norm_unit(pr.unit) == eff_u for pr in prows) or (eff_u == base and any(pr.unit is None for pr in prows))
+    source = "party_rate" if (is_party and rate > 0) else ("product_default" if rate > 0 else "none")
+    return {"rate": float(rate), "source": source, "unit": eff_u, "effective_from": None}
 
 
 # --- Bulk matrix view + bulk save (powers /pricing-matrix UI) ---
@@ -231,31 +218,33 @@ async def get_pricing_matrix(
     The frontend turns this into a sparse matrix; cells without a row use
     the product's default_rate.
     """
-    # Most-recent rate per (party_id, product_id) where effective_from <= today
+    # Most-recent rate per (party_id, product_id, unit) where effective_from <= today.
+    # unit is included so a party can hold distinct MT/CFT/CBM/Brass rates for the
+    # same product; legacy rows (unit NULL) surface as the base-unit cell.
     today = date.today()
     rows = (await db.execute(
         select(
             PartyRate.party_id,
             PartyRate.product_id,
+            PartyRate.unit,
             PartyRate.rate,
             PartyRate.effective_from,
-            PartyRate.id,
         )
         .where(PartyRate.effective_from <= today)
         .order_by(PartyRate.party_id, PartyRate.product_id, PartyRate.effective_from.desc())
     )).all()
 
-    # Collapse to first row per (party_id, product_id) — that's the most-recent
-    seen: set[tuple[uuid.UUID, uuid.UUID]] = set()
+    seen: set[tuple] = set()
     result = []
     for r in rows:
-        key = (r.party_id, r.product_id)
+        key = (r.party_id, r.product_id, (r.unit or "").upper())
         if key in seen:
             continue
         seen.add(key)
         result.append({
             "party_id": str(r.party_id),
             "product_id": str(r.product_id),
+            "unit": r.unit,
             "rate": float(r.rate),
             "effective_from": r.effective_from.isoformat(),
         })
@@ -269,41 +258,46 @@ async def bulk_set_party_rates(
     current_user: User = Depends(require_role("admin", "accountant")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Set multiple rates for one party in one call.
+    """Set multiple per-unit rates for one party in one call.
 
     Body shape:
-      { "rates": [ { "product_id": "uuid", "rate": 560.00 }, ... ] }
+      { "rates": [ { "product_id": "uuid", "unit": "CFT", "rate": 42.00 }, ... ] }
 
-    Each entry creates a new party_rates row with effective_from = today.
-    To clear a rate (revert to default), include `rate: null` — that deletes
-    all existing rates for that (party, product).
+    Each entry creates a new party_rates row (effective_from = today) for that
+    (product, unit). `unit` omitted → the legacy base-unit rate (unit NULL).
+    `rate: null` clears existing rates for that (party, product, unit).
     """
     rates = payload.get("rates") or []
     today = date.today()
     saved, cleared = 0, 0
 
+    def _norm(u):
+        return (u or "").strip().upper() or None
+
     for entry in rates:
         product_id = entry.get("product_id")
         if not product_id:
             continue
+        pid = uuid.UUID(product_id) if isinstance(product_id, str) else product_id
+        unit = _norm(entry.get("unit"))
         rate_value = entry.get("rate")
+        # Delete existing rows for this (party, product, unit) — unit-scoped so
+        # clearing/replacing a CFT rate doesn't touch the MT rate.
+        existing = (await db.execute(
+            select(PartyRate).where(
+                PartyRate.party_id == party_id,
+                PartyRate.product_id == pid,
+                (func.upper(PartyRate.unit) == unit) if unit is not None else PartyRate.unit.is_(None),
+            )
+        )).scalars().all()
+        for row in existing:
+            await db.delete(row)
         if rate_value is None:
-            # Clear: delete all existing rates for this product
-            existing = (await db.execute(
-                select(PartyRate).where(
-                    PartyRate.party_id == party_id,
-                    PartyRate.product_id == product_id,
-                )
-            )).scalars().all()
-            for row in existing:
-                await db.delete(row)
             cleared += 1
         else:
             db.add(PartyRate(
-                party_id=party_id,
-                product_id=uuid.UUID(product_id) if isinstance(product_id, str) else product_id,
-                rate=Decimal(str(rate_value)),
-                effective_from=today,
+                party_id=party_id, product_id=pid,
+                rate=Decimal(str(rate_value)), unit=unit, effective_from=today,
             ))
             saved += 1
 

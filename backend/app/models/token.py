@@ -43,6 +43,9 @@ class Token(Base):
     weight_method: Mapped[str] = mapped_column(String(20), default="weighbridge")
     # Recorded volume in CFT (cubic feet, canonical unit) for audit trail when weight_method='volume'.
     volume_cft: Mapped[Decimal | None] = mapped_column(Numeric(10, 3))
+    # Operator-chosen billing unit for this truck (MT/QUINTAL/KG/CFT/CBM/CUM/BRASS).
+    # NULL → auto-invoice falls back to the product's own unit (pre-per-unit behaviour).
+    billing_unit: Mapped[str | None] = mapped_column(String(20))
     first_weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     second_weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     first_weight_type: Mapped[str | None] = mapped_column(String(5))  # gross or tare

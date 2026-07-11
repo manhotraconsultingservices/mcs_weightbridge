@@ -183,31 +183,16 @@ async def create_invoice(
     # — party_rates is keyed by party, not type. The UI should also do this, but
     # we don't trust the client.
     if payload.party_id and payload.invoice_type in ("sale", "purchase"):
-        from app.models.party import PartyRate
-        from datetime import date as _date
+        from app.services.pricing import resolve_rate
         for it in items_data:
             sent_rate = Decimal(str(it.get("rate") or 0))
             if sent_rate > 0:
                 continue   # caller knew the rate; honour it (could be a one-off override)
-            pr = (await db.execute(
-                select(PartyRate)
-                .where(
-                    PartyRate.party_id == payload.party_id,
-                    PartyRate.product_id == it["product_id"],
-                    PartyRate.effective_from <= _date.today(),
-                )
-                .order_by(PartyRate.effective_from.desc())
-                .limit(1)
-            )).scalar_one_or_none()
-            if pr:
-                it["rate"] = float(pr.rate)
-            else:
-                # Fall back to product default
-                prod = (await db.execute(
-                    select(Product).where(Product.id == it["product_id"])
-                )).scalar_one_or_none()
-                if prod:
-                    it["rate"] = float(prod.default_rate)
+            # Unit-aware: fill the rate for THIS line's unit (party rate → product
+            # per-unit default → product.default_rate → 0).
+            r = await resolve_rate(db, payload.party_id, it["product_id"], it.get("unit"))
+            if r and r > 0:
+                it["rate"] = float(r)
 
     totals = calculate_invoice_totals(
         items=items_data,

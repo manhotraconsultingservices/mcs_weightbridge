@@ -408,6 +408,48 @@ async def update_units(
     return cleaned
 
 
+# ── Rate units — which units get a rate column in the Pricing grids ───────────
+RATE_UNITS_KEY = "rate_units"
+RATE_UNITS_DEFAULTS = ["MT", "CFT", "CUM", "BRASS"]
+
+
+@router.get("/rate-units")
+async def get_rate_units(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Units priced in the Pricing → Default/Customer Rates grids (columns)."""
+    raw = await _get_raw(db, RATE_UNITS_KEY)
+    if raw:
+        try:
+            val = json.loads(raw)
+            if isinstance(val, list) and val:
+                return val
+        except Exception:
+            pass
+    return RATE_UNITS_DEFAULTS
+
+
+@router.put("/rate-units")
+async def update_rate_units(
+    payload: list[str],
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Save the rate-unit column list (admin). Upper-cased + de-duplicated."""
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for u in (payload or []):
+        s = (u or "").strip().upper()
+        if s and s not in seen:
+            seen.add(s)
+            cleaned.append(s)
+    if not cleaned:
+        raise HTTPException(400, "At least one rate unit is required")
+    await _upsert(db, RATE_UNITS_KEY, json.dumps(cleaned))
+    return cleaned
+
+
 @router.delete("/wallpaper")
 async def delete_wallpaper(
     db: AsyncSession = Depends(get_db),

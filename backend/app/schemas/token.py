@@ -19,6 +19,7 @@ class TokenCreate(BaseModel):
     driver_id: Optional[UUID] = None
     transporter_id: Optional[UUID] = None
     agent_id: Optional[UUID] = None      # broker/dalal — carried to the invoice for commission
+    billing_unit: Optional[str] = None   # operator-chosen unit to bill this truck (MT/CFT/CBM/BRASS…)
     gate_pass: Optional[str] = None
     gate_pass_id: Optional[UUID] = None  # link to gate_passes record (uses its GP number)
     remarks: Optional[str] = None
@@ -54,6 +55,7 @@ class TokenVolumeCreate(BaseModel):
     driver_id: Optional[UUID] = None
     transporter_id: Optional[UUID] = None
     agent_id: Optional[UUID] = None      # broker/dalal — carried to the invoice for commission
+    billing_unit: Optional[str] = None   # operator-chosen unit to bill this truck (CFT/CBM/BRASS/MT…)
     volume_cft: Decimal                  # cubic feet — canonical unit stored in DB
     gate_pass: Optional[str] = None
     gate_pass_id: Optional[UUID] = None  # link to gate_passes record
@@ -154,6 +156,7 @@ class TokenResponse(BaseModel):
     anpr_exit_at: Optional[datetime] = None
     transit_pass_id: Optional[UUID] = None
     agent_id: Optional[UUID] = None
+    billing_unit: Optional[str] = None
     vehicle_rent: Optional[Decimal] = None
     remarks: Optional[str] = None
     custom_fields: Optional[dict[str, Any]] = None   # owner-defined attribute values

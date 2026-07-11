@@ -13,6 +13,7 @@ from app.models.notification import NotificationConfig, NotificationTemplate, No
 from app.models.compliance import ComplianceItem
 from app.models.custom_field import CustomFieldDefinition
 from app.models.agent import Agent, AgentCommissionPayment
+from app.models.product_unit_rate import ProductUnitRate
 
 __all__ = [
     "Company", "FinancialYear",
@@ -30,4 +31,5 @@ __all__ = [
     "ComplianceItem",
     "CustomFieldDefinition",
     "Agent", "AgentCommissionPayment",
+    "ProductUnitRate",
 ]

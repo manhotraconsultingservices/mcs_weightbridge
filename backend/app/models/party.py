@@ -62,6 +62,9 @@ class PartyRate(Base):
     party_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("parties.id"))
     product_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("products.id"))
     rate: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    # Per-unit customer rate. NULL = legacy rate that applies to the product's
+    # own base unit (backward compatible with pre-per-unit rows).
+    unit: Mapped[str | None] = mapped_column(String(20))
     effective_from: Mapped[date] = mapped_column(Date)
     effective_to: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

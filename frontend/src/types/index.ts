@@ -219,6 +219,7 @@ export interface Token {
   is_supplement: boolean;
   weight_method: 'weighbridge' | 'volume';   // measurement method
   volume_cft: number | null;                  // cubic feet — populated only when weight_method === 'volume'
+  billing_unit: string | null;                // operator-chosen billing unit (MT/CFT/CBM/BRASS…)
   gate_pass: string | null;                   // legacy free-text gate-pass note
   gate_pass_no: string | null;                // auto-allocated GP/25-26/0001
   source: 'manual' | 'anpr' | 'kiosk' | string;

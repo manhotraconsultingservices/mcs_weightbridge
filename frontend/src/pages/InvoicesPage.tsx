@@ -225,10 +225,23 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
       rate: String(p.default_rate),
       gst_rate: String(p.gst_rate),
     });
+    fillRateFor(idx, productId, p.unit);   // override with the party's unit-aware rate
   }
 
   function updateLine(idx: number, patch: Partial<LineItem>) {
     setLines(prev => prev.map((l, i) => i === idx ? { ...l, ...patch } : l));
+  }
+
+  // Unit-aware rate: for a selected party, pull the rate for (party, product, unit)
+  // so picking a unit fills the matching per-unit rate. Walk-in keeps the default.
+  async function fillRateFor(idx: number, productId: string, unit: string) {
+    if (walkIn || !form.party_id || !productId) return;
+    try {
+      const { data } = await api.get<{ rate: number }>(
+        `/api/v1/parties/${form.party_id}/effective-rate/${productId}`,
+        { params: { unit } });
+      if (data && Number(data.rate) > 0) updateLine(idx, { rate: String(data.rate) });
+    } catch { /* keep existing rate */ }
   }
 
   // Tax Type drives whether GST is shown/charged at all. Cash / Bill of Supply
@@ -443,7 +456,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
                   </div>
                   <div className="space-y-1 min-w-0">
                     {idx === 0 && <Label className="text-sm font-medium">{t('invoice.unitCol', { defaultValue: 'Unit' })}</Label>}
-                    <Select value={line.unit || undefined} onValueChange={v => updateLine(idx, { unit: v ?? '' })}>
+                    <Select value={line.unit || undefined} onValueChange={v => { const u = v ?? ''; updateLine(idx, { unit: u }); fillRateFor(idx, line.product_id, u); }}>
                       <SelectTrigger className="h-10 text-sm w-full"><SelectValue placeholder="Unit" /></SelectTrigger>
                       <SelectContent>
                         {withUnit(units, line.unit).map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
@@ -701,6 +714,16 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
     const p = products.find(x => x.id === productId);
     if (!p) return;
     updateLine(idx, { product_id: productId, hsn_code: p.hsn_code, unit: p.unit, rate: String(p.default_rate), gst_rate: String(p.gst_rate) });
+    fillRateFor(idx, productId, p.unit);
+  }
+
+  async function fillRateFor(idx: number, productId: string, unit: string) {
+    if (walkIn || !form.party_id || !productId) return;
+    try {
+      const { data } = await api.get<{ rate: number }>(
+        `/api/v1/parties/${form.party_id}/effective-rate/${productId}`, { params: { unit } });
+      if (data && Number(data.rate) > 0) updateLine(idx, { rate: String(data.rate) });
+    } catch { /* keep existing rate */ }
   }
 
   function updateLine(idx: number, patch: Partial<LineItem>) {
@@ -907,7 +930,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
                   </div>
                   <div className="space-y-1 min-w-0">
                     {idx === 0 && <Label className="text-sm font-medium">{t('invoice.unitCol', { defaultValue: 'Unit' })}</Label>}
-                    <Select value={line.unit || undefined} onValueChange={v => updateLine(idx, { unit: v ?? '' })}>
+                    <Select value={line.unit || undefined} onValueChange={v => { const u = v ?? ''; updateLine(idx, { unit: u }); fillRateFor(idx, line.product_id, u); }}>
                       <SelectTrigger className="h-10 text-sm w-full"><SelectValue placeholder="Unit" /></SelectTrigger>
                       <SelectContent>
                         {withUnit(units, line.unit).map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
