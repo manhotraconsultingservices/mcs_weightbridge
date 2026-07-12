@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
 import { useAuth } from '@/hooks/useAuth';
+import { type RoleDef } from '@/lib/rbac';
 import api from '@/services/api';
 
 // ── Types ────────────────────────────────────────────────────────────────── //
@@ -41,11 +42,12 @@ const ROLE_STYLES: Record<string, string> = {
 interface AddEditDialogProps {
   open: boolean;
   user: ManagedUser | null;
+  customRoles: RoleDef[];
   onClose: () => void;
   onSaved: (u: ManagedUser) => void;
 }
 
-function AddEditDialog({ open, user, onClose, onSaved }: AddEditDialogProps) {
+function AddEditDialog({ open, user, customRoles, onClose, onSaved }: AddEditDialogProps) {
   const { t } = useTranslation();
   const isEdit = !!user;
   const [form, setForm] = useState({
@@ -63,7 +65,9 @@ function AddEditDialog({ open, user, onClose, onSaved }: AddEditDialogProps) {
     { value: 'purchase_executive', label: t('users.roles.purchase_executive') },
     { value: 'accountant',         label: t('users.roles.accountant') },
     { value: 'viewer',             label: t('users.roles.viewer') },
-  ], [t]);
+    // Admin-defined custom roles (from /admin/permissions → New Role)
+    ...customRoles.map(r => ({ value: r.value, label: r.label })),
+  ], [t, customRoles]);
 
   useEffect(() => {
     if (open) {
@@ -250,6 +254,7 @@ export default function UserManagementPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [customRoles, setCustomRoles] = useState<RoleDef[]>([]);
   const [loading, setLoading] = useState(false);
   const [addEditOpen, setAddEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ManagedUser | null>(null);
@@ -274,6 +279,11 @@ export default function UserManagementPage() {
   }, [t]);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  useEffect(() => {
+    api.get<RoleDef[]>('/api/v1/app-settings/custom-roles')
+      .then(r => setCustomRoles(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setCustomRoles([]));
+  }, []);
 
   if (!user || user.role !== 'admin') return null;
 
@@ -307,6 +317,7 @@ export default function UserManagementPage() {
       <UsersTable
         users={users}
         loading={loading}
+        customRoles={customRoles}
         onEdit={u => { setEditTarget(u); setAddEditOpen(true); }}
         onResetPassword={u => { setResetTarget(u); setResetOpen(true); }}
       />
@@ -314,6 +325,7 @@ export default function UserManagementPage() {
       <AddEditDialog
         open={addEditOpen}
         user={editTarget}
+        customRoles={customRoles}
         onClose={() => { setAddEditOpen(false); setEditTarget(null); }}
         onSaved={handleSaved}
       />
@@ -330,10 +342,11 @@ export default function UserManagementPage() {
 // Users DataTable
 // ------------------------------------------------------------------ //
 function UsersTable({
-  users, loading, onEdit, onResetPassword,
+  users, loading, customRoles, onEdit, onResetPassword,
 }: {
   users: ManagedUser[];
   loading: boolean;
+  customRoles: RoleDef[];
   onEdit: (u: ManagedUser) => void;
   onResetPassword: (u: ManagedUser) => void;
 }) {
@@ -348,7 +361,9 @@ function UsersTable({
     accountant:         t('users.roles.accountant'),
     viewer:             t('users.roles.viewer'),
     private_admin:      t('users.roles.private_admin'),
-  }), [t]);
+    gate_guard:         t('users.roles.gate_guard'),
+    ...Object.fromEntries(customRoles.map(r => [r.value, r.label])),
+  }), [t, customRoles]);
 
   const columns = useMemo<ColumnDef<ManagedUser>[]>(() => [
     { key: 'full_name', label: t('users.colName'), accessor: u => u.full_name ?? '', className: 'font-medium' },

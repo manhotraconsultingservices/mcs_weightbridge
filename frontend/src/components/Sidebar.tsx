@@ -25,26 +25,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { getTenantModules } from '@/hooks/useAuth';
 import LanguageToggle from '@/components/LanguageToggle';
+import { HUB_CHILDREN } from '@/lib/rbac';
 import type { User } from '@/types';
 
-// ── Hub → child paths (for permission expansion + active-link detection) ──────
-//
+// HUB_CHILDREN (hub → child paths) is the single source of truth in lib/rbac.ts —
+// shared with the route guard so the sidebar and URL access can never drift.
 // If a role's stored permissions include ANY child path, the hub link is shown.
-// Old permissions (e.g. '/gate', '/purchase-invoices') automatically expand to
-// show the hub that wraps them — no permission-store migration needed.
-const HUB_CHILDREN: Record<string, string[]> = {
-  '/weighbridge':      ['/gate', '/tokens-v1', '/tokens', '/anpr/trips'],
-  '/cameras-anpr':     ['/camera-scale', '/snapshot-search', '/anpr/events', '/anpr/live', '/anpr/review', '/anpr/trips'],
-  '/sales':            ['/invoices', '/quotations', '/delivery-challans', '/credit-debit-notes'],
-  '/crm':              ['/customers', '/parties'],
-  '/procurement':      ['/purchase-invoices', '/royalty'],
-  '/inventory-hub':    ['/products', '/product-inventory', '/inventory'],
-  '/production-hub':   ['/production', '/production/dashboard', '/production/settings'],
-  '/accounts':         ['/payments', '/ledger', '/audit'],
-  '/gst-compliance':   ['/gst-reports', '/compliance'],
-  '/analytics':        ['/reports', '/reports-classic'],
-  '/fraud-registers':  ['/reports', '/reports-classic'],
-};
 
 // Tenant module gating — if ALL listed modules are disabled, the hub is hidden.
 // Note: '/inventory-hub' is intentionally NOT gated — Products/Catalog/Production

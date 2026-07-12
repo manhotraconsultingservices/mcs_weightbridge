@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
 import { useAppSettings } from '@/hooks/useAppSettings';
 import { PermissionsContext, buildPermissionsCtx } from '@/contexts/PermissionsContext';
+import { canAccessRoute } from '@/lib/rbac';
+import NoAccessPage from '@/pages/NoAccessPage';
 import LoginPage from '@/pages/LoginPage';
 import LandingPage from '@/pages/LandingPage';
 import LicenseExpiredPage from '@/pages/LicenseExpiredPage';
@@ -134,10 +136,14 @@ function AmcBanner() {
 function AppLayout({ user, logout }: { user: User; logout: () => void }) {
   const { authorized: usbAuthorized } = useUsbGuard();
   const { permissions, wallpaperUrl, roleTabPerms } = useAppSettings(user.role);
+  const location = useLocation();
   const permissionsCtx = useMemo(
     () => buildPermissionsCtx(user.role, permissions, roleTabPerms),
     [user.role, permissions, roleTabPerms],
   );
+  // Route guard — block direct URL access to a page this role wasn't granted.
+  // Admin bypasses; detail/utility routes fail open (see rbac.ts).
+  const routeAllowed = canAccessRoute(location.pathname, permissions, user.role);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // PWA install prompt (Android Chrome "Add to Home Screen")
@@ -211,6 +217,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
           <div className={wallpaperUrl ? 'min-h-full bg-background/80 backdrop-blur-sm rounded-lg p-4' : ''}>
             <PermissionsContext.Provider value={permissionsCtx}>
             <ErrorBoundary>
+            {!routeAllowed ? <NoAccessPage /> : (
             <Routes>
             <Route path="/" element={<HomeRedirect permissions={permissions} role={user.role} />} />
             {/* Legacy chart-heavy dashboard kept reachable for "View 30-day trends" link */}
@@ -286,6 +293,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/admin/wallpaper" element={<WallpaperSettingsPage />} />
               <Route path="*" element={<HomeRedirect permissions={permissions} role={user.role} />} />
             </Routes>
+            )}
             </ErrorBoundary>
             </PermissionsContext.Provider>
           </div>

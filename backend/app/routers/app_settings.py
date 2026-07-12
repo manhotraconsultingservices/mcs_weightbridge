@@ -193,6 +193,70 @@ async def update_role_tab_permissions(
     return payload
 
 
+# ── Custom Roles ──────────────────────────────────────────────────────────────
+# Admin-defined roles in addition to the built-ins. Stored as a JSON list of
+# {value, label, color}. Their page/tab/invoice-action access is controlled via
+# the SAME role_permissions / role_tab_permissions / invoice_action_permissions
+# maps (all keyed by arbitrary role string), so no other storage is needed.
+
+CUSTOM_ROLES_KEY = "custom_roles"
+
+BUILTIN_ROLE_VALUES = {
+    "admin", "store_manager", "operator", "sales_executive",
+    "purchase_executive", "accountant", "viewer", "private_admin", "gate_guard",
+}
+
+
+@router.get("/custom-roles")
+async def get_custom_roles(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Return admin-defined custom roles. Any authenticated user — the sidebar
+    and user list need it to resolve role labels."""
+    raw = await _get_raw(db, CUSTOM_ROLES_KEY)
+    if raw:
+        try:
+            val = json.loads(raw)
+            if isinstance(val, list):
+                return val
+        except Exception:
+            pass
+    return []
+
+
+@router.put("/custom-roles")
+async def update_custom_roles(
+    payload: list[dict],
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Save the custom-roles list. Admin only. Each item: {value, label, color?}.
+    `value` is slugified (lowercase + underscores); built-in role names and
+    duplicates are rejected so a custom role can never shadow a built-in one."""
+    import re
+    cleaned: list[dict] = []
+    seen: set[str] = set()
+    for item in (payload or []):
+        if not isinstance(item, dict):
+            continue
+        label = (item.get("label") or "").strip()
+        value = (item.get("value") or label).strip().lower()
+        value = re.sub(r"[^a-z0-9]+", "_", value).strip("_")
+        if not value or not label:
+            continue
+        if value in BUILTIN_ROLE_VALUES or value in seen:
+            continue
+        seen.add(value)
+        cleaned.append({
+            "value": value,
+            "label": label,
+            "color": item.get("color") or "text-slate-600",
+        })
+    await _upsert(db, CUSTOM_ROLES_KEY, json.dumps(cleaned))
+    return cleaned
+
+
 # ── Invoice Action Permissions ────────────────────────────────────────────────
 
 INVOICE_ACTIONS_KEY = "invoice_action_permissions"
