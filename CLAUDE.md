@@ -14,6 +14,32 @@
 > data / schema / config, not code.** State the proven cause before writing the
 > fix, and prefer surfacing the real error over a generic message.
 
+> **RBAC PRINCIPLE — every new page MUST be controllable by role.** Access
+> control is centralised in **`frontend/src/lib/rbac.ts`** and enforced by the
+> `canAccessRoute` route guard in `App.tsx` (a role opening a page it lacks gets
+> `NoAccessPage`, even by direct URL — not just a hidden sidebar link). When you
+> add a page/route, wire it in **before shipping**:
+> 1. **Operational / reporting page** → add it to `CATALOGUE_GROUPS` in
+>    `lib/rbac.ts` (so admins can grant/deny it per role on `/admin/permissions`)
+>    **and** to the sidebar. If it's a **tab inside an existing hub**, add its
+>    route to that hub's `HUB_CHILDREN` entry (it inherits the hub's permission)
+>    and, if it's a real tab, to `HUB_TABS` + gate it with `usePermissions().isTabAllowed`.
+>    A brand-new **hub** gets its own `CATALOGUE_GROUPS` entry + `HUB_CHILDREN` +
+>    `HUB_TABS`. Detail routes (`/x/:id`) reached only from an allowed parent need
+>    no entry — the guard fails open for them.
+> 2. **System-config / admin page** (settings, users, backup, integrations…) →
+>    add its route to `ADMIN_ROUTES` in `lib/rbac.ts` (admin-only) and guard its
+>    backend endpoints with `require_role("admin")`. These are intentionally NOT
+>    grantable to custom roles.
+> 3. **Custom roles are first-class** — never hard-code the role list. Read roles
+>    from `BUILTIN_ROLES` + `GET /api/v1/app-settings/custom-roles`; permission maps
+>    (`role_permissions` / `role_tab_permissions` / `invoice_action_permissions`)
+>    are keyed by arbitrary role string, so a page added to the catalogue is
+>    automatically assignable to any custom role with zero extra work.
+>
+> A page that isn't wired into `rbac.ts` is a bug: it will either be invisible to
+> everyone but admin, or (if route-reachable) leak to roles that shouldn't see it.
+
 > **IN-FLIGHT WORK & PENDING:** see [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
 > — the living tracker of what's not done yet (currently: Tally dual-mode Phase 3-4
 > + tenant operational follow-ups). Update it as items close.
