@@ -13,7 +13,7 @@ from app.routers import (
     usb_guard, private_invoices, notifications, audit, backup, import_data,
     tally, tally_connector, app_settings, license, compliance, cameras, inventory,
     product_stock, production, anpr, delivery_challans, royalty, portal, branches, gstr2b,
-    anomalies, gate, custom_fields, agents,
+    anomalies, gate, custom_fields, agents, fuel,
 )
 from app.middleware.license_guard import LicenseGuardMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -1000,6 +1000,7 @@ app.include_router(production.router)
 app.include_router(anpr.router)
 app.include_router(delivery_challans.router)
 app.include_router(royalty.router)
+app.include_router(fuel.router)  # Fleet fuel & mileage / diesel-leakage detection
 app.include_router(portal.router)
 app.include_router(branches.router)
 app.include_router(gstr2b.router)

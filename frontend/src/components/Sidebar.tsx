@@ -20,7 +20,7 @@ import {
   BookOpen, TrendingUp, Package,
   LogOut, Usb, Settings,
   Bell, HardDrive, Upload, UserCog, Lock, ImageIcon, Building2,
-  Camera, Cog, FileBarChart, ShieldAlert, FileCheck2, Tags, Users, Truck, IndianRupee, Handshake,
+  Camera, Cog, FileBarChart, ShieldAlert, FileCheck2, Tags, Users, Truck, Fuel, IndianRupee, Handshake,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getTenantModules } from '@/hooks/useAuth';
@@ -92,6 +92,7 @@ const NAV_SECTIONS: NavSection[] = [
       { to: '/inventory-hub',  icon: Factory, labelKey: 'sidebar.inventoryProduction' },
       { to: '/production-hub', icon: Cog,     labelKey: 'sidebar.productionHub' },
       { to: '/vehicles',       icon: Truck,   labelKey: 'sidebar.vehicleMaster' },
+      { to: '/fuel',           icon: Fuel,    labelKey: 'sidebar.fuelMileage' },
     ],
   },
   {

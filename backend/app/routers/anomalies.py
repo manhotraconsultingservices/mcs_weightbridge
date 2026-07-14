@@ -26,6 +26,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "after_hours_start": 21,              # hour (24h) after which = suspicious
     "after_hours_end": 5,                 # hour (24h) before which = suspicious
     "round_weight_divisor": 1000,         # net_weight divisible by N kg = suspicious
+    "fuel_deviation_pct": 15,             # mileage > N% below benchmark = possible diesel leakage
 }
 
 _TABLE = "app_settings"
@@ -382,6 +383,71 @@ async def get_anomalies(
         await db.rollback()
         results["unlinked_passes"] = {
             "title": "Unlinked Purchase Loads", "error": str(e), "severity": "ok", "count": 0, "items": [],
+        }
+
+    # ── 8. DIESEL MILEAGE DEVIATION (possible leakage) ───────────────────────
+    # Vehicles whose actual mileage is > N% below their (manual or auto-learned)
+    # benchmark over the range — reuses the same brim-to-brim math as the Fuel
+    # module. Silent no-op when no fuel data exists.
+    try:
+        from app.services import fuel as _fuel
+        from app.models.vehicle import Vehicle as _V, VehicleFuelEntry as _FE
+        from sqlalchemy import select as _sel
+        threshold = float(cfg.get("fuel_deviation_pct", 15))
+        vehs = {v.id: v for v in (await db.execute(
+            _sel(_V).where(_V.company_id == current_user.company_id, _V.is_active == True)
+        )).scalars().all()}
+        fills = (await db.execute(
+            _sel(_FE).where(_FE.company_id == current_user.company_id, _FE.entry_date <= date_to)
+        )).scalars().all()
+        by_veh: dict[Any, list[dict]] = {}
+        for f in fills:
+            by_veh.setdefault(f.vehicle_id, []).append({
+                "odometer_km": float(f.odometer_km), "litres": float(f.litres),
+                "entry_date": f.entry_date,
+            })
+        items = []
+        for vid, veh in vehs.items():
+            ents = by_veh.get(vid, [])
+            if len(ents) < 2:
+                continue
+            tank = float(veh.tank_capacity_litres) if veh.tank_capacity_litres else None
+            intervals = _fuel.compute_intervals(ents, tank)
+            learned = _fuel.learn_baseline([iv["interval_kmpl"] for iv in intervals])
+            manual = float(veh.benchmark_mileage_kmpl) if veh.benchmark_mileage_kmpl else None
+            bench, _src = _fuel.effective_benchmark(manual, learned)
+            if not bench:
+                continue
+            dist = 0.0
+            litres = 0.0
+            for iv in intervals:
+                ed = iv.get("entry_date")
+                if ed and date_from <= ed <= date_to and iv.get("distance_km") is not None:
+                    dist += iv["distance_km"]
+                    litres += float(iv.get("litres") or 0)
+            if litres <= 0 or dist <= 0:
+                continue
+            actual = dist / litres
+            dev = (bench - actual) / bench * 100
+            if dev >= threshold:
+                items.append({
+                    "vehicle_no": veh.registration_no,
+                    "actual_kmpl": round(actual, 2), "benchmark_kmpl": round(bench, 2),
+                    "deviation_pct": round(dev, 1),
+                    "excess_litres": round(litres - dist / bench, 2),
+                })
+        items.sort(key=lambda x: -x["deviation_pct"])
+        results["fuel_mileage_deviation"] = {
+            "title": "Diesel Mileage Deviation",
+            "description": f"Vehicles whose mileage is > {threshold}% below benchmark (possible leakage/theft)",
+            "severity": "high" if items else "ok",
+            "count": len(items),
+            "items": items[:50],
+        }
+    except Exception as e:
+        await db.rollback()
+        results["fuel_mileage_deviation"] = {
+            "title": "Diesel Mileage Deviation", "error": str(e), "severity": "ok", "count": 0, "items": [],
         }
 
     # ── Overall severity ─────────────────────────────────────────────────────

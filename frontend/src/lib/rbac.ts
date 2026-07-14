@@ -50,6 +50,7 @@ export const CATALOGUE_GROUPS: CatalogueGroup[] = [
       { path: '/inventory-hub',  label: 'Inventory',      hint: 'Finished Goods · Store · Catalog · Pricing' },
       { path: '/production-hub', label: 'Production',     hint: 'Daily Cycles · Dashboard · Settings' },
       { path: '/vehicles',       label: 'Vehicle Master', hint: 'Vehicles · Drivers · Transporters' },
+      { path: '/fuel',           label: 'Fuel & Mileage', hint: 'Diesel log · Mileage vs benchmark · Leakage detection' },
     ],
   },
   {
@@ -118,6 +119,12 @@ export const HUB_TABS: Record<string, { value: string; label: string }[]> = {
     { value: 'production', label: 'Daily Cycles' },
     { value: 'dashboard',  label: 'Production Dashboard' },
     { value: 'settings',   label: 'Production Settings' },
+  ],
+  '/fuel': [
+    { value: 'log',     label: 'Fuel Log' },
+    { value: 'report',  label: 'Mileage Report' },
+    { value: 'trends',  label: 'Trends' },
+    { value: 'leakage', label: 'Leakage Alerts' },
   ],
   '/accounts': [
     { value: 'payments',  label: 'Payments' },

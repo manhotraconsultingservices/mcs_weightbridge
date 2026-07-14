@@ -155,6 +155,28 @@ DEFAULT_TEMPLATES = [
         "subject": None,
         "body": "⚠️ <b>Low Stock Alert</b>\n\n<b>{{ product_name }}</b> is at <b>{{ current_stock }} {{ unit }}</b> (min: {{ min_stock_level }} {{ unit }}).\n\nConsider replenishing — {{ status }}.\n\n— {{ company_name }}",
     },
+    # ── Fleet fuel: possible diesel leakage (mileage below benchmark) ─────────
+    {
+        "event_type": "fuel_leakage_alert",
+        "channel": "telegram",
+        "name": "Diesel Leakage Alert (Telegram)",
+        "subject": None,
+        "body": "🛢️ <b>Possible Diesel Leakage</b>\n\nVehicle: <b>{{ vehicle_no }}</b>\nMileage: <b>{{ actual_kmpl }} km/l</b> (benchmark {{ benchmark_kmpl }} km/l)\nDeviation: <b>{{ deviation_pct }}% below</b>\nLast fill: {{ litres }} L over {{ distance_km }} km\n\nCheck the vehicle for leakage, theft, or servicing.",
+    },
+    {
+        "event_type": "fuel_leakage_alert",
+        "channel": "whatsapp",
+        "name": "Diesel Leakage Alert (WhatsApp)",
+        "subject": None,
+        "body": "*Possible Diesel Leakage*\n\nVehicle {{ vehicle_no }} ran at {{ actual_kmpl }} km/l vs benchmark {{ benchmark_kmpl }} km/l ({{ deviation_pct }}% below) on the last fill ({{ litres }} L / {{ distance_km }} km).\n\nPlease check for leakage or theft.",
+    },
+    {
+        "event_type": "fuel_leakage_alert",
+        "channel": "sms",
+        "name": "Diesel Leakage Alert (SMS)",
+        "subject": None,
+        "body": "ALERT: {{ vehicle_no }} mileage {{ actual_kmpl }} km/l vs benchmark {{ benchmark_kmpl }} ({{ deviation_pct }}% low). Possible diesel leakage - please check.",
+    },
     # ── Sprint 2: overdue payment reminders (one-tap from owner dashboard) ──
     {
         "event_type": "payment_overdue_reminder",

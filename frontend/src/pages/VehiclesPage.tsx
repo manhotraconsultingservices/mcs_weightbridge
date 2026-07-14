@@ -121,7 +121,7 @@ function VehicleDialog({ open, editing, vehicleTypes, onClose, onSaved }: {
   const { t } = useTranslation();
   const [form, setForm] = useState({
     registration_no: '', vehicle_type: 'truck', owner_name: '', owner_phone: '',
-    default_tare_weight: 0,
+    default_tare_weight: 0, benchmark_mileage_kmpl: 0, tank_capacity_litres: 0,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -134,7 +134,9 @@ function VehicleDialog({ open, editing, vehicleTypes, onClose, onSaved }: {
         owner_name: editing.owner_name ?? '',
         owner_phone: editing.owner_phone ?? '',
         default_tare_weight: editing.default_tare_weight,
-      } : { registration_no: '', vehicle_type: 'truck', owner_name: '', owner_phone: '', default_tare_weight: 0 });
+        benchmark_mileage_kmpl: editing.benchmark_mileage_kmpl ?? 0,
+        tank_capacity_litres: editing.tank_capacity_litres ?? 0,
+      } : { registration_no: '', vehicle_type: 'truck', owner_name: '', owner_phone: '', default_tare_weight: 0, benchmark_mileage_kmpl: 0, tank_capacity_litres: 0 });
       setError('');
     }
   }, [open, editing]);
@@ -150,6 +152,8 @@ function VehicleDialog({ open, editing, vehicleTypes, onClose, onSaved }: {
       const { data } = await api[method]<Vehicle>(url, {
         ...form,
         registration_no: form.registration_no.toUpperCase().trim(),
+        benchmark_mileage_kmpl: form.benchmark_mileage_kmpl || null,
+        tank_capacity_litres: form.tank_capacity_litres || null,
       });
       onSaved(data);
       onClose();
@@ -206,6 +210,24 @@ function VehicleDialog({ open, editing, vehicleTypes, onClose, onSaved }: {
             <p className="text-[10px] text-muted-foreground">
               {t('vehicle.defaultTareHint')}
             </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Benchmark Mileage (km/l)</Label>
+              <Input type="number" min="0" step="0.1"
+                value={form.benchmark_mileage_kmpl || ''}
+                onChange={e => set('benchmark_mileage_kmpl', parseFloat(e.target.value) || 0)}
+                placeholder="e.g. 4.0" />
+              <p className="text-[10px] text-muted-foreground">Expected km per litre — used to flag diesel leakage. Blank = auto-learn from history.</p>
+            </div>
+            <div className="space-y-1">
+              <Label>Tank Capacity (L)</Label>
+              <Input type="number" min="0" step="1"
+                value={form.tank_capacity_litres || ''}
+                onChange={e => set('tank_capacity_litres', parseFloat(e.target.value) || 0)}
+                placeholder="e.g. 300" />
+              <p className="text-[10px] text-muted-foreground">Flags a fill larger than the tank.</p>
+            </div>
           </div>
         </div>
         <DialogFooter>

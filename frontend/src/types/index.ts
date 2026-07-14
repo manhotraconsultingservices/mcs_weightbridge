@@ -129,6 +129,8 @@ export interface Vehicle {
   owner_name: string | null;
   owner_phone: string | null;
   default_tare_weight: number;
+  benchmark_mileage_kmpl: number | null;
+  tank_capacity_litres: number | null;
   is_active: boolean;
 }
 

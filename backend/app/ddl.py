@@ -433,6 +433,9 @@ def get_column_migrations() -> list[str]:
         # Per-unit rates: unit on customer rates + operator-chosen billing unit on tokens.
         "ALTER TABLE party_rates ADD COLUMN IF NOT EXISTS unit VARCHAR(20)",
         "ALTER TABLE tokens      ADD COLUMN IF NOT EXISTS billing_unit VARCHAR(20)",
+        # Fleet fuel & mileage — benchmark km/l + tank capacity on the vehicle master.
+        "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS benchmark_mileage_kmpl NUMERIC(6,2)",
+        "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS tank_capacity_litres NUMERIC(8,2)",
         # Custom-attribute values (owner-defined fields) per weighment.
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS custom_fields JSONB",
         "ALTER TABLE compliance_items ADD COLUMN IF NOT EXISTS policy_holder VARCHAR(200)",
@@ -704,6 +707,33 @@ def get_column_migrations() -> list[str]:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """,
+        # ── Fleet fuel & mileage (diesel-leakage detection) ──────────────────
+        # One row per diesel fill (plant tank / outside pump). odometer_km = the
+        # meter reading at the fill. Mileage + deviation vs benchmark are computed
+        # at read time from these rows (services/fuel.py) — nothing derived stored.
+        """
+        CREATE TABLE IF NOT EXISTS vehicle_fuel_entries (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id UUID NOT NULL REFERENCES companies(id),
+            branch_id UUID,
+            vehicle_id UUID NOT NULL REFERENCES vehicles(id),
+            entry_date DATE NOT NULL,
+            odometer_km NUMERIC(12,1) NOT NULL,
+            litres NUMERIC(10,2) NOT NULL,
+            rate_per_litre NUMERIC(10,2),
+            amount NUMERIC(14,2),
+            fuel_source VARCHAR(20) NOT NULL DEFAULT 'plant_tank',
+            tank_full BOOLEAN NOT NULL DEFAULT TRUE,
+            inventory_item_id UUID,
+            inventory_txn_id UUID,
+            driver_id UUID,
+            notes VARCHAR(500),
+            created_by UUID,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_fuel_entries_vehicle ON vehicle_fuel_entries (company_id, vehicle_id, odometer_km)",
+        "CREATE INDEX IF NOT EXISTS ix_fuel_entries_date ON vehicle_fuel_entries (company_id, entry_date)",
         # Append-only audit of every movement
         """
         CREATE TABLE IF NOT EXISTS product_stock_movements (

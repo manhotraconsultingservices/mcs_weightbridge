@@ -2,7 +2,7 @@ from app.models.company import Company, FinancialYear
 from app.models.user import User
 from app.models.product import ProductCategory, Product
 from app.models.party import Party, PartyRate
-from app.models.vehicle import Vehicle, TareWeightHistory, Driver, Transporter
+from app.models.vehicle import Vehicle, TareWeightHistory, Driver, Transporter, VehicleFuelEntry
 from app.models.token import Token
 from app.models.quotation import Quotation, QuotationItem
 from app.models.invoice import Invoice, InvoiceItem
@@ -20,7 +20,7 @@ __all__ = [
     "User",
     "ProductCategory", "Product",
     "Party", "PartyRate",
-    "Vehicle", "TareWeightHistory", "Driver", "Transporter",
+    "Vehicle", "TareWeightHistory", "Driver", "Transporter", "VehicleFuelEntry",
     "Token",
     "Quotation", "QuotationItem",
     "Invoice", "InvoiceItem",
