@@ -33,9 +33,22 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+# ── Base directory ────────────────────────────────────────────────────────────
+# When frozen (PyInstaller/Nuitka .exe), __file__ resolves to the TEMPORARY
+# extraction dir (_MEIPASS), NOT the folder the .exe lives in. Anchoring config
+# + logs to __file__ then makes the frozen agent read a STALE bundled
+# scale_config.json (wrong tenant) and write logs into a temp dir that vanishes.
+# Use the executable's own folder when frozen so it reads the scale_config.json
+# sitting next to the .exe and writes a visible log there.
+# getattr(sys,"frozen") covers PyInstaller; "__compiled__" in globals() covers Nuitka.
+if getattr(sys, "frozen", False) or "__compiled__" in globals():
+    BASE_DIR = Path(sys.executable).resolve().parent   # folder the .exe lives in
+else:
+    BASE_DIR = Path(__file__).resolve().parent
+
 # ── Logging ───────────────────────────────────────────────────────────────────
 
-LOG_DIR = Path(__file__).parent / "logs"
+LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 logging.basicConfig(
@@ -50,7 +63,7 @@ log = logging.getLogger("scale_agent")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-CONFIG_FILE = Path(__file__).parent / "scale_config.json"
+CONFIG_FILE = BASE_DIR / "scale_config.json"
 
 # Minimal config — serial params are filled in by auto-detection and saved.
 DEFAULT_CONFIG: dict = {
