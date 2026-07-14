@@ -61,13 +61,31 @@ logging.basicConfig(
 )
 log = logging.getLogger("scale_agent")
 
+# ── Product / tuning constants ────────────────────────────────────────────────
+PRODUCT_DOMAIN      = "weighbridgesetu.com"    # apex; per-tenant pushes go to <slug>.<PRODUCT_DOMAIN>
+SERVICE_NAME        = "WeighbridgeScaleAgent"  # Windows service name (install/uninstall)
+DEFAULT_STATUS_PORT = 9002                     # local status/Discovery UI; auto-increments if busy
+
+MAX_WEIGHT_KG        = 200_000.0   # reject parses above this (implausible for a weighbridge)
+ASCII_QUALITY_MIN    = 0.65        # below this = wrong parity/data-bits (garbage) → reject
+ASCII_QUALITY_STRONG = 0.80        # clean enough to accept a port even before a weight parses
+ASCII_QUALITY_PEEK   = 0.70        # Discovery /peek "looks good" threshold
+
+MAX_JUMP_KG          = 5000.0      # >5 MT change in <JUMP_WINDOW_SEC is physically impossible
+JUMP_WINDOW_SEC      = 2.0
+
+SCALE_RETRY_SEC          = 30      # wait after "scale not found" before re-scanning
+MAX_CONSECUTIVE_FAILURES = 5       # after N port failures: clear saved config + full re-scan
+RECONNECT_BASE_SEC       = 5       # port-error backoff start
+RECONNECT_MAX_SEC        = 60      # port-error backoff cap
+
 # ── Config ────────────────────────────────────────────────────────────────────
 
 CONFIG_FILE = BASE_DIR / "scale_config.json"
 
 # Minimal config — serial params are filled in by auto-detection and saved.
 DEFAULT_CONFIG: dict = {
-    "cloud_url": "https://weighbridgesetu.com",
+    "cloud_url": f"https://{PRODUCT_DOMAIN}",
     "tenant_slug": "",
     "agent_key": "",
     # Serial — leave blank/zero; auto-detected and saved on first run.
@@ -84,7 +102,7 @@ DEFAULT_CONFIG: dict = {
     # Log raw serial frames at DEBUG level (helps diagnose format issues).
     "log_raw_frames": False,
     # Status API preferred port; auto-increments if busy (Tally uses 9002).
-    "status_port": 9002,
+    "status_port": DEFAULT_STATUS_PORT,
 }
 
 # ── Serial configs tried during auto-detection ────────────────────────────────
@@ -139,7 +157,7 @@ def parse_weight(text: str) -> float | None:
     if m:
         try:
             w = abs(float(m.group(1)))
-            if 0.0 <= w < 200_000.0:
+            if 0.0 <= w < MAX_WEIGHT_KG:
                 return w
         except ValueError:
             pass
@@ -149,7 +167,7 @@ def parse_weight(text: str) -> float | None:
     if m:
         try:
             w = float(m.group(1))
-            if 0.0 <= w < 200_000.0:
+            if 0.0 <= w < MAX_WEIGHT_KG:
                 return w
         except ValueError:
             pass
@@ -158,16 +176,17 @@ def parse_weight(text: str) -> float | None:
     for match in re.finditer(r'(?<!\d)([+-]?\d{4,6}(?:\.\d{1,3})?)(?!\d)', text):
         try:
             w = abs(float(match.group(1)))
-            if 0.0 <= w < 200_000.0:
+            if 0.0 <= w < MAX_WEIGHT_KG:
                 return w
         except ValueError:
             pass
 
-    # 4. Fallback: any number in valid weighbridge range (catches sub-1000 kg readings)
-    for match in re.finditer(r'(?<!\d)(\d{1,6}(?:\.\d{1,3})?)(?!\d)', text):
+    # 4. Fallback: any 2+-digit number in valid weighbridge range (catches sub-1000 kg
+    #    readings). Requires ≥2 digits so a lone stray digit ("2") is NOT read as 2.0 kg.
+    for match in re.finditer(r'(?<!\d)(\d{2,6}(?:\.\d{1,3})?)(?!\d)', text):
         try:
             w = float(match.group(1))
-            if 0.0 <= w < 200_000.0:
+            if 0.0 <= w < MAX_WEIGHT_KG:
                 return w
         except ValueError:
             pass
@@ -192,7 +211,8 @@ def _probe_port(port: str, baud: int, data_bits: int, parity: str, stop_bits: in
                "O": serial.PARITY_ODD}.get(parity, serial.PARITY_NONE)
 
         ser = serial.Serial(port=port, baudrate=baud, bytesize=bsz, parity=par,
-                            stopbits=serial.STOPBITS_ONE, timeout=0.3)
+                            stopbits={1: serial.STOPBITS_ONE, 2: serial.STOPBITS_TWO}.get(stop_bits, serial.STOPBITS_ONE),
+                            timeout=0.3)
         ser.dtr = True
         ser.rts = True
         ser.reset_input_buffer()
@@ -211,7 +231,7 @@ def _probe_port(port: str, baud: int, data_bits: int, parity: str, stop_bits: in
             return False, None
 
         quality = _ascii_quality(raw)
-        if quality < 0.65:
+        if quality < ASCII_QUALITY_MIN:
             # Non-ASCII garbage → wrong serial config
             log.debug("  ✗ %s %d %d%s%d  ASCII=%.0f%% (wrong config)",
                       port, baud, data_bits, parity, stop_bits, quality * 100)
@@ -227,7 +247,7 @@ def _probe_port(port: str, baud: int, data_bits: int, parity: str, stop_bits: in
                 return True, w
 
         # Good ASCII but no weight yet (scale unstable / in error mode) — still valid
-        if quality > 0.80:
+        if quality > ASCII_QUALITY_STRONG:
             log.info("  ✓ %s  %d  %d%s%d  → ASCII OK, weight not stable yet",
                      port, baud, data_bits, parity, stop_bits)
             return True, None
@@ -301,7 +321,8 @@ def _peek_port(port: str, probe_sec: float = 1.0) -> dict:
             par = {"N": _ser.PARITY_NONE, "E": _ser.PARITY_EVEN,
                    "O": _ser.PARITY_ODD}.get(parity, _ser.PARITY_NONE)
             ser = _ser.Serial(port=port, baudrate=baud, bytesize=bsz, parity=par,
-                              stopbits=_ser.STOPBITS_ONE, timeout=0.3)
+                              stopbits={1: _ser.STOPBITS_ONE, 2: _ser.STOPBITS_TWO}.get(sbits, _ser.STOPBITS_ONE),
+                              timeout=0.3)
             ser.dtr = True
             ser.rts = True
             data = b""
@@ -313,13 +334,13 @@ def _peek_port(port: str, probe_sec: float = 1.0) -> dict:
             ser.close()
             ascii_preview = data.decode("ascii", errors="replace")[:200]
             q = round(_ascii_quality(data), 2) if data else 0.0
-            weight = parse_weight(ascii_preview) if q > 0.7 else None
+            weight = parse_weight(ascii_preview) if q > ASCII_QUALITY_PEEK else None
             results.append({
                 "config": cfg_label, "bytes": len(data), "ascii_quality": q,
                 "raw_ascii": ascii_preview, "raw_hex": data[:80].hex(" "),
-                "weight": weight, "looks_good": bool(q > 0.7 and weight is not None),
+                "weight": weight, "looks_good": bool(q > ASCII_QUALITY_PEEK and weight is not None),
             })
-            if q > 0.7 and weight is not None:
+            if q > ASCII_QUALITY_PEEK and weight is not None:
                 break  # clean config found — no need to keep trying
         except Exception as exc:
             msg = str(exc)
@@ -437,6 +458,7 @@ class ScaleReader:
 
         bsz_map = {7: serial.SEVENBITS, 8: serial.EIGHTBITS}
         par_map  = {"N": serial.PARITY_NONE, "E": serial.PARITY_EVEN, "O": serial.PARITY_ODD}
+        sbits_map = {1: serial.STOPBITS_ONE, 2: serial.STOPBITS_TWO}
 
         api_url = f"{_effective_push_base(self.cfg.get('cloud_url', ''), self.cfg.get('tenant_slug', ''))}/api/v1/weight/external-reading"
 
@@ -481,8 +503,9 @@ class ScaleReader:
                     if resp.status_code == 403:
                         self.error_count += 1
                         self.cloud_online = False
-                        log.error("AGENT KEY REJECTED (403) — edit agent_key in scale_config.json."
-                                  "  Tenant: %s", payload.get("tenant"))
+                        if self.error_count % 20 == 1:   # throttle: don't flood the log on a bad key
+                            log.error("AGENT KEY REJECTED (403) — fix agent_key in scale_config.json "
+                                      "(tenant: %s)", payload.get("tenant"))
                     elif not resp.ok:
                         self.error_count += 1
                         self.cloud_online = False
@@ -504,13 +527,13 @@ class ScaleReader:
 
         # ── Main reconnect loop ────────────────────────────────────────────
         consecutive_failures = 0
-        reconnect_delay = 5
+        reconnect_delay = RECONNECT_BASE_SEC
 
         while self.running:
             serial_cfg = self._resolve_serial_cfg()
             if serial_cfg is None:
-                log.warning("Scale not found — waiting 30 s before retrying ...")
-                time.sleep(30)
+                log.warning("Scale not found — waiting %d s before retrying ...", SCALE_RETRY_SEC)
+                time.sleep(SCALE_RETRY_SEC)
                 continue
 
             port   = serial_cfg["port"]
@@ -533,7 +556,7 @@ class ScaleReader:
                     port=port, baudrate=baud,
                     bytesize=bsz_map.get(dbits, serial.EIGHTBITS),
                     parity=par_map.get(parstr, serial.PARITY_NONE),
-                    stopbits=serial.STOPBITS_ONE,
+                    stopbits=sbits_map.get(sbits, serial.STOPBITS_ONE),
                     timeout=2,
                 )
                 ser.dtr = True
@@ -541,7 +564,7 @@ class ScaleReader:
                 ser.reset_input_buffer()
                 self.connected = True
                 consecutive_failures = 0
-                reconnect_delay = 5
+                reconnect_delay = RECONNECT_BASE_SEC
                 last_weight_time = 0.0
                 log.info("Scale connected on %s", port)
 
@@ -582,8 +605,8 @@ class ScaleReader:
                         now = time.time()
                         # Plausibility guard: >5 MT jump in <2 s is physically impossible
                         if (self.last_weight >= 0.0 and
-                                abs(weight - self.last_weight) > 5000.0 and
-                                now - last_weight_time < 2.0):
+                                abs(weight - self.last_weight) > MAX_JUMP_KG and
+                                now - last_weight_time < JUMP_WINDOW_SEC):
                             log.debug("Rejected implausible jump %.1f→%.1f kg", self.last_weight, weight)
                             continue
 
@@ -639,21 +662,22 @@ class ScaleReader:
                     log.warning("CH340 Error 31 on %s — attempting PnP reset", port)
                     if _try_reset_ch340(port):
                         consecutive_failures = 0
-                        reconnect_delay = 5
+                        reconnect_delay = RECONNECT_BASE_SEC
                         time.sleep(3)
                         continue
 
                 # After 5 consecutive failures, wipe saved config and re-scan all ports.
                 # This handles: port number changed (COM3→COM5 after reconnect),
                 # device physically moved to different port, wrong config saved.
-                if consecutive_failures >= 5:
-                    log.warning("5 consecutive failures on %s — clearing config, re-scanning all ports", port)
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    log.warning("%d consecutive failures on %s — clearing config, re-scanning all ports",
+                                MAX_CONSECUTIVE_FAILURES, port)
                     self._clear_serial_cfg()
                     consecutive_failures = 0
-                    reconnect_delay = 5
+                    reconnect_delay = RECONNECT_BASE_SEC
                 else:
                     time.sleep(reconnect_delay)
-                    reconnect_delay = min(reconnect_delay * 2, 60)
+                    reconnect_delay = min(reconnect_delay * 2, RECONNECT_MAX_SEC)
 
             finally:
                 if ser is not None:
@@ -758,7 +782,7 @@ class StatusServer:
     so Tally on 9002 never blocks this service.
     """
 
-    def __init__(self, reader: ScaleReader, preferred_port: int = 9002):
+    def __init__(self, reader: ScaleReader, preferred_port: int = DEFAULT_STATUS_PORT):
         self.reader = reader
         self.port   = self._find_free_port(preferred_port)
 
@@ -851,13 +875,15 @@ def _effective_push_base(cloud_url: str, tenant_slug: str) -> str:
     """
     from urllib.parse import urlparse
     base = (cloud_url or "").rstrip("/")
+    if base and "://" not in base:
+        base = "https://" + base          # tolerate a scheme-less host typed at the wizard
     try:
         parts = urlparse(base)
         host = (parts.hostname or "").lower()
     except Exception:
         return base
-    if tenant_slug and host in ("weighbridgesetu.com", "www.weighbridgesetu.com"):
-        return f"{parts.scheme or 'https'}://{tenant_slug}.weighbridgesetu.com"
+    if tenant_slug and host in (PRODUCT_DOMAIN, f"www.{PRODUCT_DOMAIN}"):
+        return f"{parts.scheme or 'https'}://{tenant_slug}.{PRODUCT_DOMAIN}"
     return base
 
 
@@ -926,19 +952,25 @@ def install_service():
     if not nssm:
         print("NSSM not found.  Download from https://nssm.cc and add to PATH.")
         sys.exit(1)
-    python = sys.executable
-    script = str(Path(__file__).resolve())
-    name   = "WeighbridgeScaleAgent"
-    subprocess.run([nssm, "install",        name, python, script],                        check=True)
-    subprocess.run([nssm, "set", name, "AppDirectory",   str(Path(__file__).parent)],     check=True)
-    subprocess.run([nssm, "set", name, "AppStdout",      str(LOG_DIR / "stdout.log")],    check=True)
-    subprocess.run([nssm, "set", name, "AppStderr",      str(LOG_DIR / "stderr.log")],    check=True)
-    subprocess.run([nssm, "set", name, "AppRotateFiles", "1"],                            check=True)
-    subprocess.run([nssm, "set", name, "AppRotateOnline","1"],                            check=True)
-    subprocess.run([nssm, "set", name, "AppRotateBytes", "10485760"],                     check=True)
-    print(f"\nService '{name}' installed.")
-    print(f"Start:     nssm start {name}")
-    print(f"Status:    nssm status {name}")
+    # A frozen .exe IS the program — register it directly (no python + script).
+    # Anchor everything to BASE_DIR (the .exe's own folder when frozen) so the
+    # service never points at PyInstaller/Nuitka's transient _MEIPASS dir, which
+    # is deleted when the installer process exits.
+    if getattr(sys, "frozen", False) or "__compiled__" in globals():
+        install_cmd = [nssm, "install", SERVICE_NAME, str(Path(sys.executable).resolve())]
+    else:
+        install_cmd = [nssm, "install", SERVICE_NAME,
+                       sys.executable, str((BASE_DIR / "scale_agent.py").resolve())]
+    subprocess.run(install_cmd,                                                                    check=True)
+    subprocess.run([nssm, "set", SERVICE_NAME, "AppDirectory",   str(BASE_DIR)],                   check=True)
+    subprocess.run([nssm, "set", SERVICE_NAME, "AppStdout",      str(LOG_DIR / "stdout.log")],     check=True)
+    subprocess.run([nssm, "set", SERVICE_NAME, "AppStderr",      str(LOG_DIR / "stderr.log")],     check=True)
+    subprocess.run([nssm, "set", SERVICE_NAME, "AppRotateFiles", "1"],                             check=True)
+    subprocess.run([nssm, "set", SERVICE_NAME, "AppRotateOnline","1"],                             check=True)
+    subprocess.run([nssm, "set", SERVICE_NAME, "AppRotateBytes", "10485760"],                      check=True)
+    print(f"\nService '{SERVICE_NAME}' installed.")
+    print(f"Start:     nssm start {SERVICE_NAME}")
+    print(f"Status:    nssm status {SERVICE_NAME}")
     print(f"Logs:      {LOG_DIR}")
 
 
@@ -948,8 +980,8 @@ def uninstall_service():
     if not nssm:
         print("NSSM not found.")
         sys.exit(1)
-    subprocess.run([nssm, "stop",   "WeighbridgeScaleAgent"], check=False)
-    subprocess.run([nssm, "remove", "WeighbridgeScaleAgent", "confirm"], check=True)
+    subprocess.run([nssm, "stop",   SERVICE_NAME], check=False)
+    subprocess.run([nssm, "remove", SERVICE_NAME, "confirm"], check=True)
     print("Service removed.")
 
 
@@ -1003,7 +1035,7 @@ def main():
         log.info("  Port: auto-detect (first run or after port change)")
 
     reader = ScaleReader(cfg)
-    status = StatusServer(reader, preferred_port=cfg.get("status_port", 9002))
+    status = StatusServer(reader, preferred_port=cfg.get("status_port", DEFAULT_STATUS_PORT))
     status.start()
     reader.start()
 
