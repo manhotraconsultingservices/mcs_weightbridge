@@ -93,6 +93,7 @@ SCALE_RETRY_SEC          = 30      # wait after "scale not found" before re-scan
 MAX_CONSECUTIVE_FAILURES = 5       # after N port failures: clear saved config + full re-scan
 RECONNECT_BASE_SEC       = 5       # port-error backoff start
 RECONNECT_MAX_SEC        = 60      # port-error backoff cap
+STALL_TIMEOUT_SEC        = 120     # connected but no parseable weight this long → clear + re-scan
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -294,16 +295,30 @@ def auto_detect_scale() -> dict | None:
     log.info("Scanning %d port(s): %s", len(ports), ", ".join(ports))
     log.info("Will try %d serial configs per port ...", len(PROBE_CONFIGS))
 
+    # Two-pass: PREFER a port/config that yields an ACTUAL parsed weight over one
+    # that is merely clean ASCII — a non-scale serial device (GPS, Arduino) also
+    # reads as clean ASCII, and blindly locking the first such port is the "SCALE
+    # CONNECTED but no real weight" bug. Fall back to the first clean-ASCII port
+    # only if nothing produced a live weight (a scale that was idle mid-scan). (#4)
+    ascii_only: dict | None = None
     for port in ports:
         for baud, data_bits, parity, stop_bits in PROBE_CONFIGS:
             ok, weight = _probe_port(port, baud, data_bits, parity, stop_bits)
-            if ok:
-                cfg = {"port": port, "baud_rate": baud, "data_bits": data_bits,
-                       "parity": parity, "stop_bits": stop_bits}
-                log.info("Scale FOUND: %s @ %d baud  %d%s%d  weight=%.1f kg",
-                         port, baud, data_bits, parity, stop_bits,
-                         weight if weight is not None else 0.0)
+            if not ok:
+                continue
+            cfg = {"port": port, "baud_rate": baud, "data_bits": data_bits,
+                   "parity": parity, "stop_bits": stop_bits}
+            if weight is not None:
+                log.info("Scale FOUND (live weight): %s @ %d baud  %d%s%d  weight=%.1f kg",
+                         port, baud, data_bits, parity, stop_bits, weight)
                 return cfg
+            if ascii_only is None:
+                ascii_only = cfg   # remember the first clean-ASCII candidate as a fallback
+
+    if ascii_only is not None:
+        log.warning("No live weight seen during scan — locking on clean-ASCII port %s "
+                    "(scale may be idle; will re-scan if no weight arrives)", ascii_only["port"])
+        return ascii_only
 
     log.error("Scale NOT FOUND. Check: (1) USB cable connected, (2) indicator powered on, "
               "(3) USB-serial driver (CH340/FTDI) installed in Device Manager.")
@@ -581,9 +596,20 @@ class ScaleReader:
                 consecutive_failures = 0
                 reconnect_delay = RECONNECT_BASE_SEC
                 last_weight_time = 0.0
+                saw_delimiter   = False        # #3: once CR/LF framing is seen, keep the
+                                               #     delimiter-free fallback off for good
+                last_parse_time = time.time()  # #4: last time ANY weight parsed (stall watchdog)
                 log.info("Scale connected on %s", port)
 
                 while self.running:
+                    # #4: port open but no parseable weight for STALL_TIMEOUT_SEC (silent or
+                    # garbage — e.g. locked onto a non-scale port) → clear config + re-scan.
+                    if time.time() - last_parse_time > STALL_TIMEOUT_SEC:
+                        log.warning("No parseable weight for %ds on %s — clearing config, re-scanning",
+                                    STALL_TIMEOUT_SEC, port)
+                        self.connected = False
+                        self._clear_serial_cfg()
+                        break
                     chunk = ser.read(ser.in_waiting or 1)
                     if not chunk:
                         continue
@@ -596,6 +622,7 @@ class ScaleReader:
                         candidates = [p for p in (cr, lf) if p >= 0]
                         if not candidates:
                             break
+                        saw_delimiter = True    # #3: this connection uses CR/LF framing
                         delim = min(candidates)
                         frame = buffer[:delim]
                         rest  = buffer[delim + 1:]
@@ -618,6 +645,7 @@ class ScaleReader:
                             continue
 
                         now = time.time()
+                        last_parse_time = now   # #4: port IS producing weights — not stalled
                         # Plausibility guard: >5 MT jump in <2 s is physically impossible
                         if (self.last_weight >= 0.0 and
                                 abs(weight - self.last_weight) > MAX_JUMP_KG and
@@ -641,12 +669,16 @@ class ScaleReader:
                             })
 
                     # ── Delimiter-free fallback (Leo FSD-501 continuous) ───
-                    if len(buffer) >= 16:
+                    # Only for indicators that NEVER send CR/LF (saw_delimiter stays False).
+                    # Gating on that + a 64-byte floor stops this from firing on a
+                    # partially-received CR/LF frame and truncating it mid-arrival (#3).
+                    if not saw_delimiter and len(buffer) >= 64:
                         clean = bytes(b for b in buffer if b >= 0x20)
                         raw_str = clean.decode("ascii", errors="replace")
                         self.last_raw_frame = raw_str
                         weight = parse_weight(raw_str)
                         if weight is not None:
+                            last_parse_time = time.time()   # #4: producing weights — not stalled
                             if calibration:
                                 weight += calibration
                             now = time.time()
@@ -660,7 +692,7 @@ class ScaleReader:
                                     "agent_key": self.cfg["agent_key"],
                                     "raw": raw_str,
                                 })
-                        buffer = buffer[-16:]
+                        buffer = buffer[-48:]
 
                     # Overflow guard
                     if len(buffer) > 4096:
@@ -799,27 +831,13 @@ class StatusServer:
 
     def __init__(self, reader: ScaleReader, preferred_port: int = DEFAULT_STATUS_PORT):
         self.reader = reader
-        self.port   = self._find_free_port(preferred_port)
-
-    @staticmethod
-    def _find_free_port(start: int) -> int:
-        import socket
-        for p in range(start, start + 5):
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.bind(("127.0.0.1", p))
-                s.close()
-                return p
-            except OSError:
-                continue
-        log.warning("Ports %d–%d all busy; status server may fail to bind", start, start + 4)
-        return start
+        self.preferred_port = preferred_port
+        self.port = preferred_port   # actual bound port; set for real in start()
 
     def start(self):
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
         from urllib.parse import urlparse, parse_qs
         reader = self.reader
-        port   = self.port
 
         def _status_dict():
             r = reader
@@ -866,11 +884,31 @@ class StatusServer:
             def log_message(self, *args):
                 pass  # suppress HTTP access log noise
 
+        # Bind the REAL server across the port range — no probe-then-bind TOCTOU (#8).
+        # allow_reuse_address MUST be False: HTTPServer defaults it True (SO_REUSEADDR),
+        # and on Windows SO_REUSEADDR lets a second socket bind an already-in-use port
+        # (a duplicate/hijack bind that never raises). False makes an in-use port raise
+        # WSAEADDRINUSE so the loop advances to a free one — and never steals Tally's 9002.
+        class _StatusHTTPServer(ThreadingHTTPServer):
+            allow_reuse_address = False
+        server = None
+        for p in range(self.preferred_port, self.preferred_port + 5):
+            try:
+                server = _StatusHTTPServer(("127.0.0.1", p), Handler)
+                self.port = p
+                break
+            except OSError:
+                continue
+        if server is None:
+            log.warning("Status server: ports %d–%d all busy — Discovery UI unavailable",
+                        self.preferred_port, self.preferred_port + 4)
+            return
+
         def _serve():
             try:
-                ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
-            except OSError as exc:
-                log.warning("Status server on :%d failed to bind: %s", port, exc)
+                server.serve_forever()
+            except Exception as exc:
+                log.warning("Status server stopped: %s", exc)
 
         threading.Thread(target=_serve, daemon=True, name="status-http").start()
         log.info("Status + Discovery UI: http://127.0.0.1:%d", self.port)
