@@ -45,6 +45,7 @@ DEFAULT_MODULES = {
     "anpr":          True,      # ANPR plate-recognition gate
     "royalty":       True,      # Mineral royalty / transit passes
     "gate":          True,      # Controlled-access gate register
+    "fuel":          True,      # Fleet Fuel & Mileage / diesel-leakage detection
 }
 
 from fastapi import Request

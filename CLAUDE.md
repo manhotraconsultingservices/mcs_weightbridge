@@ -40,6 +40,30 @@
 > A page that isn't wired into `rbac.ts` is a bug: it will either be invisible to
 > everyone but admin, or (if route-reachable) leak to roles that shouldn't see it.
 
+> **FEATURE-MODULE PRINCIPLE — every new feature area MUST be a toggleable Feature
+> Module.** Feature areas are gated **per-tenant** by `tenant.config.modules`
+> (Platform admin → Edit tenant → **Feature Modules**), separate from RBAC
+> (modules gate a whole feature per-TENANT for monetization; RBAC gates pages
+> per-ROLE within a tenant — a new page usually needs **both**). When you add a
+> new feature area (a new hub/page with its own API prefix), wire its module in
+> **all four** places or it can't be sold / access-controlled:
+> 1. **`backend/app/routers/auth.py` → `DEFAULT_MODULES`** — add the module key.
+>    Default `True` for a vertical/operational feature so existing tenants keep it;
+>    `False` for a premium opt-in. This is the canonical key list — the platform
+>    save rejects unknown keys, so a module missing here can't be toggled at all.
+> 2. **`backend/app/multitenancy/middleware.py` → `_ROUTE_TO_MODULE`** — map the
+>    feature's API prefix (e.g. `/api/v1/fuel`) → the module key, so the backend
+>    returns 403 "not available in your plan" when the tenant has it off.
+> 3. **`frontend/src/pages/PlatformDashboard.tsx` → `MODULE_META`** — add
+>    `{key,label,description}` so the on/off toggle appears in the tenant-edit
+>    dialog's Feature Modules panel.
+> 4. **`frontend/src/components/Sidebar.tsx` → `HUB_MODULES`** — map the sidebar
+>    route → module key(s) so the nav item hides when the module is off.
+>
+> (`moduleEnabled(key)` from `useAuth` is the client-side check; `industry.py`
+> presets can flip module defaults per vertical. A feature not wired here is
+> globally on with no way to gate or monetize it.)
+
 > **IN-FLIGHT WORK & PENDING:** see [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
 > — the living tracker of what's not done yet (currently: Tally dual-mode Phase 3-4
 > + tenant operational follow-ups). Update it as items close.

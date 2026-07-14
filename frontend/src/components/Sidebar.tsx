@@ -46,6 +46,7 @@ const HUB_MODULES: Record<string, string[]> = {
   '/compliance':    ['compliance'],
   '/gst-compliance': ['gst_reports', 'compliance'],
   '/analytics':     ['reports'],
+  '/fuel':          ['fuel'],
 };
 
 interface SidebarProps {

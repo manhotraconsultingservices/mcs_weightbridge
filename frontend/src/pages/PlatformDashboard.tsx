@@ -204,6 +204,7 @@ function EditTenantDialog({ tenant, open, onClose, onSaved }: {
     { key: 'anpr',          label: 'ANPR Gate',           description: 'Number-plate recognition gate + trips' },
     { key: 'royalty',       label: 'Royalty Passes',      description: 'Mineral royalty / transit passes (mining)' },
     { key: 'gate',          label: 'Gate Register',       description: 'Controlled-access gate pass register' },
+    { key: 'fuel',          label: 'Fuel & Mileage',      description: 'Diesel log, mileage vs benchmark, leakage detection' },
   ];
 
   if (!tenant) return null;
