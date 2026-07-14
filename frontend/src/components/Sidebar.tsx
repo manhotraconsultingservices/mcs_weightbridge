@@ -20,7 +20,7 @@ import {
   BookOpen, TrendingUp, Package,
   LogOut, Usb, Settings,
   Bell, HardDrive, Upload, UserCog, Lock, ImageIcon, Building2,
-  Camera, Cog, FileBarChart, ShieldAlert, FileCheck2, Tags, Users, Truck, Fuel, IndianRupee, Handshake,
+  Camera, Cog, FileBarChart, ShieldAlert, FileCheck2, Tags, Users, Truck, Fuel, HardHat, IndianRupee, Handshake,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getTenantModules } from '@/hooks/useAuth';
@@ -47,6 +47,7 @@ const HUB_MODULES: Record<string, string[]> = {
   '/gst-compliance': ['gst_reports', 'compliance'],
   '/analytics':     ['reports'],
   '/fuel':          ['fuel'],
+  '/workforce':     ['workforce'],
 };
 
 interface SidebarProps {
@@ -100,6 +101,7 @@ const NAV_SECTIONS: NavSection[] = [
     headerKey: 'sidebar.sectionFinance',
     items: [
       { to: '/accounts',        icon: BookOpen,     labelKey: 'sidebar.accounts' },
+      { to: '/workforce',       icon: HardHat,      labelKey: 'sidebar.workforce' },
       { to: '/compliance',      icon: FileCheck2,   labelKey: 'sidebar.compliance' },
       { to: '/gst-compliance',  icon: FileBarChart, labelKey: 'sidebar.gstCompliance' },
       { to: '/analytics',       icon: TrendingUp,   labelKey: 'sidebar.analytics' },

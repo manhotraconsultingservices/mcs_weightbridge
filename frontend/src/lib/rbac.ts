@@ -57,6 +57,7 @@ export const CATALOGUE_GROUPS: CatalogueGroup[] = [
     group: 'Finance & Intelligence',
     pages: [
       { path: '/accounts',        label: 'Accounts',          hint: 'Payments · Ledger · Balances · Advances · Activity Log' },
+      { path: '/workforce',       label: 'Workforce & Payroll', hint: 'Workers · attendance · wages/salary · advances' },
       { path: '/compliance',      label: 'Compliance',        hint: 'Insurance / License / Permit tracker' },
       { path: '/gst-compliance',  label: 'GST & Compliance',  hint: 'GSTR-1 / 3B / 2B · Compliance Docs' },
       { path: '/analytics',       label: 'Analytics',         hint: 'P&L · Sales by Status · GST Split · Write-offs' },
@@ -125,6 +126,12 @@ export const HUB_TABS: Record<string, { value: string; label: string }[]> = {
     { value: 'report',  label: 'Mileage Report' },
     { value: 'trends',  label: 'Trends' },
     { value: 'leakage', label: 'Leakage Alerts' },
+  ],
+  '/workforce': [
+    { value: 'workers',    label: 'Workers' },
+    { value: 'attendance', label: 'Attendance' },
+    { value: 'payments',   label: 'Payments' },
+    { value: 'summary',    label: 'Payroll' },
   ],
   '/accounts': [
     { value: 'payments',  label: 'Payments' },

@@ -734,6 +734,61 @@ def get_column_migrations() -> list[str]:
         """,
         "CREATE INDEX IF NOT EXISTS ix_fuel_entries_vehicle ON vehicle_fuel_entries (company_id, vehicle_id, odometer_km)",
         "CREATE INDEX IF NOT EXISTS ix_fuel_entries_date ON vehicle_fuel_entries (company_id, entry_date)",
+        # ── Workforce & Payroll (workers · attendance muster · payments) ──────
+        # Workers are NOT logins — just payroll records. Earnings + balance are
+        # computed at read time (services/payroll.py) from attendance + payments.
+        """
+        CREATE TABLE IF NOT EXISTS workers (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id UUID NOT NULL REFERENCES companies(id),
+            branch_id UUID,
+            name VARCHAR(120) NOT NULL,
+            phone VARCHAR(15),
+            worker_type VARCHAR(20) NOT NULL DEFAULT 'daily_wage',
+            rate NUMERIC(12,2) NOT NULL DEFAULT 0,
+            designation VARCHAR(80),
+            joining_date DATE,
+            aadhaar_no VARCHAR(12),
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            notes VARCHAR(500),
+            created_by UUID,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS worker_attendance (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id UUID NOT NULL REFERENCES companies(id),
+            worker_id UUID NOT NULL REFERENCES workers(id),
+            att_date DATE NOT NULL,
+            status VARCHAR(12) NOT NULL DEFAULT 'present',
+            ot_hours NUMERIC(4,1) NOT NULL DEFAULT 0,
+            notes VARCHAR(200),
+            created_by UUID,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (worker_id, att_date)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS worker_payments (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id UUID NOT NULL REFERENCES companies(id),
+            branch_id UUID,
+            worker_id UUID NOT NULL REFERENCES workers(id),
+            pay_date DATE NOT NULL,
+            payment_type VARCHAR(20) NOT NULL DEFAULT 'wage',
+            amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+            mode VARCHAR(20) NOT NULL DEFAULT 'cash',
+            reference VARCHAR(100),
+            notes VARCHAR(300),
+            created_by UUID,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_worker_att_date ON worker_attendance (company_id, att_date)",
+        "CREATE INDEX IF NOT EXISTS ix_worker_pay_date ON worker_payments (company_id, pay_date)",
+        "CREATE INDEX IF NOT EXISTS ix_worker_pay_worker ON worker_payments (worker_id)",
         # Append-only audit of every movement
         """
         CREATE TABLE IF NOT EXISTS product_stock_movements (

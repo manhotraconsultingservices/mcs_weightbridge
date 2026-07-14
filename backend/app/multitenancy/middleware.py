@@ -81,6 +81,7 @@ _ROUTE_TO_MODULE: dict[str, str] = {
     "/api/v1/tally":          "tally_sync",
     "/api/v1/import":         "data_import",
     "/api/v1/fuel":           "fuel",
+    "/api/v1/workforce":      "workforce",
 }
 
 # Module cache alongside status cache: slug → (modules_dict, timestamp)

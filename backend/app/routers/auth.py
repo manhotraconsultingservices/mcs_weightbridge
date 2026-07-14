@@ -46,6 +46,7 @@ DEFAULT_MODULES = {
     "royalty":       True,      # Mineral royalty / transit passes
     "gate":          True,      # Controlled-access gate register
     "fuel":          True,      # Fleet Fuel & Mileage / diesel-leakage detection
+    "workforce":     True,      # Workers, attendance muster, payroll & advances
 }
 
 from fastapi import Request
