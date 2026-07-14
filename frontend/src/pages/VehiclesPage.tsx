@@ -388,7 +388,7 @@ const TRANSPORTER_COLS: ColumnDef<Transporter>[] = [
 // ------------------------------------------------------------------ //
 // Main Page
 // ------------------------------------------------------------------ //
-const VEH_PAGE_SIZE = 1000;   // fetch all; DataTable handles sort/filter/columns/CSV client-side
+const VEH_PAGE_SIZE = 500;   // backend caps page_size at 500; DataTable handles sort/filter/columns/CSV client-side
 
 export default function VehiclesPage() {
   const { t } = useTranslation();
@@ -444,7 +444,7 @@ export default function VehiclesPage() {
       else { setDrivers(dRes.data.items ?? []); setDriverTotal(dRes.data.total ?? 0); }
       if (Array.isArray(tRes.data)) { setTransporters(tRes.data); setTransporterTotal(tRes.data.length); }
       else { setTransporters(tRes.data.items ?? []); setTransporterTotal(tRes.data.total ?? 0); }
-    } catch { } finally { setLoading(false); }
+    } catch (e) { console.error('Vehicles/Drivers/Transporters fetch failed', e); } finally { setLoading(false); }
   }, [search, tab]);
 
   useEffect(() => { fetch(); }, [fetch]);
