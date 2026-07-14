@@ -1,15 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
-import { Plus, Search, Pencil, Loader2, Truck, Settings2, X, Check } from 'lucide-react';
+import { Plus, Search, Pencil, Loader2, Settings2, X, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 import type { Vehicle } from '@/types';
 
@@ -346,21 +346,58 @@ function TransporterDialog({ open, editing, onClose, onSaved }: {
 }
 
 // ------------------------------------------------------------------ //
+// Column definitions (configurable via DataTable gear menu)
+// ------------------------------------------------------------------ //
+const capitalize = (v: unknown) =>
+  v ? String(v).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '—';
+
+const VEHICLE_COLS: ColumnDef<Vehicle>[] = [
+  { key: 'registration_no', label: 'Registration No', accessor: r => r.registration_no },
+  { key: 'vehicle_type', label: 'Type', accessor: r => r.vehicle_type || '', format: v => capitalize(v) },
+  { key: 'owner_name', label: 'Owner', accessor: r => r.owner_name || '—' },
+  { key: 'owner_phone', label: 'Phone', accessor: r => r.owner_phone || '—' },
+  { key: 'default_tare_weight', label: 'Tare (MT)', type: 'number', align: 'right',
+    accessor: r => Number(r.default_tare_weight) / 1000,
+    format: v => Number(v).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) },
+  { key: 'benchmark_mileage_kmpl', label: 'Benchmark (km/l)', type: 'number', align: 'right', defaultVisible: false,
+    accessor: r => r.benchmark_mileage_kmpl ?? 0,
+    format: (_v, r) => r.benchmark_mileage_kmpl == null ? '—' : Number(r.benchmark_mileage_kmpl).toFixed(1),
+    exportValue: r => r.benchmark_mileage_kmpl ?? '' },
+  { key: 'tank_capacity_litres', label: 'Tank (L)', type: 'number', align: 'right', defaultVisible: false,
+    accessor: r => r.tank_capacity_litres ?? 0,
+    format: (_v, r) => r.tank_capacity_litres == null ? '—' : Number(r.tank_capacity_litres).toFixed(0),
+    exportValue: r => r.tank_capacity_litres ?? '' },
+  { key: 'is_active', label: 'Status', type: 'enum', enumOptions: ['Active', 'Inactive'],
+    accessor: r => r.is_active ? 'Active' : 'Inactive' },
+];
+
+const DRIVER_COLS: ColumnDef<Driver>[] = [
+  { key: 'name', label: 'Name', accessor: r => r.name },
+  { key: 'license_no', label: 'License No', accessor: r => r.license_no || '—' },
+  { key: 'phone', label: 'Phone', accessor: r => r.phone || '—' },
+  { key: 'is_active', label: 'Status', type: 'enum', enumOptions: ['Active', 'Inactive'], accessor: r => r.is_active ? 'Active' : 'Inactive' },
+];
+
+const TRANSPORTER_COLS: ColumnDef<Transporter>[] = [
+  { key: 'name', label: 'Name', accessor: r => r.name },
+  { key: 'gstin', label: 'GSTIN', accessor: r => r.gstin || '—' },
+  { key: 'phone', label: 'Phone', accessor: r => r.phone || '—' },
+  { key: 'is_active', label: 'Status', type: 'enum', enumOptions: ['Active', 'Inactive'], accessor: r => r.is_active ? 'Active' : 'Inactive' },
+];
+
+// ------------------------------------------------------------------ //
 // Main Page
 // ------------------------------------------------------------------ //
-const VEH_PAGE_SIZE = 50;
+const VEH_PAGE_SIZE = 1000;   // fetch all; DataTable handles sort/filter/columns/CSV client-side
 
 export default function VehiclesPage() {
   const { t } = useTranslation();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [vehicleTotal, setVehicleTotal] = useState(0);
-  const [vehiclePage, setVehiclePage] = useState(1);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [driverTotal, setDriverTotal] = useState(0);
-  const [driverPage, setDriverPage] = useState(1);
   const [transporters, setTransporters] = useState<Transporter[]>([]);
   const [transporterTotal, setTransporterTotal] = useState(0);
-  const [transporterPage, setTransporterPage] = useState(1);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState('vehicles');
@@ -390,11 +427,11 @@ export default function VehiclesPage() {
   const fetch = useCallback(async () => {
     setLoading(true);
     try {
-      const vParams = new URLSearchParams({ page: String(vehiclePage), page_size: String(VEH_PAGE_SIZE) });
+      const vParams = new URLSearchParams({ page: '1', page_size: String(VEH_PAGE_SIZE) });
       if (search && tab === 'vehicles') vParams.set('search', search);
-      const dParams = new URLSearchParams({ page: String(driverPage), page_size: String(VEH_PAGE_SIZE) });
+      const dParams = new URLSearchParams({ page: '1', page_size: String(VEH_PAGE_SIZE) });
       if (search && tab === 'drivers') dParams.set('search', search);
-      const tParams = new URLSearchParams({ page: String(transporterPage), page_size: String(VEH_PAGE_SIZE) });
+      const tParams = new URLSearchParams({ page: '1', page_size: String(VEH_PAGE_SIZE) });
       if (search && tab === 'transporters') tParams.set('search', search);
       const [vRes, dRes, tRes] = await Promise.all([
         api.get<{ items: Vehicle[]; total: number } | Vehicle[]>(`/api/v1/vehicles?${vParams}`),
@@ -408,10 +445,9 @@ export default function VehiclesPage() {
       if (Array.isArray(tRes.data)) { setTransporters(tRes.data); setTransporterTotal(tRes.data.length); }
       else { setTransporters(tRes.data.items ?? []); setTransporterTotal(tRes.data.total ?? 0); }
     } catch { } finally { setLoading(false); }
-  }, [search, vehiclePage, driverPage, transporterPage, tab]);
+  }, [search, tab]);
 
   useEffect(() => { fetch(); }, [fetch]);
-  useEffect(() => { setVehiclePage(1); setDriverPage(1); setTransporterPage(1); }, [search]);
 
   return (
     <div className="space-y-6">
@@ -460,141 +496,60 @@ export default function VehiclesPage() {
 
         {/* Vehicles */}
         <TabsContent value="vehicles">
-          <Card>
-            <CardContent className="p-0">
-              {loading ? (
-                <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-              ) : vehicles.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-                    <Truck className="h-8 w-8 text-muted-foreground/40" />
-                  </div>
-                  <h3 className="text-sm font-semibold">{t('vehicle.noVehicles')}</h3>
-                  <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-                    {t('vehicle.noVehiclesHint')}
-                  </p>
-                </div>
-              ) : (
-                <div className="divide-y">
-                  {vehicles.map(v => (
-                    <div key={v.id} className="flex items-center gap-4 px-4 py-3 hover:bg-muted/30">
-                      <Truck className="h-5 w-5 text-muted-foreground shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-sm">{v.registration_no}</p>
-                          {v.vehicle_type && (
-                            <Badge variant="outline" className="text-[10px] capitalize">
-                              {v.vehicle_type.replace(/_/g, ' ')}
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {v.owner_name ? v.owner_name : ''}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-muted-foreground">{t('vehicle.tare')}</p>
-                        <p className="text-sm font-mono">{(Number(v.default_tare_weight) / 1000).toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} MT</p>
-                      </div>
-                      <Button size="icon" variant="ghost" onClick={() => { setEditV(v); setVDialog(true); }}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
+          {loading ? (
+            <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          ) : (
+            <DataTable<Vehicle>
+              id="vehicles.main"
+              data={vehicles}
+              columns={VEHICLE_COLS}
+              rowKey={r => r.id}
+              exportFilename="vehicles"
+              defaultSort={{ key: 'registration_no', direction: 'asc' }}
+              emptyMessage={t('vehicle.noVehicles')}
+              rowActions={r => (
+                <Button size="icon" variant="ghost" onClick={() => { setEditV(r); setVDialog(true); }}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
               )}
-              {vehicleTotal > VEH_PAGE_SIZE && (
-                <div className="flex items-center justify-between px-4 py-3 border-t text-sm">
-                  <span className="text-muted-foreground">
-                    {t('vehicle.showing', { from: (vehiclePage - 1) * VEH_PAGE_SIZE + 1, to: Math.min(vehiclePage * VEH_PAGE_SIZE, vehicleTotal), total: vehicleTotal })}
-                  </span>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" disabled={vehiclePage <= 1} onClick={() => setVehiclePage(prev => prev - 1)}>{t('vehicle.prev')}</Button>
-                    <span className="flex items-center px-2">{vehiclePage} / {Math.ceil(vehicleTotal / VEH_PAGE_SIZE)}</span>
-                    <Button variant="outline" size="sm" disabled={vehiclePage * VEH_PAGE_SIZE >= vehicleTotal} onClick={() => setVehiclePage(prev => prev + 1)}>{t('vehicle.next')}</Button>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+            />
+          )}
         </TabsContent>
 
         {/* Drivers */}
         <TabsContent value="drivers">
-          <Card>
-            <CardContent className="p-0">
-              {drivers.length === 0 ? (
-                <div className="py-16 text-center text-muted-foreground">{t('vehicle.noDrivers')}</div>
-              ) : (
-                <div className="divide-y">
-                  {drivers.map(d => (
-                    <div key={d.id} className="flex items-center gap-4 px-4 py-3 hover:bg-muted/30">
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">{d.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {[d.license_no, d.phone].filter(Boolean).join(' · ')}
-                        </p>
-                      </div>
-                      <Button size="icon" variant="ghost" onClick={() => { setEditD(d); setDDialog(true); }}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {driverTotal > VEH_PAGE_SIZE && (
-                <div className="flex items-center justify-between px-4 py-3 border-t text-sm">
-                  <span className="text-muted-foreground">
-                    {t('vehicle.showing', { from: (driverPage - 1) * VEH_PAGE_SIZE + 1, to: Math.min(driverPage * VEH_PAGE_SIZE, driverTotal), total: driverTotal })}
-                  </span>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" disabled={driverPage <= 1} onClick={() => setDriverPage(prev => prev - 1)}>{t('vehicle.prev')}</Button>
-                    <span className="flex items-center px-2">{driverPage} / {Math.ceil(driverTotal / VEH_PAGE_SIZE)}</span>
-                    <Button variant="outline" size="sm" disabled={driverPage * VEH_PAGE_SIZE >= driverTotal} onClick={() => setDriverPage(prev => prev + 1)}>{t('vehicle.next')}</Button>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <DataTable<Driver>
+            id="drivers.main"
+            data={drivers}
+            columns={DRIVER_COLS}
+            rowKey={r => r.id}
+            exportFilename="drivers"
+            defaultSort={{ key: 'name', direction: 'asc' }}
+            emptyMessage={t('vehicle.noDrivers')}
+            rowActions={r => (
+              <Button size="icon" variant="ghost" onClick={() => { setEditD(r); setDDialog(true); }}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+            )}
+          />
         </TabsContent>
 
         {/* Transporters */}
         <TabsContent value="transporters">
-          <Card>
-            <CardContent className="p-0">
-              {transporters.length === 0 ? (
-                <div className="py-16 text-center text-muted-foreground">{t('vehicle.noTransporters')}</div>
-              ) : (
-                <div className="divide-y">
-                  {transporters.map(tr => (
-                    <div key={tr.id} className="flex items-center gap-4 px-4 py-3 hover:bg-muted/30">
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">{tr.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {[tr.gstin, tr.phone].filter(Boolean).join(' · ')}
-                        </p>
-                      </div>
-                      <Button size="icon" variant="ghost" onClick={() => { setEditT(tr); setTDialog(true); }}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {transporterTotal > VEH_PAGE_SIZE && (
-                <div className="flex items-center justify-between px-4 py-3 border-t text-sm">
-                  <span className="text-muted-foreground">
-                    {t('vehicle.showing', { from: (transporterPage - 1) * VEH_PAGE_SIZE + 1, to: Math.min(transporterPage * VEH_PAGE_SIZE, transporterTotal), total: transporterTotal })}
-                  </span>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" disabled={transporterPage <= 1} onClick={() => setTransporterPage(prev => prev - 1)}>{t('vehicle.prev')}</Button>
-                    <span className="flex items-center px-2">{transporterPage} / {Math.ceil(transporterTotal / VEH_PAGE_SIZE)}</span>
-                    <Button variant="outline" size="sm" disabled={transporterPage * VEH_PAGE_SIZE >= transporterTotal} onClick={() => setTransporterPage(prev => prev + 1)}>{t('vehicle.next')}</Button>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <DataTable<Transporter>
+            id="transporters.main"
+            data={transporters}
+            columns={TRANSPORTER_COLS}
+            rowKey={r => r.id}
+            exportFilename="transporters"
+            defaultSort={{ key: 'name', direction: 'asc' }}
+            emptyMessage={t('vehicle.noTransporters')}
+            rowActions={r => (
+              <Button size="icon" variant="ghost" onClick={() => { setEditT(r); setTDialog(true); }}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+            )}
+          />
         </TabsContent>
       </Tabs>
 
