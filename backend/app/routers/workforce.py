@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import uuid
 from calendar import monthrange
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -157,17 +157,28 @@ async def _upsert_attendance(db: AsyncSession, user: User, item: AttendanceMark,
 
 @router.get("/attendance")
 async def attendance_grid(
-    month: str = Query(..., description="YYYY-MM"),
+    month: Optional[str] = Query(None, description="YYYY-MM (or pass date_from + date_to)"),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ):
-    """Muster grid for one month: workers × days + per-worker units & earned."""
-    try:
-        y, m = (int(x) for x in month.split("-")[:2])
-        dfrom = date(y, m, 1)
-        dim = monthrange(y, m)[1]
-        dto = date(y, m, dim)
-    except Exception:
-        raise HTTPException(400, "month must be YYYY-MM")
+    """Muster grid over a range (a day, a week, or a month) — workers × days + per-worker
+    units & earned for that window. Pass month=YYYY-MM OR date_from + date_to."""
+    if date_from and date_to:
+        dfrom, dto = date_from, date_to
+    elif month:
+        try:
+            y, m = (int(x) for x in month.split("-")[:2])
+            dfrom = date(y, m, 1)
+            dto = date(y, m, monthrange(y, m)[1])
+        except Exception:
+            raise HTTPException(400, "month must be YYYY-MM")
+    else:
+        raise HTTPException(400, "provide month or date_from + date_to")
+    if dto < dfrom:
+        dfrom, dto = dto, dfrom
+    if (dto - dfrom).days > 92:
+        raise HTTPException(400, "date range too large (max 3 months)")
 
     cfg = await _get_config(db)
     workers = (await db.execute(select(Worker).where(
@@ -182,7 +193,12 @@ async def attendance_grid(
         by_worker.setdefault(a.worker_id, {})[a.att_date.isoformat()] = {
             "status": a.status, "ot_hours": float(a.ot_hours or 0)}
 
-    days = [date(y, m, d).isoformat() for d in range(1, dim + 1)]
+    days = []
+    d = dfrom
+    while d <= dto:
+        days.append(d.isoformat())
+        d += timedelta(days=1)
+
     out = []
     for w in workers:
         amap = by_worker.get(w.id, {})
@@ -197,7 +213,7 @@ async def attendance_grid(
             "worker_id": str(w.id), "name": w.name, "worker_type": w.worker_type,
             "rate": float(w.rate), "attendance": amap, "units": units, "earned": earned,
         })
-    return {"month": month, "days": days, "workers": out}
+    return {"date_from": dfrom.isoformat(), "date_to": dto.isoformat(), "days": days, "workers": out}
 
 
 @router.post("/attendance")

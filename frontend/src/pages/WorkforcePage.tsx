@@ -5,7 +5,7 @@
  * The weighbridge as system-of-record for labour cost: attendance-driven Earned
  * vs Paid (advances netted) → Balance Due per worker.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Users, Plus, Loader2, CalendarCheck, IndianRupee, ClipboardList, Settings2 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -260,87 +260,143 @@ function WorkersTab({ workers, reload }: { workers: Worker[]; reload: () => void
   );
 }
 
-// ── Attendance muster grid (Excel-like) ───────────────────────────────────────
+// ── Attendance muster — Daily / Weekly / Monthly ──────────────────────────────
+const STATUS_OPTS = [
+  { v: 'present', label: 'Present' },
+  { v: 'half_day', label: 'Half-day' },
+  { v: 'overtime', label: 'Overtime' },
+  { v: 'absent', label: 'Absent' },
+  { v: 'clear', label: '— (clear)' },
+];
+const WD = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const addDays = (iso: string, n: number) => { const d = new Date(iso); d.setDate(d.getDate() + n); return d.toISOString().split('T')[0]; };
+const startOfWeek = (iso: string) => { const d = new Date(iso); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.toISOString().split('T')[0]; };
+
 function AttendanceTab() {
-  const [month, setMonth] = useState(thisMonth());
+  const [view, setView] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
+  const [ref, setRef] = useState(today());
   const [days, setDays] = useState<string[]>([]);
   const [rows, setRows] = useState<AttWorker[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const range = useMemo(() => {
+    if (view === 'daily') return { from: ref, to: ref };
+    if (view === 'weekly') { const mon = startOfWeek(ref); return { from: mon, to: addDays(mon, 6) }; }
+    const m = ref.slice(0, 7); return { from: monthStart(m), to: monthEnd(m) };
+  }, [view, ref]);
+
   const load = useCallback(async () => {
     setLoading(true);
-    try { const { data } = await api.get<{ days: string[]; workers: AttWorker[] }>(`/api/v1/workforce/attendance?month=${month}`); setDays(data.days); setRows(data.workers); }
-    catch { setDays([]); setRows([]); } finally { setLoading(false); }
-  }, [month]);
+    try {
+      const p = new URLSearchParams({ date_from: range.from, date_to: range.to });
+      const { data } = await api.get<{ days: string[]; workers: AttWorker[] }>(`/api/v1/workforce/attendance?${p}`);
+      setDays(data.days); setRows(data.workers);
+    } catch { setDays([]); setRows([]); } finally { setLoading(false); }
+  }, [range.from, range.to]);
   useEffect(() => { load(); }, [load]);
 
-  async function cycle(worker: AttWorker, date: string) {
-    const cur = worker.attendance[date]?.status || '';
-    const next = NEXT_STATUS[cur] ?? 'present';
-    const ot_hours = next === 'overtime' ? 2 : 0;
-    // optimistic update
+  const setCell = async (worker: AttWorker, date: string, status: string, ot: number) => {
     setRows(rs => rs.map(w => {
       if (w.worker_id !== worker.worker_id) return w;
       const att = { ...w.attendance };
-      if (next === '') delete att[date]; else att[date] = { status: next, ot_hours };
+      if (status === 'clear') delete att[date]; else att[date] = { status, ot_hours: ot };
       return { ...w, attendance: att };
     }));
-    try {
-      await api.post('/api/v1/workforce/attendance', { worker_id: worker.worker_id, att_date: date, status: next === '' ? 'clear' : next, ot_hours });
-      load();  // refresh units + earned
-    } catch { load(); }
-  }
+    try { await api.post('/api/v1/workforce/attendance', { worker_id: worker.worker_id, att_date: date, status, ot_hours: ot }); load(); }
+    catch { load(); }
+  };
+  const cycle = (w: AttWorker, date: string) => {
+    const next = NEXT_STATUS[w.attendance[date]?.status || ''] ?? 'present';
+    setCell(w, date, next === '' ? 'clear' : next, next === 'overtime' ? 2 : 0);
+  };
+  const markAllPresent = async (date: string) => {
+    try { await api.post('/api/v1/workforce/attendance/bulk', { items: rows.filter(r => r.worker_type !== 'monthly_salary').map(r => ({ worker_id: r.worker_id, att_date: date, status: 'present', ot_hours: 0 })) }); load(); }
+    catch { /* ignore */ }
+  };
+  const shift = (dir: number) => {
+    if (view === 'daily') setRef(addDays(ref, dir));
+    else if (view === 'weekly') setRef(addDays(ref, dir * 7));
+    else { const [y, m] = ref.slice(0, 7).split('-').map(Number); setRef(new Date(y, m - 1 + dir, 1).toISOString().split('T')[0]); }
+  };
+  const label = view === 'daily'
+    ? new Date(range.from).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+    : view === 'weekly'
+      ? `${new Date(range.from).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${new Date(range.to).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+      : new Date(range.from).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
 
-  async function markAllPresent(date: string) {
-    try {
-      await api.post('/api/v1/workforce/attendance/bulk', { items: rows.filter(r => r.worker_type !== 'monthly_salary').map(r => ({ worker_id: r.worker_id, att_date: date, status: 'present', ot_hours: 0 })) });
-      load();
-    } catch { /* ignore */ }
-  }
+  // a status dropdown for one worker/day (used in daily + weekly views)
+  const statusSelect = (w: AttWorker, d: string, wide?: boolean) => {
+    const st = w.attendance[d]?.status || '';
+    return (
+      <Select value={st || undefined} onValueChange={v => setCell(w, d, v ?? 'clear', v === 'overtime' ? (w.attendance[d]?.ot_hours || 2) : 0)}>
+        <SelectTrigger className={`h-9 ${wide ? 'w-44' : 'w-[88px]'} ${st ? CELL[st]?.c : ''}`}><SelectValue placeholder="— mark" /></SelectTrigger>
+        <SelectContent>{STATUS_OPTS.map(o => <SelectItem key={o.v} value={o.v}>{o.label}</SelectItem>)}</SelectContent>
+      </Select>
+    );
+  };
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="space-y-1"><Label className="text-xs">Month</Label><Input type="month" value={month} onChange={e => setMonth(e.target.value)} className="h-9 w-44" /></div>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-md border p-0.5">
+          {(['daily', 'weekly', 'monthly'] as const).map(v => (
+            <button key={v} onClick={() => setView(v)} className={`px-3 py-1 text-sm rounded capitalize ${view === v ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>{v}</button>
+          ))}
+        </div>
+        <Button variant="outline" size="sm" onClick={() => shift(-1)}>‹</Button>
+        <span className="text-sm font-medium min-w-[170px] text-center">{label}</span>
+        <Button variant="outline" size="sm" onClick={() => shift(1)}>›</Button>
+        <Button variant="ghost" size="sm" onClick={() => setRef(today())}>Today</Button>
         <div className="flex-1" />
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">P</span> present
-          <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700">A</span> absent
-          <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">½</span> half
-          <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">OT</span> overtime
+        <div className="hidden md:flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">P</span>
+          <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700">A</span>
+          <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">½</span>
+          <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">OT</span>
         </div>
       </div>
+
       {loading ? <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         : rows.length === 0 ? <p className="py-10 text-center text-sm text-muted-foreground">No active workers. Add workers first, then mark attendance here.</p>
-        : (
+        : view === 'daily' ? (
+        <Card><CardContent className="p-0 divide-y">
+          {rows.map(w => (
+            <div key={w.worker_id} className="flex items-center gap-3 px-4 py-3">
+              <div className="flex-1 font-medium">{w.name}{w.worker_type === 'monthly_salary' && <span className="ml-1 text-[10px] text-muted-foreground">(salary)</span>}</div>
+              {w.worker_type === 'monthly_salary' ? <span className="text-xs text-muted-foreground">salaried</span> : statusSelect(w, range.from, true)}
+              <div className="w-24 text-right font-mono text-sm">{INR(w.earned)}</div>
+            </div>
+          ))}
+        </CardContent></Card>
+      ) : (
         <Card><CardContent className="p-0 overflow-x-auto">
           <table className="min-w-max text-sm border-collapse">
-            <thead>
-              <tr className="border-b">
-                <th className="sticky left-0 z-10 bg-background px-3 py-2 text-left font-medium min-w-[140px]">Worker</th>
-                {days.map(d => {
-                  const dn = Number(d.slice(8)); const dow = new Date(d).getDay();
-                  return <th key={d} className={`px-1 py-1 text-center font-normal text-[11px] ${dow === 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
-                    <button className="hover:underline" title="Mark all present this day" onClick={() => markAllPresent(d)}>{dn}</button>
-                  </th>;
-                })}
-                <th className="px-2 py-2 text-right font-medium">Days</th>
-                <th className="px-2 py-2 text-right font-medium">Earned</th>
-              </tr>
-            </thead>
+            <thead><tr className="border-b">
+              <th className="sticky left-0 z-10 bg-background px-3 py-2 text-left font-medium min-w-[130px]">Worker</th>
+              {days.map(d => {
+                const dn = Number(d.slice(8)); const dow = new Date(d).getDay();
+                return <th key={d} className={`px-1.5 py-1.5 text-center font-normal text-[11px] ${dow === 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                  <button className="leading-tight hover:underline" title="Mark all present this day" onClick={() => markAllPresent(d)}>
+                    <div>{WD[dow]}</div><div className="font-semibold text-foreground">{dn}</div>
+                  </button>
+                </th>;
+              })}
+              <th className="px-2 py-2 text-right font-medium">Days</th>
+              <th className="px-2 py-2 text-right font-medium">Earned</th>
+            </tr></thead>
             <tbody>
               {rows.map(w => (
                 <tr key={w.worker_id} className="border-b hover:bg-muted/20">
                   <td className="sticky left-0 z-10 bg-background px-3 py-1.5 font-medium whitespace-nowrap">
                     {w.name}{w.worker_type === 'monthly_salary' && <span className="ml-1 text-[10px] text-muted-foreground">(salary)</span>}
                   </td>
-                  {days.map(d => {
-                    const st = w.attendance[d]?.status || '';
-                    const cell = CELL[st] || CELL[''];
-                    return <td key={d} className="p-0.5 text-center">
-                      <button onClick={() => cycle(w, d)} className={`h-7 w-7 rounded text-[11px] font-semibold ${cell.c}`} title={st || 'mark'}>{cell.t}</button>
-                    </td>;
-                  })}
+                  {days.map(d => (
+                    <td key={d} className="p-1 text-center">
+                      {w.worker_type === 'monthly_salary' ? <span className="text-muted-foreground">—</span>
+                        : view === 'weekly' ? statusSelect(w, d)
+                        : (() => { const cell = CELL[w.attendance[d]?.status || ''] || CELL['']; return <button onClick={() => cycle(w, d)} className={`h-9 w-9 rounded text-xs font-semibold ${cell.c}`} title={w.attendance[d]?.status || 'mark'}>{cell.t}</button>; })()}
+                    </td>
+                  ))}
                   <td className="px-2 text-right font-mono">{w.units == null ? '—' : num(w.units, 1)}</td>
                   <td className="px-2 text-right font-mono">{INR(w.earned)}</td>
                 </tr>
@@ -349,7 +405,11 @@ function AttendanceTab() {
           </table>
         </CardContent></Card>
       )}
-      <p className="text-[11px] text-muted-foreground">Tap a cell to cycle blank → P → A → ½ → OT. Tap a day number to mark all daily-wage workers present. Salary workers' earnings are the monthly rate (attendance shown for record only).</p>
+      <p className="text-[11px] text-muted-foreground">
+        {view === 'monthly' ? 'Tap a cell to cycle blank → P → A → ½ → OT; tap a day header to mark all present.'
+          : view === 'weekly' ? 'Pick a status per day from the dropdown; tap a day header to mark all present.'
+          : 'Pick each worker’s status for the day from the dropdown.'} Salary workers earn the monthly rate (attendance shown for record only).
+      </p>
     </div>
   );
 }
