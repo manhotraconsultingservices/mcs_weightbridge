@@ -106,9 +106,9 @@ function RecordFillDialog({ open, vehicles, onClose, onSaved }: {
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl">
         <DialogHeader><DialogTitle>Record Diesel Fill</DialogTitle></DialogHeader>
-        <div className="space-y-3">
+        <div className="space-y-4">
           {error && <p className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
           {result && (
             <div className="rounded border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
@@ -122,7 +122,9 @@ function RecordFillDialog({ open, vehicles, onClose, onSaved }: {
             <div className="space-y-1">
               <Label>Vehicle</Label>
               <Select value={form.vehicle_id} onValueChange={v => set('vehicle_id', v ?? '')}>
-                <SelectTrigger><SelectValue placeholder="Select vehicle" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Select vehicle">
+                  {vehicles.find(v => v.id === form.vehicle_id)?.registration_no}
+                </SelectValue></SelectTrigger>
                 <SelectContent>
                   {vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.registration_no}</SelectItem>)}
                 </SelectContent>
@@ -378,7 +380,9 @@ function TrendsTab({ vehicles }: { vehicles: Vehicle[] }) {
       <div className="flex flex-wrap items-end gap-2">
         <div className="space-y-1"><Label className="text-xs">Vehicle</Label>
           <Select value={vehicleId} onValueChange={v => setVehicleId(v ?? '')}>
-            <SelectTrigger className="h-9 w-48"><SelectValue placeholder="Select vehicle" /></SelectTrigger>
+            <SelectTrigger className="h-9 w-48"><SelectValue placeholder="Select vehicle">
+              {vehicles.find(v => v.id === vehicleId)?.registration_no}
+            </SelectValue></SelectTrigger>
             <SelectContent>{vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.registration_no}</SelectItem>)}</SelectContent>
           </Select>
         </div>
@@ -512,7 +516,9 @@ function FuelSettingsTab() {
       <div className="space-y-1">
         <Label>Diesel store item (plant tank)</Label>
         <Select value={String(cfg.diesel_item_id ?? '')} onValueChange={v => set('diesel_item_id', v || null)}>
-          <SelectTrigger><SelectValue placeholder="None — plant-tank fills won't deduct stock" /></SelectTrigger>
+          <SelectTrigger><SelectValue placeholder="None — plant-tank fills won't deduct stock">
+            {items.find(i => i.id === cfg.diesel_item_id)?.name}
+          </SelectValue></SelectTrigger>
           <SelectContent>
             {items.map(i => <SelectItem key={i.id} value={i.id}>{i.name} ({num(i.current_stock, 0)} {i.unit})</SelectItem>)}
           </SelectContent>
