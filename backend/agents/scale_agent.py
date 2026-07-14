@@ -26,6 +26,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import os
 import re
 import sys
 import threading
@@ -45,6 +46,20 @@ if getattr(sys, "frozen", False) or "__compiled__" in globals():
     BASE_DIR = Path(sys.executable).resolve().parent   # folder the .exe lives in
 else:
     BASE_DIR = Path(__file__).resolve().parent
+
+# ── TLS CA bundle (frozen-EXE insurance) ──────────────────────────────────────
+# A PyInstaller/Nuitka build can lose the OS default CA path, so requests/urllib3
+# raise SSLError on the HTTPS push. If certifi is bundled, point the standard env
+# vars at its CA bundle — but only when UNSET, so a real system / corporate CA
+# bundle configured on the host still wins.
+try:
+    import certifi as _certifi
+    _ca = _certifi.where()
+    if _ca and os.path.exists(_ca):
+        os.environ.setdefault("SSL_CERT_FILE", _ca)
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", _ca)
+except Exception:
+    pass
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
