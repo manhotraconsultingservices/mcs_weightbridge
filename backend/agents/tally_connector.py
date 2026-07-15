@@ -22,6 +22,7 @@ CLI:
 """
 from __future__ import annotations
 
+import os
 import sys
 import json
 import copy
@@ -41,8 +42,31 @@ except ImportError:
     print("Missing dependency. Run:  pip install requests")
     sys.exit(1)
 
-CONFIG_FILE = Path(__file__).parent / "tally_connector.json"
-LOG_DIR = Path(__file__).parent / "logs"
+# ── Base directory (frozen-EXE safe) ──────────────────────────────────────────
+# When frozen (PyInstaller/Nuitka .exe), __file__ resolves to the TEMPORARY
+# extraction dir (_MEIPASS), NOT the folder the .exe lives in. Anchor config +
+# logs to the executable's own folder when frozen so it reads the
+# tally_connector.json sitting next to the .exe and writes a visible log there.
+if getattr(sys, "frozen", False) or "__compiled__" in globals():
+    BASE_DIR = Path(sys.executable).resolve().parent
+else:
+    BASE_DIR = Path(__file__).resolve().parent
+
+# ── TLS CA bundle (frozen-EXE insurance) ──────────────────────────────────────
+# A frozen build can lose the OS default CA path, so requests/urllib3 raise
+# SSLError on the HTTPS push. If certifi is bundled, point the standard env vars
+# at its CA bundle — but only when UNSET, so a real system/corporate CA wins.
+try:
+    import certifi as _certifi
+    _ca = _certifi.where()
+    if _ca and os.path.exists(_ca):
+        os.environ.setdefault("SSL_CERT_FILE", _ca)
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", _ca)
+except Exception:
+    pass
+
+CONFIG_FILE = BASE_DIR / "tally_connector.json"
+LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 logging.basicConfig(
@@ -463,10 +487,12 @@ def install_service() -> None:
     if not nssm:
         print("NSSM not found. Install from https://nssm.cc and add it to PATH.")
         sys.exit(1)
-    python = sys.executable
-    script = str(Path(__file__).resolve())
-    subprocess.run([nssm, "install", _SERVICE_NAME, python, script], check=True)
-    subprocess.run([nssm, "set", _SERVICE_NAME, "AppDirectory", str(Path(__file__).parent)], check=True)
+    # A frozen .exe IS the program — register it directly (no python + script).
+    if getattr(sys, "frozen", False) or "__compiled__" in globals():
+        subprocess.run([nssm, "install", _SERVICE_NAME, str(Path(sys.executable).resolve())], check=True)
+    else:
+        subprocess.run([nssm, "install", _SERVICE_NAME, sys.executable, str((BASE_DIR / "tally_connector.py").resolve())], check=True)
+    subprocess.run([nssm, "set", _SERVICE_NAME, "AppDirectory", str(BASE_DIR)], check=True)
     subprocess.run([nssm, "set", _SERVICE_NAME, "Start", "SERVICE_AUTO_START"], check=False)
     subprocess.run([nssm, "set", _SERVICE_NAME, "AppExit", "Default", "Restart"], check=False)
     subprocess.run([nssm, "set", _SERVICE_NAME, "AppStdout", str(LOG_DIR / "service_stdout.log")], check=True)

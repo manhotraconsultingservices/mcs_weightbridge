@@ -21,6 +21,7 @@ import collections
 import json
 import time
 import sys
+import os
 import logging
 import threading
 import signal
@@ -37,9 +38,31 @@ try:
 except ImportError:
     HAS_WEBSOCKETS = False
 
+# ── Base directory (frozen-EXE safe) ──────────────────────────────────────────
+# When frozen (PyInstaller/Nuitka .exe), __file__ resolves to the TEMPORARY
+# extraction dir (_MEIPASS), NOT the folder the .exe lives in. Anchor config +
+# logs to the executable's own folder when frozen so it reads the
+# camera_config.json sitting next to the .exe and writes a visible log there.
+if getattr(sys, "frozen", False) or "__compiled__" in globals():
+    BASE_DIR = Path(sys.executable).resolve().parent
+else:
+    BASE_DIR = Path(__file__).resolve().parent
+
+# ── TLS CA bundle (frozen-EXE insurance) ──────────────────────────────────────
+# A frozen build can lose the OS default CA path. If certifi is bundled, point
+# the standard env vars at its CA bundle — only when UNSET, so a real system CA wins.
+try:
+    import certifi as _certifi
+    _ca = _certifi.where()
+    if _ca and os.path.exists(_ca):
+        os.environ.setdefault("SSL_CERT_FILE", _ca)
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", _ca)
+except Exception:
+    pass
+
 # ── Logging ──────────────────────────────────────────────────────────────────
 
-LOG_DIR = Path(__file__).parent / "logs"
+LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 logging.basicConfig(
@@ -54,7 +77,7 @@ log = logging.getLogger("camera_agent")
 
 # ── Config ───────────────────────────────────────────────────────────────────
 
-CONFIG_FILE = Path(__file__).parent / "camera_config.json"
+CONFIG_FILE = BASE_DIR / "camera_config.json"
 
 DEFAULT_CONFIG = {
     "cloud_url": "https://weighbridgesetu.com",
@@ -1096,8 +1119,14 @@ def install_service():
         print("NSSM not found. Download from https://nssm.cc and add to PATH.")
         sys.exit(1)
 
-    python = sys.executable
-    script = str(Path(__file__).resolve())
+    # A frozen .exe IS the program — register it directly (no python + script).
+    frozen = getattr(sys, "frozen", False) or "__compiled__" in globals()
+    if frozen:
+        app_path = str(Path(sys.executable).resolve())   # the .exe itself
+        app_params = ""
+    else:
+        app_path = sys.executable                         # python.exe
+        app_params = str((BASE_DIR / "camera_agent.py").resolve())
     name = "WeighbridgeCameraAgent"
 
     # Check if service already exists; if so, stop it and update parameters
@@ -1106,12 +1135,14 @@ def install_service():
     if already_exists:
         print(f"  Service '{name}' already exists — updating parameters...")
         subprocess.run([nssm, "stop", name], check=False)
+    elif frozen:
+        subprocess.run([nssm, "install", name, app_path], check=True)
     else:
-        subprocess.run([nssm, "install", name, python, script], check=True)
+        subprocess.run([nssm, "install", name, app_path, app_params], check=True)
 
-    subprocess.run([nssm, "set", name, "Application", python], check=True)
-    subprocess.run([nssm, "set", name, "AppParameters", script], check=True)
-    subprocess.run([nssm, "set", name, "AppDirectory", str(Path(__file__).parent)], check=True)
+    subprocess.run([nssm, "set", name, "Application", app_path], check=True)
+    subprocess.run([nssm, "set", name, "AppParameters", app_params], check=True)
+    subprocess.run([nssm, "set", name, "AppDirectory", str(BASE_DIR)], check=True)
     subprocess.run([nssm, "set", name, "AppStdout", str(LOG_DIR / "camera_service_stdout.log")], check=True)
     subprocess.run([nssm, "set", name, "AppStderr", str(LOG_DIR / "camera_service_stderr.log")], check=True)
     subprocess.run([nssm, "set", name, "AppRotateFiles", "1"], check=True)
