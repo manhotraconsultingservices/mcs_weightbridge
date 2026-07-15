@@ -179,11 +179,13 @@ export function downloadCsv(filename: string, rows: string[][]) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function DataTable<T>({
-  id, columns, data, loading,
+  id, columns, data = [], loading,
   rowKey, defaultSort, emptyMessage, rowActions,
   exportFilename, toolbarLeft, hideExport, className,
   initialFilters,
 }: DataTableProps<T>) {
+  // Never crash on an undefined/non-array `data` (e.g. an unexpected API shape).
+  if (!Array.isArray(data)) data = [];
   // Load persisted state on first render
   const initialSort = useMemo<SortState>(
     () => readLS<SortState>(lsKey(id, 'sort'), defaultSort ?? null),

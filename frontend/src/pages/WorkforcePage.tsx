@@ -202,7 +202,7 @@ export default function WorkforcePage() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   const loadWorkers = useCallback(async () => {
-    try { const { data } = await api.get<Worker[]>('/api/v1/workforce/workers'); setWorkers(data); } catch { /* ignore */ }
+    try { const { data } = await api.get<Worker[]>('/api/v1/workforce/workers'); setWorkers(Array.isArray(data) ? data : []); } catch { /* ignore */ }
   }, []);
   useEffect(() => { loadWorkers(); api.get<{ role: string }>('/api/v1/auth/me').then(r => setIsAdmin(r.data.role === 'admin')).catch(() => {}); }, [loadWorkers]);
   useEffect(() => { const p = new URLSearchParams(loc.search); if (p.get('tab') !== tab) { p.set('tab', tab); nav({ search: p.toString() }, { replace: true }); } }, [tab, loc.search, nav]);
@@ -290,7 +290,8 @@ function AttendanceTab() {
     try {
       const p = new URLSearchParams({ date_from: range.from, date_to: range.to });
       const { data } = await api.get<{ days: string[]; workers: AttWorker[] }>(`/api/v1/workforce/attendance?${p}`);
-      setDays(data.days); setRows(data.workers);
+      setDays(Array.isArray(data?.days) ? data.days : []);
+      setRows(Array.isArray(data?.workers) ? data.workers : []);
     } catch { setDays([]); setRows([]); } finally { setLoading(false); }
   }, [range.from, range.to]);
   useEffect(() => { load(); }, [load]);
