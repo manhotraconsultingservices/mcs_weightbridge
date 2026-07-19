@@ -153,6 +153,34 @@ async def _system_user(db: AsyncSession) -> User:
     return u
 
 
+# Roles allowed to approve an invoice — MUST mirror the require_role on the cloud
+# approve endpoint. This is the governance backstop for the offline path: the
+# frontend hides the button from non-managers and the edge fails fast, but the
+# authoritative check is HERE, at sync, against the real user record.
+APPROVE_ROLES = ("admin", "accountant", "store_manager")
+
+
+async def _resolve_approver(db: AsyncSession, approver_id) -> User:
+    """The real user who approved a bill offline. Verifies they exist, are active
+    and hold a manager role — so an operator's offline approval can NEVER apply as
+    a manager at sync (it parks for review instead). approved_by is then this real
+    user, never a generic 'system' admin. Legacy intents with no approver fall
+    back to the system user (best-effort, pre-governance-fix behaviour)."""
+    if not approver_id:
+        return await _system_user(db)
+    try:
+        aid = uuid.UUID(str(approver_id))
+    except (ValueError, AttributeError):
+        raise HTTPException(422, "approval intent carries an invalid approver id — parked for review")
+    from sqlalchemy import select as _select
+    u = (await db.execute(_select(User).where(User.id == aid))).scalar_one_or_none()
+    if u is None or not getattr(u, "is_active", True):
+        raise HTTPException(422, "offline approval by an unknown/inactive user — parked for a manager")
+    if u.role not in APPROVE_ROLES:
+        raise HTTPException(422, f"role '{u.role}' cannot approve invoices — parked for a manager")
+    return u
+
+
 async def _apply_intent(db: AsyncSession, op_type: str, entity_id: Optional[str],
                         payload: dict[str, Any]) -> dict[str, Any]:
     """Apply ONE captured intent by re-dispatching to the REAL cloud handler.
@@ -185,7 +213,8 @@ async def _apply_intent(db: AsyncSession, op_type: str, entity_id: Optional[str]
         # the second-weight replay auto-created and approve+finalises it, so the
         # SERVER assigns the legal GST number at sync.
         from app.routers.invoices import approve_token_invoice
-        res = await approve_token_invoice(uuid.UUID(entity_id), BackgroundTasks(), db, user)
+        approver = await _resolve_approver(db, (payload or {}).get("approver_user_id"))
+        res = await approve_token_invoice(uuid.UUID(entity_id), BackgroundTasks(), db, approver)
         return {"invoice_id": str(res.id), "invoice_no": res.invoice_no, "status": res.status}
     else:
         raise HTTPException(422, f"unknown op_type '{op_type}'")

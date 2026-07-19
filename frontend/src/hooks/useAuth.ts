@@ -14,6 +14,44 @@ const REFRESH_INTERVAL_MS = 20 * 60 * 1000;
 // and is readable from the file system by anyone with physical PC access).
 const STORE = sessionStorage;
 
+// App-wide refresh loop (P1 #174) — started ONCE, not per useAuth() caller.
+// useAuth is used by ~11 components; a per-component interval would fire N
+// simultaneous /auth/refresh calls. This module-level singleton keeps exactly
+// one interval + one focus/visibility listener for the whole app. It writes the
+// fresh token to sessionStorage (which api.ts reads directly); it deliberately
+// does NOT touch React state, since the session stays valid so nothing needs to
+// re-render. Guarded on token presence, so it no-ops after logout.
+let _refreshLoopStarted = false;
+
+async function _refreshToken(): Promise<void> {
+  if (!STORE.getItem('token')) return;
+  try {
+    const { data } = await api.post('/api/v1/auth/refresh');
+    if (data?.access_token) STORE.setItem('token', data.access_token);
+  } catch {
+    /* offline / transient — keep the still-valid token; only a 401 logs out (interceptor) */
+  }
+}
+
+function startRefreshLoop(): void {
+  if (_refreshLoopStarted) return;
+  _refreshLoopStarted = true;
+  window.setInterval(_refreshToken, REFRESH_INTERVAL_MS);
+  window.addEventListener('focus', _refreshToken);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') _refreshToken();
+  });
+}
+
+/** Current user (id/role/…) from sessionStorage — a pure read, no hook, no
+ *  effects. Use where you only need the identity (e.g. a role check) and don't
+ *  want to spin up a useAuth() instance. */
+export function getCurrentUser(): User | null {
+  const raw = sessionStorage.getItem('user');
+  if (!raw) return null;
+  try { return JSON.parse(raw) as User; } catch { return null; }
+}
+
 export function useAuth() {
   const [user, setUser] = useState<User | null>(() => {
     const stored = STORE.getItem('user');
@@ -64,36 +102,9 @@ export function useAuth() {
     return () => window.removeEventListener('auth:logout', handler);
   }, [logout]);
 
-  // Refresh-on-use (P1 #174): while a session is active, silently re-mint the
-  // token periodically and on focus so it never expires mid-shift. A failure is
-  // swallowed — during an outage the POST just fails (network error, NOT a 401),
-  // so the still-valid token is kept; the next online tick refreshes it. Only a
-  // genuine 401 (already expired while online) logs out, via the interceptor.
-  const refresh = useCallback(async () => {
-    if (!STORE.getItem('token')) return;
-    try {
-      const { data } = await api.post('/api/v1/auth/refresh');
-      if (data?.access_token) {
-        STORE.setItem('token', data.access_token);
-        setToken(data.access_token);
-      }
-    } catch {
-      /* offline / transient — keep the existing token */
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!token) return;
-    const id = window.setInterval(refresh, REFRESH_INTERVAL_MS);
-    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      window.clearInterval(id);
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [token, refresh]);
+  // Refresh-on-use (P1 #174): start the single app-wide refresh loop. Idempotent
+  // — only the first useAuth() caller actually starts it; the rest are no-ops.
+  useEffect(() => { startRefreshLoop(); }, []);
 
   const isAuthenticated = !!token && !!user;
 
