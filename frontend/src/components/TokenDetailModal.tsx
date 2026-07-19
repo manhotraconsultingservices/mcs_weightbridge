@@ -1,10 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Truck, Package, User, Scale, Clock, Calendar, Loader2, FileText, CreditCard, UserCheck, Building2, Camera, ImageOff, RefreshCw, ZoomIn } from 'lucide-react';
+import { Truck, Package, User, Scale, Clock, Calendar, Loader2, FileText, CreditCard, UserCheck, Building2, Camera, ImageOff, RefreshCw, ZoomIn, CheckCircle2 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle
 } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import api from '@/services/api';
 import type { Token, SnapshotResult, TokenSnapshotsResponse } from '@/types';
+
+const INR = (v: number | string | null | undefined) =>
+  '₹' + Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // DB stores kg; UI displays MT (4 decimals).
 function wFmt(v: number | null | undefined) {
@@ -154,9 +159,10 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [snapshots, setSnapshots] = useState<SnapshotResult[]>([]);
   const [lightbox, setLightbox] = useState<{ src: string; label: string } | null>(null);
+  const [approving, setApproving] = useState(false);
 
-  // Fetch token details
-  useEffect(() => {
+  // Fetch token details (refetchable — the approve action reloads it)
+  const fetchToken = useCallback(() => {
     if (!tokenId) { setToken(null); setSnapshots([]); return; }
     setLoading(true);
     api.get<Token>(`/api/v1/tokens/${tokenId}`)
@@ -164,6 +170,31 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
       .catch(() => setToken(null))
       .finally(() => setLoading(false));
   }, [tokenId]);
+
+  useEffect(() => { fetchToken(); }, [fetchToken]);
+
+  // Approve the bill (P1 #175). Calls the SAME URL online (cloud → finds the
+  // token's draft invoice, finalises it, assigns the GST number) and offline
+  // (edge → queues an intent that does the same at sync). The base-URL switch
+  // picks the target — the frontend calls one endpoint.
+  const approve = useCallback(async () => {
+    if (!token) return;
+    setApproving(true);
+    try {
+      await api.post(`/api/v1/invoices/approve-token/${token.id}`);
+      toast.success(
+        navigator.onLine
+          ? 'Bill approved — invoice numbered'
+          : 'Approved offline — the invoice will be numbered when the link returns',
+      );
+      fetchToken();
+    } catch (e) {
+      const err = e as { response?: { status?: number; data?: { detail?: string } } };
+      toast.error(err.response?.data?.detail || `Could not approve (HTTP ${err.response?.status ?? '—'})`);
+    } finally {
+      setApproving(false);
+    }
+  }, [token, fetchToken]);
 
   // Fetch snapshots
   const fetchSnapshots = useCallback(() => {
@@ -489,6 +520,51 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                         </span>
                       )}
                     </div>
+                  </div>
+                  {/* Approve → server assigns the number (P1 #175). Shown while the
+                       invoice is still a draft (pending approval). */}
+                  {token.linked_invoice.status === 'draft' && (
+                    <div className="px-4 pb-3 pt-1 border-t bg-amber-50/40">
+                      <p className="text-[11px] text-muted-foreground mb-2">
+                        Review the amount above, then approve — the invoice number is assigned on approval.
+                      </p>
+                      <Button size="sm" className="w-full" onClick={approve} disabled={approving}>
+                        {approving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
+                        Approve bill{token.linked_invoice.grand_total != null ? ` · ${INR(token.linked_invoice.grand_total)}` : ''}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Offline bill (no cloud invoice yet) — estimate + approve.
+                   The edge computes bill_estimate from the mirror; the real amount
+                   + GST number are assigned by the server at sync. */}
+              {!token.linked_invoice && token.bill_estimate != null &&
+                (token.token_type === 'sale' || token.token_type === 'purchase') && (
+                <div className="rounded-lg border border-amber-200 overflow-hidden">
+                  <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 flex items-center gap-1.5">
+                    <FileText className="h-3.5 w-3.5 text-amber-600" />
+                    <p className="text-xs font-semibold uppercase tracking-widest text-amber-700">Bill (offline)</p>
+                  </div>
+                  <div className="px-4 py-3">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-xs text-muted-foreground">Estimated amount</span>
+                      <span className="font-mono font-bold text-lg">{INR(token.bill_estimate)}</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Estimate from local rates. The final amount + GST invoice number are assigned by the server at sync.
+                    </p>
+                    {token.approve_queued ? (
+                      <div className="mt-2 flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-md px-3 py-2">
+                        <CheckCircle2 className="h-4 w-4" /> Approved — will be numbered at sync
+                      </div>
+                    ) : (
+                      <Button size="sm" className="w-full mt-2" onClick={approve} disabled={approving}>
+                        {approving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
+                        Approve bill · {INR(token.bill_estimate)}
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}

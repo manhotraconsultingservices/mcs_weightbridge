@@ -968,6 +968,40 @@ async def approve_invoice(
     return await _load_invoice(db, invoice_id)
 
 
+async def find_token_invoice(db: AsyncSession, token_id: uuid.UUID) -> Invoice | None:
+    """The draft/finalised sale-or-purchase invoice auto-created for a token.
+
+    Shared by the token-keyed approve endpoint and the offline `invoice.approve`
+    replay op (which can only key on token_id — the edge invoice id differs from
+    the cloud one)."""
+    return (await db.execute(
+        select(Invoice)
+        .where(Invoice.token_id == token_id)
+        .where(Invoice.invoice_type.in_(("sale", "purchase")))
+        .order_by(Invoice.created_at.desc()).limit(1)
+    )).scalars().first()
+
+
+@router.post("/approve-token/{token_id}", response_model=InvoiceResponse)
+async def approve_token_invoice(
+    token_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "accountant", "store_manager")),
+):
+    """Approve a token's invoice by TOKEN id (P1 #175).
+
+    Same URL shape the edge agent serves offline (`/invoices/approve-token/{id}`),
+    so the frontend calls ONE endpoint and the online/offline base-URL switch does
+    the rest: online this finds the token's draft invoice and finalises it; offline
+    the edge queues an intent that does the same at sync.
+    """
+    inv = await find_token_invoice(db, token_id)
+    if inv is None:
+        raise HTTPException(404, "No invoice found for this token yet")
+    return await approve_invoice(inv.id, background_tasks, db, current_user)
+
+
 @router.post("/{invoice_id}/finalise", response_model=InvoiceResponse)
 async def finalise_invoice(
     invoice_id: uuid.UUID,
