@@ -66,18 +66,24 @@ async def _get_company_and_fy(db: AsyncSession):
 async def _next_token_no(db: AsyncSession, company_id: uuid.UUID, fy_id: uuid.UUID,
                           token_date: date) -> int:
     """
-    Generate a random 4-digit token number (1000–9999) that is unique for the day.
+    Generate a random 4-digit token number (1000–8999) that is unique for the day.
 
     Random numbering is intentional: when tokens are moved to Supplement they are
     removed from the visible list. Sequential numbering would leave obvious gaps
     (e.g. 1, 2, 4, 5 — where did 3 go?). Random numbers make gaps meaningless
     and reveal nothing about hidden entries.
 
+    The top band **9000–9999 is RESERVED for offline edge terminals** (P1 #172):
+    an offline terminal mints its own token_no in that band and prints it on the
+    slip, and the server keeps that number verbatim at sync (see
+    record_second_weight). Drawing online numbers from 1000–8999 makes the two
+    spaces structurally non-overlapping, so no coordination is needed.
+
     Collision probability is negligible for typical daily volumes (<100 tokens)
-    against a 9000-value space. Falls back to 5-digit range if somehow exhausted.
+    against an 8000-value space. Falls back to 5-digit range if somehow exhausted.
     """
     for _ in range(50):
-        candidate = random.randint(1000, 9999)
+        candidate = random.randint(1000, 8999)
         existing = await db.execute(
             select(Token.id).where(
                 and_(
@@ -106,6 +112,22 @@ async def _next_token_no(db: AsyncSession, company_id: uuid.UUID, fy_id: uuid.UU
             return candidate
 
     raise HTTPException(500, "Could not generate a unique token number. Please try again.")
+
+
+async def _token_no_is_free(db: AsyncSession, company_id: uuid.UUID, token_date: date,
+                            token_no: int, self_id: uuid.UUID) -> bool:
+    """True if `token_no` is unused for this company+day (ignoring the token
+    itself). Backstop for #172 — lets the server keep an offline slip number when
+    it doesn't clash, and reassign when it does."""
+    row = await db.execute(
+        select(Token.id).where(and_(
+            Token.company_id == company_id,
+            Token.token_date == token_date,
+            Token.token_no == token_no,
+            Token.id != self_id,
+        )).limit(1)
+    )
+    return row.scalar_one_or_none() is None
 
 
 async def _send_notification_bg(
@@ -427,7 +449,11 @@ async def create_token(
     # number and link back. Otherwise auto-generate from number_sequences — this is the
     # backward-compatible path for deployments not using the Gate Register workflow.
     if not payload.gate_pass_id:
-        resolved_gate_pass_no = await next_gate_pass_no(db, company.id, fy.id, branch_id)
+        if op_id and origin == "edge" and payload.gate_pass_no:
+            # #172: keep the gate-pass number printed on the offline slip.
+            resolved_gate_pass_no = payload.gate_pass_no
+        else:
+            resolved_gate_pass_no = await next_gate_pass_no(db, company.id, fy.id, branch_id)
     else:
         gp_row = await db.execute(
             text("SELECT gate_pass_no, token_id, status FROM gate_passes WHERE id = :id"),
@@ -997,9 +1023,19 @@ async def record_second_weight(
     token.status = "COMPLETED"
     token.completed_at = datetime.now(timezone.utc)
 
-    # Assign gap-free token_no NOW (at completion, not at creation)
+    # Assign gap-free token_no NOW (at completion, not at creation).
+    # #172: an offline edge terminal already minted a token_no in the reserved
+    # 9000–9999 band and PRINTED it on the driver's slip — keep that exact number
+    # so the slip matches the final record. Honoured only for edge replays, and
+    # only if the number is free for the day (a rare cross-terminal clash falls
+    # back to a fresh server number; the ux_tokens_no_per_day index is the hard
+    # guard). Online second-weights always draw a fresh 1000–8999 number.
     company, fy = await _get_company_and_fy(db)
-    token.token_no = await _next_token_no(db, company.id, fy.id, token.token_date)
+    edge_no = payload.token_no if (origin == "edge" and payload.token_no) else None
+    if edge_no is not None and await _token_no_is_free(db, company.id, token.token_date, edge_no, token.id):
+        token.token_no = edge_no
+    else:
+        token.token_no = await _next_token_no(db, company.id, fy.id, token.token_date)
 
     # Auto-create a draft invoice for both sale and purchase tokens
     if token.token_type in ("sale", "purchase"):

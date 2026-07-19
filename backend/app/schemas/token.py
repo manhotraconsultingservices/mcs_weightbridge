@@ -32,6 +32,10 @@ class TokenCreate(BaseModel):
     # Ignored unless X-Client-Op-Id is present. Online creates omit both.
     id: Optional[UUID] = None
     client_op_id: Optional[UUID] = None
+    # #172: the gate-pass number the edge minted (GP/<date>/B1-NNN) and printed on
+    # the slip. Kept verbatim at sync (gate passes tolerate gaps → no rewind).
+    # Honoured only for X-Op-Origin: edge replays.
+    gate_pass_no: Optional[str] = None
 
 
 class TokenFirstWeight(BaseModel):
@@ -42,6 +46,11 @@ class TokenFirstWeight(BaseModel):
 class TokenSecondWeight(BaseModel):
     weight_kg: Decimal
     is_manual: bool = False
+    # Offline replay (P1 #172): an edge terminal mints its own token_no in the
+    # reserved 9000–9999 band and prints it on the slip; it sends that number
+    # here so the server keeps it verbatim at sync (slip == final number).
+    # Honoured only for X-Op-Origin: edge replays; online second-weights ignore it.
+    token_no: Optional[int] = None
 
 
 class TokenVolumeCreate(BaseModel):
