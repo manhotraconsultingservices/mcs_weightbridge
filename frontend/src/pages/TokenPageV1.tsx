@@ -17,6 +17,7 @@ import ResizableSplit from '@/components/ResizableSplit';
 import CreditStatusBanner from '@/components/CreditStatusBanner';
 import { toast } from 'sonner';
 import { enqueueToken } from '@/lib/offlineQueue';
+import { cacheMasters, readCachedMasters } from '@/lib/mastersCache';
 import { fmtKg, displayToKg, weightUnitLabel, weightUnit } from '@/lib/weightUnit';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -300,11 +301,24 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       api.get<Product[]>('/api/v1/products'),
       api.get<{ items: Vehicle[] } | Vehicle[]>('/api/v1/vehicles?page_size=200'),
     ]).then(([p, pr, v]) => {
-      setParties(Array.isArray(p.data) ? p.data : (p.data.items ?? []));
-      setProducts(Array.isArray(pr.data) ? pr.data : (pr.data as { items: Product[] }).items ?? []);
+      const partyList = Array.isArray(p.data) ? p.data : (p.data.items ?? []);
+      const productList = Array.isArray(pr.data) ? pr.data : (pr.data as { items: Product[] }).items ?? [];
       const vData = v.data;
-      setVehicles(Array.isArray(vData) ? vData : (vData as { items: Vehicle[] }).items ?? []);
-    }).catch(() => {});
+      const vehicleList = Array.isArray(vData) ? vData : (vData as { items: Vehicle[] }).items ?? [];
+      setParties(partyList);
+      setProducts(productList);
+      setVehicles(vehicleList);
+      // Refresh the offline cache so the form stays fillable through an outage.
+      cacheMasters('parties', partyList);
+      cacheMasters('products', productList);
+      cacheMasters('vehicles', vehicleList);
+    }).catch(() => {
+      // Offline / cloud unreachable → fall back to the last-known-good masters so
+      // the operator can still pick a party/product and queue the token.
+      setParties(readCachedMasters<Party>('parties'));
+      setProducts(readCachedMasters<Product>('products'));
+      setVehicles(readCachedMasters<Vehicle>('vehicles'));
+    });
     api.get<{ items: Agent[] }>('/api/v1/agents?page_size=500')
       .then(r => setAgents(r.data.items ?? [])).catch(() => setAgents([]));
     loadGatePasses();

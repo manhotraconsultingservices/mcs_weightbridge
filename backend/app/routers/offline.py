@@ -164,10 +164,14 @@ async def _resolve_approver(db: AsyncSession, approver_id) -> User:
     """The real user who approved a bill offline. Verifies they exist, are active
     and hold a manager role — so an operator's offline approval can NEVER apply as
     a manager at sync (it parks for review instead). approved_by is then this real
-    user, never a generic 'system' admin. Legacy intents with no approver fall
-    back to the system user (best-effort, pre-governance-fix behaviour)."""
+    user, never a generic 'system' admin.
+
+    A MISSING approver is rejected (parked), NOT applied as system — closing the
+    bypass where a hand-crafted null-approver approval (a curl to the loopback edge
+    route) would slip past the role check. The frontend always sends the approver;
+    there are no legacy no-approver intents in production to protect."""
     if not approver_id:
-        return await _system_user(db)
+        raise HTTPException(422, "offline approval carries no approver — parked for a manager")
     try:
         aid = uuid.UUID(str(approver_id))
     except (ValueError, AttributeError):
