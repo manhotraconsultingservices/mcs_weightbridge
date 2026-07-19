@@ -196,6 +196,8 @@ async def create_token(body: TokenCreate, db: AsyncSession = Depends(get_db)):
             "billing_unit": tok.billing_unit,
             "remarks": tok.remarks,
             "custom_fields": tok.custom_fields,
+            # #172: keep the offline-printed gate-pass number at sync.
+            "gate_pass_no": tok.gate_pass_no,
         },
     )
     await db.commit()
@@ -262,7 +264,10 @@ async def second_weight(token_id: str, body: WeightIn, db: AsyncSession = Depend
         db, op_type="token.second_weight", method="POST",
         url=f"/api/v1/tokens/{t.id}/second-weight", entity_id=str(t.id),
         depends_on=await _create_op_id(db, t.id),
-        payload={"weight_kg": str(t.second_weight), "is_manual": False},
+        # #172: send the 9000-band token_no printed on the slip so the server
+        # keeps it verbatim at sync (slip number == final number).
+        payload={"weight_kg": str(t.second_weight), "is_manual": False,
+                 "token_no": t.token_no},
     )
     await db.commit()
     await db.refresh(t)
