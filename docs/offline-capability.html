@@ -112,7 +112,7 @@
   <div class="brand">WeighBridge Setu</div>
   <h1>Working Without Internet</h1>
   <p class="sub">What the weighbridge can and cannot do while the connection is down</p>
-  <div class="meta">Document v1.0 &nbsp;·&nbsp; 19 July 2026 &nbsp;·&nbsp; Prepared for sites with an intermittent link</div>
+  <div class="meta">Document v1.1 &nbsp;·&nbsp; 19 July 2026 &nbsp;·&nbsp; Prepared for sites with an intermittent link &nbsp;·&nbsp; Runs in Google Chrome (installed app)</div>
 </header>
 
 <section>
@@ -183,10 +183,14 @@
   </table>
 
   <div class="warn">
-    <b>One installation step is required</b>
-    Live weight during an outage needs the <b>updated scale agent</b> installed on the weighbridge
-    PC. Until that is done, the weight display will go blank when the connection drops, even though
-    everything else on this list works. This is a five-minute, one-time install.
+    <b>Two one-time setup steps on the weighbridge PC</b>
+    <b>1. Install the app in Chrome.</b> On the weighbridge PC, open the site in <b>Google Chrome</b>
+    and choose <b>Install</b> (the install icon in the address bar). It then runs as its own app with
+    a desktop icon, keeps its pages ready without depending on a browser tab, and its storage is
+    protected by Windows. Chrome is the supported browser for the plant PC.<br>
+    <b>2. Install the updated scale agent.</b> Live weight during an outage needs the updated scale
+    agent on the PC. Until that is done the weight display goes blank when the connection drops, even
+    though everything else here works. A five-minute, one-time install.
   </div>
 </section>
 
@@ -259,11 +263,13 @@
         <td>Printed on the spot with the real token and gate-pass number.</td>
       </tr>
       <tr>
-        <td class="feat">Cash invoice</td>
+        <td class="feat">Invoice approval</td>
         <td class="stat"><span class="pill p-build">In build</span></td>
         <td>
-          A GST-format invoice for walk-in / cash customers, printed at the gate. Credit customers
-          are billed as usual from the office once the line returns.
+          The invoice can be reviewed and <b>approved</b> during the outage. The legal GST invoice
+          number is assigned by the office system when the connection returns &mdash; so every tax
+          invoice is numbered under central control, exactly as it is today. The driver leaves with the
+          gate pass and weight slip; the tax invoice follows automatically on sync.
         </td>
       </tr>
       <tr>
@@ -321,7 +327,8 @@
   <ol class="steps">
     <li>Carry on weighing. The header shows <b>Offline</b>; the weight display shows the amber
         <span class="badge-inline">Reading scale directly</span> badge.</li>
-    <li><b>Do not close or reload the browser tab</b> until the connection is back.</li>
+    <li><b>Do not close or reload the app</b> until the connection is back. (Once the offline database
+        is in place &mdash; Section 3 &mdash; this caution goes away.)</li>
     <li>Record trips as normal. Each one is saved on the PC.</li>
     <li>When the connection returns, saved trips upload on their own. The <b>Offline</b> indicator
         clears once everything has synced.</li>
@@ -340,7 +347,7 @@
 
 <footer>
   <span>WeighBridge Setu &mdash; Offline Capability</span>
-  <span>v1.0 &nbsp;·&nbsp; 19 July 2026</span>
+  <span>v1.1 &nbsp;·&nbsp; 19 July 2026</span>
 </footer>
 
 </div>
