@@ -20,11 +20,11 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Company, FinancialYear, Party, Product, Token, Vehicle
-from agents.edge import numbering
+from agents.edge import intents, numbering
 from agents.edge.db import get_sessionmaker
 
 router = APIRouter(prefix="/api/v1")
@@ -170,9 +170,36 @@ async def create_token(body: TokenCreate, db: AsyncSession = Depends(get_db)):
         gate_pass_no=gate_pass_no, source="edge",
     )
     db.add(tok)
+    await db.flush()
+    # Record the replay intent IN THE SAME TRANSACTION as the token. If the
+    # commit fails, neither the token nor its intent survives — no orphans.
+    await intents.add_intent(
+        db, op_type="token.create", method="POST", url="/api/v1/tokens",
+        entity_id=str(tok.id),
+        payload={
+            "id": str(tok.id),
+            "token_date": tok.token_date.isoformat(),
+            "token_type": tok.token_type,
+            "direction": tok.direction or ("outbound" if tok.token_type == "sale" else "inbound"),
+            "vehicle_no": tok.vehicle_no,
+            "party_id": str(tok.party_id) if tok.party_id else None,
+            "product_id": str(tok.product_id) if tok.product_id else None,
+            "vehicle_id": str(tok.vehicle_id) if tok.vehicle_id else None,
+            "billing_unit": tok.billing_unit,
+            "remarks": tok.remarks,
+            "custom_fields": tok.custom_fields,
+        },
+    )
     await db.commit()
     await db.refresh(tok)
     return _token_dict(tok)
+
+
+async def _create_op_id(db: AsyncSession, token_id) -> str | None:
+    row = await db.execute(text(
+        "SELECT op_id FROM intents WHERE entity_id = :e AND op_type = 'token.create' LIMIT 1"
+    ), {"e": str(token_id)})
+    return row.scalar_one_or_none()
 
 
 async def _load_token(db: AsyncSession, token_id: str) -> Token:
@@ -196,6 +223,12 @@ async def first_weight(token_id: str, body: WeightIn, db: AsyncSession = Depends
     t.first_weight_type = "tare" if t.token_type == "sale" else "gross"
     t.first_weight_at = datetime.now(timezone.utc)
     t.status = "FIRST_WEIGHT"
+    await intents.add_intent(
+        db, op_type="token.first_weight", method="POST",
+        url=f"/api/v1/tokens/{t.id}/first-weight", entity_id=str(t.id),
+        depends_on=await _create_op_id(db, t.id),
+        payload={"weight_kg": str(t.first_weight), "is_manual": False},
+    )
     await db.commit()
     await db.refresh(t)
     return _token_dict(t)
@@ -217,6 +250,12 @@ async def second_weight(token_id: str, body: WeightIn, db: AsyncSession = Depend
     t.token_no = await numbering.next_token_no(db, t.company_id, t.token_date)
     t.status = "COMPLETED"
     t.completed_at = datetime.now(timezone.utc)
+    await intents.add_intent(
+        db, op_type="token.second_weight", method="POST",
+        url=f"/api/v1/tokens/{t.id}/second-weight", entity_id=str(t.id),
+        depends_on=await _create_op_id(db, t.id),
+        payload={"weight_kg": str(t.second_weight), "is_manual": False},
+    )
     await db.commit()
     await db.refresh(t)
     return _token_dict(t)

@@ -39,11 +39,35 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
     return _Session
 
 
+# Edge-only infrastructure table — NOT an app table, so it lives outside the
+# shared ORM metadata (the cloud never has an `intents` table).
+_INTENTS_DDL = """
+CREATE TABLE IF NOT EXISTS intents (
+    seq          INTEGER PRIMARY KEY AUTOINCREMENT,
+    op_id        TEXT NOT NULL UNIQUE,
+    op_type      TEXT NOT NULL,          -- token.create | token.first_weight | ...
+    method       TEXT NOT NULL,
+    url          TEXT NOT NULL,
+    payload      TEXT,                   -- JSON body to replay
+    entity_id    TEXT,                   -- local id of the affected row
+    depends_on   TEXT,                   -- op_id of a prerequisite intent
+    status       TEXT NOT NULL DEFAULT 'pending',
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    last_error   TEXT,
+    assigned     TEXT,                   -- JSON server response on success
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+)
+"""
+
+
 async def init_db(db_path: str):
     """Create the full edge schema on the SQLite file. Idempotent."""
+    from sqlalchemy import text as _text
+
     engine = get_engine(db_path)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(_text(_INTENTS_DDL))
         present = await conn.run_sync(
             lambda sync_conn: set(__import__("sqlalchemy").inspect(sync_conn).get_table_names())
         )
