@@ -29,6 +29,7 @@ import api from '@/services/api';
 import { useWeight } from '@/hooks/useWeight';
 import LocalScaleBadge from '@/components/LocalScaleBadge';
 import { fmtKg, displayToKg, weightUnitLabel, weightUnit } from '@/lib/weightUnit';
+import { cacheMasters, readCachedMasters } from '@/lib/mastersCache';
 import type { User, Party, Product, Token, TokenListResponse } from '@/types';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -305,10 +306,19 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
       api.get<Product[] | { items: Product[] }>('/api/v1/products?page_size=200'),
     ]).then(([p, pr]) => {
       const pData = p.data;
-      setParties(Array.isArray(pData) ? pData : (pData as { items: Party[] }).items ?? []);
+      const partyList = Array.isArray(pData) ? pData : (pData as { items: Party[] }).items ?? [];
       const prodData = pr.data;
-      setProducts(Array.isArray(prodData) ? prodData : (prodData as { items: Product[] }).items ?? []);
-    }).catch(() => { /* keep empty */ });
+      const productList = Array.isArray(prodData) ? prodData : (prodData as { items: Product[] }).items ?? [];
+      setParties(partyList);
+      setProducts(productList);
+      // Refresh the offline cache so the kiosk's pickers stay usable in an outage.
+      cacheMasters('parties', partyList);
+      cacheMasters('products', productList);
+    }).catch(() => {
+      // Offline → last-known-good so the operator can still pick a buyer/material.
+      setParties(readCachedMasters<Party>('parties'));
+      setProducts(readCachedMasters<Product>('products'));
+    });
   }, []);
 
   // ── Plate match against in-progress tokens ─────────────────────────────

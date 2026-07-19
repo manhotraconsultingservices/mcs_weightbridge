@@ -225,7 +225,8 @@ def test_allocation_guard():
     from app.routers.payments import _validate_allocations
 
     inv = types.SimpleNamespace(id="inv-1", invoice_no="INV/1", company_id="co-1",
-                                party_id="party-1", grand_total=D("1000"), amount_paid=D("0"))
+                                party_id="party-1", grand_total=D("1000"), amount_paid=D("0"),
+                                write_off_amount=D("0"))
     by_id = {"inv-1": inv}
 
     def alloc(invoice_id, amount):
