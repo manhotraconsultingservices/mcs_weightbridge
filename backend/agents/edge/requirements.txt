@@ -1,0 +1,12 @@
+# Weighbridge Edge Agent — offline SQLite mini-backend.
+# Heavier than the other agents because it runs a real FastAPI app + ORM.
+# Install: pip install -r requirements.txt
+fastapi>=0.115
+uvicorn>=0.30
+sqlalchemy>=2.0
+aiosqlite>=0.20
+greenlet>=3.0
+requests>=2.31
+certifi>=2023.7.22
+# The edge agent reuses the backend app package (app.models / app.services /
+# templates), so it must be deployed alongside it (or bundled into its EXE).

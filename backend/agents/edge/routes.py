@@ -1,0 +1,241 @@
+"""Edge offline routes — the small subset that must work with no internet.
+
+Deliberately mirrors the cloud API SHAPE (same paths under /api/v1) so the
+browser can point at the edge with only a base-URL change. The handlers are a
+slim local reimplementation over the SQLite mirror — they do NOT import the
+cloud routers (which are wired to Postgres tenant-routing + middleware) but they
+reuse the same ORM models, so a token written here is identical to one the
+server would write.
+
+Numbers minted here: token_no (offline 9000–9999 band) + gate_pass_no (local
+per-terminal daily sequence). Invoice numbers are NOT minted offline — the
+server assigns them at sync.
+"""
+from __future__ import annotations
+
+import uuid
+from datetime import date, datetime, timezone
+from decimal import Decimal, InvalidOperation
+from typing import Any, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import Company, FinancialYear, Party, Product, Token, Vehicle
+from agents.edge import numbering
+from agents.edge.db import get_sessionmaker
+
+router = APIRouter(prefix="/api/v1")
+
+_ACTIVE = ("OPEN", "FIRST_WEIGHT", "LOADING", "SECOND_WEIGHT")
+
+
+async def get_db() -> AsyncSession:  # type: ignore[misc]
+    async with get_sessionmaker()() as db:
+        yield db
+
+
+def _dec(v: Any) -> Optional[Decimal]:
+    if v is None or v == "":
+        return None
+    try:
+        return Decimal(str(v))
+    except (InvalidOperation, ValueError):
+        raise HTTPException(422, f"not a number: {v!r}")
+
+
+async def _company_and_fy(db: AsyncSession) -> tuple[Company, FinancialYear]:
+    """The edge mirror holds exactly one company; resolve it + the active FY."""
+    co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
+    if co is None:
+        raise HTTPException(503, "Master data not yet mirrored to this terminal")
+    fy = (await db.execute(
+        select(FinancialYear).where(and_(
+            FinancialYear.company_id == co.id, FinancialYear.is_active == True  # noqa: E712
+        )).limit(1)
+    )).scalar_one_or_none()
+    if fy is None:
+        fy = (await db.execute(
+            select(FinancialYear).where(FinancialYear.company_id == co.id)
+            .order_by(FinancialYear.end_date.desc()).limit(1)
+        )).scalar_one_or_none()
+    if fy is None:
+        raise HTTPException(503, "No financial year mirrored to this terminal")
+    return co, fy
+
+
+def _token_dict(t: Token) -> dict:
+    return {
+        "id": str(t.id),
+        "token_no": t.token_no,
+        "gate_pass_no": t.gate_pass_no,
+        "token_date": t.token_date.isoformat() if t.token_date else None,
+        "status": t.status,
+        "token_type": t.token_type,
+        "direction": t.direction,
+        "vehicle_no": t.vehicle_no,
+        "party_id": str(t.party_id) if t.party_id else None,
+        "product_id": str(t.product_id) if t.product_id else None,
+        "gross_weight": str(t.gross_weight) if t.gross_weight is not None else None,
+        "tare_weight": str(t.tare_weight) if t.tare_weight is not None else None,
+        "net_weight": str(t.net_weight) if t.net_weight is not None else None,
+        "weight_method": t.weight_method,
+        "source": t.source,
+        "custom_fields": t.custom_fields,
+        "origin": "edge",
+    }
+
+
+# ── Masters (read from the local mirror) ─────────────────────────────────────
+@router.get("/parties")
+async def list_parties(db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(select(Party).order_by(Party.name))).scalars().all()
+    return {"items": [{
+        "id": str(p.id), "name": p.name, "party_type": p.party_type,
+        "gstin": p.gstin, "phone": p.phone,
+        "default_payment_mode": getattr(p, "default_payment_mode", None),
+    } for p in rows], "total": len(rows)}
+
+
+@router.get("/products")
+async def list_products(db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(select(Product).order_by(Product.name))).scalars().all()
+    return {"items": [{
+        "id": str(p.id), "name": p.name, "unit": p.unit, "hsn_code": p.hsn_code,
+        "default_rate": str(p.default_rate) if p.default_rate is not None else None,
+        "gst_rate": str(p.gst_rate) if p.gst_rate is not None else None,
+        "bulk_density": str(p.bulk_density) if getattr(p, "bulk_density", None) is not None else None,
+    } for p in rows], "total": len(rows)}
+
+
+@router.get("/vehicles")
+async def list_vehicles(db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(select(Vehicle).order_by(Vehicle.registration_no))).scalars().all()
+    return {"items": [{
+        "id": str(v.id), "registration_no": v.registration_no,
+        "default_tare_weight": str(v.default_tare_weight) if v.default_tare_weight is not None else None,
+    } for v in rows], "total": len(rows)}
+
+
+# ── Token create + weighments ────────────────────────────────────────────────
+class TokenCreate(BaseModel):
+    vehicle_no: str
+    token_type: str = "sale"
+    direction: Optional[str] = None
+    party_id: Optional[str] = None
+    product_id: Optional[str] = None
+    vehicle_id: Optional[str] = None
+    billing_unit: Optional[str] = None
+    remarks: Optional[str] = None
+    custom_fields: Optional[dict[str, Any]] = None
+
+
+class WeightIn(BaseModel):
+    weight: float   # kg
+
+
+@router.post("/tokens", status_code=201)
+async def create_token(body: TokenCreate, db: AsyncSession = Depends(get_db)):
+    co, fy = await _company_and_fy(db)
+    plate = body.vehicle_no.strip().upper()
+    if not plate:
+        raise HTTPException(422, "vehicle_no required")
+
+    # Duplicate-active-token guard (mirrors the server): one open token per plate.
+    dup = (await db.execute(select(Token).where(and_(
+        Token.company_id == co.id,
+        Token.vehicle_no == plate,
+        Token.status.in_(_ACTIVE),
+    )).limit(1))).scalar_one_or_none()
+    if dup is not None:
+        raise HTTPException(
+            409,
+            f"Vehicle {plate} already has an active token (status: {dup.status}). "
+            "Complete or cancel it before creating a new one.",
+        )
+
+    today = date.today()
+    gate_pass_no = await numbering.next_gate_pass_no(db, co.id, _TERMINAL_TAG[0], today)
+    tok = Token(
+        id=uuid.uuid4(), company_id=co.id, fy_id=fy.id, branch_id=None,
+        token_date=today, status="OPEN", token_type=body.token_type,
+        direction=body.direction, vehicle_no=plate,
+        party_id=uuid.UUID(body.party_id) if body.party_id else None,
+        product_id=uuid.UUID(body.product_id) if body.product_id else None,
+        vehicle_id=uuid.UUID(body.vehicle_id) if body.vehicle_id else None,
+        billing_unit=body.billing_unit, remarks=body.remarks,
+        custom_fields=body.custom_fields, weight_method="weighbridge",
+        gate_pass_no=gate_pass_no, source="edge",
+    )
+    db.add(tok)
+    await db.commit()
+    await db.refresh(tok)
+    return _token_dict(tok)
+
+
+async def _load_token(db: AsyncSession, token_id: str) -> Token:
+    try:
+        tid = uuid.UUID(token_id)
+    except ValueError:
+        raise HTTPException(422, "bad token id")
+    t = (await db.execute(select(Token).where(Token.id == tid))).scalar_one_or_none()
+    if t is None:
+        raise HTTPException(404, "token not found")
+    return t
+
+
+@router.post("/tokens/{token_id}/first-weight")
+async def first_weight(token_id: str, body: WeightIn, db: AsyncSession = Depends(get_db)):
+    t = await _load_token(db, token_id)
+    if t.status not in ("OPEN", "LOADING"):
+        raise HTTPException(409, f"token is {t.status}, cannot take first weight")
+    # sale (outbound): 1st = tare (empty). purchase (inbound): 1st = gross (loaded).
+    t.first_weight = _dec(body.weight)
+    t.first_weight_type = "tare" if t.token_type == "sale" else "gross"
+    t.first_weight_at = datetime.now(timezone.utc)
+    t.status = "FIRST_WEIGHT"
+    await db.commit()
+    await db.refresh(t)
+    return _token_dict(t)
+
+
+@router.post("/tokens/{token_id}/second-weight")
+async def second_weight(token_id: str, body: WeightIn, db: AsyncSession = Depends(get_db)):
+    t = await _load_token(db, token_id)
+    if t.status not in ("FIRST_WEIGHT", "SECOND_WEIGHT", "LOADING"):
+        raise HTTPException(409, f"token is {t.status}, cannot take second weight")
+    if t.first_weight is None:
+        raise HTTPException(409, "first weight not recorded")
+    t.second_weight = _dec(body.weight)
+    w1, w2 = t.first_weight, t.second_weight
+    gross, tare = (w1, w2) if w1 >= w2 else (w2, w1)
+    t.gross_weight, t.tare_weight = gross, tare
+    t.net_weight = gross - tare
+    t.second_weight_at = datetime.now(timezone.utc)
+    t.token_no = await numbering.next_token_no(db, t.company_id, t.token_date)
+    t.status = "COMPLETED"
+    t.completed_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(t)
+    return _token_dict(t)
+
+
+@router.get("/tokens")
+async def list_tokens(db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(
+        select(Token).where(Token.token_date == date.today())
+        .order_by(Token.created_at.desc())
+    )).scalars().all()
+    return {"items": [_token_dict(t) for t in rows], "total": len(rows)}
+
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+# Module-level holder so the configured terminal tag reaches numbering without
+# threading it through every call. Set once by create_app().
+_TERMINAL_TAG = ["B1"]
+
+
+def set_terminal_tag(tag: str) -> None:
+    _TERMINAL_TAG[0] = (tag or "B1").strip() or "B1"
