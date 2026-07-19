@@ -235,6 +235,34 @@ async def get_me(current_user: User = Depends(get_current_user)):
     return UserResponse.model_validate(current_user)
 
 
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_token(current_user: User = Depends(get_current_user)):
+    """Re-mint a fresh access token from a still-valid one (P1 #174).
+
+    The operator's browser calls this on activity while online so the session
+    never expires mid-shift — essential when the link keeps dropping for 30–40
+    minutes and a re-login (which needs the network) may not be possible for a
+    while. Requires a currently-valid token (refresh-BEFORE-expiry); it does NOT
+    resurrect an expired one. The tenant claim is carried over from the context
+    the middleware set from the incoming token, so the new token targets the same
+    tenant DB.
+    """
+    settings = get_settings()
+    data = {"sub": str(current_user.id)}
+    tenant_slug = None
+    if settings.MULTI_TENANT:
+        from app.multitenancy.context import current_tenant_slug
+        tenant_slug = current_tenant_slug.get()
+        if tenant_slug:
+            data["tenant"] = tenant_slug
+    token = create_access_token(data=data)
+    return TokenResponse(
+        access_token=token,
+        user=UserResponse.model_validate(current_user),
+        tenant_slug=tenant_slug,
+    )
+
+
 @router.put("/change-password")
 async def change_password(
     req: ChangePasswordRequest,
