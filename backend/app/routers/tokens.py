@@ -896,11 +896,25 @@ async def update_token(
 async def record_first_weight(
     token_id: uuid.UUID,
     payload: TokenFirstWeight,
+    request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     token = await _load_token(db, token_id)
+
+    # Idempotency (P1 #171): a replayed first-weight returns the token unchanged
+    # instead of tripping the OPEN-only guard below (which would otherwise falsely
+    # park a successfully-applied weighment as needs_review on the edge). Sent
+    # online too, so the dedupe path runs continuously in production.
+    op_id = idempotency.get_op_id(request)
+    origin = idempotency.get_origin(request)
+    company = None
+    if op_id:
+        company, _ = await _get_company_and_fy(db)
+        prior = await idempotency.find_applied(db, company.id, op_id)
+        if prior:
+            return await _load_token(db, token_id)
 
     if token.status != "OPEN":
         raise HTTPException(400, f"First weight can only be recorded on OPEN tokens (current: {token.status})")
@@ -913,6 +927,15 @@ async def record_first_weight(
 
     # Sale: first weight is the empty truck (tare). Purchase: first weight is the loaded truck (gross).
     token.first_weight_type = "tare" if token.token_type == "sale" else "gross"
+
+    # Idempotency ledger, in the SAME transaction as the weight mutation.
+    if op_id:
+        await idempotency.record_operation(
+            db, company_id=company.id, op_id=op_id, op_type="token.first_weight",
+            entity_type="token", entity_id=token.id,
+            assigned={"id": str(token.id), "status": token.status},
+            user_id=current_user.id, origin=origin,
+        )
 
     await db.commit()
 
@@ -942,11 +965,23 @@ async def record_first_weight(
 async def record_second_weight(
     token_id: uuid.UUID,
     payload: TokenSecondWeight,
+    request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     token = await _load_token(db, token_id)
+
+    # Idempotency (P1 #171): a replayed second-weight returns the already-completed
+    # token (with its assigned token_no + auto-invoice intact) instead of tripping
+    # the FIRST_WEIGHT/LOADING-only guard or double-creating an invoice.
+    op_id = idempotency.get_op_id(request)
+    origin = idempotency.get_origin(request)
+    if op_id:
+        _co, _ = await _get_company_and_fy(db)
+        prior = await idempotency.find_applied(db, _co.id, op_id)
+        if prior:
+            return await _load_token(db, token_id)
 
     if token.status not in ("FIRST_WEIGHT", "LOADING"):
         raise HTTPException(400, f"Second weight requires FIRST_WEIGHT or LOADING status (current: {token.status})")
@@ -973,6 +1008,15 @@ async def record_second_weight(
 
     # P1: Auto-draw against the linked transit/royalty pass (non-blocking)
     await _auto_consume_royalty_pass(db, token)
+
+    # Idempotency ledger, in the SAME transaction as the completion + auto-invoice.
+    if op_id:
+        await idempotency.record_operation(
+            db, company_id=company.id, op_id=op_id, op_type="token.second_weight",
+            entity_type="token", entity_id=token.id,
+            assigned={"id": str(token.id), "token_no": token.token_no, "status": token.status},
+            user_id=current_user.id, origin=origin,
+        )
 
     await db.commit()
 
