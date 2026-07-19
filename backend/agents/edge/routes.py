@@ -274,6 +274,61 @@ async def second_weight(token_id: str, body: WeightIn, db: AsyncSession = Depend
     return _token_dict(t)
 
 
+async def _bill_estimate(db: AsyncSession, t: Token) -> Optional[str]:
+    """Best-effort offline bill amount for a completed sale/purchase token.
+
+    Uses the REAL pure pricing service against the mirror (same resolver the cloud
+    bills with) so the manager approves a realistic number. It is an ESTIMATE —
+    the cloud recomputes authoritatively and assigns the number at sync — because
+    the mirror may lag and GST rounding is done server-side.
+    """
+    if t.token_type not in ("sale", "purchase") or t.status != "COMPLETED":
+        return None
+    if not (t.party_id and t.product_id):
+        return None
+    try:
+        from app.services.pricing import resolve_rate, token_quantity
+        product = (await db.execute(select(Product).where(Product.id == t.product_id))).scalar_one_or_none()
+        if product is None:
+            return None
+        unit = t.billing_unit or product.unit
+        rate = await resolve_rate(db, t.party_id, t.product_id, unit)
+        qty = token_quantity(t, unit, product)
+        taxable = Decimal(str(qty)) * Decimal(str(rate))
+        party = (await db.execute(select(Party).where(Party.id == t.party_id))).scalar_one_or_none()
+        is_gst = getattr(party, "default_payment_mode", "cash") == "online"
+        gst_rate = Decimal(str(getattr(product, "gst_rate", 0) or 0))
+        gst = (taxable * gst_rate / Decimal("100")) if is_gst else Decimal("0")
+        return str((taxable + gst).quantize(Decimal("0.01")))
+    except Exception:
+        return None
+
+
+async def _approve_queued(db: AsyncSession, token_id: str) -> bool:
+    row = await db.execute(text(
+        "SELECT 1 FROM intents WHERE entity_id = :e AND op_type = 'invoice.approve' LIMIT 1"
+    ), {"e": token_id})
+    return row.first() is not None
+
+
+@router.get("/tokens/{token_id}")
+async def get_token(token_id: str, db: AsyncSession = Depends(get_db)):
+    """Token detail for the offline modal — mirrors the cloud shape, plus an
+    offline `bill_estimate` and `approve_queued` so the approve UI works offline."""
+    t = await _load_token(db, token_id)
+    d = _token_dict(t)
+    d["bill_estimate"] = await _bill_estimate(db, t)
+    d["approve_queued"] = await _approve_queued(db, token_id)
+    # Minimal party/product hydration so the modal renders names offline.
+    if t.party_id:
+        p = (await db.execute(select(Party).where(Party.id == t.party_id))).scalar_one_or_none()
+        d["party"] = {"id": str(p.id), "name": p.name} if p else None
+    if t.product_id:
+        pr = (await db.execute(select(Product).where(Product.id == t.product_id))).scalar_one_or_none()
+        d["product"] = {"id": str(pr.id), "name": pr.name, "unit": pr.unit} if pr else None
+    return d
+
+
 @router.post("/invoices/approve-token/{token_id}")
 async def approve_token_invoice(token_id: str, db: AsyncSession = Depends(get_db)):
     """Offline invoice approval (P1 #175): a manager reviews a completed token's
