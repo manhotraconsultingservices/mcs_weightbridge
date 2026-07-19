@@ -78,5 +78,10 @@ async def mark(db: AsyncSession, op_id: str, status: str, *,
     if assigned is not None:
         sql += ", assigned = :a"
         params["a"] = json.dumps(assigned)
+    if status == "done":
+        # Stamp the sync time so the pruner can retain from sync — not creation.
+        # An intent created at 23:00 and synced at 09:00 must survive the 04:00
+        # prune the next morning.
+        sql += ", synced_at = datetime('now')"
     sql += " WHERE op_id = :op"
     await db.execute(text(sql), params)

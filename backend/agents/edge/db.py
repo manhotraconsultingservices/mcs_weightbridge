@@ -55,9 +55,16 @@ CREATE TABLE IF NOT EXISTS intents (
     attempts     INTEGER NOT NULL DEFAULT 0,
     last_error   TEXT,
     assigned     TEXT,                   -- JSON server response on success
-    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    synced_at    TEXT                    -- when it reached 'done' — retention is measured from HERE
 )
 """
+
+# Migration for edge DBs created before synced_at existed. Idempotent: the
+# duplicate-column error is swallowed in init_db.
+_INTENTS_MIGRATIONS = (
+    "ALTER TABLE intents ADD COLUMN synced_at TEXT",
+)
 
 
 async def init_db(db_path: str):
@@ -68,6 +75,11 @@ async def init_db(db_path: str):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(_text(_INTENTS_DDL))
+        for _mig in _INTENTS_MIGRATIONS:
+            try:
+                await conn.execute(_text(_mig))
+            except Exception:
+                pass    # column already exists — idempotent
         present = await conn.run_sync(
             lambda sync_conn: set(__import__("sqlalchemy").inspect(sync_conn).get_table_names())
         )

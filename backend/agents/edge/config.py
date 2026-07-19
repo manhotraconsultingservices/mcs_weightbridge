@@ -36,6 +36,12 @@ DEFAULT_CONFIG: dict = {
     "terminal_tag": "B1",
     "api_port": DEFAULT_API_PORT,
     "db_path": DEFAULT_DB_PATH,
+    # Cloud sync loop cadence + local retention for the 04:05 conditional prune.
+    "sync_interval_sec": 30,
+    "retain_days": 7,
+    # Optional — a SKIPPED prune (unsynced work pending at 04:00) alerts here.
+    "telegram_bot_token": "",
+    "telegram_chat_id": "",
     # Extra browser origins allowed to call the edge API (LAN dev, etc.).
     # The tenant subdomain + apex are derived automatically from cloud_url.
     "allowed_origins": [],
