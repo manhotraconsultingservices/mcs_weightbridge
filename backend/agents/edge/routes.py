@@ -274,6 +274,34 @@ async def second_weight(token_id: str, body: WeightIn, db: AsyncSession = Depend
     return _token_dict(t)
 
 
+@router.post("/invoices/approve-token/{token_id}")
+async def approve_token_invoice(token_id: str, db: AsyncSession = Depends(get_db)):
+    """Offline invoice approval (P1 #175): a manager reviews a completed token's
+    amount and approves it. The edge does not hold the invoice — it emits an
+    intent keyed by token_id; at sync the second-weight replay auto-creates the
+    draft invoice on the cloud and this intent approves + finalises it, so the
+    legal GST number is assigned by the SERVER (never minted offline)."""
+    t = await _load_token(db, token_id)
+    if t.status != "COMPLETED":
+        raise HTTPException(409, "token is not completed — cannot approve its invoice yet")
+    # Idempotent: one approve intent per token.
+    existing = (await db.execute(text(
+        "SELECT op_id FROM intents WHERE entity_id = :e AND op_type = 'invoice.approve' LIMIT 1"
+    ), {"e": token_id})).scalar_one_or_none()
+    if existing:
+        return {"ok": True, "already_queued": True, "op_id": existing}
+    sw_op = (await db.execute(text(
+        "SELECT op_id FROM intents WHERE entity_id = :e AND op_type = 'token.second_weight' LIMIT 1"
+    ), {"e": token_id})).scalar_one_or_none()
+    op = await intents.add_intent(
+        db, op_type="invoice.approve", method="POST",
+        url=f"/api/v1/invoices/approve-token/{token_id}", entity_id=token_id,
+        depends_on=sw_op, payload={"token_id": token_id},
+    )
+    await db.commit()
+    return {"ok": True, "op_id": op}
+
+
 @router.get("/tokens")
 async def list_tokens(db: AsyncSession = Depends(get_db)):
     rows = (await db.execute(
