@@ -180,20 +180,12 @@ async def _apply_intent(db: AsyncSession, op_type: str, entity_id: Optional[str]
         tok = await record_second_weight(uuid.UUID(entity_id), TokenSecondWeight(**body),
                                          req, BackgroundTasks(), db, user)
     elif op_type == "invoice.approve":
-        # #175: keyed by token_id (the edge invoice id ≠ the cloud one). Find the
-        # draft invoice the second-weight replay auto-created for this token and
-        # approve+finalise it → the SERVER assigns the legal GST number at sync.
-        from app.routers.invoices import approve_invoice
-        from app.models.invoice import Invoice
-        inv = (await db.execute(
-            select(Invoice)
-            .where(Invoice.token_id == uuid.UUID(entity_id))
-            .where(Invoice.invoice_type.in_(("sale", "purchase")))
-            .order_by(Invoice.created_at.desc()).limit(1)
-        )).scalars().first()
-        if inv is None:
-            raise HTTPException(422, "no invoice found for this token to approve")
-        res = await approve_invoice(inv.id, BackgroundTasks(), db, user)
+        # #175: keyed by token_id (the edge invoice id != the cloud one). Reuse the
+        # same token-keyed approve the cloud endpoint serves — it finds the draft
+        # the second-weight replay auto-created and approve+finalises it, so the
+        # SERVER assigns the legal GST number at sync.
+        from app.routers.invoices import approve_token_invoice
+        res = await approve_token_invoice(uuid.UUID(entity_id), BackgroundTasks(), db, user)
         return {"invoice_id": str(res.id), "invoice_no": res.invoice_no, "status": res.status}
     else:
         raise HTTPException(422, f"unknown op_type '{op_type}'")

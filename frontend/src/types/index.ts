@@ -235,6 +235,11 @@ export interface Token {
   first_weight_at: string | null;
   second_weight_at: string | null;
   completed_at: string | null;
+  // Edge-only (offline, P1 #175): an estimated bill amount + whether an offline
+  // approve intent is already queued. Absent on the cloud token detail (which
+  // carries the real linked_invoice instead).
+  bill_estimate?: string | null;
+  approve_queued?: boolean;
 }
 
 export interface TokenListResponse {
