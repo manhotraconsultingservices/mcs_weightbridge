@@ -6,10 +6,16 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import api from '@/services/api';
+import { getCurrentUser } from '@/hooks/useAuth';
 import type { Token, SnapshotResult, TokenSnapshotsResponse } from '@/types';
 
 const INR = (v: number | string | null | undefined) =>
   '₹' + Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Who may approve a bill (must mirror the cloud require_role on
+// /invoices/approve-token). A manager control — operators do NOT approve, online
+// OR offline, so the offline outage path can't be used to self-approve a bill.
+const APPROVE_ROLES = ['admin', 'accountant', 'store_manager'];
 
 // DB stores kg; UI displays MT (4 decimals).
 function wFmt(v: number | null | undefined) {
@@ -181,7 +187,15 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
     if (!token) return;
     setApproving(true);
     try {
-      await api.post(`/api/v1/invoices/approve-token/${token.id}`);
+      // Send the approver's identity. Online, the cloud uses the JWT + require_role
+      // and ignores this. Offline, the edge stamps it into the intent and the
+      // cloud verifies the role + attributes approved_by to this real user at
+      // sync (never "system") — closing the offline self-approval gap.
+      const me = getCurrentUser();
+      await api.post(`/api/v1/invoices/approve-token/${token.id}`, {
+        approver_user_id: me?.id ?? null,
+        approver_role: me?.role ?? null,
+      });
       toast.success(
         navigator.onLine
           ? 'Bill approved — invoice numbered'
@@ -195,6 +209,10 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
       setApproving(false);
     }
   }, [token, fetchToken]);
+
+  // Only managers approve — consistent online AND offline. Non-managers see the
+  // amount (read-only) with an "awaiting manager" note, never the button.
+  const canApprove = APPROVE_ROLES.includes(getCurrentUser()?.role ?? '');
 
   // Fetch snapshots
   const fetchSnapshots = useCallback(() => {
@@ -522,16 +540,24 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                     </div>
                   </div>
                   {/* Approve → server assigns the number (P1 #175). Shown while the
-                       invoice is still a draft (pending approval). */}
+                       invoice is still a draft (pending approval), to managers only. */}
                   {token.linked_invoice.status === 'draft' && (
                     <div className="px-4 pb-3 pt-1 border-t bg-amber-50/40">
-                      <p className="text-[11px] text-muted-foreground mb-2">
-                        Review the amount above, then approve — the invoice number is assigned on approval.
-                      </p>
-                      <Button size="sm" className="w-full" onClick={approve} disabled={approving}>
-                        {approving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
-                        Approve bill{token.linked_invoice.grand_total != null ? ` · ${INR(token.linked_invoice.grand_total)}` : ''}
-                      </Button>
+                      {canApprove ? (
+                        <>
+                          <p className="text-[11px] text-muted-foreground mb-2">
+                            Review the amount above, then approve — the invoice number is assigned on approval.
+                          </p>
+                          <Button size="sm" className="w-full" onClick={approve} disabled={approving}>
+                            {approving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
+                            Approve bill{token.linked_invoice.grand_total != null ? ` · ${INR(token.linked_invoice.grand_total)}` : ''}
+                          </Button>
+                        </>
+                      ) : (
+                        <p className="text-[11px] text-muted-foreground">
+                          Draft — awaiting approval by a manager (admin / accountant / store manager).
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -559,11 +585,15 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                       <div className="mt-2 flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-md px-3 py-2">
                         <CheckCircle2 className="h-4 w-4" /> Approved — will be numbered at sync
                       </div>
-                    ) : (
+                    ) : canApprove ? (
                       <Button size="sm" className="w-full mt-2" onClick={approve} disabled={approving}>
                         {approving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
                         Approve bill · {INR(token.bill_estimate)}
                       </Button>
+                    ) : (
+                      <p className="mt-2 text-[11px] text-muted-foreground">
+                        Awaiting approval by a manager (admin / accountant / store manager).
+                      </p>
                     )}
                   </div>
                 </div>
