@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Weighbridge Setu — Working Without Internet</title>
+<style>
+  @page { size: A4; margin: 14mm 15mm; }
+
+  :root {
+    --ink:      #14181f;
+    --muted:    #5b6472;
+    --line:     #d7dce3;
+    --live:     #0f7a3d;
+    --live-bg:  #e8f5ed;
+    --build:    #9a6400;
+    --build-bg: #fdf3e0;
+    --net:      #8a2b2b;
+    --net-bg:   #fbecec;
+    --accent:   #123a6b;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  body {
+    margin: 0;
+    font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 10.2pt;
+    line-height: 1.5;
+    color: var(--ink);
+    background: #fff;
+  }
+
+  .sheet { max-width: 180mm; margin: 0 auto; }
+
+  /* ---------- header ---------- */
+  header { border-bottom: 2.5pt solid var(--accent); padding-bottom: 7pt; margin-bottom: 12pt; }
+  .brand { font-size: 8.4pt; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+  h1 { font-size: 19pt; margin: 3pt 0 2pt; letter-spacing: -.2pt; }
+  .sub { color: var(--muted); font-size: 10pt; margin: 0; }
+  .meta { margin-top: 6pt; font-size: 8.6pt; color: var(--muted); }
+
+  /* ---------- headings ---------- */
+  h2 {
+    font-size: 12pt; margin: 16pt 0 7pt; padding-bottom: 3pt;
+    border-bottom: 1pt solid var(--line);
+  }
+  h2 .n {
+    display: inline-block; width: 16pt; height: 16pt; line-height: 16pt;
+    text-align: center; border-radius: 50%; background: var(--accent);
+    color: #fff; font-size: 9pt; margin-right: 6pt; vertical-align: 1pt;
+  }
+
+  /* ---------- status pills ---------- */
+  .pill {
+    display: inline-block; padding: 1.2pt 6pt; border-radius: 9pt;
+    font-size: 7.6pt; font-weight: 700; letter-spacing: .05em;
+    text-transform: uppercase; white-space: nowrap;
+  }
+  .p-live  { background: var(--live-bg);  color: var(--live);  border: .7pt solid var(--live); }
+  .p-build { background: var(--build-bg); color: var(--build); border: .7pt solid var(--build); }
+  .p-net   { background: var(--net-bg);   color: var(--net);   border: .7pt solid var(--net); }
+
+  .legend { display: flex; gap: 14pt; flex-wrap: wrap; margin: 10pt 0 4pt; font-size: 9pt; }
+  .legend div { display: flex; align-items: center; gap: 5pt; }
+
+  /* ---------- tables ---------- */
+  table { width: 100%; border-collapse: collapse; margin: 4pt 0 2pt; }
+  th {
+    text-align: left; font-size: 8.2pt; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--muted); border-bottom: 1pt solid var(--line); padding: 4pt 6pt 3pt;
+    font-weight: 700;
+  }
+  td { padding: 5pt 6pt; border-bottom: .6pt solid var(--line); vertical-align: top; }
+  td.feat { font-weight: 600; width: 34%; }
+  td.stat { width: 15%; white-space: nowrap; }
+  tr { break-inside: avoid; }
+
+  /* ---------- callouts ---------- */
+  .note {
+    border-left: 2.5pt solid var(--accent); background: #f5f8fc;
+    padding: 7pt 10pt; margin: 9pt 0; font-size: 9.5pt; break-inside: avoid;
+  }
+  .warn {
+    border-left: 2.5pt solid var(--build); background: var(--build-bg);
+    padding: 7pt 10pt; margin: 9pt 0; font-size: 9.5pt; break-inside: avoid;
+  }
+  .note b, .warn b { display: block; margin-bottom: 2pt; }
+
+  ol.steps { margin: 5pt 0 5pt 14pt; padding: 0; }
+  ol.steps li { margin-bottom: 3pt; }
+
+  .badge-inline {
+    display: inline-block; background: var(--build-bg); border: .7pt solid var(--build);
+    color: var(--build); border-radius: 8pt; padding: .5pt 5pt; font-size: 8.4pt; font-weight: 600;
+  }
+
+  footer {
+    margin-top: 16pt; padding-top: 6pt; border-top: .8pt solid var(--line);
+    font-size: 8.2pt; color: var(--muted); display: flex; justify-content: space-between;
+  }
+
+  .page-break { break-before: page; }
+  section { break-inside: avoid-page; }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+<header>
+  <div class="brand">WeighBridge Setu</div>
+  <h1>Working Without Internet</h1>
+  <p class="sub">What the weighbridge can and cannot do while the connection is down</p>
+  <div class="meta">Document v1.0 &nbsp;·&nbsp; 19 July 2026 &nbsp;·&nbsp; Prepared for sites with an intermittent link</div>
+</header>
+
+<section>
+  <p style="margin-top:0">
+    The system is cloud-hosted, so a dropped connection normally stops work. For sites where the
+    link fails for <b>30&ndash;40 minutes at a time</b>, we are making the weighbridge keep
+    operating through the outage and sync automatically afterwards. This sheet states plainly
+    what works <b>today</b>, what is <b>being built</b>, and what will always need a connection.
+  </p>
+
+  <div class="legend">
+    <div><span class="pill p-live">Live now</span> <span>Working today</span></div>
+    <div><span class="pill p-build">In build</span> <span>Planned, not yet available</span></div>
+    <div><span class="pill p-net">Needs internet</span> <span>Requires the connection</span></div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">1</span>Works without internet &mdash; today</h2>
+  <table>
+    <thead>
+      <tr><th>Feature</th><th>Status</th><th>What actually happens</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="feat">The app stays open</td>
+        <td class="stat"><span class="pill p-live">Live now</span></td>
+        <td>The screen does not go blank. The page remains usable for the whole outage.</td>
+      </tr>
+      <tr>
+        <td class="feat">Live weight from the scale</td>
+        <td class="stat"><span class="pill p-live">Live now</span></td>
+        <td>
+          The screen reads the weighbridge indicator <b>directly on the plant PC</b>, bypassing the
+          internet entirely. The weight keeps moving and the <b>Capture</b> button still works.
+          An amber <span class="badge-inline">Reading scale directly &mdash; will sync later</span>
+          badge appears so the operator knows.
+          <br><i>Requires the updated scale agent &mdash; see the note below.</i>
+        </td>
+      </tr>
+      <tr>
+        <td class="feat">Recording a new trip</td>
+        <td class="stat"><span class="pill p-live">Live now</span></td>
+        <td>
+          Vehicle, customer, material and remarks are saved on the PC and upload automatically when
+          the line returns. The operator sees &ldquo;Saved offline &mdash; will sync when the
+          connection returns&rdquo;.
+        </td>
+      </tr>
+      <tr>
+        <td class="feat">Nothing is ever lost</td>
+        <td class="stat"><span class="pill p-live">Live now</span></td>
+        <td>
+          A trip saved offline is <b>never discarded</b>. If the server later refuses it, it is held
+          and flagged for a person to resolve &mdash; it is not silently deleted.
+        </td>
+      </tr>
+      <tr>
+        <td class="feat">Outage is visible</td>
+        <td class="stat"><span class="pill p-live">Live now</span></td>
+        <td>
+          The header shows <b>Offline</b> with a count of items waiting, and the system actively
+          checks the server rather than trusting Windows&rsquo; network icon &mdash; which reports
+          &ldquo;connected&rdquo; even when a 4G dongle has no working link.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="warn">
+    <b>One installation step is required</b>
+    Live weight during an outage needs the <b>updated scale agent</b> installed on the weighbridge
+    PC. Until that is done, the weight display will go blank when the connection drops, even though
+    everything else on this list works. This is a five-minute, one-time install.
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">2</span>Current limitations &mdash; please read</h2>
+  <table>
+    <tbody>
+      <tr>
+        <td class="feat">Numbers are issued on sync</td>
+        <td>
+          A trip recorded during an outage receives its <b>token and gate-pass number when the
+          connection returns</b>, not at the moment of weighing. A printed slip carrying the final
+          number is therefore not available during the outage. <i>(Being addressed &mdash; Section 3.)</i>
+        </td>
+      </tr>
+      <tr>
+        <td class="feat">Do not reload or close the browser</td>
+        <td>
+          Customer, material and vehicle lists are not yet stored on the PC. If the page is reloaded
+          or the browser closed mid-outage, those dropdowns will be empty and a new trip cannot be
+          started until the connection returns. <b>Leave the tab open.</b>
+          <i>(Being addressed &mdash; Section 3.)</i>
+        </td>
+      </tr>
+      <tr>
+        <td class="feat">Second weighment</td>
+        <td>
+          Closing out a truck that is already on the bridge still needs the connection today.
+          <i>(Being addressed &mdash; Section 3.)</i>
+        </td>
+      </tr>
+      <tr>
+        <td class="feat">Printing</td>
+        <td>Weight slips and invoices are produced by the server, so printing needs the connection.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="page-break">
+  <h2><span class="n">3</span>Being built &mdash; full offline operation</h2>
+  <p style="margin-top:0">
+    A small database is being added to the weighbridge PC itself. The plant then keeps working
+    normally through an outage, and everything uploads automatically once the line returns.
+    The office system remains the single source of record.
+  </p>
+  <table>
+    <thead>
+      <tr><th>Capability</th><th>Status</th><th>Result for the operator</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="feat">Gate pass at entry</td>
+        <td class="stat"><span class="pill p-build">In build</span></td>
+        <td>Issued offline with a real number the driver can be given.</td>
+      </tr>
+      <tr>
+        <td class="feat">Both weighments</td>
+        <td class="stat"><span class="pill p-build">In build</span></td>
+        <td>First and second weight captured offline; a truck can be fully completed.</td>
+      </tr>
+      <tr>
+        <td class="feat">Customer / material lists</td>
+        <td class="stat"><span class="pill p-build">In build</span></td>
+        <td>Held on the PC, so the form works even after a reload or a restart.</td>
+      </tr>
+      <tr>
+        <td class="feat">Printing the weight slip</td>
+        <td class="stat"><span class="pill p-build">In build</span></td>
+        <td>Printed on the spot with the real token and gate-pass number.</td>
+      </tr>
+      <tr>
+        <td class="feat">Cash invoice</td>
+        <td class="stat"><span class="pill p-build">In build</span></td>
+        <td>
+          A GST-format invoice for walk-in / cash customers, printed at the gate. Credit customers
+          are billed as usual from the office once the line returns.
+        </td>
+      </tr>
+      <tr>
+        <td class="feat">Automatic sync</td>
+        <td class="stat"><span class="pill p-build">In build</span></td>
+        <td>
+          Everything captured offline uploads in order when the connection returns, with no
+          duplicates and no manual re-entry.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2><span class="n">4</span>Always needs the internet</h2>
+  <table>
+    <tbody>
+      <tr>
+        <td class="feat">Signing in for the first time</td>
+        <td class="stat"><span class="pill p-net">Needs internet</span></td>
+        <td>A session already open continues to work through an outage.</td>
+      </tr>
+      <tr>
+        <td class="feat">Reports &amp; dashboards</td>
+        <td class="stat"><span class="pill p-net">Needs internet</span></td>
+        <td>Sales, stock, P&amp;L, GST reports and analytics are produced centrally.</td>
+      </tr>
+      <tr>
+        <td class="feat">Payments &amp; ledger</td>
+        <td class="stat"><span class="pill p-net">Needs internet</span></td>
+        <td>Receipts, outstanding and account statements.</td>
+      </tr>
+      <tr>
+        <td class="feat">Government systems</td>
+        <td class="stat"><span class="pill p-net">Needs internet</span></td>
+        <td>e-Invoice (IRN) and e-Way Bill are live calls to the GST portal.</td>
+      </tr>
+      <tr>
+        <td class="feat">Tally sync</td>
+        <td class="stat"><span class="pill p-net">Needs internet</span></td>
+        <td>Queued centrally and pushed to Tally automatically once reachable &mdash; nothing is lost.</td>
+      </tr>
+      <tr>
+        <td class="feat">Camera images to cloud</td>
+        <td class="stat"><span class="pill p-net">Needs internet</span></td>
+        <td>Live camera view on the plant network continues to work.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2><span class="n">5</span>What the operator does during an outage</h2>
+  <ol class="steps">
+    <li>Carry on weighing. The header shows <b>Offline</b>; the weight display shows the amber
+        <span class="badge-inline">Reading scale directly</span> badge.</li>
+    <li><b>Do not close or reload the browser tab</b> until the connection is back.</li>
+    <li>Record trips as normal. Each one is saved on the PC.</li>
+    <li>When the connection returns, saved trips upload on their own. The <b>Offline</b> indicator
+        clears once everything has synced.</li>
+    <li>If a red <b>&ldquo;needs attention&rdquo;</b> indicator appears, one saved item could not be
+        accepted &mdash; call the office. <b>It has not been lost.</b></li>
+  </ol>
+
+  <div class="note">
+    <b>A note on connectivity</b>
+    These measures make the plant resilient to an unreliable link, but they do not replace one.
+    A dual-WAN or 4G-failover router typically removes 30&ndash;40 minute outages altogether for a
+    few thousand rupees, and is the single most effective improvement available. We recommend it
+    alongside &mdash; not instead of &mdash; the work above.
+  </div>
+</section>
+
+<footer>
+  <span>WeighBridge Setu &mdash; Offline Capability</span>
+  <span>v1.0 &nbsp;·&nbsp; 19 July 2026</span>
+</footer>
+
+</div>
+</body>
+</html>
