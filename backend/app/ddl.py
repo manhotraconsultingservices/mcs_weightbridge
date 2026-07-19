@@ -1243,6 +1243,10 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE tokens   ADD COLUMN IF NOT EXISTS origin VARCHAR(10) NOT NULL DEFAULT 'online'",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_op_id UUID",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS origin VARCHAR(10) NOT NULL DEFAULT 'online'",
+        # Offline approve-then-number (P1 #175)
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS approved BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS approved_by UUID REFERENCES users(id)",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ",
         """
         CREATE TABLE IF NOT EXISTS sync_operations (
             op_id         UUID PRIMARY KEY,
