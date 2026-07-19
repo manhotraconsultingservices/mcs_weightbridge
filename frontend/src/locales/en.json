@@ -613,6 +613,7 @@
     "typeWeightByHandBtn": "Type Weight by Hand",
     "stable": "✓ STABLE — READY TO CAPTURE",
     "waitStable": "⏳ Wait for truck to stop moving…",
+    "localBridge": "Reading scale directly — will sync later",
     "useLiveScale": "Use live scale instead",
     "typeInstead": "Type weight by hand instead",
     "saving": "Saving…",

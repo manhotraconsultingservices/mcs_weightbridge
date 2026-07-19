@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import api from '@/services/api';
 import { useWeight } from '@/hooks/useWeight';
+import LocalScaleBadge from '@/components/LocalScaleBadge';
 import { fmtKg, displayToKg, weightUnitLabel, weightUnit } from '@/lib/weightUnit';
 import type { User, Party, Product, Token, TokenListResponse } from '@/types';
 
@@ -924,7 +925,7 @@ interface WeighingScreenProps {
 
 function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenProps) {
   const { t } = useTranslation();
-  const { reading } = useWeight();
+  const { reading, isLocalSource } = useWeight();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   // Manual entry fallback — critical when the bridge is offline. Operator
@@ -1088,6 +1089,11 @@ function WeighingScreen({ token, onParked, onDone, onCancel }: WeighingScreenPro
                 <span className="text-amber-700 animate-pulse">{t('kiosk.waitStable')}</span>
               )}
             </div>
+            {isLocalSource && (
+              <div className="mt-4">
+                <LocalScaleBadge size="lg" label={t('kiosk.localBridge')} />
+              </div>
+            )}
           </>
         )}
       </div>

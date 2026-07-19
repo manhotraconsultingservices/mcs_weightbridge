@@ -1,5 +1,6 @@
 import { useWeight } from '@/hooks/useWeight';
 import { Badge } from '@/components/ui/badge';
+import LocalScaleBadge from '@/components/LocalScaleBadge';
 import { cn } from '@/lib/utils';
 
 interface WeightDisplayProps {
@@ -8,7 +9,7 @@ interface WeightDisplayProps {
 }
 
 export default function WeightDisplay({ onCapture, className }: WeightDisplayProps) {
-  const { reading, formattedMT } = useWeight();
+  const { reading, formattedMT, isLocalSource } = useWeight();
 
   return (
     <div className={cn('rounded-xl border-2 bg-card p-4 text-center', className,
@@ -21,6 +22,7 @@ export default function WeightDisplay({ onCapture, className }: WeightDisplayPro
         ) : (
           <Badge variant="outline" className="border-red-400 text-red-500 text-[10px]">OFFLINE</Badge>
         )}
+        {isLocalSource && <LocalScaleBadge />}
       </div>
 
       <div className={cn(

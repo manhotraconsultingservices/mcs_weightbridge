@@ -29,6 +29,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger
 } from '@/components/ui/select';
 import { useWeight } from '@/hooks/useWeight';
+import LocalScaleBadge from '@/components/LocalScaleBadge';
 import { useAuth, moduleEnabled, getTenantIndustry } from '@/hooks/useAuth';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import api from '@/services/api';
@@ -85,7 +86,7 @@ const canWeigh = (t: Token) =>
 // ------------------------------------------------------------------ //
 function ScaleStatus() {
   const { t } = useTranslation();
-  const { reading, formattedMT } = useWeight();
+  const { reading, formattedMT, isLocalSource } = useWeight();
   return (
     <div className={cn(
       'flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition-colors',
@@ -100,6 +101,7 @@ function ScaleStatus() {
           ? <span className="flex items-center gap-1 text-xs text-green-600"><Wifi className="h-3 w-3" />{t('token.scaleLive')}</span>
           : <span className="flex items-center gap-1 text-xs text-red-500"><WifiOff className="h-3 w-3" />{t('token.scaleOffline')}</span>
         }
+        {isLocalSource && <LocalScaleBadge />}
       </div>
       <div className="text-right">
         <span className={cn(
@@ -1143,7 +1145,7 @@ function mtFromKg(kg: number) {
 
 function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: WeightDialogProps) {
   const { t } = useTranslation();
-  const { reading, formattedMT } = useWeight();
+  const { reading, formattedMT, isLocalSource } = useWeight();
   const camerasEnabled = moduleEnabled('cameras');
   const [manualMode, setManualMode] = useState(false);
   const [manualWeight, setManualWeight] = useState('');
@@ -1316,6 +1318,7 @@ function WeightCaptureDialog({ token, weightStage, open, onClose, onDone }: Weig
                   ? <Badge variant="outline" className="border-green-500 text-green-600 text-[10px]">{t('token.liveStatus')}</Badge>
                   : <Badge variant="outline" className="border-red-400 text-red-500 text-[10px]">{t('token.offlineStatus')}</Badge>
                 }
+                {isLocalSource && <LocalScaleBadge />}
               </div>
               <div className={cn(
                 'font-mono text-5xl font-black tabular-nums',
