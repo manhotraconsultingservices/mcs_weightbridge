@@ -487,7 +487,10 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     };
     try {
       if (!navigator.onLine) throw new Error('offline');
-      const { data } = await api.post<Token>('/api/v1/tokens', tokenPayload);
+      // Short timeout: on a black-holed link (the tenant's real symptom) axios
+      // would otherwise hang on the OS default (~2 min) with the spinner stuck
+      // before the token could be queued offline.
+      const { data } = await api.post<Token>('/api/v1/tokens', tokenPayload, { timeout: 10_000 });
       onCreated(data);
       resetForm();
     } catch (e: unknown) {
@@ -498,7 +501,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       };
       const reached = err.response;
       if (!navigator.onLine || !reached) {
-        enqueueToken('/tokens', tokenPayload, tokenPayload.vehicle_no);
+        enqueueToken('/api/v1/tokens', tokenPayload, tokenPayload.vehicle_no);
         toast.success(`Saved offline — ${tokenPayload.vehicle_no} will sync when the connection returns`);
         resetForm();
       } else {

@@ -1187,6 +1187,52 @@ def get_column_migrations() -> list[str]:
         """,
         "CREATE INDEX IF NOT EXISTS ix_gate_cam_events_company ON gate_camera_events(company_id, detected_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_gate_cam_events_pass ON gate_camera_events(gate_pass_id)",
+
+        # ── Document-number uniqueness (offline-ops prerequisite) ─────────────
+        # Until now NOTHING enforced these at the DB level: invoice numbers relied
+        # on the row-locked NumberSequence, and token_no on a read-then-write
+        # collision probe (tokens.py::_next_token_no) which is inherently racy.
+        # That is tolerable while the server is the only writer, but it is the
+        # only atomic dedupe available once an offline terminal can replay a
+        # queued operation, so it lands ahead of that work.
+        #
+        # These are guarded: _apply_all_ddl runs each statement in its own
+        # transaction, so if a tenant already holds legacy duplicates the index
+        # is skipped and logged rather than aborting the whole DDL pass.
+        # Pre-flight before deploying (per tenant DB):
+        #   SELECT company_id, branch_id, invoice_no, COUNT(*) FROM invoices
+        #    WHERE invoice_no IS NOT NULL
+        #    GROUP BY 1,2,3 HAVING COUNT(*) > 1;
+        #   SELECT company_id, token_date, token_no, COUNT(*) FROM tokens
+        #    WHERE token_no IS NOT NULL
+        #    GROUP BY 1,2,3 HAVING COUNT(*) > 1;
+        #
+        # NOTE (scoped to branch deliberately): _next_invoice_no keeps a SEPARATE
+        # sequence per branch_id but does NOT vary the prefix, so two branches
+        # legitimately both mint 'INV/25-26/0001' today. A company-wide unique
+        # index would therefore break finalisation on the second branch. Scoping
+        # to branch still gives full replay-dedupe (a replay targets one branch)
+        # without changing existing behaviour. The cross-branch duplicate is a
+        # separate pre-existing concern — GST Rule 46(b) wants a unique series —
+        # and is fixed by giving each branch its own prefix, the same mechanism
+        # used for offline terminal prefixes.
+        # COALESCE because Postgres treats NULLs as distinct in a unique index,
+        # so the very common default branch (branch_id IS NULL) would otherwise
+        # not be constrained at all.
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_invoices_no_per_branch
+            ON invoices (
+                company_id,
+                COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                invoice_no
+            )
+            WHERE invoice_no IS NOT NULL
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_tokens_no_per_day
+            ON tokens (company_id, token_date, token_no)
+            WHERE token_no IS NOT NULL
+        """,
     ]
 
 
