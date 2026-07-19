@@ -440,7 +440,7 @@ def setup_wizard() -> None:
     print("=" * 60 + "\n")
     cfg = copy.deepcopy(DEFAULT_CONFIG)
     cfg["cloud_url"]   = input(f"Cloud URL [{cfg['cloud_url']}]: ").strip() or cfg["cloud_url"]
-    cfg["tenant_slug"] = input("Tenant slug (e.g. megna-trading): ").strip()
+    cfg["tenant_slug"] = input("Tenant slug (e.g. your-company-name): ").strip()
     cfg["agent_key"]   = input("Agent API key (from the Platform console): ").strip()
     cfg["tally_host"]  = input("Local Tally host [localhost]: ").strip() or "localhost"
     try:

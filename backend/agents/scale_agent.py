@@ -1140,7 +1140,7 @@ def setup_wizard():
     cfg = copy.deepcopy(DEFAULT_CONFIG)
 
     cfg["cloud_url"]    = input(f"Cloud URL [{cfg['cloud_url']}]: ").strip() or cfg["cloud_url"]
-    cfg["tenant_slug"]  = input("Tenant slug (e.g. sss-stone-crusher): ").strip()
+    cfg["tenant_slug"]  = input("Tenant slug (e.g. your-company-name): ").strip()
     cfg["agent_key"]    = input("Agent API key (from platform admin panel): ").strip()
 
     print()
