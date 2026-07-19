@@ -329,13 +329,33 @@ async def get_token(token_id: str, db: AsyncSession = Depends(get_db)):
     return d
 
 
+_APPROVE_ROLES = ("admin", "accountant", "store_manager")
+
+
+class ApproveBody(BaseModel):
+    approver_user_id: Optional[str] = None
+    approver_role: Optional[str] = None
+
+
 @router.post("/invoices/approve-token/{token_id}")
-async def approve_token_invoice(token_id: str, db: AsyncSession = Depends(get_db)):
-    """Offline invoice approval (P1 #175): a manager reviews a completed token's
+async def approve_token_invoice(
+    token_id: str,
+    body: Optional[ApproveBody] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Offline invoice approval (P1 #175): a MANAGER reviews a completed token's
     amount and approves it. The edge does not hold the invoice — it emits an
     intent keyed by token_id; at sync the second-weight replay auto-creates the
     draft invoice on the cloud and this intent approves + finalises it, so the
-    legal GST number is assigned by the SERVER (never minted offline)."""
+    legal GST number is assigned by the SERVER (never minted offline).
+
+    Governance (closes the offline self-approval gap): the caller's identity +
+    role ride in the intent. This route fails fast if the role isn't a manager
+    (advisory — the frontend already hides the button); the CLOUD re-verifies the
+    role at sync and stamps approved_by to this real user (never 'system')."""
+    role = body.approver_role if body else None
+    if role is not None and role not in _APPROVE_ROLES:
+        raise HTTPException(403, "Only a manager (admin / accountant / store manager) can approve bills")
     t = await _load_token(db, token_id)
     if t.status != "COMPLETED":
         raise HTTPException(409, "token is not completed — cannot approve its invoice yet")
@@ -351,7 +371,9 @@ async def approve_token_invoice(token_id: str, db: AsyncSession = Depends(get_db
     op = await intents.add_intent(
         db, op_type="invoice.approve", method="POST",
         url=f"/api/v1/invoices/approve-token/{token_id}", entity_id=token_id,
-        depends_on=sw_op, payload={"token_id": token_id},
+        depends_on=sw_op,
+        payload={"token_id": token_id,
+                 "approver_user_id": body.approver_user_id if body else None},
     )
     await db.commit()
     return {"ok": True, "op_id": op}
