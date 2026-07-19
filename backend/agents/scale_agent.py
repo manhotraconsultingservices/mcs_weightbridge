@@ -31,8 +31,10 @@ import re
 import sys
 import threading
 import time
+from collections import deque
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 # ── Base directory ────────────────────────────────────────────────────────────
 # When frozen (PyInstaller/Nuitka .exe), __file__ resolves to the TEMPORARY
@@ -88,6 +90,21 @@ ASCII_QUALITY_PEEK   = 0.70        # Discovery /peek "looks good" threshold
 
 MAX_JUMP_KG          = 5000.0      # >5 MT change in <JUMP_WINDOW_SEC is physically impossible
 JUMP_WINDOW_SEC      = 2.0
+
+# ── Stability detection ───────────────────────────────────────────────────────
+# Mirrors app/integrations/serial_port/manager.py::_make_reading so a LOCAL
+# reading matches what the cloud would have reported for the same frames.
+# This is not cosmetic: the weighment UI gates its capture button on is_stable
+# (TokenPageV1 `canCapture`), and the agent has never emitted that field — so
+# without this an operator on a dropped link sees a live weight but CANNOT
+# capture it, which is the whole point of working offline.
+DEFAULT_STABILITY_READINGS     = 5      # window size — matches the server default
+DEFAULT_STABILITY_TOLERANCE_KG = 20.0   # max spread across the window, in kg
+STABILITY_GAP_RESET_SEC        = 2.0    # a gap this long invalidates the window
+
+# Reported on /status. The cloud refuses to issue offline number leases to an
+# out-of-date agent, so this has to be truthful and bumped on contract changes.
+AGENT_VERSION = "2.1.0"
 
 SCALE_RETRY_SEC          = 30      # wait after "scale not found" before re-scanning
 MAX_CONSECUTIVE_FAILURES = 5       # after N port failures: clear saved config + full re-scan
@@ -415,6 +432,51 @@ def _try_reset_ch340(port: str) -> bool:
 
 # ── Scale Reader ──────────────────────────────────────────────────────────────
 
+def _allowed_origins(cfg: dict) -> set[str]:
+    """Origins permitted to read /status cross-origin.
+
+    Derived from config (cloud_url + tenant_slug) rather than hard-coded, so a
+    different domain or a self-hosted deployment needs no code change. Extra
+    origins — a LAN-served UI, local dev — come from `allowed_origins` in the
+    config file.
+
+    A wildcard is deliberately NOT used. This server listens on the operator's
+    own machine, so `*` would let ANY website they happen to visit read the live
+    scale weight and, via /ports, enumerate their serial hardware.
+    """
+    origins: set[str] = set()
+    cloud_url = str(cfg.get("cloud_url") or "").strip()
+    slug = str(cfg.get("tenant_slug") or "").strip().lower()
+
+    host = ""
+    if cloud_url:
+        parts = urlsplit(cloud_url if "//" in cloud_url else f"https://{cloud_url}")
+        host = (parts.hostname or "").lower()
+        if host:
+            origins.add(f"https://{host}")
+
+    # Reduce to the registrable base so the tenant subdomain, apex and www all
+    # work regardless of which form the operator happened to configure.
+    base = host
+    for prefix in ((f"{slug}." if slug else None), "www."):
+        if prefix and base.startswith(prefix):
+            base = base[len(prefix):]
+            break
+    if not base:
+        base = PRODUCT_DOMAIN
+    if base:
+        origins.add(f"https://{base}")
+        origins.add(f"https://www.{base}")
+        if slug:
+            origins.add(f"https://{slug}.{base}")
+
+    for extra in (cfg.get("allowed_origins") or []):
+        extra = str(extra).strip().rstrip("/")
+        if extra:
+            origins.add(extra)
+    return {o for o in origins if "://" in o}
+
+
 class ScaleReader:
     """Reads weight from serial port and pushes to cloud.
 
@@ -435,6 +497,27 @@ class ScaleReader:
         self.error_count: int = 0
         self._thread: threading.Thread | None = None
         self._last_push_time: float = 0.0
+        # Stability window — config-overridable, defaults match the server.
+        # Parsed defensively: this runs on the client's weighbridge PC, and a
+        # typo'd value in the JSON must not stop the agent from reading weight.
+        try:
+            self.stability_readings = max(
+                int(config.get("stability_readings", DEFAULT_STABILITY_READINGS)), 2)
+        except (TypeError, ValueError):
+            log.warning("Invalid stability_readings in config — using %d", DEFAULT_STABILITY_READINGS)
+            self.stability_readings = DEFAULT_STABILITY_READINGS
+        try:
+            self.stability_tolerance_kg = float(
+                config.get("stability_tolerance_kg", DEFAULT_STABILITY_TOLERANCE_KG))
+        except (TypeError, ValueError):
+            log.warning("Invalid stability_tolerance_kg in config — using %.1f",
+                        DEFAULT_STABILITY_TOLERANCE_KG)
+            self.stability_tolerance_kg = DEFAULT_STABILITY_TOLERANCE_KG
+        self._recent: deque[float] = deque(maxlen=self.stability_readings)
+        self._stable_since: float | None = None
+        self._last_note_time: float = 0.0
+        self.is_stable: bool = False
+        self.stable_duration_sec: float = 0.0
 
     def start(self):
         self.running = True
@@ -445,6 +528,40 @@ class ScaleReader:
         self.running = False
         if self._thread:
             self._thread.join(timeout=5)
+
+    def _note_weight(self, weight: float) -> None:
+        """Feed one parsed weight into the stability window.
+
+        Called for EVERY parsed frame, deliberately NOT folded into the push
+        throttle below. The server evaluates stability per frame; sampling only
+        the throttled pushes would stretch the effective window and report
+        "stable" late — or never, on a scale whose reading drifts by under the
+        1 kg push threshold while a truck settles.
+        """
+        now = time.time()
+        # Any gap in frames (disconnect, port switch, re-scan) invalidates the
+        # window: without this a reconnect could inherit a stale "stable"
+        # verdict from readings taken minutes ago and let the operator capture
+        # a weight the scale is no longer reporting.
+        if self._last_note_time and (now - self._last_note_time) > STABILITY_GAP_RESET_SEC:
+            self._recent.clear()
+            self._stable_since = None
+        self._last_note_time = now
+
+        self._recent.append(weight)
+        is_stable = False
+        stable_duration = 0.0
+        if len(self._recent) >= 2:
+            if (max(self._recent) - min(self._recent)) <= self.stability_tolerance_kg:
+                if self._stable_since is None:
+                    self._stable_since = now
+                stable_duration = now - self._stable_since
+                # Only a FULL window counts as stable — same rule as the server.
+                is_stable = len(self._recent) == self._recent.maxlen
+            else:
+                self._stable_since = None
+        self.is_stable = is_stable
+        self.stable_duration_sec = round(stable_duration, 1)
 
     def _resolve_serial_cfg(self) -> dict | None:
         """Return serial config.  If already saved in config file, use it.
@@ -656,6 +773,10 @@ class ScaleReader:
                         if calibration:
                             weight += calibration
 
+                        # Stability is evaluated per frame, before the push
+                        # throttle (see _note_weight).
+                        self._note_weight(weight)
+
                         if (abs(weight - self.last_weight) >= 1.0 or
                                 now - self._last_push_time >= push_interval):
                             self.last_weight    = weight
@@ -681,6 +802,7 @@ class ScaleReader:
                             last_parse_time = time.time()   # #4: producing weights — not stalled
                             if calibration:
                                 weight += calibration
+                            self._note_weight(weight)
                             now = time.time()
                             if (abs(weight - self.last_weight) >= 1.0 or
                                     now - self._last_push_time >= push_interval):
@@ -843,22 +965,68 @@ class StatusServer:
             r = reader
             return {
                 "service": "scale_agent_v2", "status": "running",
+                "agent_version": AGENT_VERSION,
                 "timestamp": datetime.now().isoformat(),
                 "scale_connected": r.connected, "detected_port": r.detected_port,
                 "detected_config": r.detected_config, "cloud_online": r.cloud_online,
                 "last_weight_kg": r.last_weight, "last_raw_frame": r.last_raw_frame,
+                # Stability: the browser needs these to enable the capture
+                # button while running against this agent during an outage.
+                # Forced false when the port is down so a stale window can
+                # never present a disconnected scale as ready to capture.
+                "is_stable": bool(r.connected and r.is_stable),
+                "stable_duration_sec": r.stable_duration_sec if r.connected else 0.0,
+                "stability_readings": r.stability_readings,
+                "stability_tolerance_kg": r.stability_tolerance_kg,
                 "calibration_offset_kg": r.cfg.get("calibration_offset_kg", 0.0),
                 "push_count": r.push_count, "error_count": r.error_count,
             }
 
+        allowed_origins = _allowed_origins(reader.cfg)
+        log.info("Status CORS allowlist: %s", ", ".join(sorted(allowed_origins)) or "(none)")
+
         class Handler(BaseHTTPRequestHandler):
-            def _send(self, code, body, ctype):
+            def _cors_headers(self) -> bool:
+                """Echo an allowlisted Origin. Applied to /status ONLY."""
+                origin = (self.headers.get("Origin") or "").strip().rstrip("/")
+                if origin and origin in allowed_origins:
+                    self.send_header("Access-Control-Allow-Origin", origin)
+                    self.send_header("Vary", "Origin")
+                    # Chrome's Private Network Access gate for a public HTTPS
+                    # page reaching a loopback address. Verified on Chrome 148
+                    # that localhost is not currently gated by PNA, but the
+                    # header is sent so a future rollout cannot silently break
+                    # offline weighing.
+                    self.send_header("Access-Control-Allow-Private-Network", "true")
+                    return True
+                return False
+
+            def _send(self, code, body, ctype, cors=False):
                 data = body.encode() if isinstance(body, str) else body
                 self.send_response(code)
                 self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(data)))
+                if cors:
+                    self._cors_headers()
                 self.end_headers()
                 self.wfile.write(data)
+
+            def do_OPTIONS(self):
+                # Preflight. Only /status is cross-origin readable — /ports,
+                # /rescan and /peek stay same-origin because they expose or
+                # mutate serial hardware state.
+                if urlparse(self.path).path != "/status":
+                    self.send_response(404)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                self.send_response(204)
+                self._cors_headers()
+                self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "content-type")
+                self.send_header("Access-Control-Max-Age", "600")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
 
             def do_GET(self):
                 u = urlparse(self.path)
@@ -866,7 +1034,7 @@ class StatusServer:
                 if p in ("/", "/index.html", "/discover"):
                     self._send(200, DISCOVERY_HTML, "text/html; charset=utf-8")
                 elif p == "/status":
-                    self._send(200, json.dumps(_status_dict(), indent=2), "application/json")
+                    self._send(200, json.dumps(_status_dict(), indent=2), "application/json", cors=True)
                 elif p == "/ports":
                     self._send(200, json.dumps(_list_ports(reader)), "application/json")
                 elif p == "/rescan":
