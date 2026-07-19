@@ -940,6 +940,34 @@ async def apply_advance(
     return await _load_invoice(db, invoice_id)
 
 
+@router.post("/{invoice_id}/approve", response_model=InvoiceResponse)
+async def approve_invoice(
+    invoice_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "accountant", "store_manager")),
+):
+    """Approve an invoice's amount and let the SERVER assign its number (P1 #175).
+
+    The offline flow is 'approve now, number at sync': a manager reviews and
+    approves the amount during an outage, and when the intent replays the server
+    finalises the draft — so the legal GST number is ALWAYS server-assigned, never
+    minted offline (zero numbering/compliance surface). Marks the invoice approved
+    and, if still a draft, finalises it (assigning invoice_no). Idempotent —
+    approving an already-final invoice just stamps the flag.
+    """
+    inv = await _load_invoice(db, invoice_id)
+    if not inv.approved:
+        inv.approved = True
+        inv.approved_by = current_user.id
+        inv.approved_at = datetime.now(timezone.utc)
+    if inv.status == "draft":
+        # finalise_invoice commits (persisting the approved flag on the same row).
+        return await finalise_invoice(invoice_id, background_tasks, db, current_user)
+    await db.commit()
+    return await _load_invoice(db, invoice_id)
+
+
 @router.post("/{invoice_id}/finalise", response_model=InvoiceResponse)
 async def finalise_invoice(
     invoice_id: uuid.UUID,

@@ -93,6 +93,14 @@ class Invoice(Base):
     status: Mapped[str] = mapped_column(String(15), default="draft")  # draft, final, cancelled
     notes: Mapped[str | None] = mapped_column(Text)
 
+    # Offline approve-then-number (P1 #175). A manager APPROVES the amount during
+    # an outage; the legal GST number is still assigned by the SERVER at sync
+    # (finalise). approved=True means "reviewed, ready to number" — set offline
+    # and replayed as an intent keyed by token_id.
+    approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Tally sync
     tally_synced: Mapped[bool] = mapped_column(Boolean, default=False)
     tally_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
