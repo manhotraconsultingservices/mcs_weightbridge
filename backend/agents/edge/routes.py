@@ -47,22 +47,30 @@ def _dec(v: Any) -> Optional[Decimal]:
 
 
 async def _company_and_fy(db: AsyncSession) -> tuple[Company, FinancialYear]:
-    """The edge mirror holds exactly one company; resolve it + the active FY."""
-    co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
-    if co is None:
-        raise HTTPException(503, "Master data not yet mirrored to this terminal")
+    """Resolve the operating company + financial year from the mirror.
+
+    A real tenant DB holds exactly one company, but rather than trust row order
+    we anchor on the ACTIVE financial year (the year the operator is booking
+    into) and take its company — robust even if the mirror ever carried a stray
+    second company row. Falls back to the most-recent FY, then any company.
+    """
     fy = (await db.execute(
-        select(FinancialYear).where(and_(
-            FinancialYear.company_id == co.id, FinancialYear.is_active == True  # noqa: E712
-        )).limit(1)
+        select(FinancialYear).where(FinancialYear.is_active == True)  # noqa: E712
+        .order_by(FinancialYear.end_date.desc()).limit(1)
     )).scalar_one_or_none()
     if fy is None:
         fy = (await db.execute(
-            select(FinancialYear).where(FinancialYear.company_id == co.id)
-            .order_by(FinancialYear.end_date.desc()).limit(1)
+            select(FinancialYear).order_by(FinancialYear.end_date.desc()).limit(1)
         )).scalar_one_or_none()
     if fy is None:
         raise HTTPException(503, "No financial year mirrored to this terminal")
+    co = (await db.execute(
+        select(Company).where(Company.id == fy.company_id)
+    )).scalar_one_or_none()
+    if co is None:
+        co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
+    if co is None:
+        raise HTTPException(503, "Master data not yet mirrored to this terminal")
     return co, fy
 
 

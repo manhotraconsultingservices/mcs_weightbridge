@@ -7,25 +7,46 @@ offline unlock harden this further in a later step (auth across an outage).
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from agents.edge import routes
+from agents.edge import routes, sync
 from agents.edge.config import allowed_origins
 from agents.edge.db import init_db
 
 EDGE_VERSION = "0.1.0"
 
+log = logging.getLogger("edge.app")
+
 
 def create_app(cfg: dict) -> FastAPI:
     routes.set_terminal_tag(cfg.get("terminal_tag", "B1"))
+    sync_interval = float(cfg.get("sync_interval_sec", 30))
+    # Only run the cloud sync loop when we know which tenant to sync to.
+    sync_enabled = bool(cfg.get("cloud_url") and cfg.get("tenant_slug") and cfg.get("agent_key"))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await init_db(cfg["db_path"])
-        yield
+        stop = asyncio.Event()
+        task = None
+        if sync_enabled:
+            task = asyncio.create_task(sync.run_loop(cfg, stop, interval=sync_interval))
+        else:
+            log.warning("edge sync loop NOT started — cloud_url/tenant_slug/agent_key missing")
+        try:
+            yield
+        finally:
+            stop.set()
+            if task is not None:
+                try:
+                    await asyncio.wait_for(task, timeout=5)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    task.cancel()
 
     app = FastAPI(title="Weighbridge Edge Agent", version=EDGE_VERSION, lifespan=lifespan)
 
@@ -47,7 +68,24 @@ def create_app(cfg: dict) -> FastAPI:
             "edge_version": EDGE_VERSION,
             "tenant_slug": cfg.get("tenant_slug"),
             "mode": "offline-capable",
+            "sync_enabled": sync_enabled,
         }
+
+    @app.get("/api/v1/sync/status")
+    async def sync_status():
+        """Spool depth by status — powers the operator's 'N pending to sync' pill."""
+        counts = await sync.pending_summary()
+        pending = sum(v for k, v in counts.items() if k != "done")
+        return {"spool": counts, "pending": pending,
+                "needs_review": counts.get("needs_review", 0),
+                "needs_auth": counts.get("needs_auth", 0)}
+
+    @app.post("/api/v1/sync/now")
+    async def sync_now():
+        """Force one mirror+replay cycle (used by a manual 'Sync now' action)."""
+        if not sync_enabled:
+            return {"online": False, "error": "sync not configured"}
+        return await sync.sync_once(cfg)
 
     app.include_router(routes.router)
     return app
