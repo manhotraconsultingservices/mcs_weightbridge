@@ -71,6 +71,11 @@ class Token(Base):
     # Owner-defined custom attributes, keyed by custom_field_definitions.field_key
     # (e.g. {"moisture_pct": 13.5, "quality": "A"}). Definitions drive the UI/slip.
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # Offline replay (P1 #171): the client-generated op id that produced this
+    # row (deduped via ux_tokens_client_op) + where it originated. NULL /
+    # 'online' for normal cloud writes; set when a token was captured offline.
+    client_op_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    origin: Mapped[str] = mapped_column(String(10), default="online")
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

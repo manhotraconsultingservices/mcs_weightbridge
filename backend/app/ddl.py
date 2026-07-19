@@ -1233,6 +1233,40 @@ def get_column_migrations() -> list[str]:
             ON tokens (company_id, token_date, token_no)
             WHERE token_no IS NOT NULL
         """,
+
+        # ── Offline replay: idempotency ledger + client_op_id (P1 #171) ───────
+        # Every mutation the edge captures carries a client-generated op id.
+        # sync_operations is the ledger; the partial unique indexes on the
+        # business tables are the correctness backstop so a racing replay can
+        # never create a second row.
+        "ALTER TABLE tokens   ADD COLUMN IF NOT EXISTS client_op_id UUID",
+        "ALTER TABLE tokens   ADD COLUMN IF NOT EXISTS origin VARCHAR(10) NOT NULL DEFAULT 'online'",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_op_id UUID",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS origin VARCHAR(10) NOT NULL DEFAULT 'online'",
+        """
+        CREATE TABLE IF NOT EXISTS sync_operations (
+            op_id         UUID PRIMARY KEY,
+            company_id    UUID NOT NULL REFERENCES companies(id),
+            user_id       UUID REFERENCES users(id),
+            op_type       VARCHAR(40) NOT NULL,
+            entity_type   VARCHAR(20),
+            entity_id     UUID,
+            assigned_json JSONB,
+            origin        VARCHAR(10) NOT NULL DEFAULT 'online',
+            status        VARCHAR(16) NOT NULL DEFAULT 'applied',
+            error         TEXT,
+            created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_sync_ops_company ON sync_operations(company_id, created_at DESC)",
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_tokens_client_op
+            ON tokens (company_id, client_op_id) WHERE client_op_id IS NOT NULL
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_invoices_client_op
+            ON invoices (company_id, client_op_id) WHERE client_op_id IS NOT NULL
+        """,
     ]
 
 

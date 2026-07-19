@@ -17,7 +17,9 @@ import random
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
+from sqlalchemy.exc import IntegrityError
+from app.services import idempotency
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, text
@@ -373,11 +375,22 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
 @router.post("", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def create_token(
     payload: TokenCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     branch_id=Depends(get_current_branch_id),
 ):
     company, fy = await _get_company_and_fy(db)
+
+    # Idempotency (P1 #171): if this client op already applied, return the stored
+    # token WITHOUT re-running any side effects (no gate-pass number burned, no
+    # duplicate guard tripped). Sent online too, so this runs continuously.
+    op_id = idempotency.get_op_id(request)
+    origin = idempotency.get_origin(request)
+    if op_id:
+        prior = await idempotency.find_applied(db, company.id, op_id)
+        if prior and prior.entity_id:
+            return await _load_token(db, uuid.UUID(prior.entity_id))
 
     # Per-unit billing guard: a weighbridge (weighed) truck can only bill in a
     # weight unit — a volume unit (CFT/CBM/Brass) needs a volume-measured token.
@@ -442,6 +455,11 @@ async def create_token(
         resolved_gate_pass_no = gp.gate_pass_no
 
     token = Token(
+        # A replayed offline token keeps the id it was given locally, so its
+        # weighments (which target /tokens/{id}) need no id substitution.
+        id=(payload.id if (op_id and payload.id) else uuid.uuid4()),
+        client_op_id=op_id,
+        origin=origin if op_id else "online",
         company_id=company.id,
         branch_id=branch_id,
         fy_id=fy.id,
@@ -469,13 +487,31 @@ async def create_token(
         status="OPEN",
     )
     db.add(token)
-    await db.flush()  # get token.id before commit
+    try:
+        await db.flush()  # get token.id before commit; ux_tokens_client_op guards races
+    except IntegrityError:
+        # A concurrent replay of the same op won the race — return its token.
+        await db.rollback()
+        if op_id:
+            prior = await idempotency.find_applied(db, company.id, op_id)
+            if prior and prior.entity_id:
+                return await _load_token(db, uuid.UUID(prior.entity_id))
+        raise
 
     # If linked to a gate pass record, stamp token_id on it in the same transaction
     if payload.gate_pass_id:
         await db.execute(
             text("UPDATE gate_passes SET token_id = :tid, updated_at = NOW() WHERE id = :id"),
             {"tid": str(token.id), "id": str(payload.gate_pass_id)},
+        )
+
+    # Idempotency ledger, in the SAME transaction as the token row.
+    if op_id:
+        await idempotency.record_operation(
+            db, company_id=company.id, op_id=op_id, op_type="token.create",
+            entity_type="token", entity_id=token.id,
+            assigned={"id": str(token.id), "gate_pass_no": token.gate_pass_no},
+            user_id=current_user.id, origin=origin,
         )
 
     await db.commit()

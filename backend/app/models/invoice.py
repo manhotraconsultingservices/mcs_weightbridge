@@ -111,6 +111,12 @@ class Invoice(Base):
     einvoice_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     irn_cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Offline replay (P1 #171): the client op id that produced this invoice
+    # (deduped via ux_invoices_client_op) + origin. Invoice NUMBERS are never
+    # minted offline — the server assigns them at sync — so these only tag which
+    # invoices came in from an edge terminal.
+    client_op_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    origin: Mapped[str] = mapped_column(String(10), default="online")
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

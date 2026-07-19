@@ -26,6 +26,12 @@ class TokenCreate(BaseModel):
     transit_pass_id: Optional[UUID] = None   # links purchase token to its transit/royalty pass
     vehicle_rent: Optional[Decimal] = None   # payment to truck owner per trip
     custom_fields: Optional[dict[str, Any]] = None   # owner-defined attributes (moisture, quality…)
+    # Offline replay (P1 #171): when an edge terminal replays a token it captured
+    # offline, it sends the id it already assigned locally so the token has the
+    # SAME id on both sides (no dependency substitution for the weighments).
+    # Ignored unless X-Client-Op-Id is present. Online creates omit both.
+    id: Optional[UUID] = None
+    client_op_id: Optional[UUID] = None
 
 
 class TokenFirstWeight(BaseModel):
