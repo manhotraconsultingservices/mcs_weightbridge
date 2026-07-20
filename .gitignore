@@ -178,3 +178,24 @@ nssm.exe
 
 # Local-only reference materials (sales/marketing, demo, test scripts) — never pushed
 /Reference Documents/
+
+# ── Deployment secrets & local machine config (NEVER commit) ────────────────
+# These hold LIVE credentials (VPS host/user/keys, agent API tokens). They were
+# untracked but NOT ignored, so a single `git add -A` would have published them.
+# Globs rather than exact names: one such file was written with a private-use
+# character in its name (U+F03A), which no literal entry would reliably match.
+vps_config.txt
+*vps_config*
+*_token.txt
+*token.txt
+*.token
+secrets.dpapi
+
+# SSH / deploy keys — this repo deploys to a VPS over SSH
+id_rsa
+id_rsa.*
+*.pem
+*.ppk
+
+# Agent build scratch (PyInstaller work dir; dist/ already covered above)
+backend/agents/build/
