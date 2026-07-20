@@ -193,8 +193,19 @@ def _parse_tally_response(xml_text: str) -> tuple[bool, str]:
     except ET.ParseError:
         # Tally sometimes returns non-XML on success (older versions)
         # Use tag form to avoid matching error messages that mention "created"
-        if "<CREATED>" in xml_text:
+        low = (xml_text or "").lower()
+        if "<created>" in low:
             return True, "Voucher created in Tally"
+        # Tally's HTTP status / license / gateway banner (HTML) is NOT an import
+        # confirmation — it's what Tally returns when NO company is open, or when
+        # the request never reached the import handler. Reporting success here would
+        # silently mark an un-imported voucher as tally_synced (permanent invoice
+        # loss). A false-negative is safe (the GUID-keyed retry self-heals).
+        if ("license server" in low or "gateway version" in low
+                or "<!doctype html" in low or "<html" in low):
+            return False, ("Tally returned its status/license page, not an import result. "
+                           "Open the target company in Tally and enable Help > Settings > "
+                           "Connectivity > 'Act as server', then retry.")
         return True, "Sent to Tally (response: OK)"
 
 

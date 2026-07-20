@@ -69,6 +69,16 @@ CONFIG_FILE = BASE_DIR / "tally_connector.json"
 LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
+# Force UTF-8 console output. A frozen EXE on a Windows cp1252 console otherwise
+# raises UnicodeEncodeError on any non-ASCII log char (arrows like -> and the
+# "Tally raw reply" diagnostics), which prints "--- Logging error ---" and
+# SWALLOWS the real message. errors="replace" guarantees the line prints.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")  # Python 3.7+
+    except Exception:
+        pass
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -219,8 +229,21 @@ def _parse_tally_response(xml_text: str) -> tuple[bool, str]:
             return False, f"{_ZERO_IMPORT_HINT} [Tally: {_response_summary(xml_text)}]"
         return True, "Sent to Tally"
     except ET.ParseError:
-        if "<CREATED>" in xml_text:
+        low = xml_text.lower()
+        if "<created>" in low:
             return True, "Created in Tally"
+        # Tally's HTTP status / license / gateway banner (HTML) is NOT an import
+        # confirmation — it's what Tally returns when NO company is open, or when
+        # the request never reached the import handler. Reporting success here would
+        # silently mark an un-imported voucher as synced (permanent invoice loss).
+        # Found via live test: TallyPrime returned "License server is Running /
+        # Gateway Version ...". A false-negative is safe (the GUID-keyed retry
+        # self-heals); a false-positive is not.
+        if ("license server" in low or "gateway version" in low
+                or "<!doctype html" in low or "<html" in low):
+            return False, ("Tally returned its status/license page, not an import result. "
+                           "Open the target company in Tally and enable Help > Settings > "
+                           "Connectivity > 'Act as server', then retry.")
         return True, "Sent to Tally (response: OK)"
 
 
@@ -239,7 +262,13 @@ def push_to_local_tally(xml: str, host: str, port: int, timeout: float = 20.0):
     except requests.ConnectionError:
         return False, f"Cannot reach Tally at {url} — is Tally open with its XML/ODBC server enabled?", None
     except requests.Timeout:
-        return False, "Tally connection timed out", None
+        # Tally accepts the socket but never replies when it is blocked on the UI:
+        # no company loaded (it sits on the company-select screen), or a modal
+        # prompt is open (e.g. a "Rewrite?" recovery dialog). Name those causes —
+        # a bare "timed out" sends people hunting the network instead of the screen.
+        return False, ("Tally did not reply before the timeout. Usual cause: NO COMPANY is open "
+                       "in Tally, or Tally is showing a dialog/prompt that blocks the import. "
+                       "Open the target company and clear any on-screen prompt, then retry."), None
     except Exception as e:  # noqa: BLE001
         return False, f"Unexpected error: {e}", None
 
