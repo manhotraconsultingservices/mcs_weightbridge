@@ -63,6 +63,20 @@
 .PARAMETER BaudRate
     Scale baud rate (default: 9600)
 
+.PARAMETER DataBits
+    Serial data bits: 7 or 8 (default: 8)
+
+.PARAMETER Parity
+    Serial parity: N=none, E=even, O=odd (default: N)
+
+.PARAMETER StopBits
+    Serial stop bits: 1 or 2 (default: 1)
+
+    NOTE on framing: 8N1 is the common default, but many Indian weighbridge
+    indicators (Essae and similar) run 7E1. Get this right — a mismatched config
+    makes the agent read garbage until auto-detection rescues it (~2 min).
+    Check an existing working install's scale_config.json if unsure.
+
 .PARAMETER Uninstall
     Remove agents, scheduled tasks, and firewall rules
 
@@ -91,6 +105,14 @@
     .\deploy-agents.ps1 -Mode source -TenantSlug "demo" -AgentKey "key123" -ComPort "COM3"
 
 .EXAMPLE
+    # Scale only, source mode, 7E1 framing (typical Indian indicator).
+    # Use this when Smart App Control blocks the unsigned EXEs.
+    .\deploy-agents.ps1 -Mode source -AgentType scale `
+        -TenantSlug "acme-crushers" -AgentKey "key123" `
+        -CloudUrl "https://acme-crushers.weighbridgesetu.com" `
+        -ComPort "COM7" -BaudRate 9600 -DataBits 7 -Parity E -StopBits 1
+
+.EXAMPLE
     # Uninstall everything (tasks, NSSM services, firewall, processes)
     .\deploy-agents.ps1 -Uninstall
 #>
@@ -116,6 +138,16 @@ param(
     [string]$CameraPass      = "",
     [string]$ComPort         = "",
     [int]$BaudRate           = 9600,
+    # Serial framing. 8N1 is the common default, but Indian weighbridge
+    # indicators (Essae etc.) are frequently 7E1 — hardcoding 8N1 wrote a config
+    # that did not match the scale, so the agent read garbage for ~2 minutes
+    # before auto-detect rescued it.
+    [ValidateSet(7,8)]
+    [int]$DataBits           = 8,
+    [ValidateSet("N","E","O")]
+    [string]$Parity          = "N",
+    [ValidateSet(1,2)]
+    [int]$StopBits           = 1,
     [switch]$Uninstall
 )
 
@@ -523,15 +555,29 @@ if ($deployScale) {
     }
     $BaudRate = [int](Prompt-Value "Baud rate" $BaudRate)
 
+    # Framing must be PROMPTED, not assumed. This path previously wrote 8N1
+    # unconditionally, so an interactive install against a 7E1 indicator (common
+    # on Indian weighbridges — Essae and similar) produced a config that did not
+    # match the scale: the agent read garbage until auto-detect rescued it.
+    Write-Info "Framing: 8N1 is the common default; many Indian indicators use 7E1."
+    $DataBits = [int](Prompt-Value "Data bits (7 or 8)"              $DataBits)
+    $Parity   =      (Prompt-Value "Parity (N=none, E=even, O=odd)"  $Parity).ToUpper()
+    $StopBits = [int](Prompt-Value "Stop bits (1 or 2)"              $StopBits)
+
+    if ($DataBits -notin @(7, 8))        { Write-Warn "Invalid data bits '$DataBits' — using 8"; $DataBits = 8 }
+    if ($Parity   -notin @("N","E","O")) { Write-Warn "Invalid parity '$Parity' — using N";      $Parity   = "N" }
+    if ($StopBits -notin @(1, 2))        { Write-Warn "Invalid stop bits '$StopBits' — using 1"; $StopBits = 1 }
+    Write-OK "Serial framing: $ComPort @ $BaudRate $DataBits$Parity$StopBits"
+
     $scaleConfig = @{
         cloud_url        = $CloudUrl
         tenant_slug      = $TenantSlug
         agent_key        = $AgentKey
         port             = $ComPort
         baud_rate        = $BaudRate
-        data_bits        = 8
-        stop_bits        = 1
-        parity           = "N"
+        data_bits        = $DataBits
+        stop_bits        = $StopBits
+        parity           = $Parity
         push_interval_ms = 500
         status_port      = 9002
     }
@@ -736,7 +782,7 @@ if ($deployScale) {
     Write-Host "  Scale Agent:" -ForegroundColor Cyan
     Write-Host "    Task:       WeighbridgeScaleAgent" -ForegroundColor Gray
     Write-Host "    Status API: http://localhost:9002" -ForegroundColor Gray
-    Write-Host "    COM Port:   $ComPort @ $BaudRate baud" -ForegroundColor Gray
+    Write-Host "    COM Port:   $ComPort @ $BaudRate baud $DataBits$Parity$StopBits" -ForegroundColor Gray
     Write-Host "    Config:     $InstallDir\scale_config.json" -ForegroundColor Gray
     Write-Host ""
 }
