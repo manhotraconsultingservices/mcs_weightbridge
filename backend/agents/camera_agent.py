@@ -23,10 +23,12 @@ import time
 import sys
 import os
 import logging
+from logging.handlers import RotatingFileHandler
 import threading
 import signal
 import asyncio
-from datetime import datetime
+import shutil
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import urllib3
@@ -65,15 +67,149 @@ except Exception:
 LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
+# Force UTF-8 console output. A frozen EXE on a Windows cp1252 console otherwise
+# raises UnicodeEncodeError on any non-ASCII log char (the box-drawing banner,
+# arrows, dashes), which prints "--- Logging error ---" and SWALLOWS the real
+# message. errors="replace" guarantees the line prints.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")  # Python 3.7+
+    except Exception:
+        pass
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(LOG_DIR / "camera_agent.log", encoding="utf-8"),
+        # Rotating, NOT plain FileHandler: this log is never truncated otherwise,
+        # and a dead camera with a browser tab open can append for months.
+        # 5 MB x 3 backups = 20 MB ceiling.
+        RotatingFileHandler(LOG_DIR / "camera_agent.log", maxBytes=5_000_000,
+                            backupCount=3, encoding="utf-8"),
     ],
 )
 log = logging.getLogger("camera_agent")
+
+# ── Throttled error logging ───────────────────────────────────────────────────
+# The poll/push loops run every 3-5s. Logging every failure would flood the log
+# (which does not rotate); logging none of them — the previous behaviour — made a
+# dead cloud, a wrong agent key or a stale tenant slug COMPLETELY invisible while
+# /status still reported "running". Log the first occurrence, then at most once
+# per interval, so a persistent fault is always visible but never spams.
+_last_err_log: dict[str, float] = {}
+
+
+def log_throttled(key: str, msg: str, *args, every: float = 60.0) -> None:
+    now = time.time()
+    if now - _last_err_log.get(key, 0.0) >= every:
+        _last_err_log[key] = now
+        log.warning(msg, *args)
+
+
+# ── Local snapshot retention ──────────────────────────────────────────────────
+
+def prune_local_snapshots(cfg: dict) -> None:
+    """Delete locally-saved snapshot folders older than `local_retention_days`.
+
+    Snapshot folders are named YYYYMMDD, so a plain string compare is enough —
+    no date parsing, and any folder that is not exactly 8 digits is left alone.
+    Without this the directory grows ~120 MB/day until the disk fills, after
+    which every capture fails on a swallowed write error.
+    """
+    days = int(cfg.get("local_retention_days", 30) or 0)
+    if days <= 0:
+        return                                   # 0 = keep forever (opt-out)
+    root = Path(cfg.get("local_save_dir", "") or "")
+    if not root.is_dir():
+        return
+    cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
+    removed = 0
+    for d in sorted(root.iterdir()):
+        try:
+            if d.is_dir() and len(d.name) == 8 and d.name.isdigit() and d.name < cutoff:
+                shutil.rmtree(d, ignore_errors=True)
+                removed += 1
+        except Exception as e:                   # noqa: BLE001
+            log.warning("Prune failed for %s: %s", d, e)
+    if removed:
+        log.info("Pruned %d snapshot folder(s) older than %d days from %s", removed, days, root)
+
+
+def warn_if_disk_low(cfg: dict, min_free_mb: int = 500) -> None:
+    """Warn loudly when the snapshot volume is nearly full — otherwise a full
+    disk just makes captures vanish with no visible cause."""
+    root = Path(cfg.get("local_save_dir", "") or "")
+    try:
+        if root.is_dir():
+            free_mb = shutil.disk_usage(root).free // (1024 * 1024)
+            if free_mb < min_free_mb:
+                log.error("LOW DISK on %s: %d MB free — snapshot saves will start failing",
+                          root, free_mb)
+    except Exception:                            # noqa: BLE001
+        pass
+
+
+def allowed_origins(cfg: dict) -> set[str]:
+    """Origins permitted to read the status/snapshot servers cross-origin.
+
+    Mirrors scale_agent._allowed_origins. A wildcard is deliberately NOT used:
+    these servers bind 0.0.0.0 so the camera page can be opened from another PC
+    on the plant LAN, which means `*` would let ANY website the operator happens
+    to visit read live weighbridge camera frames straight off their machine.
+
+    Derived from cloud_url + tenant_slug so a different domain needs no code
+    change; extra origins come from `allowed_origins` in the config file.
+    """
+    from urllib.parse import urlsplit
+
+    origins: set[str] = set()
+    cloud_url = str(cfg.get("cloud_url") or "").strip()
+    slug = str(cfg.get("tenant_slug") or "").strip().lower()
+
+    host = ""
+    if cloud_url:
+        parts = urlsplit(cloud_url if "//" in cloud_url else f"https://{cloud_url}")
+        host = (parts.hostname or "").lower()
+        if host:
+            origins.add(f"https://{host}")
+
+    base = host
+    for prefix in ((f"{slug}." if slug else None), "www."):
+        if prefix and base.startswith(prefix):
+            base = base[len(prefix):]
+            break
+    if base:
+        origins.add(f"https://{base}")
+        origins.add(f"https://www.{base}")
+        if slug:
+            origins.add(f"https://{slug}.{base}")
+
+    for extra in (cfg.get("allowed_origins") or []):
+        extra = str(extra).strip().rstrip("/")
+        if extra:
+            origins.add(extra)
+    return {o for o in origins if "://" in o}
+
+
+def cors_origin_for(origin: str, allow: set[str]) -> str | None:
+    """Echo the request Origin only when it is allowlisted (else no CORS header)."""
+    o = (origin or "").strip().rstrip("/")
+    return o if o and o in allow else None
+
+
+def start_maintenance_thread(cfg: dict) -> None:
+    """Prune + disk-check now, then every 6 hours, on a daemon thread."""
+    def _loop():
+        while True:
+            try:
+                prune_local_snapshots(cfg)
+                warn_if_disk_low(cfg)
+            except Exception as e:               # noqa: BLE001
+                log.warning("Maintenance pass failed: %s", e)
+            time.sleep(6 * 3600)
+
+    threading.Thread(target=_loop, daemon=True, name="SnapshotMaintenance").start()
 
 # ── Config ───────────────────────────────────────────────────────────────────
 
@@ -95,6 +231,10 @@ DEFAULT_CONFIG = {
     "local_save_dir": "D:\\weighbridge\\snapshots",
     "snapshot_serve_url": "",   # e.g. https://cam-acme.weighbridgesetu.com
     "file_serve_port": 9005,
+    # Locally-saved snapshots are pruned after this many days. Without it the
+    # folder grows ~120 MB/day (~43 GB/yr) until the disk fills, after which
+    # every capture fails. 0 disables pruning (keep forever).
+    "local_retention_days": 30,
     "cameras": {
         "front": {
             "label": "Front View",
@@ -280,6 +420,31 @@ class CameraCapturer:
 
         return None
 
+    def capture_once(self, cam_url: str, cam: dict, timeout: float = 5.0) -> bytes | None:
+        """Single-attempt capture for LIVE frames — no retries.
+
+        _capture_single retries 3x with a 10s timeout (up to ~60s on a dead
+        camera). That is correct for a weighment snapshot, which must not be
+        missed, but wrong for a live feed pushed every 3s: a dead ENTRY camera
+        stalled the EXIT frames for 34s+ every cycle. Mirrors the fast path
+        already used by WebSocketLiveServer._get_frame.
+        """
+        import requests
+        from requests.auth import HTTPDigestAuth, HTTPBasicAuth
+        try:
+            auth = None
+            if cam.get("username"):
+                auth = HTTPDigestAuth(cam["username"], cam.get("password", ""))
+            resp = requests.get(cam_url, auth=auth, timeout=timeout, verify=False)
+            if resp.status_code == 401 and auth:
+                auth = HTTPBasicAuth(cam["username"], cam.get("password", ""))
+                resp = requests.get(cam_url, auth=auth, timeout=timeout, verify=False)
+            if resp.status_code == 200 and len(resp.content) >= 500:
+                return resp.content
+        except Exception:  # noqa: BLE001
+            return None
+        return None
+
     def capture_and_upload(self, token_id: str, weight_stage: str = "second_weight") -> dict:
         """Capture from all cameras and upload to cloud."""
         import requests
@@ -349,7 +514,11 @@ class CameraCapturer:
         import requests
 
         results = {}
-        test_dir = Path(__file__).parent / "test_snapshots"
+        # BASE_DIR, not __file__: when frozen, __file__ is PyInstaller's _MEIPASS
+        # temp dir, which is DELETED when the process exits — so the installer
+        # would capture the test images and then destroy them, and the whole
+        # point of --test is to eyeball the camera framing afterwards.
+        test_dir = BASE_DIR / "test_snapshots"
         test_dir.mkdir(exist_ok=True)
 
         for camera_id in ("front", "top"):
@@ -483,12 +652,52 @@ class CameraCapturer:
 class EventListener:
     """Polls cloud API for pending camera capture events."""
 
+    # Sized to the SERVER's contract: /cameras/agent-pending re-offers an event
+    # for 5 minutes after the weight is recorded. 60 attempts x 5s poll = ~5 min,
+    # so we keep retrying for exactly as long as the job is still on offer and
+    # the server's own cutoff bounds us. (A smaller budget would give up early
+    # and lose a snapshot the server was still willing to hand us.)
+    MAX_CAPTURE_ATTEMPTS = 60
+
     def __init__(self, config: dict, capturer: CameraCapturer):
         self.cfg = config
         self.capturer = capturer
         self.running = False
         self._thread = None
         self._processed: collections.OrderedDict[str, float] = collections.OrderedDict()
+        # key -> failed attempts so far. Only holds ACTIVELY failing events; an
+        # entry is removed as soon as it succeeds or we give up, so it stays small.
+        self._attempts: dict[str, int] = {}
+
+    def _finish(self, key: str, results: dict, label: str) -> bool:
+        """Mark an event done ONLY when the capture actually succeeded.
+
+        Previously the event was marked processed regardless of outcome, so a
+        camera that blipped during a weighment lost that snapshot permanently.
+        Returns True when the event is finished with (succeeded, or given up on).
+        """
+        ok = bool(results) and all(r.get("success") for r in results.values())
+        if ok or not results:
+            # `not results` == no cameras configured for this event: nothing to retry.
+            self._processed[key] = time.time()
+            self._attempts.pop(key, None)
+            return True
+
+        n = self._attempts.get(key, 0) + 1
+        self._attempts[key] = n
+        if n >= self.MAX_CAPTURE_ATTEMPTS:
+            self._processed[key] = time.time()      # stop retrying
+            self._attempts.pop(key, None)
+            # ERROR, not warning: this is a snapshot that will never exist.
+            log.error("Snapshot PERMANENTLY MISSING for token %s (%s) — gave up after %d attempts",
+                      label, key, n)
+            return True
+        # Throttled: with a 60-attempt budget an unthrottled warning would write
+        # one line every poll for 5 minutes per failing event.
+        log_throttled(f"retry_{key}",
+                      "Capture failed for %s (attempt %d/%d) — will retry on next poll",
+                      key, n, self.MAX_CAPTURE_ATTEMPTS, every=30.0)
+        return False
 
     def start(self):
         self.running = True
@@ -519,7 +728,15 @@ class EventListener:
                 if resp.status_code == 200:
                     events = resp.json().get("events", [])
                     for evt in events:
-                        key = f"{evt['token_id']}_{evt['weight_stage']}"
+                        # Per-event guard: ONE malformed event must not abort the
+                        # rest of the batch. Previously a KeyError here skipped
+                        # events 2..N and, because the bad event was never marked
+                        # processed, it re-blocked the queue on every poll forever.
+                        try:
+                            key = f"{evt['token_id']}_{evt['weight_stage']}"
+                        except (KeyError, TypeError):
+                            log.error("Malformed event skipped (no token_id/weight_stage): %r", evt)
+                            continue
                         if key in self._processed:
                             continue
 
@@ -529,20 +746,24 @@ class EventListener:
 
                         # Local-first (Tunnel) mode when snapshot_serve_url is set;
                         # fall back to binary upload when it's not configured.
-                        if self.cfg.get("snapshot_serve_url"):
-                            self.capturer.capture_local(evt["token_id"], evt["weight_stage"])
-                        else:
-                            self.capturer.capture_and_upload(evt["token_id"], evt["weight_stage"])
-                        self._processed[key] = time.time()
+                        try:
+                            if self.cfg.get("snapshot_serve_url"):
+                                res = self.capturer.capture_local(evt["token_id"], evt["weight_stage"])
+                            else:
+                                res = self.capturer.capture_and_upload(evt["token_id"], evt["weight_stage"])
+                        except Exception as e:  # noqa: BLE001
+                            log.warning("Capture raised for %s: %s", key, e)
+                            res = {}
 
-                        while len(self._processed) > 1000:
-                            self._processed.popitem(last=False)
+                        if self._finish(key, res or {}, evt.get("token_no", "?")):
+                            while len(self._processed) > 1000:
+                                self._processed.popitem(last=False)
 
                 elif resp.status_code != 404:
                     log.warning("Poll HTTP %d", resp.status_code)
 
-            except requests.RequestException:
-                pass
+            except requests.RequestException as e:
+                log_throttled("poll", "Cloud unreachable (token snapshot poll): %s", e)
             except Exception as e:
                 log.error("Poll error: %s", e)
 
@@ -562,6 +783,12 @@ class GatePassListener:
     If those URLs are empty, falls back to cameras.front (the token camera).
     """
 
+    # Same reasoning as EventListener: /gate/agent-pending re-offers a pass with
+    # no entry/exit photo for 5 minutes, so retry for that whole window.
+    # This is the path a PHONE-ONLY gate guard depends on — the guard's phone just
+    # creates the pass; this agent (on a plant PC) takes the actual photo.
+    MAX_CAPTURE_ATTEMPTS = 60
+
     def __init__(self, config: dict, capturer: CameraCapturer):
         self.cfg = config
         self.capturer = capturer
@@ -569,6 +796,31 @@ class GatePassListener:
         self._thread = None
         # Dedup: "gate_pass_id_position" → timestamp
         self._processed: collections.OrderedDict[str, float] = collections.OrderedDict()
+        # key -> failed attempts (only actively-failing keys; popped on done).
+        self._attempts: dict[str, int] = {}
+
+    def _finish(self, key: str, ok: bool, label: str) -> bool:
+        """Mark a gate photo event done ONLY when the capture actually succeeded.
+
+        Returns True when the event is finished with (succeeded, or given up on).
+        """
+        if ok:
+            self._processed[key] = time.time()
+            self._attempts.pop(key, None)
+            return True
+
+        n = self._attempts.get(key, 0) + 1
+        self._attempts[key] = n
+        if n >= self.MAX_CAPTURE_ATTEMPTS:
+            self._processed[key] = time.time()      # stop retrying
+            self._attempts.pop(key, None)
+            log.error("Gate photo PERMANENTLY MISSING for gate pass %s (%s) — "
+                      "gave up after %d attempts", label, key, n)
+            return True
+        log_throttled(f"gate_retry_{key}",
+                      "Gate photo failed for %s (attempt %d/%d) — will retry on next poll",
+                      key, n, self.MAX_CAPTURE_ATTEMPTS, every=30.0)
+        return False
 
     def _resolve_gate_cam(self, position: str) -> dict:
         """Return the camera dict to use for this gate position.
@@ -599,6 +851,7 @@ class GatePassListener:
         image_data = self.capturer._capture_single(cam_url, cam, f"gate_{position}")
         if image_data is None:
             log.warning("Gate snapshot capture failed for gp=%s position=%s", gate_pass_id, position)
+            self.capturer.error_count += 1
             return False
 
         log.info("Gate captured %d bytes for gp=%s position=%s", len(image_data), gate_pass_id, position)
@@ -615,12 +868,17 @@ class GatePassListener:
             resp = requests.post(upload_url, files=files, data=data, timeout=30)
             if resp.status_code == 200:
                 log.info("Gate photo uploaded: gp=%s position=%s", gate_pass_id, position)
+                # Gate paths used to bypass these counters entirely, so /status
+                # reported error_count=0 while every gate capture was failing.
+                self.capturer.capture_count += 1
                 return True
             else:
                 log.warning("Gate upload failed: HTTP %d — %s", resp.status_code, resp.text[:200])
+                self.capturer.error_count += 1
                 return False
         except requests.RequestException as e:
             log.warning("Gate upload error: %s", e)
+            self.capturer.error_count += 1
             return False
 
     def start(self):
@@ -652,7 +910,13 @@ class GatePassListener:
                 if resp.status_code == 200:
                     events = resp.json().get("events", [])
                     for evt in events:
-                        key = f"{evt['gate_pass_id']}_{evt['position']}"
+                        # Per-event guard — one malformed event must not abort the
+                        # batch nor re-block the queue forever (see EventListener).
+                        try:
+                            key = f"{evt['gate_pass_id']}_{evt['position']}"
+                        except (KeyError, TypeError):
+                            log.error("Malformed gate event skipped (no gate_pass_id/position): %r", evt)
+                            continue
                         if key in self._processed:
                             continue
 
@@ -660,18 +924,22 @@ class GatePassListener:
                                  evt.get("gate_pass_no", "?"), evt.get("vehicle_no", "?"),
                                  evt["position"])
 
-                        self._capture_and_upload(evt["gate_pass_id"], evt["position"])
-                        self._processed[key] = time.time()
+                        try:
+                            ok = self._capture_and_upload(evt["gate_pass_id"], evt["position"])
+                        except Exception as e:  # noqa: BLE001
+                            log.warning("Gate capture raised for %s: %s", key, e)
+                            ok = False
 
-                        # Trim cache to last 500 entries
-                        while len(self._processed) > 500:
-                            self._processed.popitem(last=False)
+                        if self._finish(key, bool(ok), evt.get("gate_pass_no", "?")):
+                            # Trim cache to last 500 entries
+                            while len(self._processed) > 500:
+                                self._processed.popitem(last=False)
 
                 elif resp.status_code not in (404, 403):
                     log.warning("Gate poll HTTP %d", resp.status_code)
 
-            except requests.RequestException:
-                pass
+            except requests.RequestException as e:
+                log_throttled("gate_poll", "Cloud unreachable (gate photo poll): %s", e)
             except Exception as e:
                 log.error("Gate poll error: %s", e)
 
@@ -723,8 +991,12 @@ class GateLiveFeedPusher:
         if not cam_url:
             return False
 
-        image_data = self.capturer._capture_single(cam_url, cam, f"gate_live_{position}")
+        # Fast single attempt — this loop runs every 3s per position; the 3x10s
+        # retry path would let one dead camera stall the other position.
+        image_data = self.capturer.capture_once(cam_url, cam)
         if image_data is None:
+            log_throttled(f"live_cap_{position}",
+                          "Gate live feed (%s): capture failed from %s", position, cam_url)
             return False
 
         push_url = f"{self.cfg['cloud_url'].rstrip('/')}/api/v1/gate/push-snapshot/{position}"
@@ -736,8 +1008,17 @@ class GateLiveFeedPusher:
                 data={"tenant_slug": self.cfg.get("tenant_slug", "")},
                 timeout=10,
             )
-            return resp.status_code == 200
-        except requests.RequestException:
+            if resp.status_code != 200:
+                # Was silent: a wrong agent key / stale tenant slug returned 401/403
+                # every 3s forever while the Gate Live page showed "Waiting for
+                # agent..." and the agent log said nothing at all.
+                log_throttled(f"push_{position}",
+                              "Gate live feed push failed (%s): HTTP %d %s",
+                              position, resp.status_code, (resp.text or "")[:120])
+                return False
+            return True
+        except requests.RequestException as e:
+            log_throttled(f"push_{position}", "Gate live feed push failed (%s): %s", position, e)
             return False
 
     def start(self):
@@ -750,7 +1031,16 @@ class GateLiveFeedPusher:
         for pos in ("entry", "exit"):
             cam = self._resolve_gate_cam(pos)
             if cam.get("url"):
-                log.info("Gate live feed (%s): %s", pos, cam["url"])
+                # Say so when this position has no dedicated gate camera and is
+                # falling back to cameras.front — otherwise the gate live page
+                # shows the WEIGHBRIDGE camera labelled "exit" and the log gives
+                # no hint why.
+                configured = (self.cfg.get("gate_cameras", {}).get(pos, {}).get("url") or "").strip()
+                if configured:
+                    log.info("Gate live feed (%s): %s", pos, cam["url"])
+                else:
+                    log.info("Gate live feed (%s): %s  [FALLBACK - no gate_cameras.%s.url "
+                             "configured, using cameras.front]", pos, cam["url"], pos)
         log.info("Gate live feed pusher started (every %ds per camera)", self.PUSH_INTERVAL)
 
     def stop(self):
@@ -771,16 +1061,25 @@ class GateLiveFeedPusher:
 # ── Status API ───────────────────────────────────────────────────────────────
 
 class StatusServer:
-    """Serves status JSON + live camera snapshot proxy on localhost.
+    """Serves status JSON + live camera snapshot proxy.
 
     Endpoints:
       GET /                     → agent status JSON
       GET /snapshot/front       → live JPEG from front camera
       GET /snapshot/top         → live JPEG from top camera
 
-    The snapshot proxy allows the browser to load camera images via
-    http://localhost:9003/snapshot/front — no mixed-content issues.
-    CORS headers allow any origin (the cloud-hosted frontend).
+    BIND ADDRESS: 0.0.0.0, i.e. reachable from other machines on the plant LAN —
+    deliberately, so the Camera & Scale page can be opened from an office PC as
+    well as the weighbridge PC. (The docstring used to claim "localhost", which
+    was simply wrong and hid the exposure.)
+
+    Because it IS LAN-reachable, CORS echoes an ALLOWLISTED Origin only (derived
+    from cloud_url + tenant_slug, see allowed_origins()). It used to send
+    `Access-Control-Allow-Origin: *`, which let any website the operator happened
+    to visit read live weighbridge frames straight off their machine.
+
+    Note this is origin control, not authentication: a direct non-browser request
+    from the LAN can still fetch a frame. Put the agent on a trusted plant LAN.
     """
 
     def __init__(self, capturer: CameraCapturer, port: int = 9003):
@@ -788,18 +1087,33 @@ class StatusServer:
         self.port = port
 
     def start(self):
-        from http.server import HTTPServer, BaseHTTPRequestHandler
+        # ThreadingHTTPServer, not HTTPServer: a handler here can call
+        # _capture_single, which retries 3x with a 10s timeout (up to ~60s when a
+        # camera is dead). On the single-threaded HTTPServer that one request
+        # blocks EVERY other connection — health checks and the other camera's
+        # snapshot all hang until it finishes.
+        from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
         capturer = self.capturer
+        # StatusServer holds no config of its own — the capturer carries it.
+        allow = allowed_origins(getattr(self.capturer, "cfg", {}) or {})
+        log.info("Status CORS allowlist: %s", ", ".join(sorted(allow)) or "(none)")
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
-                # CORS headers for cross-origin access from cloud frontend
+                # Echo an ALLOWLISTED Origin only. This was "*", which — because
+                # the server binds 0.0.0.0 so other PCs on the plant LAN can view
+                # the camera page — let any website the operator visited read live
+                # weighbridge frames from their machine.
                 cors_headers = {
-                    "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Methods": "GET",
                     "Cache-Control": "no-store, no-cache",
                     "Pragma": "no-cache",
                 }
+                _o = cors_origin_for(self.headers.get("Origin", ""), allow)
+                if _o:
+                    cors_headers["Access-Control-Allow-Origin"] = _o
+                    cors_headers["Vary"] = "Origin"
+                    cors_headers["Access-Control-Allow-Private-Network"] = "true"
 
                 path = self.path.split("?")[0]  # strip query params
 
@@ -847,9 +1161,13 @@ class StatusServer:
                 self.wfile.write(body.encode())
 
             def do_OPTIONS(self):
-                """Handle CORS preflight."""
+                """Handle CORS preflight (allowlisted origins only)."""
                 self.send_response(204)
-                self.send_header("Access-Control-Allow-Origin", "*")
+                _o = cors_origin_for(self.headers.get("Origin", ""), allow)
+                if _o:
+                    self.send_header("Access-Control-Allow-Origin", _o)
+                    self.send_header("Vary", "Origin")
+                    self.send_header("Access-Control-Allow-Private-Network", "true")
                 self.send_header("Access-Control-Allow-Methods", "GET")
                 self.send_header("Access-Control-Allow-Headers", "*")
                 self.end_headers()
@@ -859,12 +1177,13 @@ class StatusServer:
 
         def _serve():
             try:
-                HTTPServer(("0.0.0.0", self.port), Handler).serve_forever()
+                ThreadingHTTPServer(("0.0.0.0", self.port), Handler).serve_forever()
             except OSError as e:
                 log.warning("Status server port %d: %s", self.port, e)
 
         threading.Thread(target=_serve, daemon=True).start()
-        log.info("Status API: http://127.0.0.1:%d", self.port)
+        log.info("Status API: http://127.0.0.1:%d  (also reachable on the LAN at "
+                 "this PC's IP:%d — CORS allowlisted)", self.port, self.port)
 
 
 # ── Local Snapshot File Server ───────────────────────────────────────────────
@@ -893,7 +1212,12 @@ class LocalSnapshotServer:
         self.port = port
 
     def start(self):
-        from http.server import HTTPServer, BaseHTTPRequestHandler
+        # ThreadingHTTPServer, not HTTPServer: a handler here can call
+        # _capture_single, which retries 3x with a 10s timeout (up to ~60s when a
+        # camera is dead). On the single-threaded HTTPServer that one request
+        # blocks EVERY other connection — health checks and the other camera's
+        # snapshot all hang until it finishes.
+        from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
         save_dir = self.save_dir
         port = self.port
@@ -944,7 +1268,7 @@ class LocalSnapshotServer:
 
         def _serve():
             try:
-                HTTPServer(("0.0.0.0", port), Handler).serve_forever()
+                ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
             except OSError as e:
                 log.warning("Snapshot file server port %d: %s", port, e)
 
@@ -1063,9 +1387,16 @@ class WebSocketLiveServer:
                         await websocket.send(b"\x00")
                         consecutive_errors += 1
                         if consecutive_errors > 20:
-                            log.warning("Camera %s: too many consecutive failures", camera_id)
+                            # Throttled: this used to log EVERY 1.5s, so a dead
+                            # camera with a wall-board tab left open wrote ~40
+                            # lines/minute into a log that never rotated.
+                            log_throttled(f"live_{camera_id}",
+                                          "Camera %s: %d consecutive live-frame failures",
+                                          camera_id, consecutive_errors)
 
-                    await asyncio.sleep(1.5)
+                    # Once the camera is clearly dead, back off instead of
+                    # hammering it (and the log) every 1.5s.
+                    await asyncio.sleep(1.5 if consecutive_errors <= 20 else 10)
 
             except websockets.ConnectionClosed:
                 log.info("Live stream client disconnected: %s", camera_id)
@@ -1185,9 +1516,15 @@ def main():
         print("\n  Testing camera snapshots...\n")
         capturer = CameraCapturer(cfg)
         results = capturer.test_cameras()
-        ok = all(results.values())
-        print(f"\n  Result: {'ALL OK' if ok else 'SOME FAILED'}")
-        print(f"  Test images saved to: {Path(__file__).parent / 'test_snapshots'}")
+        # all({}) is True. Without this guard a config with NO camera URLs prints
+        # "ALL OK" and the technician signs off an install that tested nothing.
+        if not results:
+            print("\n  Result: NO CAMERAS TESTED — no camera URLs are configured.")
+            print("  Run 'camera_agent.exe --setup' to set the camera URLs.")
+        else:
+            ok = all(results.values())
+            print(f"\n  Result: {'ALL OK' if ok else 'SOME FAILED'}")
+        print(f"  Test images saved to: {BASE_DIR / 'test_snapshots'}")
         return
 
     cfg = load_config()
@@ -1230,11 +1567,20 @@ def main():
     except Exception as e:
         log.warning("Cloud unreachable: %s — will retry", e)
 
-    # Test cameras once
+    # Test cameras once. NEVER fatal — this is a diagnostic self-test, and an
+    # exception here (e.g. a mkdir PermissionError when installed under
+    # Program Files with a restricted service account) would kill the process
+    # BEFORE any listener starts, so NSSM would crash-loop the service forever.
     print("  Testing cameras...")
     capturer = CameraCapturer(cfg)
-    capturer.test_cameras()
+    try:
+        capturer.test_cameras()
+    except Exception as e:  # noqa: BLE001
+        log.warning("Startup camera self-test failed (starting anyway): %s", e)
     print()
+
+    # Prune old local snapshots + warn on low disk (now, then every 6h)
+    start_maintenance_thread(cfg)
 
     # Start token snapshot listener
     listener = EventListener(cfg, capturer)
