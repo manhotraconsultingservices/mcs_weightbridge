@@ -68,6 +68,16 @@ except Exception:
 LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
+# Force UTF-8 console output. A frozen EXE on a Windows cp1252 console otherwise
+# raises UnicodeEncodeError on any non-ASCII log char (arrows, check marks, etc.),
+# which prints "--- Logging error ---" and SWALLOWS the real message — hiding the
+# very diagnostics the operator needs. errors="replace" guarantees the line prints.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")  # Python 3.7+
+    except Exception:
+        pass
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -230,8 +240,14 @@ def parse_weight(text: str) -> float | None:
 # ── Auto-detection ────────────────────────────────────────────────────────────
 
 def _probe_port(port: str, baud: int, data_bits: int, parity: str, stop_bits: int,
-                probe_sec: float = 2.5) -> tuple[bool, float | None]:
+                probe_sec: float = 2.5) -> tuple[bool, float | None, str | None]:
     """Open a COM port with specific settings and check for valid weight data.
+
+    Returns (success, weight_or_None, error_or_None). `error` is the OS message
+    when the port could not be OPENED (e.g. "Access is denied" when another
+    program holds it) — the #1 cause of "can't detect the scale" after swapping
+    agents — so the caller can surface an actionable reason instead of a silent
+    "not found".
 
     Returns (success, weight_or_None).
     Rejects configs where received bytes fail the ASCII quality check
@@ -261,14 +277,14 @@ def _probe_port(port: str, baud: int, data_bits: int, parity: str, stop_bits: in
 
         if len(raw) < 4:
             # Port opened but indicator sent nothing (wrong port or indicator off)
-            return False, None
+            return False, None, None
 
         quality = _ascii_quality(raw)
         if quality < ASCII_QUALITY_MIN:
             # Non-ASCII garbage → wrong serial config
             log.debug("  ✗ %s %d %d%s%d  ASCII=%.0f%% (wrong config)",
                       port, baud, data_bits, parity, stop_bits, quality * 100)
-            return False, None
+            return False, None, None
 
         # Try to parse a weight from any line in the received data
         text = raw.decode("ascii", errors="replace")
@@ -277,19 +293,28 @@ def _probe_port(port: str, baud: int, data_bits: int, parity: str, stop_bits: in
             if w is not None:
                 log.info("  ✓ %s  %d  %d%s%d  → %.1f kg  (ASCII %.0f%%)",
                          port, baud, data_bits, parity, stop_bits, w, quality * 100)
-                return True, w
+                return True, w, None
 
         # Good ASCII but no weight yet (scale unstable / in error mode) — still valid
         if quality > ASCII_QUALITY_STRONG:
             log.info("  ✓ %s  %d  %d%s%d  → ASCII OK, weight not stable yet",
                      port, baud, data_bits, parity, stop_bits)
-            return True, None
+            return True, None, None
 
-        return False, None
+        return False, None, None
 
     except Exception as e:
         log.debug("  ✗ %s %d %d%s%d  %s", port, baud, data_bits, parity, stop_bits, e)
-        return False, None
+        return False, None, str(e)
+
+
+def _is_port_busy(err: str | None) -> bool:
+    """True when a serial-open error means the port is held by another program
+    (access denied / in use) rather than absent or misconfigured."""
+    low = (err or "").lower()
+    return ("access is denied" in low or "permission" in low or "in use" in low
+            or "being used by another" in low or "errno 13" in low
+            or "could not open port" in low and "denied" in low)
 
 
 def auto_detect_scale() -> dict | None:
@@ -318,9 +343,18 @@ def auto_detect_scale() -> dict | None:
     # CONNECTED but no real weight" bug. Fall back to the first clean-ASCII port
     # only if nothing produced a live weight (a scale that was idle mid-scan). (#4)
     ascii_only: dict | None = None
+    busy: dict[str, str] = {}          # port -> reason, when it can't be opened at all
     for port in ports:
         for baud, data_bits, parity, stop_bits in PROBE_CONFIGS:
-            ok, weight = _probe_port(port, baud, data_bits, parity, stop_bits)
+            ok, weight, err = _probe_port(port, baud, data_bits, parity, stop_bits)
+            if err and _is_port_busy(err):
+                # The port cannot be OPENED — trying other baud rates is pointless.
+                # This is the #1 "can't detect the scale" cause after swapping agents.
+                busy[port] = err
+                log.error("Port %s is IN USE - %s. Another program is holding it: a "
+                          "still-running OLD scale agent, Tally, or a serial terminal. "
+                          "Stop that program and this agent will detect the scale.", port, err)
+                break
             if not ok:
                 continue
             cfg = {"port": port, "baud_rate": baud, "data_bits": data_bits,
@@ -337,8 +371,15 @@ def auto_detect_scale() -> dict | None:
                     "(scale may be idle; will re-scan if no weight arrives)", ascii_only["port"])
         return ascii_only
 
-    log.error("Scale NOT FOUND. Check: (1) USB cable connected, (2) indicator powered on, "
-              "(3) USB-serial driver (CH340/FTDI) installed in Device Manager.")
+    if busy:
+        log.error("Scale NOT FOUND - %d COM port(s) were BUSY (%s). The usual cause is a "
+                  "PREVIOUS scale agent still running and holding the port. Stop it "
+                  "(Task Manager → end 'scale_agent'/'python', or remove the old Windows "
+                  "service/task) and retry.",
+                  len(busy), "; ".join(f"{p}: {r}" for p, r in busy.items()))
+    else:
+        log.error("Scale NOT FOUND. Check: (1) USB cable connected, (2) indicator powered on, "
+                  "(3) USB-serial driver (CH340/FTDI) installed in Device Manager.")
     return None
 
 
@@ -826,6 +867,12 @@ class ScaleReader:
                 consecutive_failures += 1
                 log.warning("Port error on %s (failure #%d): %s", port, consecutive_failures, exc)
 
+                if _is_port_busy(exc_str):
+                    log.error("Port %s is IN USE - another program is holding it: a "
+                              "still-running OLD scale agent, Tally, or a serial terminal. "
+                              "Stop it (Task Manager → end 'scale_agent'/'python', or remove "
+                              "the old service), then this agent will connect.", port)
+
                 # CH340 Error 31 auto-recovery
                 if "31" in exc_str and "functioning" in exc_str.lower():
                     log.warning("CH340 Error 31 on %s — attempting PnP reset", port)
@@ -1108,22 +1155,97 @@ def _effective_push_base(cloud_url: str, tenant_slug: str) -> str:
     return base
 
 
+def _config_candidates() -> list[Path]:
+    """Ordered, de-duplicated places a scale_config.json may live. BASE_DIR
+    (beside the EXE) is authoritative; the rest RESCUE a config a previous
+    (source-run) install left in the old scattered layout — so swapping to the
+    EXE doesn't lose the working serial port and fall back to auto-detection."""
+    # Relative-only (no hard-coded install path) so the search can never pick up a
+    # DIFFERENT tenant's config from a fixed location — keeps the EXE tenant-neutral.
+    cands = [
+        CONFIG_FILE,                                      # beside the EXE (primary)
+        Path.cwd() / "scale_config.json",                 # current working dir
+        BASE_DIR / "scale" / "scale_config.json",         # old per-agent subfolder layout
+        BASE_DIR.parent / "scale_config.json",            # exe in a subfolder, config one level up
+    ]
+    out, seen = [], set()
+    for p in cands:
+        try:
+            key = str(p.resolve()).lower()
+        except Exception:
+            key = str(p).lower()
+        if key not in seen:
+            seen.add(key)
+            out.append(p)
+    return out
+
+
+def _read_config_dict(path: Path) -> dict | None:
+    """Parsed config if `path` holds a usable one (valid JSON with tenant_slug +
+    agent_key), else None. utf-8-sig strips the BOM PowerShell Out-File adds."""
+    try:
+        if not path.exists() or path.stat().st_size == 0:
+            return None
+        with open(path, "r", encoding="utf-8-sig") as fh:
+            d = json.load(fh)
+        if isinstance(d, dict) and d.get("tenant_slug") and d.get("agent_key"):
+            return d
+    except Exception:
+        pass
+    return None
+
+
 def load_config() -> dict:
-    if not CONFIG_FILE.exists():
-        log.error("Config not found: %s\nRun: python scale_agent.py --setup", CONFIG_FILE)
+    # Prefer a config that ALSO carries a saved serial `port` (the exact working
+    # config from a prior install), then any valid config — searching beside the
+    # EXE first, then known legacy locations.
+    with_port: tuple[Path, dict] | None = None
+    any_valid: tuple[Path, dict] | None = None
+    for p in _config_candidates():
+        d = _read_config_dict(p)
+        if not d:
+            continue
+        if any_valid is None:
+            any_valid = (p, d)
+        if str(d.get("port") or "").strip() and with_port is None:
+            with_port = (p, d)
+    chosen = with_port or any_valid
+
+    if not chosen:
+        # Nothing with tenant+key anywhere. If a file exists beside the EXE, load
+        # it raw so the downstream "tenant_slug/agent_key required" check fires
+        # with the exact path (clearer than a generic 'not found').
+        if CONFIG_FILE.exists():
+            try:
+                with open(CONFIG_FILE, "r", encoding="utf-8-sig") as fh:
+                    raw = json.load(fh)
+                if isinstance(raw, dict):
+                    merged = copy.deepcopy(DEFAULT_CONFIG)
+                    merged.update(raw)
+                    return merged
+            except Exception:
+                pass
+        log.error("Config not found (or missing tenant_slug/agent_key). Looked in:\n  %s\n"
+                  "Run:  scale_agent.exe --setup", "\n  ".join(str(p) for p in _config_candidates()))
         sys.exit(1)
-    # utf-8-sig strips the BOM that PowerShell 5.1 Out-File adds by default.
-    with open(CONFIG_FILE, "r", encoding="utf-8-sig") as fh:
-        data = json.load(fh)
+
+    src, data = chosen
     merged = copy.deepcopy(DEFAULT_CONFIG)
     merged.update(data)
+    if src.resolve() != CONFIG_FILE.resolve():
+        log.warning("Loaded config from %s (not beside the EXE) - migrating a copy to %s "
+                    "so the next start is clean.", src, CONFIG_FILE)
+        try:
+            save_config(merged)
+        except Exception as e:
+            log.warning("Could not migrate config to %s: %s", CONFIG_FILE, e)
     return merged
 
 
 def save_config(cfg: dict):
     with open(CONFIG_FILE, "w", encoding="utf-8") as fh:
         json.dump(cfg, fh, indent=2)
-    log.info("Config saved → %s", CONFIG_FILE)
+    log.info("Config saved -> %s", CONFIG_FILE)
 
 
 # ── Setup wizard ──────────────────────────────────────────────────────────────

@@ -1,17 +1,32 @@
-<#
+﻿<#
 .SYNOPSIS
     Weighbridge Agent Deployment Script — one-click installer for client PCs.
 
 .DESCRIPTION
     Deploys the Camera Agent and/or Scale Agent on a client PC.
-    Handles: Python check, dependency install, config generation,
-    Windows Scheduled Task registration, firewall rules, and verification.
+    Handles: prerequisite check, config generation, Windows Scheduled Task
+    registration, firewall rules, and verification.
+
+    Two modes:
+      • exe    (default) — deploys the frozen PyInstaller EXEs from .\dist.
+                           NO Python needed on the client PC. Build them first with:
+                             pyinstaller --noconfirm --onefile --console --name scale_agent  --collect-submodules certifi scale_agent.py
+                             pyinstaller --noconfirm --onefile --console --name camera_agent --collect-submodules certifi camera_agent.py
+      • source           — copies the .py files and runs them with a locally
+                           installed Python 3.11+ (dev / fallback).
 
 .PARAMETER InstallDir
     Installation directory (default: C:\weighbridge-agent)
 
 .PARAMETER AgentType
     Which agent(s) to deploy: "both", "camera", "scale" (default: both)
+
+.PARAMETER Mode
+    "exe" (default, frozen EXEs, no Python) or "source" (.py + local Python)
+
+.PARAMETER IncludeTally
+    Also copy tally_connector.exe (or .py) into the install dir. It self-installs
+    via its own --setup / --install (see the closing notes after deployment).
 
 .PARAMETER CloudUrl
     Cloud server URL (default: https://weighbridgesetu.com)
@@ -52,11 +67,11 @@
     Remove agents, scheduled tasks, and firewall rules
 
 .EXAMPLE
-    # Interactive setup (prompts for all values)
+    # Interactive setup — frozen EXEs, no Python on the client (default mode)
     .\deploy-agents.ps1
 
 .EXAMPLE
-    # Full automated deployment
+    # Full automated EXE deployment
     .\deploy-agents.ps1 -TenantSlug "ziya-ore" -AgentKey "abc-123" `
         -FrontCameraUrl "http://192.168.0.101/cgi-bin/snapshot.cgi" `
         -TopCameraUrl "http://192.168.0.103/cgi-bin/snapshot.cgi" `
@@ -64,11 +79,19 @@
         -ComPort "COM3"
 
 .EXAMPLE
-    # Camera only
+    # Camera only, EXE mode
     .\deploy-agents.ps1 -AgentType camera -TenantSlug "demo" -AgentKey "key123"
 
 .EXAMPLE
-    # Uninstall everything
+    # Also stage the Tally connector EXE (self-installs afterwards)
+    .\deploy-agents.ps1 -IncludeTally -TenantSlug "demo" -AgentKey "key123" -ComPort "COM3"
+
+.EXAMPLE
+    # Dev / fallback — run the .py with a local Python instead of the EXEs
+    .\deploy-agents.ps1 -Mode source -TenantSlug "demo" -AgentKey "key123" -ComPort "COM3"
+
+.EXAMPLE
+    # Uninstall everything (tasks, NSSM services, firewall, processes)
     .\deploy-agents.ps1 -Uninstall
 #>
 
@@ -76,6 +99,12 @@ param(
     [string]$InstallDir   = "C:\weighbridge-agent",
     [ValidateSet("both","camera","scale")]
     [string]$AgentType    = "both",
+    # exe    = deploy the frozen PyInstaller EXEs from .\dist (NO Python needed on the client PC) — default.
+    # source = copy the .py files and run them with a locally-installed Python (dev / fallback).
+    [ValidateSet("exe","source")]
+    [string]$Mode         = "exe",
+    # Also copy tally_connector.exe into the install dir (it self-installs — see the closing notes).
+    [switch]$IncludeTally,
     [string]$CloudUrl     = "https://weighbridgesetu.com",
     [string]$TenantSlug   = "",
     [string]$AgentKey     = "",
@@ -91,6 +120,21 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Directory this script lives in — the agent files sit next to it (.py, or the
+# frozen .exe either in .\dist or flat alongside this script in a client bundle).
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$distDir   = Join-Path $scriptDir "dist"
+
+# Locate a frozen agent EXE: prefer .\dist (dev build layout), else next to this
+# script (flat C:\weighbridge-agent client bundle). Returns full path or $null.
+function Resolve-AgentExe($name) {
+    foreach ($dir in @($distDir, $scriptDir)) {
+        $p = Join-Path $dir $name
+        if (Test-Path $p) { return (Resolve-Path $p).Path }
+    }
+    return $null
+}
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -128,6 +172,10 @@ Write-Host "  ╔═════════════════════
 Write-Host "  ║   Weighbridge Agent Deployment                  ║" -ForegroundColor Cyan
 Write-Host "  ║   Camera + Scale Agent Installer                ║" -ForegroundColor Cyan
 Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Cyan
+if (-not $Uninstall) {
+    $modeLabel = if ($Mode -eq "exe") { "Frozen EXE (no Python required on this PC)" } else { "Python source (.py + local Python)" }
+    Write-Host "  Mode: $modeLabel" -ForegroundColor DarkGray
+}
 Write-Host ""
 
 # ── Uninstall ───────────────────────────────────────────────────────────────
@@ -146,11 +194,12 @@ if ($Uninstall) {
         }
     }
 
-    # Also try NSSM services
+    # Also try NSSM services (Tally connector self-installs as one; camera/scale may
+    # have been NSSM services in older deployments).
     $nssm = Get-Command nssm -ErrorAction SilentlyContinue
     if (-not $nssm) { $nssm = Get-Command "C:\scripts\nssm.exe" -ErrorAction SilentlyContinue }
     if ($nssm) {
-        foreach ($svcName in @("WeighbridgeCameraAgent", "WeighbridgeScaleAgent")) {
+        foreach ($svcName in @("WeighbridgeCameraAgent", "WeighbridgeScaleAgent", "WeighbridgeTallyConnector")) {
             $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
             if ($svc) {
                 & $nssm.Source stop $svcName 2>$null
@@ -166,9 +215,13 @@ if ($Uninstall) {
     Write-OK "Firewall rules removed"
 
     Write-Step 3 "Stopping Processes"
+    # Source-run agents show up as python*; frozen agents run as their own EXE name.
     Get-Process python* -ErrorAction SilentlyContinue | Where-Object {
         $_.Path -and $_.Path -like "*weighbridge*"
     } | Stop-Process -Force -ErrorAction SilentlyContinue
+    foreach ($proc in @("scale_agent", "camera_agent", "tally_connector")) {
+        Get-Process $proc -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
     Write-OK "Agent processes stopped"
 
     Write-Host ""
@@ -186,36 +239,62 @@ if ($Uninstall) {
 $deployCamera = $AgentType -in @("both", "camera")
 $deployScale  = $AgentType -in @("both", "scale")
 
-# ── Step 1: Check Python ────────────────────────────────────────────────────
+# ── Step 1: Check prerequisites ─────────────────────────────────────────────
 
-Write-Step 1 "Checking Python"
+Write-Step 1 "Checking prerequisites"
 
 $pythonExe = $null
-foreach ($candidate in @(
-    "python",
-    "python3",
-    "C:\Program Files\Python311\python.exe",
-    "C:\Program Files\Python312\python.exe",
-    "C:\Python311\python.exe",
-    "C:\Python312\python.exe"
-)) {
-    try {
-        $ver = & $candidate --version 2>&1
-        if ($ver -match "Python 3\.\d+") {
-            $pythonExe = $candidate
-            break
-        }
-    } catch {}
-}
 
-if (-not $pythonExe) {
-    Write-Err "Python 3.x not found. Install from https://python.org/downloads"
-    exit 1
-}
+if ($Mode -eq "source") {
+    foreach ($candidate in @(
+        "python",
+        "python3",
+        "C:\Program Files\Python311\python.exe",
+        "C:\Program Files\Python312\python.exe",
+        "C:\Python311\python.exe",
+        "C:\Python312\python.exe"
+    )) {
+        try {
+            $ver = & $candidate --version 2>&1
+            if ($ver -match "Python 3\.\d+") {
+                $pythonExe = $candidate
+                break
+            }
+        } catch {}
+    }
 
-$pyVersion = & $pythonExe --version 2>&1
-$pyPath    = & $pythonExe -c "import sys; print(sys.executable)" 2>&1
-Write-OK "$pyVersion at $pyPath"
+    if (-not $pythonExe) {
+        Write-Err "Python 3.x not found. Install from https://python.org/downloads"
+        Write-Info "(Or re-run WITHOUT -Mode source to deploy the bundled EXEs — no Python needed.)"
+        exit 1
+    }
+
+    $pyVersion = & $pythonExe --version 2>&1
+    $pyPath    = & $pythonExe -c "import sys; print(sys.executable)" 2>&1
+    Write-OK "$pyVersion at $pyPath"
+} else {
+    # EXE mode — no Python required. Locate the frozen agents (in .\dist OR flat
+    # beside this script, e.g. the C:\weighbridge-agent client bundle).
+    $requiredExes = @()
+    if ($deployCamera) { $requiredExes += "camera_agent.exe" }
+    if ($deployScale)  { $requiredExes += "scale_agent.exe" }
+    $missingExe = @()
+    foreach ($exe in $requiredExes) {
+        $found = Resolve-AgentExe $exe
+        if ($found) { Write-OK "Found $exe" }
+        else { $missingExe += $exe }
+    }
+    if ($missingExe.Count -gt 0) {
+        Write-Err "Missing EXE(s): $($missingExe -join ', ')"
+        Write-Info "Looked in: $distDir  and  $scriptDir"
+        Write-Info "Build them (from backend\agents):"
+        Write-Info "  pyinstaller --noconfirm --onefile --console --name scale_agent  --collect-submodules certifi scale_agent.py"
+        Write-Info "  pyinstaller --noconfirm --onefile --console --name camera_agent --collect-submodules certifi camera_agent.py"
+        Write-Info "…or re-run with -Mode source to run the .py directly with a local Python."
+        exit 1
+    }
+    Write-Info "No Python needed — running the frozen agents."
+}
 
 # ── Step 2: Create Install Directory ────────────────────────────────────────
 
@@ -234,19 +313,40 @@ New-Item -Path "$InstallDir\logs" -ItemType Directory -Force -ErrorAction Silent
 
 Write-Step 3 "Copying agent files"
 
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+if ($Mode -eq "exe") {
+    # Copy the frozen EXEs into the install dir. The agents resolve their config +
+    # logs relative to their OWN location (sys.executable dir when frozen), so the
+    # config JSON written to $InstallDir sits right next to the EXE.
+    $exesToCopy = @()
+    if ($deployCamera) { $exesToCopy += "camera_agent.exe" }
+    if ($deployScale)  { $exesToCopy += "scale_agent.exe" }
+    if ($IncludeTally) { $exesToCopy += "tally_connector.exe" }
+    foreach ($exe in $exesToCopy) {
+        $src = Resolve-AgentExe $exe
+        $dst = Join-Path $InstallDir $exe
+        if (-not $src) { Write-Warn "$exe not found (looked in $distDir and $scriptDir)"; continue }
+        # Flat client bundle: the EXE may already BE at $InstallDir — don't self-copy.
+        if ([System.IO.Path]::GetFullPath($src) -ieq [System.IO.Path]::GetFullPath($dst)) {
+            Write-OK "$exe already in place"
+        } else {
+            Copy-Item $src -Destination $dst -Force
+            Write-OK "Copied $exe"
+        }
+    }
+} else {
+    $filesToCopy = @("requirements.txt")
+    if ($deployCamera) { $filesToCopy += "camera_agent.py" }
+    if ($deployScale)  { $filesToCopy += "scale_agent.py" }
+    if ($IncludeTally) { $filesToCopy += "tally_connector.py" }
 
-$filesToCopy = @("requirements.txt")
-if ($deployCamera) { $filesToCopy += "camera_agent.py" }
-if ($deployScale)  { $filesToCopy += "scale_agent.py" }
-
-foreach ($file in $filesToCopy) {
-    $src = Join-Path $scriptDir $file
-    if (Test-Path $src) {
-        Copy-Item $src -Destination "$InstallDir\$file" -Force
-        Write-OK "Copied $file"
-    } else {
-        Write-Warn "$file not found in $scriptDir"
+    foreach ($file in $filesToCopy) {
+        $src = Join-Path $scriptDir $file
+        if (Test-Path $src) {
+            Copy-Item $src -Destination "$InstallDir\$file" -Force
+            Write-OK "Copied $file"
+        } else {
+            Write-Warn "$file not found in $scriptDir"
+        }
     }
 }
 
@@ -254,8 +354,12 @@ foreach ($file in $filesToCopy) {
 
 Write-Step 4 "Installing Python dependencies"
 
+if ($Mode -eq "exe") {
+    Write-OK "Skipped — dependencies are bundled inside the EXE"
+}
+
 $reqFile = Join-Path $InstallDir "requirements.txt"
-if (Test-Path $reqFile) {
+if ($Mode -eq "source" -and (Test-Path $reqFile)) {
     # Install to global site-packages so the SYSTEM-user Scheduled Task can
     # import the packages. Use sysconfig.get_paths()['purelib'] — it always
     # returns the correct site-packages folder. (site.getsitepackages() on
@@ -292,7 +396,7 @@ if (Test-Path $reqFile) {
         Write-Info "Retrying as a fallback…"
         & $pythonExe -m pip install --user -r $reqFile --quiet --disable-pip-version-check 2>&1 | Out-Null
     }
-} else {
+} elseif ($Mode -eq "source") {
     Write-Warn "requirements.txt not found — skipping"
 }
 
@@ -339,7 +443,8 @@ if ($deployCamera) {
 
     Write-Host ""
     Write-Info "── Gate cameras (live feed on Gate Camera Live page) ──"
-    Write-Info "   Leave blank to skip — gate live feed will not show images."
+    Write-Info "   Leave blank and that position FALLS BACK to the front weighbridge camera"
+    Write-Info "   (so the gate page shows the weighbridge view, not a dedicated gate view)."
     if ([string]::IsNullOrWhiteSpace($EntryCameraUrl)) {
         $EntryCameraUrl = Prompt-Value "Entry camera URL (blank to skip)" ""
     }
@@ -446,7 +551,11 @@ if ($deployCamera) {
     Write-Step $stepNum "Testing cameras"
 
     Push-Location $InstallDir
-    $testResult = & $pythonExe camera_agent.py --test 2>&1
+    if ($Mode -eq "exe") {
+        $testResult = & "$InstallDir\camera_agent.exe" --test 2>&1
+    } else {
+        $testResult = & $pythonExe camera_agent.py --test 2>&1
+    }
     Pop-Location
 
     foreach ($line in $testResult) {
@@ -482,11 +591,16 @@ function Register-AgentTask($taskName, $scriptFile, $description) {
         }
     }
 
-    $scriptPath = Join-Path $InstallDir $scriptFile
-    $pyExePath  = (& $pythonExe -c "import sys; print(sys.executable)" 2>&1).Trim()
-
-    # Create scheduled task that runs at startup and restarts on failure
-    $action  = New-ScheduledTaskAction -Execute $pyExePath -Argument $scriptPath -WorkingDirectory $InstallDir
+    # Create scheduled task that runs at startup and restarts on failure.
+    # EXE mode runs the frozen agent directly (no Python); source mode runs the .py.
+    if ($Mode -eq "exe") {
+        $exePath = Join-Path $InstallDir ([System.IO.Path]::ChangeExtension($scriptFile, ".exe"))
+        $action  = New-ScheduledTaskAction -Execute $exePath -WorkingDirectory $InstallDir
+    } else {
+        $scriptPath = Join-Path $InstallDir $scriptFile
+        $pyExePath  = (& $pythonExe -c "import sys; print(sys.executable)" 2>&1).Trim()
+        $action  = New-ScheduledTaskAction -Execute $pyExePath -Argument $scriptPath -WorkingDirectory $InstallDir
+    }
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
     $settings = New-ScheduledTaskSettingsSet `
@@ -636,3 +750,25 @@ Write-Host "    Restart camera: Stop-ScheduledTask WeighbridgeCameraAgent; Start
 Write-Host "    Restart scale:  Stop-ScheduledTask WeighbridgeScaleAgent; Start-ScheduledTask WeighbridgeScaleAgent" -ForegroundColor Gray
 Write-Host "    Uninstall:      .\deploy-agents.ps1 -Uninstall" -ForegroundColor Gray
 Write-Host ""
+
+if ($IncludeTally) {
+    Write-Host "  Tally Connector (copied, NOT auto-started — it self-installs):" -ForegroundColor Cyan
+    Write-Host "    1) cd $InstallDir" -ForegroundColor Gray
+    Write-Host "    2) .\tally_connector.exe --setup     # cloud_url, tenant, agent key, Tally host/port" -ForegroundColor Gray
+    Write-Host "    3) .\tally_connector.exe --test      # verify cloud auth + local Tally reachability" -ForegroundColor Gray
+    Write-Host "    4) .\tally_connector.exe --install   # registers NSSM service WeighbridgeTallyConnector" -ForegroundColor Gray
+    Write-Host ""
+}
+
+if ($Mode -eq "exe") {
+    Write-Host "  ⚠ Smart App Control / SmartScreen note:" -ForegroundColor Yellow
+    Write-Host "    These EXEs are unsigned. On a client PC with Smart App Control ON, Windows may" -ForegroundColor Gray
+    Write-Host "    block them by per-file reputation until they build trust, or refuse to run them." -ForegroundColor Gray
+    Write-Host "    If an agent won't start:" -ForegroundColor Gray
+    Write-Host "      • Right-click the .exe → Properties → check 'Unblock' → Apply, then restart the task; or" -ForegroundColor Gray
+    Write-Host "      • Turn Smart App Control OFF (Settings → Privacy & security → Windows Security →" -ForegroundColor Gray
+    Write-Host "        App & browser control → Smart App Control) — note: OFF is permanent until reinstall; or" -ForegroundColor Gray
+    Write-Host "      • Re-run with -Mode source (needs Python 3.11+ on the PC) — the always-reliable path." -ForegroundColor Gray
+    Write-Host "    A code-signing certificate removes this entirely (recommended for wide rollout)." -ForegroundColor Gray
+    Write-Host ""
+}
