@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield, XCircle, PieChart, TrendingUp, ShieldAlert, DoorOpen, Ticket } from 'lucide-react';
+import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield, XCircle, PieChart, TrendingUp, ShieldAlert, DoorOpen, Ticket, Wallet } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import PaymentsPage from './PaymentsPage';
@@ -22,8 +22,9 @@ import SalesStatusReportPage from './SalesStatusReportPage';
 import AnomalyReportPage from './AnomalyReportPage';
 import GatePassRegisterPage from './GatePassRegisterPage';
 import TokenRegisterPage from './TokenRegisterPage';
+import EodSummaryReportPage from './EodSummaryReportPage';
 
-type Tab = 'payments' | 'statement' | 'gst' | 'gstr2b' | 'gst-split' | 'sales-status' | 'reports' | 'write-offs' | 'compliance' | 'activity' | 'anomaly' | 'gate-passes' | 'token-register';
+type Tab = 'payments' | 'eod' | 'statement' | 'gst' | 'gstr2b' | 'gst-split' | 'sales-status' | 'reports' | 'write-offs' | 'compliance' | 'activity' | 'anomaly' | 'gate-passes' | 'token-register';
 
 export default function ReportsHubPage() {
   const { t } = useTranslation();
@@ -36,6 +37,7 @@ export default function ReportsHubPage() {
 
   const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
     { value: 'payments', label: t('payment.title'), icon: CreditCard },
+    { value: 'eod', label: 'Day Book (EOD)', icon: Wallet },
     { value: 'statement', label: t('reports.accountStatement'), icon: BookOpen },
     { value: 'gst', label: t('reports.gstReturns'), icon: FileBarChart },
     { value: 'gstr2b', label: t('reports.gstr2b'), icon: FileBarChart },
@@ -73,6 +75,7 @@ export default function ReportsHubPage() {
           })}
         </TabsList>
         <TabsContent value="payments" className="mt-4"><PaymentsPage /></TabsContent>
+        <TabsContent value="eod" className="mt-4"><EodSummaryReportPage /></TabsContent>
         <TabsContent value="statement" className="mt-4"><LedgerPage /></TabsContent>
         <TabsContent value="gst" className="mt-4"><GstReportsPage /></TabsContent>
         <TabsContent value="gstr2b" className="mt-4"><Gstr2bReconcilePage /></TabsContent>

@@ -644,6 +644,26 @@ async def _send_owner_digest_for_session(session_factory, label: str) -> None:
         except Exception as e:
             logger.warning("anpr_daily_summary send failed [%s]: %s", label, e)
 
+        # ── EOD Daily Business Summary / day book (fires at the same time) ──
+        # Cash vs electronic collections + itemised money-out (incl. advances).
+        # Gated by app_settings 'eod_summary.enabled' (default ON). Owner picks
+        # channels via the Recipients tab on /notifications (event 'eod_summary').
+        try:
+            eod_row = (await db.execute(
+                _sql("SELECT value FROM app_settings WHERE key = 'eod_summary.enabled'"),
+            )).fetchone()
+            eod_enabled = True
+            if eod_row and eod_row[0] is not None:
+                eod_enabled = str(eod_row[0]).strip().lower() not in ("false", "0", "no", "off")
+            if eod_enabled:
+                from app.routers.reports import build_eod_summary_context
+                eod_ctx = await build_eod_summary_context(db, co.id, co.name, today)
+                await send_notification(db, co.id, "eod_summary", eod_ctx,
+                                        entity_type="company", entity_id=str(co.id))
+                logger.info("eod_summary sent [%s]", label)
+        except Exception as e:
+            logger.warning("eod_summary send failed [%s]: %s", label, e)
+
 
 async def _purge_old_tally_jobs(factory, label: str = "default") -> None:
     """Daily retention: delete completed Tally relay jobs older than 30 days
