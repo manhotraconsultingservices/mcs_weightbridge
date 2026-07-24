@@ -4,10 +4,13 @@ GSTR-3B, Profit & Loss, Stock Summary.
 """
 import io
 import json
+import logging
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
+
+logger = logging.getLogger("reports")
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -792,7 +795,16 @@ async def profit_loss(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Basic P&L: Revenue (sales) vs COGS (purchases) by month."""
+    """Full P&L by month:
+        Revenue (sales, net of credit/debit notes)
+      − COGS (purchase invoices)
+      = Gross profit
+      − Operating expenses: Labour · Store inventory (at purchase) · Fuel · Commission
+      − Bad-debt write-offs
+      = Net profit
+    Operating-expense lines come from optional feature modules and degrade to zero
+    (never error) on a tenant that doesn't have them.
+    """
     yr = func.extract("year", Invoice.invoice_date)
     mo = func.extract("month", Invoice.invoice_date)
 
@@ -878,6 +890,66 @@ async def profit_loss(
         y, m = int(yr_val), int(mo_val)
         return f"{y}-{m:02d}", f"{calendar.month_abbr[m]} {y}"
 
+    # ── Operating expenses (FULL P&L) ────────────────────────────────────────
+    # A trading account is only Sales − Purchases. A real P&L also subtracts
+    # operating costs. These come from OPTIONAL feature modules (workforce /
+    # inventory / fuel / agents) whose tables may not exist on a given tenant, so
+    # each aggregation runs in its OWN SAVEPOINT — a missing table degrades that
+    # line to zero instead of aborting the whole P&L transaction.
+    exp_params = {"cid": str(current_user.company_id), "fd": from_date, "td": to_date}
+
+    async def _expense_by_month(sql: str) -> dict[str, float]:
+        out: dict[str, float] = {}
+        try:
+            async with db.begin_nested():
+                rows = (await db.execute(text(sql), exp_params)).all()
+            for row in rows:
+                if row.yr is None or row.mo is None:
+                    continue
+                k, _ = _month_label(row.yr, row.mo)
+                out[k] = _r2(out.get(k, 0.0) + float(row.total or 0))
+        except Exception as e:  # noqa: BLE001 — missing feature-module table, etc.
+            logger.warning("P&L expense line skipped: %s", str(e)[:140])
+        return out
+
+    # LABOUR: wages + salary + bonus, less deductions. ADVANCES are EXCLUDED — a
+    # worker advance is a loan recovered from later wages, so counting it as an
+    # expense as well would double-count labour.
+    labour_by_month = await _expense_by_month(
+        "SELECT EXTRACT(year FROM pay_date) AS yr, EXTRACT(month FROM pay_date) AS mo, "
+        "SUM(CASE WHEN payment_type='deduction' THEN -amount ELSE amount END) AS total "
+        "FROM worker_payments WHERE company_id = :cid "
+        "AND payment_type IN ('wage','salary','bonus','deduction') "
+        "AND pay_date >= :fd AND pay_date <= :td GROUP BY 1, 2")
+
+    # STORE INVENTORY: recognised WHEN PURCHASED (received), valued at the PO unit
+    # price. A receipt transaction references its PO; join the PO item for price.
+    store_by_month = await _expense_by_month(
+        "SELECT EXTRACT(year FROM t.created_at) AS yr, EXTRACT(month FROM t.created_at) AS mo, "
+        "SUM(t.quantity * COALESCE(pi.unit_price, 0)) AS total "
+        "FROM inventory_transactions t "
+        "JOIN inventory_po_items pi ON pi.po_id = t.reference_id AND pi.item_id = t.item_id "
+        "WHERE t.company_id = :cid AND t.transaction_type = 'receipt' "
+        # CAST(created_at AS date) — comparing the date part avoids a ':param::type'
+        # cast, which SQLAlchemy's text() parser rejects as a syntax error, and
+        # covers the whole final day without timestamp-boundary arithmetic.
+        "AND CAST(t.created_at AS date) >= :fd AND CAST(t.created_at AS date) <= :td GROUP BY 1, 2")
+
+    # FUEL: exclude plant_tank fills — that diesel was already expensed when it was
+    # purchased into the store inventory above (prevents double-counting).
+    fuel_by_month = await _expense_by_month(
+        "SELECT EXTRACT(year FROM entry_date) AS yr, EXTRACT(month FROM entry_date) AS mo, "
+        "SUM(amount) AS total FROM vehicle_fuel_entries WHERE company_id = :cid "
+        "AND COALESCE(fuel_source,'') <> 'plant_tank' "
+        "AND entry_date >= :fd AND entry_date <= :td GROUP BY 1, 2")
+
+    # COMMISSION: agent/broker commission snapshotted on finalised sale invoices.
+    commission_by_month = await _expense_by_month(
+        "SELECT EXTRACT(year FROM invoice_date) AS yr, EXTRACT(month FROM invoice_date) AS mo, "
+        "SUM(COALESCE(commission_amount,0)) AS total FROM invoices WHERE company_id = :cid "
+        "AND invoice_type='sale' AND status='final' AND COALESCE(commission_amount,0) > 0 "
+        "AND invoice_date >= :fd AND invoice_date <= :td GROUP BY 1, 2")
+
     rev_by_month: dict[str, dict] = {}
     for r in rev_result.all():
         key, label = _month_label(r.yr, r.mo)
@@ -910,10 +982,13 @@ async def profit_loss(
         note_net_by_month[key] = _r2(note_net_by_month.get(key, 0.0) + signed)
 
     # Merge by month
-    all_months = sorted(set(list(rev_by_month.keys()) + list(cogs_by_month.keys())
-                            + list(wo_by_month.keys()) + list(note_net_by_month.keys())))
+    all_months = sorted(set(
+        list(rev_by_month) + list(cogs_by_month) + list(wo_by_month)
+        + list(note_net_by_month) + list(labour_by_month) + list(store_by_month)
+        + list(fuel_by_month) + list(commission_by_month)))
     monthly = []
     total_revenue = total_cogs = total_write_off = 0.0
+    total_labour = total_store = total_fuel = total_commission = 0.0
     for key in all_months:
         rev = rev_by_month.get(key, {})
         cogs = cogs_by_month.get(key, {})
@@ -924,18 +999,35 @@ async def profit_loss(
         revenue = _r2(rev.get("revenue", 0.0) + note_net)
         cost = cogs.get("cogs", 0.0)
         write_off = wo.get("write_off", 0.0)
+        labour = labour_by_month.get(key, 0.0)
+        store = store_by_month.get(key, 0.0)
+        fuel = fuel_by_month.get(key, 0.0)
+        commission = commission_by_month.get(key, 0.0)
         gross_profit = _r2(revenue - cost)
-        net_profit = _r2(gross_profit - write_off)
+        operating_expenses = _r2(labour + store + fuel + commission)
+        total_expenses = _r2(operating_expenses + write_off)
+        net_profit = _r2(gross_profit - total_expenses)
         margin = _r2((net_profit / revenue * 100) if revenue > 0 else 0)
         total_revenue += revenue
         total_cogs += cost
         total_write_off += write_off
+        total_labour += labour
+        total_store += store
+        total_fuel += fuel
+        total_commission += commission
         monthly.append({
             "month": key, "label": label,
             "revenue": revenue, "cogs": cost,
             "credit_debit_note_net": note_net,
-            "write_off": write_off,
             "gross_profit": gross_profit,
+            # operating-expense breakdown (the full-P&L additions)
+            "labour": labour,
+            "store_inventory": store,
+            "fuel": fuel,
+            "commission": commission,
+            "write_off": write_off,
+            "operating_expenses": operating_expenses,
+            "total_expenses": total_expenses,
             "net_profit": net_profit,
             "margin_pct": margin,
             "sale_count": rev.get("sale_count", 0),
@@ -944,14 +1036,22 @@ async def profit_loss(
         })
 
     total_gross = _r2(total_revenue - total_cogs)
-    total_net = _r2(total_gross - total_write_off)
+    total_opex = _r2(total_labour + total_store + total_fuel + total_commission)
+    total_expenses_all = _r2(total_opex + total_write_off)
+    total_net = _r2(total_gross - total_expenses_all)
     return {
         "period": f"{from_date.isoformat()} to {to_date.isoformat()}",
         "summary": {
             "total_revenue": _r2(total_revenue),
             "total_cogs": _r2(total_cogs),
-            "total_write_off": _r2(total_write_off),
             "gross_profit": total_gross,
+            "labour": _r2(total_labour),
+            "store_inventory": _r2(total_store),
+            "fuel": _r2(total_fuel),
+            "commission": _r2(total_commission),
+            "total_write_off": _r2(total_write_off),
+            "operating_expenses": total_opex,
+            "total_expenses": total_expenses_all,
             "net_profit": total_net,
             "margin_pct": _r2((total_net / total_revenue * 100) if total_revenue > 0 else 0),
         },
