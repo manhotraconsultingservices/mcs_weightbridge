@@ -1638,14 +1638,22 @@ function mtFmt(v: number | null | undefined) {
   if (v == null) return '—';
   return fmtKg(v, 4);
 }
-/** Net weight in the tenant unit; MT products with a bulk_density(kg/CFT) also
- *  show CFT, e.g. "9.7500 MT / 247.23 CFT". Maize (Qtl, no density) → "97.500 Qtl". */
-function dualFmt(weightKg: number | null | undefined, bulkDensity: number | null | undefined): string {
-  if (weightKg == null) return '—';
-  const base = fmtKg(weightKg, 4);
-  if (!bulkDensity || Number(bulkDensity) <= 0) return base;
-  const volCft = weightKg / Number(bulkDensity);   // kg ÷ (kg/CFT) = CFT
-  return `${base} / ${volCft.toFixed(2)} CFT`;
+/** Volume in the token's chosen billing unit (canonical storage stays CFT). */
+function volFmt(cft: number | null | undefined, unit?: string | null): string {
+  if (cft == null) return '—';
+  const u = (unit || 'CFT').toUpperCase();
+  if (u === 'CBM' || u === 'CUM') return `${(cft / CFT_PER_M3).toFixed(2)} CBM`;
+  if (u === 'BRASS') return `${(cft / CFT_PER_BRASS).toFixed(2)} Brass`;
+  return `${cft.toFixed(2)} CFT`;
+}
+/** Net quantity in the unit the token was actually recorded in — no cross-unit
+ *  conversion. Volume tokens show their volume unit (CFT/CBM/Brass); weighed
+ *  tokens show the tenant weight unit (MT, or Qtl for maize). */
+function qtyFmt(token: Token): string {
+  if (token.weight_method === 'volume' && token.volume_cft != null) {
+    return volFmt(Number(token.volume_cft), token.billing_unit);
+  }
+  return mtFmt(token.net_weight);
 }
 
 // Active statuses (default filter)
@@ -2025,13 +2033,8 @@ export default function TokenPageV1() {
               disabled={filtered.length === 0}
               onClick={() => {
                 const wu = weightUnitLabel();
-                const headers = ['Token No', 'Gate Pass', 'Date', 'Vehicle', 'Method', 'Party', 'Material', `Gross (${wu})`, `Tare (${wu})`, `Net (${wu})`, 'Net (CFT)', 'Volume (CFT)', 'Status'];
+                const headers = ['Token No', 'Gate Pass', 'Date', 'Vehicle', 'Method', 'Party', 'Material', `Gross (${wu})`, `Tare (${wu})`, `Net (${wu})`, 'Volume (CFT)', 'Status'];
                 const rows = filtered.map(t => {
-                  // bulk_density is kg/CFT, so vol_cft = weight_kg / (kg/CFT)
-                  const bd = t.product?.bulk_density;
-                  const cft = (t.net_weight != null && bd && Number(bd) > 0)
-                    ? (Number(t.net_weight) / Number(bd)).toFixed(2)
-                    : '';
                   return [
                     t.token_no != null ? String(t.token_no) : '',
                     t.gate_pass_no ?? '',
@@ -2043,7 +2046,6 @@ export default function TokenPageV1() {
                     t.gross_weight != null ? fmtKg(t.gross_weight, 4, false) : '',
                     t.tare_weight != null ? fmtKg(t.tare_weight, 4, false) : '',
                     t.net_weight != null ? fmtKg(t.net_weight, 4, false) : '',
-                    cft,
                     t.volume_cft != null ? Number(t.volume_cft).toFixed(2) : '',
                     t.status,
                   ];
@@ -2249,9 +2251,9 @@ export default function TokenPageV1() {
                     <div className="min-w-0 overflow-hidden text-right font-mono text-xs text-muted-foreground whitespace-nowrap">{mtFmt(token.tare_weight)}</div>
                     )}
                     {visibleCols.includes('net') && (
-                    <div className="min-w-0 overflow-hidden text-right font-mono text-xs font-bold whitespace-nowrap" title={dualFmt(token.net_weight, token.product?.bulk_density)}>
-                      {token.net_weight != null
-                        ? <span className="text-primary">{dualFmt(token.net_weight, token.product?.bulk_density)}</span>
+                    <div className="min-w-0 overflow-hidden text-right font-mono text-xs font-bold whitespace-nowrap" title={qtyFmt(token)}>
+                      {(token.weight_method === 'volume' ? token.volume_cft != null : token.net_weight != null)
+                        ? <span className="text-primary">{qtyFmt(token)}</span>
                         : <span className="text-muted-foreground">—</span>
                       }
                     </div>

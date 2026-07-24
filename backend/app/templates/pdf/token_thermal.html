@@ -263,28 +263,7 @@
 <hr class="sep">
 
 {% if is_volume %}
-  {# ===== VOLUME MODE ===== #}
-  <div class="vol-block">
-    <div class="row">
-      <span class="row-label">{{ bl('volume') | upper }}</span>
-      <span class="row-value">
-        {% if token.volume_cft %}{{ '%.2f'|format(token.volume_cft|float) }} CFT{% else %}—{% endif %}
-      </span>
-    </div>
-    <div class="row">
-      <span class="row-label">{{ bl('bulk_density') | upper }}</span>
-      <span class="row-value">
-        {% if token.product and token.product.bulk_density %}
-          {{ '%.2f'|format(token.product.bulk_density|float) }} kg/CFT
-        {% else %}—{% endif %}
-      </span>
-    </div>
-    {% if token.volume_cft and token.product and token.product.bulk_density %}
-    <div class="vol-eq">
-      {{ '%.2f'|format(token.volume_cft|float) }} CFT × {{ '%.2f'|format(token.product.bulk_density|float) }} kg/CFT = {{ '%.2f'|format((token.volume_cft|float) * (token.product.bulk_density|float) / 1000) }} MT
-    </div>
-    {% endif %}
-  </div>
+  {# ===== VOLUME MODE — quantity shown in the net block below, in the unit entered (no MT conversion) ===== #}
 {% else %}
   {# ===== WEIGHBRIDGE MODE ===== #}
   <div class="weight-block">
@@ -299,14 +278,19 @@
   </div>
 {% endif %}
 
-{# Net weight — same prominent block for both modes #}
+{# Net quantity — in the unit the token was recorded in (no cross-unit conversion) #}
 <div class="net-big">
+  {% if is_volume %}
+  {% set _bu = (token.billing_unit or 'CFT')|upper %}
+  <div class="lbl">{{ bl('volume') | upper }}</div>
+  <div class="val">
+    {% if token.volume_cft %}{% if _bu == 'CBM' or _bu == 'CUM' %}{{ '%.2f'|format(token.volume_cft|float / 35.3147) }} CBM{% elif _bu == 'BRASS' %}{{ '%.2f'|format(token.volume_cft|float / 100) }} Brass{% else %}{{ '%.2f'|format(token.volume_cft|float) }} CFT{% endif %}{% else %}—{% endif %}
+  </div>
+  {% else %}
   <div class="lbl">{{ bl('net_weight') | upper }}</div>
   <div class="val">
     {% if token.net_weight %}{{ '%.3f'|format(token.net_weight|float / bill_div) }} {{ unit_lbl }}{% else %}—{% endif %}
   </div>
-  {% if _u == 'MT' and token.net_weight and token.product and token.product.bulk_density and (token.product.bulk_density|float) > 0 %}
-  <div class="sub">{{ '%.2f'|format(token.net_weight|float / (token.product.bulk_density|float)) }} CFT</div>
   {% endif %}
 </div>
 
@@ -334,41 +318,8 @@
 <hr class="sep">
 {% endif %}
 
-{# ── Financial summary ── #}
-{% set has_fin = (rate is defined and rate and rate > 0) or (royalty_amount is defined and royalty_amount and royalty_amount > 0) or (vehicle_rent is defined and vehicle_rent and vehicle_rent > 0) %}
-{% if has_fin %}
-{% if rate is defined and rate and rate > 0 %}
-<div class="row">
-  <span class="row-label">{{ bl('rate') | upper }}</span>
-  <span class="row-value">₹{{ '%.2f'|format(rate) }}/{{ unit_lbl }}</span>
-</div>
-{% endif %}
-{% if amount is defined and amount %}
-<div class="row">
-  <span class="row-label">{{ bl('amount') | upper }}</span>
-  <span class="row-value">₹{{ '%.2f'|format(amount) }}</span>
-</div>
-{% endif %}
-{% if royalty_amount is defined and royalty_amount and royalty_amount > 0 %}
-<div class="row">
-  <span class="row-label">ROYALTY{% if royalty_per_mt and royalty_per_mt > 0 %} {{ '%.0f'|format(royalty_per_mt) }}{% endif %}</span>
-  <span class="row-value">₹{{ '%.2f'|format(royalty_amount) }}</span>
-</div>
-{% endif %}
-{% if vehicle_rent is defined and vehicle_rent and vehicle_rent > 0 %}
-<div class="row">
-  <span class="row-label">VEH RENT</span>
-  <span class="row-value">₹{{ '%.2f'|format(vehicle_rent) }}</span>
-</div>
-{% endif %}
-{% if total_amount is defined and total_amount and total_amount > 0 %}
-<div class="row total-row">
-  <span class="row-label">TOTAL</span>
-  <span class="row-value">₹{{ '%.2f'|format(total_amount) }}</span>
-</div>
-{% endif %}
-<hr class="sep">
-{% endif %}
+{# Rate/amount intentionally omitted from the weight slip — pricing is sensitive
+   (accountant-only) and lives on the invoice, not on the operational token. #}
 
 <div class="thank-you">Thank You</div>
 
