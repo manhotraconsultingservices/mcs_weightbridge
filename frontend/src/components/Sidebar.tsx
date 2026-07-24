@@ -20,7 +20,7 @@ import {
   BookOpen, TrendingUp, Package,
   LogOut, Usb, Settings,
   Bell, HardDrive, Upload, UserCog, Lock, ImageIcon, Building2,
-  Camera, Cog, FileBarChart, ShieldAlert, FileCheck2, Tags, Users, Truck, Fuel, HardHat, IndianRupee, Handshake,
+  Camera, Cog, FileBarChart, ShieldAlert, FileCheck2, Tags, Users, Truck, Fuel, HardHat, IndianRupee, Handshake, Wallet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getTenantModules } from '@/hooks/useAuth';
@@ -59,7 +59,7 @@ interface SidebarProps {
   onMobileClose?: () => void;
 }
 
-type NavItem    = { to: string; icon: React.ElementType; labelKey: string };
+type NavItem    = { to: string; icon: React.ElementType; labelKey: string; permKey?: string };
 type NavSection = { headerKey?: string; items: NavItem[] };
 
 // ── Navigation — 4 sections, 7 hub entries ───────────────────────────────────
@@ -101,6 +101,7 @@ const NAV_SECTIONS: NavSection[] = [
     headerKey: 'sidebar.sectionFinance',
     items: [
       { to: '/accounts',        icon: BookOpen,     labelKey: 'sidebar.accounts' },
+      { to: '/reports?tab=eod', icon: Wallet,       labelKey: 'sidebar.dayBook', permKey: '/analytics' },
       { to: '/workforce',       icon: HardHat,      labelKey: 'sidebar.workforce' },
       { to: '/compliance',      icon: FileCheck2,   labelKey: 'sidebar.compliance' },
       { to: '/gst-compliance',  icon: FileBarChart, labelKey: 'sidebar.gstCompliance' },
@@ -171,9 +172,13 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
     // Dashboard is always visible regardless of stored permissions
     if (item.to === '/') return true;
 
+    // Permission + module gating key. A nav item may point at a deep-link
+    // (e.g. /reports?tab=eod) yet gate on a hub path via permKey.
+    const key = item.permKey ?? item.to;
+
     // Admins see everything (module-gated items excepted)
     if (isAdmin) {
-      const mods = HUB_MODULES[item.to];
+      const mods = HUB_MODULES[key];
       if (mods && modules) {
         const anyEnabled = mods.some(m => modules[m] !== false);
         if (!anyEnabled) return false;
@@ -182,11 +187,11 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
     }
     // Direct permission OR any hub-child permission
     const ok =
-      permissions.includes(item.to) ||
-      (HUB_CHILDREN[item.to] || []).some(child => permissions.includes(child));
+      permissions.includes(key) ||
+      (HUB_CHILDREN[key] || []).some(child => permissions.includes(child));
     if (!ok) return false;
     // Module gating
-    const mods = HUB_MODULES[item.to];
+    const mods = HUB_MODULES[key];
     if (mods && modules) {
       const anyEnabled = mods.some(m => modules[m] !== false);
       if (!anyEnabled) return false;

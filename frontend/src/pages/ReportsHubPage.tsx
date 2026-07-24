@@ -35,6 +35,14 @@ export default function ReportsHubPage() {
   const initial = (new URLSearchParams(loc.search).get('tab') as Tab) || 'reports';
   const [tab, setTab] = useState<Tab>(initial);
 
+  // User picks a tab → update state + URL.
+  const selectTab = (v: Tab) => {
+    setTab(v);
+    const params = new URLSearchParams(loc.search);
+    params.set('tab', v);
+    nav({ search: params.toString() }, { replace: true });
+  };
+
   const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
     { value: 'payments', label: t('payment.title'), icon: CreditCard },
     { value: 'eod', label: 'Day Book (EOD)', icon: Wallet },
@@ -52,18 +60,17 @@ export default function ReportsHubPage() {
     { value: 'token-register', label: t('hubs.reports.tokenRegister'), icon: Ticket },
   ];
 
+  // Deep-link / sidebar nav (e.g. /reports?tab=eod) → sync URL into state.
   useEffect(() => {
-    const params = new URLSearchParams(loc.search);
-    if (params.get('tab') !== tab) {
-      params.set('tab', tab);
-      nav({ search: params.toString() }, { replace: true });
-    }
-  }, [tab, loc.search, nav]);
+    const urlTab = new URLSearchParams(loc.search).get('tab') as Tab | null;
+    if (urlTab && urlTab !== tab) setTab(urlTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loc.search]);
 
   return (
     <div className="space-y-3">
-      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <MobileTabSelect value={tab} onValueChange={(v) => setTab(v as Tab)} options={TABS.map(tab => ({ value: tab.value, label: tab.label }))} />
+      <Tabs value={tab} onValueChange={(v) => selectTab(v as Tab)}>
+        <MobileTabSelect value={tab} onValueChange={(v) => selectTab(v as Tab)} options={TABS.map(tab => ({ value: tab.value, label: tab.label }))} />
         <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
           {TABS.map(t => {
             const Icon = t.icon;
