@@ -51,8 +51,8 @@ interface SalesRegister { items: SalesRow[]; totals: SalesTotals; count: number;
 interface WeightRow { id: string; token_no: number; token_date: string; token_type: string; vehicle_no: string | null; party_name: string | null; product_name: string | null; gross_weight: number | null; tare_weight: number | null; net_weight: number | null; is_manual_weight: boolean; }
 interface WeightRegister { items: WeightRow[]; total_net_weight: number; count: number; }
 
-interface PLMonth { month: string; label: string; revenue: number; cogs: number; gross_profit: number; margin_pct: number; sale_count: number; purchase_count: number; }
-interface PLData { period: string; summary: { total_revenue: number; total_cogs: number; gross_profit: number; margin_pct: number; }; monthly: PLMonth[]; }
+interface PLMonth { month: string; label: string; revenue: number; cogs: number; gross_profit: number; labour: number; store_inventory: number; fuel: number; commission: number; write_off: number; operating_expenses: number; total_expenses: number; net_profit: number; margin_pct: number; sale_count: number; purchase_count: number; }
+interface PLData { period: string; summary: { total_revenue: number; total_cogs: number; gross_profit: number; labour: number; store_inventory: number; fuel: number; commission: number; total_write_off: number; operating_expenses: number; total_expenses: number; net_profit: number; margin_pct: number; }; monthly: PLMonth[]; }
 
 interface StockItem { product_name: string; hsn_code: string; unit: string; rate: number; qty_purchased: number; value_purchased: number; qty_sold: number; value_sold: number; closing_qty: number; closing_value: number; }
 interface StockData { period: string; items: StockItem[]; totals: { qty_purchased_by_unit: Record<string, number>; qty_sold_by_unit: Record<string, number>; value_purchased: number; value_sold: number; closing_value: number; }; }
@@ -114,6 +114,18 @@ const PL_COLS: ColumnDef<PLMonth>[] = [
     format: v => <span className="text-red-600">{fmt(v as number)}</span>, exportValue: r => r.cogs },
   { key: 'gross_profit',   label: 'Gross Profit', accessor: r => r.gross_profit, type: 'number', align: 'right',
     format: v => <span className={`font-semibold ${(v as number) >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(v as number)}</span>, exportValue: r => r.gross_profit },
+  { key: 'labour',         label: 'Labour',      accessor: r => r.labour, type: 'number', align: 'right',
+    format: v => <span className="text-red-600">{fmt(v as number)}</span>, exportValue: r => r.labour },
+  { key: 'store_inventory', label: 'Store',      accessor: r => r.store_inventory, type: 'number', align: 'right',
+    format: v => <span className="text-red-600">{fmt(v as number)}</span>, exportValue: r => r.store_inventory, defaultVisible: false },
+  { key: 'fuel',           label: 'Fuel',        accessor: r => r.fuel, type: 'number', align: 'right',
+    format: v => <span className="text-red-600">{fmt(v as number)}</span>, exportValue: r => r.fuel, defaultVisible: false },
+  { key: 'commission',     label: 'Commission',  accessor: r => r.commission, type: 'number', align: 'right',
+    format: v => <span className="text-red-600">{fmt(v as number)}</span>, exportValue: r => r.commission, defaultVisible: false },
+  { key: 'total_expenses', label: 'Expenses',    accessor: r => r.total_expenses, type: 'number', align: 'right',
+    format: v => <span className="text-red-600 font-medium">{fmt(v as number)}</span>, exportValue: r => r.total_expenses },
+  { key: 'net_profit',     label: 'Net Profit',  accessor: r => r.net_profit, type: 'number', align: 'right',
+    format: v => <span className={`font-semibold ${(v as number) >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(v as number)}</span>, exportValue: r => r.net_profit },
   { key: 'margin_pct',     label: 'Margin %',    accessor: r => r.margin_pct, type: 'number', align: 'right',
     format: v => <span className={(v as number) >= 0 ? 'text-green-700' : 'text-red-600'}>{(v as number).toFixed(1)}%</span>, exportValue: r => r.margin_pct },
   { key: 'sale_count',     label: 'Sales #',     accessor: r => r.sale_count, type: 'number', align: 'right', defaultVisible: false },
@@ -308,18 +320,51 @@ export default function ReportsPage() {
                   <CardContent><p className="text-2xl font-bold text-green-700">{fmt(plData.summary.total_revenue)}</p></CardContent>
                 </Card>
                 <Card>
-                  <CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1"><TrendingDown className="h-3 w-3 text-red-500" /> Total Purchases</CardTitle></CardHeader>
-                  <CardContent><p className="text-2xl font-bold text-red-600">{fmt(plData.summary.total_cogs)}</p></CardContent>
-                </Card>
-                <Card>
                   <CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Gross Profit</CardTitle></CardHeader>
                   <CardContent><p className={`text-2xl font-bold ${plData.summary.gross_profit >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(plData.summary.gross_profit)}</p></CardContent>
                 </Card>
                 <Card>
-                  <CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Margin</CardTitle></CardHeader>
-                  <CardContent><p className={`text-2xl font-bold ${plData.summary.margin_pct >= 0 ? 'text-green-700' : 'text-red-600'}`}>{plData.summary.margin_pct.toFixed(1)}%</p></CardContent>
+                  <CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1"><TrendingDown className="h-3 w-3 text-red-500" /> Total Expenses</CardTitle></CardHeader>
+                  <CardContent><p className="text-2xl font-bold text-red-600">{fmt(plData.summary.total_expenses)}</p></CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Net Profit</CardTitle></CardHeader>
+                  <CardContent><p className={`text-2xl font-bold ${plData.summary.net_profit >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(plData.summary.net_profit)}</p>
+                    <p className={`text-xs ${plData.summary.margin_pct >= 0 ? 'text-green-600' : 'text-red-500'}`}>{plData.summary.margin_pct.toFixed(1)}% margin</p></CardContent>
                 </Card>
               </div>
+
+              {/* Full P&L statement — every operating expense that reduces profit */}
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Profit &amp; Loss Statement</CardTitle></CardHeader>
+                <CardContent className="p-0">
+                  {(() => {
+                    const s = plData.summary;
+                    const Row = ({ label, value, kind }: { label: string; value: number; kind?: 'in' | 'out' | 'sub' | 'net' }) => (
+                      <div className={`flex justify-between px-4 py-2 text-sm ${kind === 'sub' || kind === 'net' ? 'font-semibold border-t' : ''} ${kind === 'net' ? 'border-t-2 bg-muted/40' : ''}`}>
+                        <span className={kind === 'out' ? 'pl-4 text-muted-foreground' : ''}>{label}</span>
+                        <span className={kind === 'in' ? 'text-green-700' : kind === 'out' ? 'text-red-600' : (value >= 0 ? 'text-green-700' : 'text-red-600')}>
+                          {kind === 'out' ? '− ' : ''}{fmt(Math.abs(value))}
+                        </span>
+                      </div>
+                    );
+                    return (
+                      <div className="divide-y">
+                        <Row label="Revenue (net of credit/debit notes)" value={s.total_revenue} kind="in" />
+                        <Row label="Purchases (COGS)" value={s.total_cogs} kind="out" />
+                        <Row label="Gross Profit" value={s.gross_profit} kind="sub" />
+                        <Row label="Labour (wages + salary)" value={s.labour} kind="out" />
+                        <Row label="Store inventory (purchased)" value={s.store_inventory} kind="out" />
+                        <Row label="Fuel / diesel" value={s.fuel} kind="out" />
+                        <Row label="Agent commission" value={s.commission} kind="out" />
+                        <Row label="Bad-debt write-offs" value={s.total_write_off} kind="out" />
+                        <Row label="Total operating expenses" value={s.total_expenses} kind="sub" />
+                        <Row label="Net Profit" value={s.net_profit} kind="net" />
+                      </div>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
 
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Monthly Breakdown</CardTitle></CardHeader>
