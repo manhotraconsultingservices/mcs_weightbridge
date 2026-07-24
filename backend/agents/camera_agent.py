@@ -296,9 +296,19 @@ def setup_wizard():
 
     cfg = copy.deepcopy(DEFAULT_CONFIG)
 
+    # Client-agnostic placeholder. This prompt used to name a REAL customer, which
+    # is both unprofessional in front of a different client and looks as though the
+    # build is tied to that tenant. (scale_agent was fixed for this; this was missed.)
+    #
+    # Tenant + key are OPTIONAL here on purpose: cameras are commissioned on site,
+    # often BEFORE the tenant is provisioned. Leaving them blank produces a valid
+    # camera-only config you can test immediately with --test, and the cloud details
+    # can be filled in later by re-running --setup.
     cfg["cloud_url"] = input(f"Cloud URL [{cfg['cloud_url']}]: ").strip() or cfg["cloud_url"]
-    cfg["tenant_slug"] = input("Tenant slug (e.g. ziya-ore-minerals): ").strip()
-    cfg["agent_key"] = input("Agent API key (from platform admin): ").strip()
+    print("\nTenant + agent key are OPTIONAL — leave blank to configure cameras only")
+    print("(you can test cameras now and add the cloud details later).")
+    cfg["tenant_slug"] = input("Tenant slug (e.g. your-company-name) [skip]: ").strip()
+    cfg["agent_key"] = input("Agent API key (from platform admin)   [skip]: ").strip()
 
     print("\n--- Camera URLs ---")
     print("Common snapshot URL formats:")
@@ -521,10 +531,17 @@ class CameraCapturer:
         test_dir = BASE_DIR / "test_snapshots"
         test_dir.mkdir(exist_ok=True)
 
-        for camera_id in ("front", "top"):
-            cam = self.cfg.get("cameras", {}).get(camera_id, {})
+        # Iterate whatever cameras are actually configured, not a hardcoded
+        # ("front","top"). Hardcoding silently ignored any other camera id — so
+        # cameras passed on the command line, or extra cameras in the config, were
+        # reported as "SKIPPED (no URL)" and the run claimed nothing was tested.
+        cams = self.cfg.get("cameras", {}) or {}
+        for camera_id in (["front", "top"] + [k for k in cams if k not in ("front", "top")]):
+            cam = cams.get(camera_id, {})
             cam_url = cam.get("url", "")
             if not cam_url:
+                if camera_id in ("front", "top") and camera_id not in cams:
+                    continue      # not configured at all — nothing to report
                 print(f"  {camera_id}: SKIPPED (no URL)")
                 continue
 
@@ -1512,8 +1529,31 @@ def main():
         uninstall_service()
         return
     if "--test" in sys.argv:
-        cfg = load_config()
-        print("\n  Testing camera snapshots...\n")
+        # Camera commissioning happens on site, often before the tenant exists and
+        # before any config file has been written. Allow the cameras to be given
+        # straight on the command line so this binary is a usable camera tester
+        # with NO config and NO tenant:
+        #   camera_agent.exe --test --camera http://IP/cgi-bin/snapshot.cgi \
+        #                    --user admin --pass secret
+        # Repeat --camera for more than one. Falls back to camera_config.json.
+        cli_cams = [sys.argv[i + 1] for i, a in enumerate(sys.argv)
+                    if a == "--camera" and i + 1 < len(sys.argv)]
+        if cli_cams:
+            def _opt(flag: str) -> str:
+                return next((sys.argv[i + 1] for i, a in enumerate(sys.argv)
+                             if a == flag and i + 1 < len(sys.argv)), "")
+            user, pw = _opt("--user"), _opt("--pass")
+            cfg = {
+                "cameras": {f"cam{n}": {"label": f"Camera {n}", "url": u,
+                                        "username": user, "password": pw}
+                            for n, u in enumerate(cli_cams, 1)},
+                "gate_cameras": {},
+            }
+            print(f"\n  Testing {len(cli_cams)} camera(s) from the command line "
+                  f"(no config / no tenant needed)...\n")
+        else:
+            cfg = load_config()
+            print("\n  Testing camera snapshots...\n")
         capturer = CameraCapturer(cfg)
         results = capturer.test_cameras()
         # all({}) is True. Without this guard a config with NO camera URLs prints
@@ -1530,8 +1570,15 @@ def main():
     cfg = load_config()
 
     if not cfg.get("tenant_slug") or not cfg.get("agent_key"):
-        log.error("tenant_slug and agent_key required in camera_config.json")
-        log.info("Run: python camera_agent.py --setup")
+        # Only RUNNING the agent needs cloud credentials (it has to authenticate to
+        # upload). Camera commissioning does not — point that out rather than just
+        # refusing, so a tech on site is not blocked waiting for tenant provisioning.
+        log.error("tenant_slug and agent_key are required to RUN the agent "
+                  "(they authenticate the upload to the cloud).")
+        log.info("To configure them:      camera_agent.exe --setup")
+        log.info("To test cameras WITHOUT a tenant, no config needed:")
+        log.info("  camera_agent.exe --test --camera http://<ip>/cgi-bin/snapshot.cgi "
+                 "--user <user> --pass <pass>")
         sys.exit(1)
 
     print()
