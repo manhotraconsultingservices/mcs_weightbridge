@@ -23,9 +23,13 @@ function wFmt(v: number | null | undefined) {
   return (Number(v) / 1000).toLocaleString('en-IN', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) + ' MT';
 }
 
-function mtFmt(v: number | null | undefined) {
-  if (v == null) return '—';
-  return (v / 1000).toLocaleString('en-IN', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) + ' MT';
+// Volume in the token's chosen billing unit (canonical storage is CFT) — no MT conversion.
+function volFmt(cft: number | null | undefined, unit?: string | null) {
+  if (cft == null) return '—';
+  const u = (unit || 'CFT').toUpperCase();
+  if (u === 'CBM' || u === 'CUM') return (Number(cft) / 35.3147).toFixed(2) + ' CBM';
+  if (u === 'BRASS') return (Number(cft) / 100).toFixed(2) + ' Brass';
+  return Number(cft).toFixed(2) + ' CFT';
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -386,11 +390,10 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                     <p className="font-mono font-bold text-sm">{wFmt(token.tare_weight)}</p>
                   </div>
                   <div className="p-3 text-center bg-primary/5">
-                    <p className="text-xs text-muted-foreground mb-1">Net</p>
-                    <p className="font-mono font-bold text-sm text-primary">{wFmt(token.net_weight)}</p>
-                    {token.net_weight != null && (
-                      <p className="text-[10px] text-muted-foreground mt-0.5">{mtFmt(token.net_weight)}</p>
-                    )}
+                    <p className="text-xs text-muted-foreground mb-1">{token.weight_method === 'volume' ? 'Volume' : 'Net'}</p>
+                    <p className="font-mono font-bold text-sm text-primary">
+                      {token.weight_method === 'volume' ? volFmt(token.volume_cft, token.billing_unit) : wFmt(token.net_weight)}
+                    </p>
                   </div>
                 </div>
               </div>

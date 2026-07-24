@@ -68,32 +68,12 @@
 
 {% macro format_dt(dt) %}{% if dt %}{{ dt.strftime('%d-%b-%Y %H:%M') }}{% endif %}{% endmacro %}
 {% macro format_date(dt) %}{% if dt %}{{ dt.strftime('%d-%b-%Y') }}{% endif %}{% endmacro %}
-{# Weight in MT (3 decimals) — used by the volume block #}
-{% macro format_wt_mt(w) %}{% if w %}{{ '%.3f' % (w|float / 1000) }} MT{% else %}—{% endif %}{% endmacro %}
 {# Billing-unit label for a product: MT (default) · Qtl · KG #}
 {% macro unit_label(product) %}{% set u = (product.unit if product and product.unit else 'MT')|upper %}{% if u == 'QUINTAL' %}Qtl{% elif u == 'KG' %}KG{% else %}MT{% endif %}{% endmacro %}
-{# Weight in the product's billing unit (no CFT) — gross/tare rows #}
+{# Weight in the product's billing unit — the unit actually used, no cross-unit conversion #}
 {% macro format_wt(w, product) %}{% if w %}{% set u = (product.unit if product and product.unit else 'MT')|upper %}{% if u == 'QUINTAL' %}{{ '%.3f' % (w|float / 100) }} Qtl{% elif u == 'KG' %}{{ '%.0f' % (w|float) }} KG{% else %}{{ '%.3f' % (w|float / 1000) }} MT{% endif %}{% else %}—{% endif %}{% endmacro %}
-{# Net weight in the product's billing unit; MT products with a bulk density also show CFT #}
-{% macro format_wt_dual(w, product) %}
-  {% if w %}
-    {% set u = (product.unit if product and product.unit else 'MT')|upper %}
-    {% if u == 'QUINTAL' %}{{ '%.3f' % (w|float / 100) }} Qtl
-    {% elif u == 'KG' %}{{ '%.0f' % (w|float) }} KG
-    {% else %}
-      {{ '%.4f' % (w|float / 1000) }} MT
-      {% if product and product.bulk_density and (product.bulk_density|float) > 0 %}
-        {# volume_cft = weight_kg / bulk_density(kg/CFT) #}
-        / {{ '%.2f' % (w|float / (product.bulk_density|float)) }} CFT
-      {% endif %}
-    {% endif %}
-  {% else %}—{% endif %}
-{% endmacro %}
-
-{# Volume display: volume_cft is stored in cubic feet (canonical unit). #}
-{% macro vol_fmt(cft) %}
-  {% if cft %}{{ '%.2f' % (cft|float) }} CFT{% else %}—{% endif %}
-{% endmacro %}
+{# Volume in the token's chosen billing unit (CFT canonical · CBM · Brass) — no MT conversion #}
+{% macro vol_unit_fmt(cft, token) %}{% if cft %}{% set bu = (token.billing_unit or 'CFT')|upper %}{% if bu == 'CBM' or bu == 'CUM' %}{{ '%.2f' % (cft|float / 35.3147) }} CBM{% elif bu == 'BRASS' %}{{ '%.2f' % (cft|float / 100) }} Brass{% else %}{{ '%.2f' % (cft|float) }} CFT{% endif %}{% else %}—{% endif %}{% endmacro %}
 
 {% macro slip_title(token) %}
   {% if token.weight_method == 'volume' %}Volume Slip{% else %}Weight Slip{% endif %}
@@ -161,7 +141,7 @@
   <div class="row">
     <span class="lbl">ITEM:</span>
     <span class="val">{{ token.product.name if token.product else '—' }}
-      {%- if token.product and token.product.bulk_density %}
+      {%- if is_volume and token.product and token.product.bulk_density %}
         · {{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT
       {%- endif %}
     </span>
@@ -176,35 +156,11 @@
 
   {# ── Mode-specific body ── #}
   {% if is_volume %}
+    {# Quantity shown in the unit the operator entered — no volume→weight conversion #}
     <div class="vol-block">
-      <div class="vol-grid">
-        <div class="vol-cell">
-          <div class="lbl">{{ bl('volume') }}</div>
-          <div class="val">{{ vol_fmt(token.volume_cft) }}</div>
-        </div>
-        <div class="vol-cell">
-          <div class="lbl">× {{ bl('bulk_density') }}</div>
-          <div class="val">
-            {% if token.product and token.product.bulk_density %}
-              {{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT
-            {% else %}—{% endif %}
-          </div>
-        </div>
-        <div class="vol-cell">
-          <div class="lbl">Truck Class</div>
-          <div class="val">
-            {% if token.tyre_count %}{{ token.tyre_count }}-tyre{% else %}—{% endif %}
-          </div>
-        </div>
-      </div>
-      <div class="vol-eq">
-        {% if token.volume_cft and token.product and token.product.bulk_density %}
-          {{ vol_fmt(token.volume_cft) }} × {{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT = {{ '%.3f' % (token.volume_cft|float * token.product.bulk_density|float / 1000) }} MT
-        {% endif %}
-      </div>
       <div class="vol-net">
-        <div class="lbl">{{ bl('net_weight') }}</div>
-        <div class="val">{{ format_wt_mt(token.net_weight) }}</div>
+        <div class="lbl">{{ bl('volume') }}</div>
+        <div class="val">{{ vol_unit_fmt(token.volume_cft, token) }}</div>
         <div class="sub">Recorded on {{ format_dt(token.completed_at) }}</div>
       </div>
     </div>
@@ -232,50 +188,15 @@
         </tr>
         <tr class="net">
           <td>{{ bl('net_weight') }}</td>
-          <td class="col-wt">{{ format_wt_dual(token.net_weight, token.product) }}</td>
+          <td class="col-wt">{{ format_wt(token.net_weight, token.product) }}</td>
           <td class="col-dt">{{ format_dt(token.completed_at) }}</td>
         </tr>
       </tbody>
     </table>
   {% endif %}
 
-  {# ── Financial summary ── #}
-  {% set has_fin = (rate is defined and rate and rate > 0) or (royalty_amount is defined and royalty_amount and royalty_amount > 0) or (vehicle_rent is defined and vehicle_rent and vehicle_rent > 0) %}
-  {% if has_fin %}
-  <div class="sep"></div>
-  <table class="fin-tbl">
-    {% if rate is defined and rate and rate > 0 %}
-    <tr>
-      <td class="lbl">{{ bl('rate') }}</td>
-      <td class="val">₹{{ '%.2f' % rate }}/{{ unit_label(token.product) | trim }}</td>
-    </tr>
-    {% endif %}
-    {% if amount is defined and amount %}
-    <tr>
-      <td class="lbl">{{ bl('amount') }}</td>
-      <td class="val">₹{{ '%.2f' % amount }}</td>
-    </tr>
-    {% endif %}
-    {% if royalty_amount is defined and royalty_amount and royalty_amount > 0 %}
-    <tr>
-      <td class="lbl">Royalty{% if royalty_per_mt and royalty_per_mt > 0 %} (₹{{ '%.2f' % royalty_per_mt }}/MT){% endif %}</td>
-      <td class="val">₹{{ '%.2f' % royalty_amount }}</td>
-    </tr>
-    {% endif %}
-    {% if vehicle_rent is defined and vehicle_rent and vehicle_rent > 0 %}
-    <tr>
-      <td class="lbl">Vehicle Rent</td>
-      <td class="val">₹{{ '%.2f' % vehicle_rent }}</td>
-    </tr>
-    {% endif %}
-    {% if total_amount is defined and total_amount and total_amount > 0 %}
-    <tr class="total">
-      <td class="lbl">TOTAL</td>
-      <td class="val">₹{{ '%.2f' % total_amount }}</td>
-    </tr>
-    {% endif %}
-  </table>
-  {% endif %}
+  {# Rate/amount intentionally omitted from the weight slip — pricing is sensitive
+     (accountant-only) and lives on the invoice, not on the operational token. #}
 
   {% if token.remarks %}
   <div style="margin-top:4px; font-size:10px;"><span style="font-weight:bold;">Remarks:</span> {{ token.remarks }}</div>

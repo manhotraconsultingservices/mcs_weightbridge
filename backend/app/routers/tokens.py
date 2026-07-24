@@ -1155,59 +1155,13 @@ async def print_token(
 ):
     """Return an HTML weighment slip for printing. format=a4 (default) or thermal."""
     from app.routers.app_settings import VOLUME_UNIT_KEY, _get_raw
-    from app.models.invoice import Invoice, InvoiceItem
-    from app.models.royalty import RoyaltyPassConsumption, RoyaltyPass
     token = await _load_token(db, token_id)
     company, _ = await _get_company_and_fy(db)
     volume_unit = (await _get_raw(db, VOLUME_UNIT_KEY)) or "cft"
 
-    # Prefer rate/amount from the linked invoice's line item
-    rate: float = 0.0
-    amount: float | None = None
-    grand_total: float | None = None
-    inv_row = (await db.execute(
-        select(Invoice.id, Invoice.grand_total)
-        .where(Invoice.token_id == token_id, Invoice.status != "cancelled")
-        .order_by(Invoice.created_at.desc())
-        .limit(1)
-    )).first()
-    if inv_row:
-        grand_total = float(inv_row.grand_total) if inv_row.grand_total else None
-        item_row = (await db.execute(
-            select(InvoiceItem.rate, InvoiceItem.amount)
-            .where(InvoiceItem.invoice_id == inv_row.id)
-            .limit(1)
-        )).first()
-        if item_row:
-            rate = float(item_row.rate)
-            amount = float(item_row.amount)
-
-    # Fallback: derive from unit-aware party_rates / product.default_rate
-    if rate == 0.0:
-        from app.models.product import Product as _Prod
-        _prod = (await db.execute(select(_Prod).where(_Prod.id == token.product_id))).scalar_one_or_none() if token.product_id else None
-        _bunit = token.billing_unit or (_prod.unit if _prod else None)
-        fetched = await _fetch_rate(db, token.party_id, token.product_id, _bunit)
-        rate = float(fetched)
-        if rate > 0 and _prod:
-            from app.services.pricing import token_quantity
-            amount = rate * float(token_quantity(token, _bunit, _prod))
-
-    # Royalty: look up the consumption linked to this token
-    royalty_amount: float = 0.0
-    royalty_per_mt: float = 0.0
-    royalty_row = (await db.execute(
-        select(RoyaltyPassConsumption.quantity_mt, RoyaltyPass.rate)
-        .join(RoyaltyPass, RoyaltyPassConsumption.pass_id == RoyaltyPass.id)
-        .where(RoyaltyPassConsumption.token_id == token_id)
-        .limit(1)
-    )).first()
-    if royalty_row:
-        royalty_per_mt = float(royalty_row.rate)
-        royalty_amount = float(royalty_row.quantity_mt) * royalty_per_mt
-
-    vehicle_rent = float(token.vehicle_rent or 0)
-    total_amount = (amount or 0) + royalty_amount + vehicle_rent
+    # NOTE: rate / amount / royalty / vehicle-rent are intentionally NOT computed
+    # or rendered on the weight slip — pricing is sensitive (accountant-only) and
+    # belongs on the invoice, not on the operational token.
 
     # Owner-defined custom attributes flagged to print on the slip (e.g. Moisture %)
     slip_custom_fields: list[dict] = []
@@ -1240,13 +1194,6 @@ async def print_token(
         "token": token,
         "company": company,
         "volume_unit": volume_unit,
-        "rate": rate,
-        "amount": amount,
-        "grand_total": grand_total,
-        "royalty_amount": royalty_amount,
-        "royalty_per_mt": royalty_per_mt,
-        "vehicle_rent": vehicle_rent,
-        "total_amount": total_amount,
         "slip_custom_fields": slip_custom_fields,
     })
     return HTMLResponse(content=html)
