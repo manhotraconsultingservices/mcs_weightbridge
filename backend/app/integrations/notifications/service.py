@@ -310,6 +310,54 @@ DEFAULT_TEMPLATES = [
             "— {{ company_name }}"
         ),
     },
+    # ── EOD Daily Business Summary (day book) ────────────────────────────────
+    {
+        "event_type": "eod_summary",
+        "channel": "telegram",
+        "name": "EOD Daily Summary (Telegram)",
+        "subject": None,
+        "body": (
+            "📒 <b>Day Book — {{ date }}</b>\n\n"
+            "<b>Sales In</b>\n"
+            "• Cash: ₹{{ cash_sales }}\n"
+            "• Bank / Card / UPI: ₹{{ electronic_sales }}\n"
+            "• <b>Total sales: ₹{{ total_sales }}</b>\n\n"
+            "<b>Expenses Out</b>\n"
+            "• Purchases: ₹{{ purchases }}\n"
+            "• Store / Inventory: ₹{{ store_inventory }}\n"
+            "• Diesel: ₹{{ diesel }}\n"
+            "• Salary / Wages: ₹{{ salary }}\n"
+            "• Advances: ₹{{ advance }}\n"
+            "• Commission: ₹{{ commission }}\n"
+            "• <b>Total expenses: ₹{{ total_expenses }}</b>\n\n"
+            "{{ net_emoji }} <b>Net (Sales − Expenses): ₹{{ net }}</b>\n\n"
+            "— {{ company_name }}"
+        ),
+    },
+    {
+        "event_type": "eod_summary",
+        "channel": "email",
+        "name": "EOD Daily Summary (Email)",
+        "subject": "Day Book — {{ date }} — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;">Day Book — {{ date }}</h2>
+<p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;min-width:320px;">
+  <tr style="background:#f1f5f9;"><th colspan="2" align="left">Sales In</th></tr>
+  <tr><td>Cash</td><td align="right">&#8377;{{ cash_sales }}</td></tr>
+  <tr><td>Bank / Card / UPI</td><td align="right">&#8377;{{ electronic_sales }}</td></tr>
+  <tr style="border-top:1px solid #cbd5e1;"><td><b>Total Sales</b></td><td align="right"><b>&#8377;{{ total_sales }}</b></td></tr>
+  <tr style="background:#f1f5f9;"><th colspan="2" align="left">Expenses Out</th></tr>
+  <tr><td>Purchases</td><td align="right">&#8377;{{ purchases }}</td></tr>
+  <tr><td>Store / Inventory</td><td align="right">&#8377;{{ store_inventory }}</td></tr>
+  <tr><td>Diesel</td><td align="right">&#8377;{{ diesel }}</td></tr>
+  <tr><td>Salary / Wages</td><td align="right">&#8377;{{ salary }}</td></tr>
+  <tr><td>Advances</td><td align="right">&#8377;{{ advance }}</td></tr>
+  <tr><td>Commission</td><td align="right">&#8377;{{ commission }}</td></tr>
+  <tr style="border-top:1px solid #cbd5e1;"><td><b>Total Expenses</b></td><td align="right"><b>&#8377;{{ total_expenses }}</b></td></tr>
+  <tr style="border-top:2px solid #334155;background:#f8fafc;"><td><b>Net (Sales &minus; Expenses)</b></td><td align="right"><b>&#8377;{{ net }}</b></td></tr>
+</table>
+<p style="margin-top:10px;color:#888;font-size:12px;">Sales = money collected today (cash vs electronic). Expenses include advances paid out.</p>""",
+    },
 ]
 
 

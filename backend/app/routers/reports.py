@@ -1059,6 +1059,173 @@ async def profit_loss(
     }
 
 
+# ── EOD Daily Business Summary (cash-book view) ──────────────────────────────
+# A CASH/END-OF-DAY lens, DISTINCT from the accrual P&L above:
+#   • Sales split by how the money came in — CASH vs ELECTRONIC (bank/card/UPI),
+#     read from the payment RECEIPTS (collections), per the owner's definition.
+#   • Money OUT itemised: purchases · store inventory · diesel · salary · advance
+#     · commission. Note ADVANCES ARE INCLUDED here (real cash out today) —
+#     unlike the P&L, where an advance is a balance-sheet item, not an expense.
+# Optional feature-module tables (worker_payments / inventory / fuel) each run in
+# their own SAVEPOINT and degrade to zero on a tenant that doesn't have them.
+
+async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_date: date) -> dict:
+    """Per-day cash-in (cash vs electronic) + money-out breakdown, plus totals.
+    Shared by the HTTP endpoint and the scheduled EOD notification."""
+    params = {"cid": str(company_id), "fd": from_date, "td": to_date}
+
+    async def _daily(sql: str) -> dict[str, float]:
+        out: dict[str, float] = {}
+        try:
+            async with db.begin_nested():
+                rows = (await db.execute(text(sql), params)).all()
+            for r in rows:
+                if r.d is None:
+                    continue
+                k = r.d.isoformat() if hasattr(r.d, "isoformat") else str(r.d)
+                out[k] = _r2(out.get(k, 0.0) + float(r.total or 0))
+        except Exception as e:  # noqa: BLE001 — missing feature-module table, etc.
+            logger.warning("EOD summary line skipped: %s", str(e)[:140])
+        return out
+
+    # SALES IN — collections split by payment mode. Cash = literally 'cash';
+    # everything else (upi/bank_transfer/cheque/card…) = "electronic".
+    cash = await _daily(
+        "SELECT CAST(receipt_date AS date) AS d, SUM(amount) AS total FROM payment_receipts "
+        "WHERE company_id=:cid AND LOWER(COALESCE(payment_mode,''))='cash' "
+        "AND receipt_date>=:fd AND receipt_date<=:td GROUP BY 1")
+    electronic = await _daily(
+        "SELECT CAST(receipt_date AS date) AS d, SUM(amount) AS total FROM payment_receipts "
+        "WHERE company_id=:cid AND LOWER(COALESCE(payment_mode,''))<>'cash' "
+        "AND receipt_date>=:fd AND receipt_date<=:td GROUP BY 1")
+
+    # MONEY OUT — expense categories (actual amounts incl. GST for a cash view).
+    purchases = await _daily(
+        "SELECT CAST(invoice_date AS date) AS d, SUM(grand_total) AS total FROM invoices "
+        "WHERE company_id=:cid AND invoice_type='purchase' AND status='final' "
+        "AND invoice_date>=:fd AND invoice_date<=:td GROUP BY 1")
+    store = await _daily(
+        "SELECT CAST(t.created_at AS date) AS d, SUM(t.quantity * COALESCE(pi.unit_price,0)) AS total "
+        "FROM inventory_transactions t JOIN inventory_po_items pi "
+        "ON pi.po_id=t.reference_id AND pi.item_id=t.item_id "
+        "WHERE t.company_id=:cid AND t.transaction_type='receipt' "
+        "AND CAST(t.created_at AS date)>=:fd AND CAST(t.created_at AS date)<=:td GROUP BY 1")
+    diesel = await _daily(
+        "SELECT CAST(entry_date AS date) AS d, SUM(amount) AS total FROM vehicle_fuel_entries "
+        "WHERE company_id=:cid AND COALESCE(fuel_source,'')<>'plant_tank' "
+        "AND entry_date>=:fd AND entry_date<=:td GROUP BY 1")
+    salary = await _daily(
+        "SELECT CAST(pay_date AS date) AS d, "
+        "SUM(CASE WHEN payment_type='deduction' THEN -amount ELSE amount END) AS total "
+        "FROM worker_payments WHERE company_id=:cid "
+        "AND payment_type IN ('wage','salary','bonus','deduction') "
+        "AND pay_date>=:fd AND pay_date<=:td GROUP BY 1")
+    advance = await _daily(
+        "SELECT CAST(pay_date AS date) AS d, SUM(amount) AS total FROM worker_payments "
+        "WHERE company_id=:cid AND payment_type='advance' "
+        "AND pay_date>=:fd AND pay_date<=:td GROUP BY 1")
+    commission = await _daily(
+        "SELECT CAST(invoice_date AS date) AS d, SUM(COALESCE(commission_amount,0)) AS total "
+        "FROM invoices WHERE company_id=:cid AND invoice_type='sale' AND status='final' "
+        "AND COALESCE(commission_amount,0)>0 "
+        "AND invoice_date>=:fd AND invoice_date<=:td GROUP BY 1")
+
+    all_days = sorted(set(
+        list(cash) + list(electronic) + list(purchases) + list(store)
+        + list(diesel) + list(salary) + list(advance) + list(commission)))
+    days = []
+    tot = {k: 0.0 for k in ("cash_sales", "electronic_sales", "purchases",
+                            "store_inventory", "diesel", "salary", "advance", "commission")}
+    for d in all_days:
+        cs, es = cash.get(d, 0.0), electronic.get(d, 0.0)
+        pu, st, di = purchases.get(d, 0.0), store.get(d, 0.0), diesel.get(d, 0.0)
+        sa, ad, co = salary.get(d, 0.0), advance.get(d, 0.0), commission.get(d, 0.0)
+        total_sales = _r2(cs + es)
+        total_exp = _r2(pu + st + di + sa + ad + co)
+        days.append({
+            "date": d, "cash_sales": cs, "electronic_sales": es, "total_sales": total_sales,
+            "purchases": pu, "store_inventory": st, "diesel": di, "salary": sa,
+            "advance": ad, "commission": co, "total_expenses": total_exp,
+            "net": _r2(total_sales - total_exp),
+        })
+        tot["cash_sales"] += cs; tot["electronic_sales"] += es
+        tot["purchases"] += pu; tot["store_inventory"] += st; tot["diesel"] += di
+        tot["salary"] += sa; tot["advance"] += ad; tot["commission"] += co
+    summary = {k: _r2(v) for k, v in tot.items()}
+    summary["total_sales"] = _r2(summary["cash_sales"] + summary["electronic_sales"])
+    summary["total_expenses"] = _r2(
+        summary["purchases"] + summary["store_inventory"] + summary["diesel"]
+        + summary["salary"] + summary["advance"] + summary["commission"])
+    summary["net"] = _r2(summary["total_sales"] - summary["total_expenses"])
+    return {"from_date": from_date.isoformat(), "to_date": to_date.isoformat(),
+            "days": days, "summary": summary}
+
+
+async def build_eod_summary_context(db: AsyncSession, company_id, company_name: str, target_date: date) -> dict:
+    """Notification context for the daily EOD summary (email + Telegram)."""
+    data = await compute_eod_summary(db, company_id, target_date, target_date)
+    s = data["summary"]
+    money = lambda v: f"{float(v or 0):,.0f}"  # noqa: E731
+    return {
+        "company_name": company_name,
+        "date": target_date.strftime("%d %b %Y"),
+        "cash_sales": money(s["cash_sales"]),
+        "electronic_sales": money(s["electronic_sales"]),
+        "total_sales": money(s["total_sales"]),
+        "purchases": money(s["purchases"]),
+        "store_inventory": money(s["store_inventory"]),
+        "diesel": money(s["diesel"]),
+        "salary": money(s["salary"]),
+        "advance": money(s["advance"]),
+        "commission": money(s["commission"]),
+        "total_expenses": money(s["total_expenses"]),
+        "net": money(s["net"]),
+        "net_emoji": "🟢" if s["net"] >= 0 else "🔴",
+    }
+
+
+@router.get("/eod-summary")
+async def eod_summary(
+    from_date: date = Query(None),
+    to_date: date = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """EOD Daily Business Summary — cash vs electronic sales + itemised expenses.
+    Defaults to TODAY when no range is given (the daily EOD view); accepts a
+    range for the report page + CSV."""
+    today = date.today()
+    fd = from_date or today
+    td = to_date or today
+    if td < fd:
+        fd, td = td, fd
+    return await compute_eod_summary(db, current_user.company_id, fd, td)
+
+
+@router.post("/eod-summary/send")
+async def send_eod_summary(
+    target_date: date = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Fire the EOD day-book summary now (email + Telegram) to subscribed
+    recipients — the same context the scheduled daily loop builds. Admin only."""
+    if current_user.role != "admin":
+        raise HTTPException(403, "Admin only")
+    from app.models.company import Company
+    from app.integrations.notifications.service import send_notification
+    co = (await db.execute(
+        select(Company).where(Company.id == current_user.company_id)
+    )).scalar_one_or_none()
+    if not co:
+        raise HTTPException(404, "Company not found")
+    d = target_date or date.today()
+    ctx = await build_eod_summary_context(db, co.id, co.name, d)
+    await send_notification(db, co.id, "eod_summary", ctx,
+                            entity_type="company", entity_id=str(co.id))
+    return {"ok": True, "date": d.isoformat()}
+
+
 # ── Stock Summary ────────────────────────────────────────────────────────────
 
 @router.get("/stock-summary")
