@@ -992,46 +992,23 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Could not start weight manager: %s", e)
 
-        # ── Seed notification templates + ensure default recipients ──────────
+        # ── Seed notification templates (default DB only) ────────────────────
+        # Per-tenant template seeding happens on-demand via the Notifications
+        # page. Named recipients are DELIBERATELY never auto-seeded: each tenant
+        # adds its OWN (Notifications → Recipients) so alerts go only to that
+        # tenant's own Telegram chats / emails via that tenant's own bot + SMTP —
+        # never to a shared or vendor default.
         try:
             from app.integrations.notifications.service import seed_default_templates
             from app.models.company import Company as _Company
-            from app.models.notification import NotificationRecipient as _NR
-            import json as _json
             async with async_session() as db:
                 co = (await db.execute(select(_Company).limit(1))).scalar_one_or_none()
                 if co:
                     await seed_default_templates(db, co.id)
-
-                    # Ensure default named recipients exist (idempotent by contact)
-                    default_recipients = [
-                        {"name": "Ankush",  "channel": "telegram", "contact": "6613370540"},
-                        {"name": "RM",      "channel": "telegram", "contact": "11003601151496"},
-                        {"name": "A",       "channel": "telegram", "contact": "1988828526"},
-                        {"name": "Ankush",  "channel": "email",    "contact": "ankushmanhotra@gmail.com"},
-                        {"name": "Rishu",   "channel": "email",    "contact": "rishumanhotra@gmail.com"},
-                    ]
-                    existing_contacts = {
-                        (r.channel, r.contact)
-                        for r in (await db.execute(
-                            select(_NR.channel, _NR.contact).where(_NR.company_id == co.id)
-                        )).all()
-                    }
-                    for rec in default_recipients:
-                        key = (rec["channel"], rec["contact"])
-                        if key not in existing_contacts:
-                            db.add(_NR(
-                                company_id=co.id,
-                                name=rec["name"],
-                                channel=rec["channel"],
-                                contact=rec["contact"],
-                                event_types=_json.dumps(["*"]),
-                                is_active=True,
-                            ))
                     await db.commit()
-                    logger.info("Notification templates seeded; default recipients ensured.")
+                    logger.info("Notification templates seeded (default DB).")
         except Exception as e:
-            logger.warning("Could not seed notification templates/recipients: %s", e)
+            logger.warning("Could not seed notification templates: %s", e)
 
     yield
 
