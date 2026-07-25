@@ -154,6 +154,7 @@ backend/agents/tally_connector.json
 backend/agents/scale_config.json
 backend/agents/camera_config.json
 backend/agents/gate_camera_config.json
+backend/agents/watchdog_agent.json
 
 # ── Build Crash Reports ───────────────────────────────────────────────────
 backend/nuitka-crash-report.xml
