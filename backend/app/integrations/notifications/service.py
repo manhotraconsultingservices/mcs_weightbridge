@@ -385,6 +385,124 @@ DEFAULT_TEMPLATES = [
 </table>
 <p style="margin-top:10px;color:#888;font-size:12px;">Sales = money collected today (cash vs electronic). Expenses include advances paid out.</p>""",
     },
+
+    # ── Email variants for the owner/operational alerts (Telegram-only before) ──
+    {
+        "event_type": "device_down",
+        "channel": "email",
+        "name": "Device Offline (Email)",
+        "subject": "ALERT: {{ device_label }} offline — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;color:#b91c1c;">Device offline</h2>
+<p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;">
+  <tr><td><b>Device</b></td><td>{{ device_label }} ({{ device_type }})</td></tr>
+  <tr><td><b>Site</b></td><td>{{ site }}</td></tr>
+  <tr><td><b>Down for</b></td><td>{{ down_minutes }} min</td></tr>
+  <tr><td><b>Reason</b></td><td>{{ reason }}</td></tr>
+</table>
+<p style="margin-top:10px;color:#555;">Please check the device or its PC.</p>""",
+    },
+    {
+        "event_type": "device_recovered",
+        "channel": "email",
+        "name": "Device Back Online (Email)",
+        "subject": "Resolved: {{ device_label }} back online — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;color:#15803d;">Device back online</h2>
+<p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;">
+  <tr><td><b>Device</b></td><td>{{ device_label }} ({{ device_type }})</td></tr>
+  <tr><td><b>Site</b></td><td>{{ site }}</td></tr>
+</table>
+<p style="margin-top:10px;color:#555;">Recovered and reporting normally.</p>""",
+    },
+    {
+        "event_type": "low_product_stock",
+        "channel": "email",
+        "name": "Low Product Stock (Email)",
+        "subject": "Low stock: {{ product_name }} — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;color:#b45309;">Low product stock</h2>
+<p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;">
+  <tr><td><b>Product</b></td><td>{{ product_name }}</td></tr>
+  <tr><td><b>Current stock</b></td><td>{{ current_stock }} {{ unit }}</td></tr>
+  <tr><td><b>Minimum level</b></td><td>{{ min_stock_level }} {{ unit }}</td></tr>
+  <tr><td><b>Status</b></td><td>{{ status }}</td></tr>
+</table>""",
+    },
+    {
+        "event_type": "fuel_leakage_alert",
+        "channel": "email",
+        "name": "Fuel Leakage Alert (Email)",
+        "subject": "Fuel leakage / low mileage — {{ vehicle_no }}",
+        "body": """<h2 style="margin:0 0 4px;color:#b91c1c;">Possible fuel leakage / low mileage</h2>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;">
+  <tr><td><b>Vehicle</b></td><td>{{ vehicle_no }}</td></tr>
+  <tr><td><b>Actual mileage</b></td><td>{{ actual_kmpl }} km/l</td></tr>
+  <tr><td><b>Benchmark</b></td><td>{{ benchmark_kmpl }} km/l</td></tr>
+  <tr><td><b>Deviation</b></td><td>{{ deviation_pct }}%</td></tr>
+  <tr><td><b>Fuel filled</b></td><td>{{ litres }} L over {{ distance_km }} km</td></tr>
+</table>""",
+    },
+    {
+        "event_type": "owner_digest",
+        "channel": "email",
+        "name": "Daily Owner Digest (Email)",
+        "subject": "Daily summary — {{ date }} — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;">Daily summary — {{ date }}</h2>
+<p style="margin:0 0 8px;color:#555;">{{ company_name }}</p>
+<p style="margin:0 0 12px;"><b>{{ status_headline }}</b></p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;min-width:320px;">
+  <tr><td>Tokens today</td><td align="right">{{ tokens_today }}</td></tr>
+  <tr><td>Tonnage</td><td align="right">{{ tonnage_today }} MT</td></tr>
+  <tr><td>Revenue</td><td align="right">&#8377;{{ revenue_today }}</td></tr>
+  <tr><td>Collected</td><td align="right">&#8377;{{ collected_today }}</td></tr>
+  <tr><td>Overdue customers</td><td align="right">{{ overdue_count }} (&#8377;{{ overdue_total }})</td></tr>
+  <tr><td>Low-stock products</td><td align="right">{{ low_stock_count }}</td></tr>
+  <tr><td>Compliance due</td><td align="right">{{ compliance_count }}</td></tr>
+  <tr><td>Yield</td><td align="right">{{ yield_pct }}% (target {{ target_yield_pct }}%)</td></tr>
+</table>""",
+    },
+    {
+        "event_type": "royalty_unaccounted_alert",
+        "channel": "email",
+        "name": "Royalty Unaccounted Alert (Email)",
+        "subject": "Royalty unaccounted — {{ date }} — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;color:#b45309;">Royalty reconciliation alert</h2>
+<p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;">
+  <tr><td>Date</td><td align="right">{{ date }}</td></tr>
+  <tr><td>Inbound (MT)</td><td align="right">{{ inbound_mt }}</td></tr>
+  <tr><td>Consumed vs passes (MT)</td><td align="right">{{ consumed_mt }}</td></tr>
+  <tr style="border-top:1px solid #cbd5e1;"><td><b>Unaccounted (MT)</b></td><td align="right"><b>{{ unaccounted_mt }}</b></td></tr>
+  <tr><td>Threshold (MT)</td><td align="right">{{ threshold_mt }}</td></tr>
+</table>""",
+    },
+    {
+        "event_type": "anpr_camera_down",
+        "channel": "email",
+        "name": "ANPR Camera Offline (Email)",
+        "subject": "ANPR camera offline — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;color:#b91c1c;">ANPR camera offline</h2>
+<p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
+<p>Camera <b>{{ camera_id }}</b> has not delivered a frame for {{ down_minutes }} minutes. Please check the gate camera.</p>""",
+    },
+    {
+        "event_type": "anpr_daily_summary",
+        "channel": "email",
+        "name": "Daily Gate Movement Report (Email)",
+        "subject": "Gate movement — {{ date }} — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;">Gate movement report — {{ date }}</h2>
+<p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;min-width:300px;">
+  <tr><td>Entries</td><td align="right">{{ entries }}</td></tr>
+  <tr><td>Exits</td><td align="right">{{ exits }}</td></tr>
+  <tr><td>Currently inside</td><td align="right">{{ currently_inside }}</td></tr>
+  <tr><td>Total tonnage</td><td align="right">{{ tonnage_mt }} MT</td></tr>
+  <tr><td>Total revenue</td><td align="right">&#8377;{{ revenue }}</td></tr>
+  <tr><td>Avg dwell</td><td align="right">{{ avg_dwell }} min</td></tr>
+</table>
+<p style="margin-top:10px;color:#888;font-size:12px;">{{ trip_count }} trip(s) recorded today.</p>""",
+    },
 ]
 
 
