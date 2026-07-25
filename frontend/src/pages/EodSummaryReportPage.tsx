@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { DataTable, type ColumnDef, downloadCsv } from '@/components/DataTable';
 import api from '@/services/api';
 import { getCurrentUser } from '@/hooks/useAuth';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface EodDay {
   date: string;
@@ -87,6 +88,7 @@ export default function EodSummaryReportPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isAdmin = getCurrentUser()?.role === 'admin';
+  const isMobile = useIsMobile();
   const [detailDate, setDetailDate] = useState<string | null>(null);
   const [detail, setDetail] = useState<EodDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -111,6 +113,18 @@ export default function EodSummaryReportPage() {
       it.ref, it.party, it.detail, String(it.amount),
     ]);
     downloadCsv(`day-book-${detail.date}.csv`, [header, ...rows]);
+  }
+
+  // Per-day CSV (used by the mobile card view, which has no DataTable export).
+  function downloadDaysCsv() {
+    if (!data) return;
+    const header = ['Date', 'Cash Sales', 'Credit (Bank/UPI)', 'Total Sales', 'Purchases', 'Store', 'Diesel', 'Salary', 'Advance', 'Commission', 'Total Expenses', 'Net'];
+    const rows = data.days.map(d => [
+      d.date, String(d.cash_sales), String(d.electronic_sales), String(d.total_sales),
+      String(d.purchases), String(d.store_inventory), String(d.diesel), String(d.salary),
+      String(d.advance), String(d.commission), String(d.total_expenses), String(d.net),
+    ]);
+    downloadCsv(`day-book-${fromDate}-to-${toDate}.csv`, [header, ...rows]);
   }
 
   const load = useCallback(async () => {
@@ -273,8 +287,40 @@ export default function EodSummaryReportPage() {
         </div>
       )}
 
-      {/* Per-day table */}
-      {data && (
+      {/* Per-day breakdown — tap-friendly cards on mobile, full table on desktop */}
+      {data && (isMobile ? (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-sm font-semibold">Daily breakdown</span>
+            <Button onClick={downloadDaysCsv} variant="ghost" size="sm" className="h-7 gap-1 text-xs" disabled={data.days.length === 0}>
+              <Download className="h-3.5 w-3.5" /> CSV
+            </Button>
+          </div>
+          {data.days.length === 0 ? (
+            <div className="text-center text-muted-foreground py-8 text-sm rounded-lg border bg-card">No sales or expenses in this range.</div>
+          ) : data.days.map(d => (
+            <button
+              key={d.date}
+              onClick={() => openDetail(d.date)}
+              className="w-full text-left rounded-lg border bg-card p-3 active:bg-muted/40 transition-colors"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-semibold text-sm">
+                  {new Date(d.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </span>
+                <span className={`text-sm font-bold ${d.net >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{INR(d.net)}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                <div className="flex justify-between"><span className="text-muted-foreground">Cash</span><span className="text-emerald-700 font-medium">{INR(d.cash_sales)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Credit</span><span className="text-sky-700 font-medium">{INR(d.electronic_sales)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Sales</span><span className="font-medium">{INR(d.total_sales)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Expenses</span><span className="text-rose-700 font-medium">{INR(d.total_expenses)}</span></div>
+              </div>
+              <div className="mt-2 text-[11px] text-blue-600 font-medium">Tap for full breakup →</div>
+            </button>
+          ))}
+        </div>
+      ) : (
         <Card>
           <CardContent className="p-0">
             <div className="text-sm font-semibold text-slate-700 px-3 pt-3 pb-1">Daily breakdown</div>
@@ -289,7 +335,7 @@ export default function EodSummaryReportPage() {
             />
           </CardContent>
         </Card>
-      )}
+      ))}
 
       {/* Per-day transaction breakup */}
       <Dialog open={detailDate !== null} onOpenChange={(o) => { if (!o) { setDetailDate(null); setDetail(null); } }}>
