@@ -9,9 +9,10 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Search, Scale, CheckCircle2, XCircle, Loader2,
   Truck, Package, User, Wifi, WifiOff, ArrowRight,
-  AlertCircle, RefreshCw, Camera, Download, Plus, Settings2,
+  AlertCircle, RefreshCw, Camera, Download, Plus, Settings2, Banknote,
 } from 'lucide-react';
 import { PrintButton } from '@/components/PrintButton';
+import { CollectCashDialog } from '@/components/CollectCashDialog';
 import { downloadCsv } from '@/components/DataTable';
 import ResizableSplit from '@/components/ResizableSplit';
 import CreditStatusBanner from '@/components/CreditStatusBanner';
@@ -1894,6 +1895,7 @@ export default function TokenPageV1() {
   const [weightStage, setWeightStage] = useState<'first' | 'second'>('first');
   const [weightOpen, setWeightOpen] = useState(false);
   const [tokenModalId, setTokenModalId] = useState<string | null>(null);
+  const [collectTokenId, setCollectTokenId] = useState<string | null>(null);
 
   // Fetch tokens for selected date range (all except CANCELLED — status filtered client-side)
   const fetchTokens = useCallback(async () => {
@@ -2035,6 +2037,13 @@ export default function TokenPageV1() {
                           <Scale className="h-4 w-4" />
                         </Button>
                       )}
+                      {token.status === 'COMPLETED' && token.payment_mode === 'cash' && (
+                        <Button size="sm" variant="outline" className="h-9 w-9 p-0 text-emerald-600 border-emerald-200"
+                          title="Collect cash & finalise bill"
+                          onClick={() => setCollectTokenId(token.id)}>
+                          <Banknote className="h-4 w-4" />
+                        </Button>
+                      )}
                       <Button size="sm" variant="ghost" className="h-9 w-9 p-0"
                         onClick={() => setTokenModalId(token.id)}>
                         <ArrowRight className="h-4 w-4" />
@@ -2054,6 +2063,7 @@ export default function TokenPageV1() {
           onDone={handleWeightDone}
         />
         <TokenDetailModal tokenId={tokenModalId} onClose={() => setTokenModalId(null)} />
+        <CollectCashDialog tokenId={collectTokenId} onClose={() => setCollectTokenId(null)} onDone={fetchTokens} />
       </div>
     );
   }
@@ -2389,6 +2399,17 @@ export default function TokenPageV1() {
                           <Scale className="h-3.5 w-3.5" />
                         </Button>
                       )}
+                      {token.status === 'COMPLETED' && token.payment_mode === 'cash' && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-100 shrink-0"
+                          title="Collect cash & finalise bill"
+                          onClick={() => setCollectTokenId(token.id)}
+                        >
+                          <Banknote className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       {token.status === 'COMPLETED' && (
                         <>
                           <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
@@ -2430,6 +2451,7 @@ export default function TokenPageV1() {
         tokenId={tokenModalId}
         onClose={() => setTokenModalId(null)}
       />
+      <CollectCashDialog tokenId={collectTokenId} onClose={() => setCollectTokenId(null)} onDone={fetchTokens} />
     </div>
   );
 }
