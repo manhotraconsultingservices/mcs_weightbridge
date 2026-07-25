@@ -148,6 +148,8 @@ const CFT_PER_BRASS = 100;
 const VOLUME_UNITS = ['CFT', 'CBM', 'BRASS'] as const;
 const VOLUME_UNIT_LABEL: Record<string, string> = { CFT: 'Cubic Feet (CFT)', CBM: 'Cubic Meter (CBM)', BRASS: 'Brass' };
 const UNIT_SHORT: Record<string, string> = { CFT: 'CFT', CBM: 'CBM', BRASS: 'Brass' };
+// Operator-selectable payment modes → invoice tax type (cash = Bill of Supply, rest = GST)
+const PAYMENT_MODE_LABEL: Record<string, string> = { cash: 'Cash', credit: 'Credit', upi: 'UPI', bank_transfer: 'Bank' };
 function toCft(qty: number, unit: string): number {
   if (unit === 'CBM') return qty * CFT_PER_M3;
   if (unit === 'BRASS') return qty * CFT_PER_BRASS;
@@ -176,7 +178,10 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     vehicle_rent: '',      // optional payment to truck owner per trip
     agent_id: '',          // broker/dalal — carried to the invoice for commission
     billing_unit: '',      // operator-chosen billing unit ('' = auto = product's unit)
+    rate: '',              // ₹ per billing_unit (prefilled from customer-wise/default price, editable)
+    payment_mode: '',      // cash | credit | upi | bank_transfer — drives the invoice tax type
   });
+  const [rateSource, setRateSource] = useState<'party' | 'default' | 'none'>('none');
   // Volume-based weighment (skips the bridge)
   const [weightMethod, setWeightMethod] = useState<'weighbridge' | 'volume'>('weighbridge');
   const [volumeValue, setVolumeValue] = useState('');
@@ -325,7 +330,8 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   }, [loadGatePasses]);
 
   function resetForm() {
-    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', agent_id: '', billing_unit: weightMethod === 'weighbridge' ? weightUnit().code : 'CFT' });
+    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', agent_id: '', billing_unit: weightMethod === 'weighbridge' ? weightUnit().code : 'CFT', rate: '', payment_mode: '' });
+    setRateSource('none');
     setCustomValues({});
     setVehicleSearch('');
     setSelectedVehicle(null);
@@ -347,6 +353,53 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const computedWeightKg = selectedProduct?.bulk_density && volumeCft > 0
     ? volumeCft * Number(selectedProduct.bulk_density)
     : 0;
+
+  const selectedParty = form.party_id ? parties.find(p => p.id === form.party_id) ?? null : null;
+
+  // Prefill the material price for the current party + product + unit: the
+  // customer-wise rate if one is set, otherwise the product default. The operator
+  // can override the value; changing party/product/unit re-fetches it.
+  useEffect(() => {
+    if (!form.product_id) { setRateSource('none'); return; }
+    const unit = form.billing_unit || undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (form.party_id) {
+          const { data } = await api.get<{ rate: number; source: string }>(
+            `/api/v1/parties/${form.party_id}/effective-rate/${form.product_id}`,
+            { params: { unit } },
+          );
+          if (cancelled) return;
+          setRateSource(data.source === 'party_rate' ? 'party' : (data.rate > 0 ? 'default' : 'none'));
+          setForm(f => ({ ...f, rate: data.rate ? String(data.rate) : '' }));
+        } else {
+          // No party (walk-in) → fall back to the product's base default rate.
+          const dr = selectedProduct?.default_rate;
+          if (cancelled) return;
+          setRateSource(dr ? 'default' : 'none');
+          setForm(f => ({ ...f, rate: dr ? String(dr) : '' }));
+        }
+      } catch { if (!cancelled) setRateSource('none'); }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.party_id, form.product_id, form.billing_unit]);
+
+  // Default the payment mode from the party (cash → Cash / Bill of Supply;
+  // online → UPI) whenever the party changes. The operator can override per token;
+  // the override persists until a different party is selected.
+  useEffect(() => {
+    if (!selectedParty) return;
+    const def = selectedParty.default_payment_mode === 'online' ? 'upi' : 'cash';
+    setForm(f => ({ ...f, payment_mode: def }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.party_id]);
+
+  // The unit the rate is priced in, and its short label, for the Price field.
+  const billUnitCode = weightMethod === 'volume' ? (form.billing_unit || 'CFT') : weightUnit().code;
+  const billUnitShort = UNIT_SHORT[billUnitCode] ?? billUnitCode;
+  const rateNum = parseFloat(form.rate || '0');
 
   const handleTypeChange = (type: string) => {
     setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '', vehicle_rent: '' }));
@@ -448,6 +501,8 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           transit_pass_id: form.transit_pass_id || undefined,
           agent_id: form.agent_id || undefined,
           billing_unit: form.billing_unit || undefined,
+          rate: form.rate ? Number(form.rate) : undefined,
+          payment_mode: form.payment_mode || undefined,
           gate_pass_id: form.gate_pass_id || undefined,
           vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
           remarks: form.remarks
@@ -496,6 +551,8 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       transit_pass_id: form.transit_pass_id || undefined,
       agent_id: form.agent_id || undefined,
       billing_unit: form.billing_unit || undefined,
+      rate: form.rate ? Number(form.rate) : undefined,
+      payment_mode: form.payment_mode || undefined,
       gate_pass_id: form.gate_pass_id || undefined,
       vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
       remarks: form.remarks || undefined,
@@ -886,6 +943,59 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             </div>
           </div>
         )}
+
+        {/* Price & Payment — operator sees/sets the material rate + payment mode.
+            Rate is prefilled from the customer-wise price (or the product default);
+            the payment mode decides GST Tax Invoice vs Bill of Supply. */}
+        <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Rate (₹/{billUnitShort})</Label>
+                {form.rate && rateSource !== 'none' && (
+                  <span className={cn('text-[9px] px-1.5 py-0.5 rounded-full font-medium',
+                    rateSource === 'party' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600')}>
+                    {rateSource === 'party' ? 'customer rate' : 'default'}
+                  </span>
+                )}
+              </div>
+              <Input
+                type="number" min="0" step="0.01" className="h-8 text-xs"
+                value={form.rate}
+                onChange={e => { setForm(f => ({ ...f, rate: e.target.value })); setRateSource('none'); }}
+                placeholder="0.00"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Payment mode</Label>
+              <Select value={form.payment_mode || 'cash'} onValueChange={v => setForm(f => ({ ...f, payment_mode: v ?? 'cash' }))}>
+                <SelectTrigger className="h-8 text-xs">
+                  <span className="truncate text-left flex-1">{PAYMENT_MODE_LABEL[form.payment_mode] ?? 'Cash'}</span>
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(PAYMENT_MODE_LABEL).map(([v, lbl]) => (
+                    <SelectItem key={v} value={v}>{lbl}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            {form.payment_mode === 'cash'
+              ? 'Cash → Bill of Supply (no GST).'
+              : 'Credit / UPI / Bank → GST Tax Invoice.'}
+            {rateNum > 0 && (
+              <>
+                {' '}
+                {weightMethod === 'volume'
+                  ? (volumeInput > 0
+                      ? `≈ ₹${(rateNum * volumeInput).toLocaleString('en-IN', { maximumFractionDigits: 2 })} (${volumeInput} ${billUnitShort} × ₹${rateNum})`
+                      : `₹${rateNum}/${billUnitShort}`)
+                  : `₹${rateNum}/${billUnitShort} — amount = weight × rate on the invoice.`}
+              </>
+            )}
+          </p>
+        </div>
 
         {/* Gate Pass — optional, links to a guard-created entry from Gate Register */}
         {(() => {

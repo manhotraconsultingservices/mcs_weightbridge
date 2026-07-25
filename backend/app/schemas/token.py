@@ -20,6 +20,8 @@ class TokenCreate(BaseModel):
     transporter_id: Optional[UUID] = None
     agent_id: Optional[UUID] = None      # broker/dalal — carried to the invoice for commission
     billing_unit: Optional[str] = None   # operator-chosen unit to bill this truck (MT/CFT/CBM/BRASS…)
+    rate: Optional[Decimal] = None       # ₹ per billing_unit shown on the form (customer-wise or default); NULL → resolver decides at invoicing
+    payment_mode: Optional[str] = None   # cash | credit | upi | bank_transfer — overrides party default → invoice tax_type
     gate_pass: Optional[str] = None
     gate_pass_id: Optional[UUID] = None  # link to gate_passes record (uses its GP number)
     remarks: Optional[str] = None
@@ -71,6 +73,8 @@ class TokenVolumeCreate(BaseModel):
     transporter_id: Optional[UUID] = None
     agent_id: Optional[UUID] = None      # broker/dalal — carried to the invoice for commission
     billing_unit: Optional[str] = None   # operator-chosen unit to bill this truck (CFT/CBM/BRASS/MT…)
+    rate: Optional[Decimal] = None       # ₹ per billing_unit shown on the form; NULL → resolver decides
+    payment_mode: Optional[str] = None   # cash | credit | upi | bank_transfer — overrides party default → invoice tax_type
     volume_cft: Decimal                  # cubic feet — canonical unit stored in DB
     gate_pass: Optional[str] = None
     gate_pass_id: Optional[UUID] = None  # link to gate_passes record
@@ -172,6 +176,8 @@ class TokenResponse(BaseModel):
     transit_pass_id: Optional[UUID] = None
     agent_id: Optional[UUID] = None
     billing_unit: Optional[str] = None
+    rate: Optional[Decimal] = None           # operator-set ₹ per billing_unit
+    payment_mode: Optional[str] = None       # cash | credit | upi | bank_transfer
     vehicle_rent: Optional[Decimal] = None
     operator_name: Optional[str] = None      # who created the token (cash accountability)
     remarks: Optional[str] = None

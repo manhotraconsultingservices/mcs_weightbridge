@@ -292,7 +292,8 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
     # product's own unit for tokens created before per-unit billing).
     from app.services.pricing import token_quantity
     bill_unit = token.billing_unit or product.unit
-    rate = await _fetch_rate(db, token.party_id, token.product_id, bill_unit)
+    # Operator-set price wins (shown/edited on the token); else resolve customer/default rate.
+    rate = token.rate if token.rate is not None else await _fetch_rate(db, token.party_id, token.product_id, bill_unit)
     qty = token_quantity(token, bill_unit, product)
 
     amount = (qty * rate).quantize(Decimal("0.01"))
@@ -304,10 +305,14 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
     party = (await db.execute(select(PartyModel).where(PartyModel.id == token.party_id))).scalar_one_or_none()
     intra = is_intra_state(company.state_code, party_place_of_supply(party) if party else company.state_code)
 
-    # Payment-mode drives the tax type (mirrors the manual invoice-create path):
-    #   party.default_payment_mode == 'cash'  → non-GST Bill of Supply (no GST)
-    #   party.default_payment_mode == 'online' (or unset) → GST invoice
-    effective_tax_type = "non_gst" if (party and party.default_payment_mode == "cash") else "gst"
+    # Payment mode → tax type. The operator's per-token choice (cash → non-GST
+    # Bill of Supply; credit/upi/bank → GST) OVERRIDES the party default; falls
+    # back to party.default_payment_mode when the operator didn't pick one.
+    tok_mode = (token.payment_mode or "").lower()
+    if tok_mode:
+        effective_tax_type = "non_gst" if tok_mode == "cash" else "gst"
+    else:
+        effective_tax_type = "non_gst" if (party and party.default_payment_mode == "cash") else "gst"
 
     items_data = [{
         "product_id": str(token.product_id),
@@ -367,6 +372,7 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
         status="draft",
         payment_status="unpaid",
         amount_paid=Decimal("0"),
+        payment_mode=token.payment_mode,   # operator-chosen mode carried to the invoice
         created_by=user_id,
         vehicle_rent=token.vehicle_rent or Decimal("0"),   # transport rent → billed (in grand_total)
         **{k: v for k, v in totals.items() if k != "computed_items"},
@@ -506,6 +512,8 @@ async def create_token(
         transporter_id=payload.transporter_id,
         agent_id=payload.agent_id,
         billing_unit=payload.billing_unit,
+        rate=payload.rate,                    # operator-set material price (₹/unit); NULL → resolver at invoicing
+        payment_mode=payload.payment_mode,    # operator-chosen mode → drives invoice tax_type (cash → Bill of Supply)
         gate_pass=payload.gate_pass,
         gate_pass_no=resolved_gate_pass_no,
         transit_pass_id=payload.transit_pass_id,
@@ -662,6 +670,8 @@ async def create_volume_token(
         transporter_id=payload.transporter_id,
         agent_id=payload.agent_id,
         billing_unit=payload.billing_unit,
+        rate=payload.rate,                    # operator-set material price (₹/unit); NULL → resolver at invoicing
+        payment_mode=payload.payment_mode,    # operator-chosen mode → drives invoice tax_type (cash → Bill of Supply)
         gate_pass=payload.gate_pass,
         gate_pass_no=resolved_vol_gate_pass_no,
         transit_pass_id=payload.transit_pass_id,
@@ -1357,3 +1367,138 @@ async def collect_cash(
         "receipt_no": receipt_no,
         "payment_status": inv.payment_status,
     }
+
+
+class TokenPricingIn(BaseModel):
+    """Edit a token's billable quantity and/or material price. The frontend sends
+    the quantity already converted to the token's storage unit (net_weight in kg
+    for a weighbridge token, volume_cft for a volume token)."""
+    rate: Decimal | None = None            # ₹ per billing_unit
+    net_weight: Decimal | None = None      # kg — weighbridge qty override
+    volume_cft: Decimal | None = None      # volume qty override (volume tokens)
+    billing_unit: str | None = None        # change the billing unit
+    payment_mode: str | None = None        # cash | credit | upi | bank_transfer → invoice tax_type
+
+
+@router.put("/{token_id}/pricing", response_model=TokenResponse)
+async def update_token_pricing(
+    token_id: uuid.UUID,
+    payload: TokenPricingIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update a token's quantity and/or material price, and re-sync the linked
+    DRAFT invoice so the change flows to billing. Works on COMPLETED tokens (that
+    is when the draft invoice exists). If the invoice is already FINALISED it is
+    left untouched and the request is rejected — amend it via an invoice revision.
+    """
+    from app.models.invoice import Invoice, InvoiceItem
+    from app.models.party import Party as PartyModel
+    from app.services.gst_service import calculate_invoice_totals, is_intra_state, party_place_of_supply
+    from app.services.pricing import token_quantity
+
+    token = await _load_token(db, token_id)
+    if token.status == "CANCELLED":
+        raise HTTPException(400, "Cannot edit a cancelled token.")
+
+    changing_billing = (
+        payload.rate is not None or payload.net_weight is not None
+        or payload.volume_cft is not None or payload.payment_mode is not None
+        or payload.billing_unit is not None
+    )
+
+    # Guard: never silently edit a finalised bill's basis.
+    finalised = (await db.execute(
+        select(Invoice.id, Invoice.invoice_no).where(
+            Invoice.token_id == token_id,
+            Invoice.invoice_type.in_(("sale", "purchase")),
+            Invoice.status == "final",
+        ).limit(1)
+    )).first()
+    if finalised and changing_billing:
+        raise HTTPException(
+            400,
+            f"Invoice {finalised.invoice_no or ''} for this token is already finalised. "
+            f"Create a revision on the invoice to change its quantity, rate or payment mode.",
+        )
+
+    product = (await db.execute(
+        select(Product).where(Product.id == token.product_id)
+    )).scalar_one_or_none() if token.product_id else None
+
+    # Apply token field updates.
+    if payload.billing_unit is not None:
+        token.billing_unit = payload.billing_unit
+    if payload.rate is not None:
+        token.rate = payload.rate
+    if payload.payment_mode is not None:
+        token.payment_mode = payload.payment_mode
+    if token.weight_method == "volume":
+        # Volume token: quantity is driven by volume_cft; keep net_weight consistent.
+        if payload.volume_cft is not None:
+            if payload.volume_cft <= 0:
+                raise HTTPException(400, "Volume must be greater than zero.")
+            token.volume_cft = payload.volume_cft
+            if product and product.bulk_density and product.bulk_density > 0:
+                token.net_weight = (payload.volume_cft * product.bulk_density).quantize(Decimal("0.01"))
+    else:
+        # Weighbridge token: quantity is driven by net_weight (kg).
+        if payload.net_weight is not None:
+            if payload.net_weight <= 0:
+                raise HTTPException(400, "Weight must be greater than zero.")
+            token.net_weight = payload.net_weight
+
+    # Re-sync the linked DRAFT invoice (if any) from the token's new qty + rate.
+    inv = (await db.execute(
+        select(Invoice).where(
+            Invoice.token_id == token_id,
+            Invoice.invoice_type.in_(("sale", "purchase")),
+            Invoice.status == "draft",
+        ).order_by(Invoice.created_at.desc()).limit(1)
+    )).scalar_one_or_none()
+
+    if inv and product:
+        bill_unit = token.billing_unit or product.unit
+        new_qty = token_quantity(token, bill_unit, product)
+        new_rate = token.rate if token.rate is not None else await _fetch_rate(
+            db, token.party_id, token.product_id, bill_unit
+        )
+        # A payment-mode change re-derives the tax basis on the draft:
+        #   cash → non-GST Bill of Supply, credit/upi/bank → GST Tax Invoice.
+        if payload.payment_mode is not None:
+            tok_mode = (token.payment_mode or "").lower()
+            inv.payment_mode = token.payment_mode
+            inv.tax_type = "non_gst" if tok_mode == "cash" else "gst"
+        items = (await db.execute(
+            select(InvoiceItem).where(InvoiceItem.invoice_id == inv.id).order_by(InvoiceItem.sort_order)
+        )).scalars().all()
+        if items:
+            it = items[0]
+            party = (await db.execute(select(PartyModel).where(PartyModel.id == inv.party_id))).scalar_one_or_none()
+            company, _ = await _get_company_and_fy(db)
+            intra = is_intra_state(company.state_code, party_place_of_supply(party) if party else company.state_code)
+            totals = calculate_invoice_totals(
+                items=[{
+                    "product_id": str(it.product_id), "description": it.description, "hsn_code": it.hsn_code,
+                    "quantity": new_qty, "unit": bill_unit, "rate": new_rate,
+                    "gst_rate": it.gst_rate or Decimal("0"), "sort_order": 0,
+                }],
+                discount_type=inv.discount_type, discount_value=inv.discount_value or Decimal("0"),
+                freight=inv.freight or Decimal("0"), tcs_rate=inv.tcs_rate or Decimal("0"),
+                intra_state=intra, tax_type=inv.tax_type,
+                vehicle_rent=inv.vehicle_rent or Decimal("0"),
+            )
+            for k, v in totals.items():
+                if k != "computed_items" and hasattr(inv, k):
+                    setattr(inv, k, v)
+            cd = totals["computed_items"][0]
+            it.quantity = Decimal(str(cd["quantity"])); it.rate = Decimal(str(cd["rate"]))
+            it.unit = bill_unit
+            it.amount = cd["amount"]; it.gst_rate = Decimal(str(cd.get("gst_rate", 0)))
+            it.cgst_amount = cd["cgst_amount"]; it.sgst_amount = cd["sgst_amount"]
+            it.igst_amount = cd["igst_amount"]; it.total_amount = cd["total_amount"]
+            # keep denormalised weight on the invoice in step with the token
+            inv.net_weight = token.net_weight
+
+    await db.commit()
+    return await get_token(token_id, db, current_user)

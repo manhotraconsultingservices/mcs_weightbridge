@@ -33,6 +33,17 @@ function volFmt(cft: number | null | undefined, unit?: string | null) {
   return Number(cft).toFixed(2) + ' CFT';
 }
 
+// Billing-unit ↔ storage conversions for the "Edit qty & price" dialog.
+const VOL_TO_CFT: Record<string, number> = { CFT: 1, CBM: 35.3147, CUM: 35.3147, BRASS: 100 };
+const WT_TO_KG: Record<string, number> = { MT: 1000, QUINTAL: 100, KG: 1 };
+const PAY_MODES: { value: string; label: string }[] = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'credit', label: 'Credit' },
+  { value: 'upi', label: 'UPI' },
+  { value: 'bank_transfer', label: 'Bank' },
+];
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
+
 const STATUS_COLORS: Record<string, string> = {
   OPEN: 'bg-blue-100 text-blue-700',
   FIRST_WEIGHT: 'bg-amber-100 text-amber-700',
@@ -176,6 +187,12 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
   const [collectRate, setCollectRate] = useState('');
   const [collectUnit, setCollectUnit] = useState('');
   const [collecting, setCollecting] = useState(false);
+  // Edit qty & price (+ payment mode) — re-syncs the linked draft invoice.
+  const [editOpen, setEditOpen] = useState(false);
+  const [editQty, setEditQty] = useState('');
+  const [editRate, setEditRate] = useState('');
+  const [editMode, setEditMode] = useState('cash');
+  const [editing, setEditing] = useState(false);
 
   async function openCollect() {
     if (!token?.linked_invoice?.id) return;
@@ -204,6 +221,53 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
       const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       toast.error(typeof d === 'string' ? d : 'Failed to collect cash');
     } finally { setCollecting(false); }
+  }
+
+  // The unit the qty is edited in (the token's billing unit; defaults by method).
+  function editUnit(): string {
+    if (!token) return 'MT';
+    return (token.billing_unit || (token.weight_method === 'volume' ? 'CFT' : 'MT')).toUpperCase();
+  }
+
+  async function openEdit() {
+    if (!token) return;
+    const u = editUnit();
+    // Current quantity in the billing unit.
+    let qty = 0;
+    if (token.weight_method === 'volume') qty = Number(token.volume_cft ?? 0) / (VOL_TO_CFT[u] ?? 1);
+    else qty = Number(token.net_weight ?? 0) / (WT_TO_KG[u] ?? 1000);
+    setEditQty(qty ? String(round3(qty)) : '');
+    // Rate: prefer the token's stored rate, else the linked invoice's line rate.
+    let rate: number | null = token.rate != null ? Number(token.rate) : null;
+    if (rate == null && token.linked_invoice?.id) {
+      try {
+        const { data } = await api.get<{ items?: { rate: number }[] }>(`/api/v1/invoices/${token.linked_invoice.id}`);
+        rate = data.items?.[0]?.rate ?? null;
+      } catch { /* ignore */ }
+    }
+    setEditRate(rate != null ? String(rate) : '');
+    setEditMode(token.payment_mode || 'cash');
+    setEditOpen(true);
+  }
+
+  async function doEdit() {
+    if (!token) return;
+    const q = parseFloat(editQty), r = parseFloat(editRate);
+    if (!q || q <= 0 || isNaN(r) || r < 0) { toast.error('Enter a valid quantity and rate'); return; }
+    const u = editUnit();
+    const payload: Record<string, unknown> = { rate: r, payment_mode: editMode, billing_unit: u };
+    if (token.weight_method === 'volume') payload.volume_cft = q * (VOL_TO_CFT[u] ?? 1);
+    else payload.net_weight = q * (WT_TO_KG[u] ?? 1000);
+    setEditing(true);
+    try {
+      await api.put(`/api/v1/tokens/${token.id}/pricing`, payload);
+      toast.success('Updated — the draft bill was re-priced');
+      setEditOpen(false);
+      fetchToken();
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(typeof d === 'string' ? d : 'Failed to update the token');
+    } finally { setEditing(false); }
   }
 
   // Fetch token details (refetchable — the approve action reloads it)
@@ -590,6 +654,11 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                   {token.linked_invoice.status === 'draft' && (
                     <div className="px-4 pb-3 pt-1 border-t bg-amber-50/40">
                       {canCollect && (
+                        <Button size="sm" variant="outline" className="w-full mb-2 gap-1.5" onClick={openEdit}>
+                          <Package className="h-3.5 w-3.5" /> Edit qty &amp; price
+                        </Button>
+                      )}
+                      {canCollect && (
                         <Button size="sm" className="w-full mb-2 gap-1.5 bg-emerald-600 hover:bg-emerald-700" onClick={openCollect}>
                           <CreditCard className="h-3.5 w-3.5" /> Collect Cash — see rate, finalise bill{token.linked_invoice.grand_total != null ? ` · ${INR(token.linked_invoice.grand_total)}` : ''}
                         </Button>
@@ -690,6 +759,56 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
             <Button onClick={doCollect} disabled={collecting} className="w-full gap-1.5 bg-emerald-600 hover:bg-emerald-700">
               {collecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
               Finalise bill &amp; collect cash
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit qty & price — updates the token and re-prices the linked draft invoice */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Edit quantity &amp; price</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Change the billable quantity, the material rate, or the payment mode. The linked draft bill is re-priced automatically.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Quantity ({editUnit()})</label>
+                <Input type="number" min="0" step="0.001" value={editQty} onChange={e => setEditQty(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Rate (₹/{editUnit()})</label>
+                <Input type="number" min="0" step="0.01" value={editRate} onChange={e => setEditRate(e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Payment mode</label>
+              <div className="grid grid-cols-4 gap-1">
+                {PAY_MODES.map(m => (
+                  <button
+                    key={m.value}
+                    type="button"
+                    onClick={() => setEditMode(m.value)}
+                    className={`rounded-md border px-1 py-1.5 text-xs font-medium transition-colors ${
+                      editMode === m.value ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:bg-muted'
+                    }`}
+                  >{m.label}</button>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                {editMode === 'cash' ? 'Cash → Bill of Supply (no GST).' : 'Credit / UPI / Bank → GST Tax Invoice.'}
+              </p>
+            </div>
+            <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2">
+              <span className="text-sm font-medium">Amount</span>
+              <span className="text-lg font-bold">
+                {INR((parseFloat(editQty) || 0) * (parseFloat(editRate) || 0))}
+              </span>
+            </div>
+            <Button onClick={doEdit} disabled={editing} className="w-full gap-1.5">
+              {editing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Save changes
             </Button>
           </div>
         </DialogContent>
