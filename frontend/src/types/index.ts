@@ -317,6 +317,7 @@ export interface Invoice {
   tcs_rate: number;
   tcs_amount: number;
   freight: number;
+  vehicle_rent?: number;
   total_amount: number;
   round_off: number;
   grand_total: number;

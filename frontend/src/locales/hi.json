@@ -241,6 +241,7 @@
     "discountFlat": "निश्चित राशि (₹)",
     "discountValue": "छूट राशि",
     "freight": "माल भाड़ा (₹)",
+    "vehicleRent": "वाहन किराया (₹)",
     "transportDetails": "परिवहन विवरण",
     "createInvoice": "चालान बनाएं",
     "editDraftInvoice": "मसौदा चालान संपादित करें",
