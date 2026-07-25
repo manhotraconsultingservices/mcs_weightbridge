@@ -499,6 +499,48 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                 </div>
               </div>
 
+              {/* Pricing — read-only rate + payment mode (edit via "Edit qty & price") */}
+              {(token.rate != null || token.payment_mode) && (
+                <div className="rounded-lg border overflow-hidden">
+                  <div className="px-4 py-2 bg-muted/40 border-b">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Pricing</p>
+                  </div>
+                  <div className="grid grid-cols-2 divide-x">
+                    <div className="p-3">
+                      <p className="text-xs text-muted-foreground mb-1">Rate</p>
+                      <p className="font-mono font-bold text-sm">
+                        {token.rate != null ? `${INR(token.rate)}/${editUnit()}` : '—'}
+                      </p>
+                    </div>
+                    <div className="p-3">
+                      <p className="text-xs text-muted-foreground mb-1">Payment mode</p>
+                      <p className="font-medium text-sm">
+                        {PAY_MODES.find(m => m.value === token.payment_mode)?.label ?? '—'}
+                      </p>
+                      {token.payment_mode && (
+                        <p className="text-[10px] text-muted-foreground">
+                          {token.payment_mode === 'cash' ? 'Bill of Supply · no GST' : 'GST Tax Invoice'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {(() => {
+                    const u = editUnit();
+                    const rate = token.rate != null ? Number(token.rate) : null;
+                    const qty = token.weight_method === 'volume'
+                      ? Number(token.volume_cft ?? 0) / (VOL_TO_CFT[u] ?? 1)
+                      : Number(token.net_weight ?? 0) / (WT_TO_KG[u] ?? 1000);
+                    const amt = rate != null && qty > 0 ? rate * qty : null;
+                    return amt != null ? (
+                      <div className="px-4 py-2 border-t flex items-center justify-between bg-muted/10">
+                        <span className="text-xs text-muted-foreground">Material amount (excl. GST)</span>
+                        <span className="font-mono font-semibold text-sm">{INR(amt)}</span>
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+              )}
+
               {/* ── Camera Snapshots ── */}
               {hasAnyCamera && (
                 <div className="rounded-lg border overflow-hidden">
