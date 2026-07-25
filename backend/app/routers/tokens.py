@@ -927,13 +927,17 @@ async def update_token(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Edit a token's details — fix a typo (vehicle no, party, material, driver,
-    remarks…). Allowed even after the token is COMPLETED (that is exactly when a
-    typo is noticed, once the slip prints). A CANCELLED token stays locked. If the
-    party or material changes, the linked DRAFT invoice is rebuilt so billing stays
-    correct; if that invoice is already FINALISED the party/material can't change
+    """The ONE token editor — fix anything: vehicle no, party, material, quantity,
+    rate, vehicle rent, payment mode, remarks. Allowed even after the token is
+    COMPLETED (that is exactly when a typo is noticed, once the slip prints); a
+    CANCELLED token stays locked. The linked DRAFT invoice is kept correct:
+    party/material change rebuilds it; qty/rate/vehicle-rent/payment-mode change
+    re-prices it. If the invoice is already FINALISED, billing fields can't change
     (cancel or revise the bill first) — cosmetic fields still edit freely."""
     from app.models.invoice import Invoice, InvoiceItem
+    from app.models.party import Party as PartyModel
+    from app.services.gst_service import calculate_invoice_totals, is_intra_state, party_place_of_supply
+    from app.services.pricing import token_quantity
 
     token = await _load_token(db, token_id)
     if token.status == "CANCELLED":
@@ -942,6 +946,9 @@ async def update_token(
     data = payload.model_dump(exclude_none=True)
     party_changed = "party_id" in data and data["party_id"] != token.party_id
     product_changed = "product_id" in data and data["product_id"] != token.product_id
+    _BILLING_KEYS = {"party_id", "product_id", "rate", "net_weight", "volume_cft",
+                     "vehicle_rent", "payment_mode", "billing_unit"}
+    billing_changed = any(k in data for k in _BILLING_KEYS)
 
     # Any invoice linked to this token (drives what edits are safe).
     inv = (await db.execute(
@@ -951,26 +958,32 @@ async def update_token(
         ).order_by(Invoice.created_at.desc()).limit(1)
     )).scalar_one_or_none()
 
-    if inv and inv.status == "final" and (party_changed or product_changed):
+    if inv and inv.status == "final" and billing_changed:
         raise HTTPException(
             400,
-            f"Invoice {inv.invoice_no or ''} is finalised — its party/material can't be changed here. "
-            f"Cancel or revise the invoice first.",
+            f"Invoice {inv.invoice_no or ''} is finalised — its quantity/price/party/material "
+            f"can't be changed here. Cancel or revise the invoice first.",
         )
 
+    # Apply all edited fields (every key is a real Token column).
     for field, value in data.items():
         setattr(token, field, value)
     if payload.vehicle_no:
         token.vehicle_no = payload.vehicle_no.upper().strip()
-    # A material change invalidates the stored rate — let the resolver re-price.
-    if product_changed:
+    # Volume token: quantity is driven by volume_cft → keep net_weight consistent.
+    if token.weight_method == "volume" and "volume_cft" in data:
+        vprod = (await db.execute(select(Product).where(Product.id == token.product_id))).scalar_one_or_none() if token.product_id else None
+        if vprod and vprod.bulk_density and vprod.bulk_density > 0 and token.volume_cft:
+            token.net_weight = (Decimal(str(token.volume_cft)) * vprod.bulk_density).quantize(Decimal("0.01"))
+    # A material change invalidates a stale stored rate — unless the caller set one.
+    if product_changed and "rate" not in data:
         token.rate = None
 
     # Keep the linked invoice consistent with the corrected token.
-    if inv:
-        if inv.status == "draft" and (party_changed or product_changed):
+    if inv and inv.status == "draft":
+        if party_changed or product_changed:
             # Rebuild the draft from the corrected token (reuses all the pricing /
-            # GST / tax-type logic — no partial re-derivation to get wrong).
+            # GST / tax-type logic — picks up the new rate/qty/vehicle_rent/mode).
             for it in (await db.execute(
                 select(InvoiceItem).where(InvoiceItem.invoice_id == inv.id)
             )).scalars().all():
@@ -978,16 +991,59 @@ async def update_token(
             await db.delete(inv)
             await db.flush()
             company, _active_fy = await _get_company_and_fy(db)
-            # Rebuild in the token's OWN financial year (robust if editing an old token).
             fy = (await db.execute(
                 select(FinancialYear).where(FinancialYear.id == token.fy_id)
             )).scalar_one_or_none() or _active_fy
             if token.party_id and token.product_id and token.token_type in ("sale", "purchase"):
                 await _auto_create_invoice(db, token, company, fy, current_user.id,
                                            invoice_type=token.token_type)
+        elif billing_changed:
+            # Re-price the existing draft from the token's new qty + rate + mode + rent.
+            product = (await db.execute(select(Product).where(Product.id == token.product_id))).scalar_one_or_none() if token.product_id else None
+            items = (await db.execute(
+                select(InvoiceItem).where(InvoiceItem.invoice_id == inv.id).order_by(InvoiceItem.sort_order)
+            )).scalars().all()
+            if product and items:
+                it = items[0]
+                bill_unit = token.billing_unit or product.unit
+                new_qty = token_quantity(token, bill_unit, product)
+                new_rate = token.rate if token.rate is not None else await _fetch_rate(db, token.party_id, token.product_id, bill_unit)
+                if "payment_mode" in data:
+                    m = (token.payment_mode or "").lower()
+                    inv.payment_mode = token.payment_mode
+                    inv.tax_type = "non_gst" if m == "cash" else "gst"
+                if "vehicle_rent" in data:
+                    inv.vehicle_rent = token.vehicle_rent or Decimal("0")
+                party = (await db.execute(select(PartyModel).where(PartyModel.id == inv.party_id))).scalar_one_or_none()
+                company, _ = await _get_company_and_fy(db)
+                intra = is_intra_state(company.state_code, party_place_of_supply(party) if party else company.state_code)
+                totals = calculate_invoice_totals(
+                    items=[{
+                        "product_id": str(it.product_id), "description": it.description, "hsn_code": it.hsn_code,
+                        "quantity": new_qty, "unit": bill_unit, "rate": new_rate,
+                        "gst_rate": it.gst_rate or Decimal("0"), "sort_order": 0,
+                    }],
+                    discount_type=inv.discount_type, discount_value=inv.discount_value or Decimal("0"),
+                    freight=inv.freight or Decimal("0"), tcs_rate=inv.tcs_rate or Decimal("0"),
+                    intra_state=intra, tax_type=inv.tax_type,
+                    vehicle_rent=inv.vehicle_rent or Decimal("0"),
+                )
+                for k, v in totals.items():
+                    if k != "computed_items" and hasattr(inv, k):
+                        setattr(inv, k, v)
+                cd = totals["computed_items"][0]
+                it.quantity = Decimal(str(cd["quantity"])); it.rate = Decimal(str(cd["rate"]))
+                it.unit = bill_unit; it.amount = cd["amount"]; it.gst_rate = Decimal(str(cd.get("gst_rate", 0)))
+                it.cgst_amount = cd["cgst_amount"]; it.sgst_amount = cd["sgst_amount"]
+                it.igst_amount = cd["igst_amount"]; it.total_amount = cd["total_amount"]
+                inv.vehicle_no = token.vehicle_no
+                inv.net_weight = token.net_weight
         else:
             # Cosmetic change → keep the invoice's denormalised transport field in step.
             inv.vehicle_no = token.vehicle_no
+    elif inv:
+        # Non-draft (final): only cosmetic changes reach here (billing blocked above).
+        inv.vehicle_no = token.vehicle_no
 
     await db.commit()
 
