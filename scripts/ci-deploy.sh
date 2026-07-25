@@ -162,16 +162,27 @@ log "→ Reloading nginx"
 nginx -t > /dev/null 2>&1 && systemctl reload nginx
 log "  nginx: $(systemctl is-active nginx)"
 
-# ── Health check ────────────────────────────────────────────────────────────
+# ── Health check (retried) ──────────────────────────────────────────────────
+# Multi-tenant startup runs per-tenant DDL + template seeding + several
+# background loops before uvicorn binds — that can take 20-40s, well past the
+# `sleep 3` above. A single curl fired too early returns 000 and would fail an
+# otherwise-healthy deploy, so poll for up to ~40s before giving up.
 log "→ Health check ($HEALTH_URL)"
-HEALTH_CODE=$(curl --max-time 10 -s -o /tmp/health.out -w "%{http_code}" "$HEALTH_URL" || echo "000")
+HEALTH_CODE="000"
+for attempt in $(seq 1 20); do
+    HEALTH_CODE=$(curl --max-time 10 -s -o /tmp/health.out -w "%{http_code}" "$HEALTH_URL" || echo "000")
+    case "$HEALTH_CODE" in
+        200|503) break ;;
+    esac
+    sleep 2
+done
 # 200 = healthy, 503 = degraded-but-up (e.g. weight scale offline). Both OK.
 case "$HEALTH_CODE" in
     200|503)
-        log "  ✅ Backend responded $HEALTH_CODE"
+        log "  ✅ Backend responded $HEALTH_CODE (attempt $attempt)"
         ;;
     *)
-        log "  ❌ Backend health check returned $HEALTH_CODE — see /tmp/health.out"
+        log "  ❌ Backend health check returned $HEALTH_CODE after $attempt attempts — see /tmp/health.out"
         log "  Service status: $(systemctl is-active $SERVICE)"
         log "  Last 20 service log lines:"
         journalctl -u "$SERVICE" -n 20 --no-pager 2>&1 | tail -20 | tee -a "$LOG_FILE"
