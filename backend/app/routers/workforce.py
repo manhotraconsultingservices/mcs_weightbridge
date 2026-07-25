@@ -13,7 +13,7 @@ from calendar import monthrange
 from datetime import date, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -264,8 +264,30 @@ async def list_payments(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
+def _ctx_tenant_slug():
+    try:
+        from app.multitenancy.context import current_tenant_slug
+        return current_tenant_slug.get()
+    except Exception:
+        return None
+
+
+async def _notify_bg(company_id, event_type: str, context: dict,
+                     entity_type=None, entity_id=None, tenant_slug=None) -> None:
+    """Background wrapper: own tenant-routed session → send_notification."""
+    import logging as _logging
+    try:
+        from app.database import get_tenant_session
+        from app.integrations.notifications.service import send_notification
+        async with await get_tenant_session(tenant_slug) as _db:
+            await send_notification(_db, company_id, event_type, context, entity_type, entity_id)
+    except Exception as exc:
+        _logging.getLogger(__name__).warning("Workforce notification failed [%s]: %s", event_type, exc)
+
+
 @router.post("/payments", response_model=PaymentResponse, status_code=201)
-async def create_payment(payload: PaymentCreate, db: AsyncSession = Depends(get_db),
+async def create_payment(payload: PaymentCreate, background: BackgroundTasks,
+                         db: AsyncSession = Depends(get_db),
                          user: User = Depends(get_current_user)):
     w = (await db.execute(select(Worker).where(
         Worker.id == payload.worker_id, Worker.company_id == user.company_id))).scalar_one_or_none()
@@ -278,6 +300,24 @@ async def create_payment(payload: PaymentCreate, db: AsyncSession = Depends(get_
     db.add(p)
     await db.commit()
     await db.refresh(p)
+    # Fire "worker payment" (salary / wage / advance / bonus / deduction) notification
+    try:
+        from app.models.company import Company as _Company
+        _co = (await db.execute(select(_Company).limit(1))).scalar_one_or_none()
+        background.add_task(
+            _notify_bg, user.company_id, "worker_payment",
+            {
+                "worker_name": w.name,
+                "payment_type": (p.payment_type or "").replace("_", " ").title(),
+                "amount": f"{float(p.amount):.2f}",
+                "mode": (p.mode or "").upper(),
+                "pay_date": p.pay_date.strftime("%d-%m-%Y") if p.pay_date else "",
+                "company_name": _co.name if _co else "",
+            },
+            "worker_payment", str(p.id), _ctx_tenant_slug(),
+        )
+    except Exception:
+        pass
     resp = PaymentResponse.model_validate(p)
     resp.worker_name = w.name
     return resp

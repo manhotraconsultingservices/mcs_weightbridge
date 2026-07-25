@@ -26,6 +26,26 @@ from app.schemas.vehicle import FuelEntryCreate, FuelEntryUpdate, FuelEntryRespo
 from app.services import fuel as fuel_svc
 
 log = logging.getLogger(__name__)
+
+
+def _ctx_tenant_slug():
+    try:
+        from app.multitenancy.context import current_tenant_slug
+        return current_tenant_slug.get()
+    except Exception:
+        return None
+
+
+async def _notify_bg(company_id, event_type: str, context: dict,
+                     entity_type=None, entity_id=None, tenant_slug=None) -> None:
+    """Background wrapper: own tenant-routed session → send_notification."""
+    try:
+        from app.database import get_tenant_session
+        from app.integrations.notifications.service import send_notification
+        async with await get_tenant_session(tenant_slug) as _db:
+            await send_notification(_db, company_id, event_type, context, entity_type, entity_id)
+    except Exception as exc:
+        log.warning("fuel notification failed [%s]: %s", event_type, exc)
 router = APIRouter(prefix="/api/v1/fuel", tags=["Fleet Fuel & Mileage"])
 
 DEFAULT_FUEL_CONFIG: dict[str, Any] = {
@@ -231,6 +251,26 @@ async def create_entry(payload: FuelEntryCreate, background: BackgroundTasks,
     await db.refresh(entry)
 
     resp = await _entry_to_response(db, entry, veh)
+
+    # Fire a "diesel transaction" notification on every fill (non-blocking)
+    try:
+        from app.models.company import Company as _Company
+        _co = (await db.execute(select(_Company).limit(1))).scalar_one_or_none()
+        background.add_task(
+            _notify_bg, user.company_id, "diesel_transaction",
+            {
+                "vehicle_no": veh.registration_no,
+                "litres": f"{float(litres):g}",
+                "rate": f"{float(rate):.2f}" if rate is not None else "",
+                "amount": f"{float(amount):.2f}" if amount is not None else "",
+                "odometer_km": f"{float(odo):g}",
+                "fuel_source": (payload.fuel_source or "plant_tank").replace("_", " "),
+                "company_name": _co.name if _co else "",
+            },
+            "fuel_entry", str(entry.id), _ctx_tenant_slug(),
+        )
+    except Exception as _e:
+        log.warning("diesel_transaction notify wiring failed: %s", _e)
 
     # Fire a leakage alert (non-blocking) when this fill's interval mileage is
     # well below the effective benchmark.

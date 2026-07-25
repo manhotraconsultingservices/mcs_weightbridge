@@ -503,6 +503,225 @@ DEFAULT_TEMPLATES = [
 </table>
 <p style="margin-top:10px;color:#888;font-size:12px;">{{ trip_count }} trip(s) recorded today.</p>""",
     },
+
+    # ── Gate pass created (vehicle entry via the manual Gate Register) ─────────
+    {
+        "event_type": "gate_pass_created",
+        "channel": "telegram",
+        "name": "Gate Pass Created (Telegram)",
+        "subject": None,
+        "body": (
+            "🚧 <b>Gate pass created</b>\n\n"
+            "Pass: <b>{{ gate_pass_no }}</b>\n"
+            "Vehicle: <b>{{ vehicle_no }}</b>\n"
+            "{% if driver_name %}Driver: {{ driver_name }}\n{% endif %}"
+            "{% if material %}Material: {{ material }}\n{% endif %}"
+            "Purpose: {{ purpose }}\n"
+            "Entry: {{ entry_time }}\n\n— {{ company_name }}"
+        ),
+    },
+    {
+        "event_type": "gate_pass_created",
+        "channel": "email",
+        "name": "Gate Pass Created (Email)",
+        "subject": "Gate pass {{ gate_pass_no }} — {{ vehicle_no }} — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;">Gate pass created</h2>
+<p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;">
+  <tr><td><b>Pass no</b></td><td>{{ gate_pass_no }}</td></tr>
+  <tr><td><b>Vehicle</b></td><td>{{ vehicle_no }}</td></tr>
+  <tr><td><b>Driver</b></td><td>{{ driver_name }}</td></tr>
+  <tr><td><b>Material</b></td><td>{{ material }}</td></tr>
+  <tr><td><b>Purpose</b></td><td>{{ purpose }}</td></tr>
+  <tr><td><b>Entry</b></td><td>{{ entry_time }}</td></tr>
+</table>""",
+    },
+
+    # ── Store inventory transaction (issue / adjustment / receipt) ────────────
+    {
+        "event_type": "inventory_transaction",
+        "channel": "telegram",
+        "name": "Store Inventory Transaction (Telegram)",
+        "subject": None,
+        "body": (
+            "📦 <b>Store: {{ transaction_type }}</b>\n\n"
+            "Item: <b>{{ item_name }}</b>\n"
+            "Qty: <b>{{ quantity }} {{ unit }}</b>\n"
+            "Balance: <b>{{ stock_after }} {{ unit }}</b>\n"
+            "{% if reference_no %}Ref: {{ reference_no }}\n{% endif %}"
+            "{% if notes %}Note: {{ notes }}\n{% endif %}"
+            "By: {{ done_by }}\n\n— {{ company_name }}"
+        ),
+    },
+    {
+        "event_type": "inventory_transaction",
+        "channel": "email",
+        "name": "Store Inventory Transaction (Email)",
+        "subject": "Store {{ transaction_type }}: {{ item_name }} — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;">Store inventory — {{ transaction_type }}</h2>
+<p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;">
+  <tr><td><b>Item</b></td><td>{{ item_name }}</td></tr>
+  <tr><td><b>Type</b></td><td>{{ transaction_type }}</td></tr>
+  <tr><td><b>Quantity</b></td><td>{{ quantity }} {{ unit }}</td></tr>
+  <tr><td><b>Balance after</b></td><td>{{ stock_after }} {{ unit }}</td></tr>
+  <tr><td><b>Reference</b></td><td>{{ reference_no }}</td></tr>
+  <tr><td><b>Note</b></td><td>{{ notes }}</td></tr>
+  <tr><td><b>By</b></td><td>{{ done_by }}</td></tr>
+</table>""",
+    },
+
+    # ── Gate pass exit ────────────────────────────────────────────────────────
+    {
+        "event_type": "gate_pass_exit",
+        "channel": "telegram",
+        "name": "Gate Pass Exit (Telegram)",
+        "subject": None,
+        "body": (
+            "🚪 <b>Gate pass exit</b>\n\n"
+            "Pass: <b>{{ gate_pass_no }}</b>\n"
+            "Vehicle: <b>{{ vehicle_no }}</b>\n"
+            "Exit: {{ exit_time }}\n\n— {{ company_name }}"
+        ),
+    },
+    {
+        "event_type": "gate_pass_exit",
+        "channel": "email",
+        "name": "Gate Pass Exit (Email)",
+        "subject": "Gate exit {{ gate_pass_no }} — {{ vehicle_no }} — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;">Gate pass exit</h2>
+<p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;">
+  <tr><td><b>Pass no</b></td><td>{{ gate_pass_no }}</td></tr>
+  <tr><td><b>Vehicle</b></td><td>{{ vehicle_no }}</td></tr>
+  <tr><td><b>Exit</b></td><td>{{ exit_time }}</td></tr>
+</table>""",
+    },
+
+    # ── Invoice write-off (bad debt) ──────────────────────────────────────────
+    {
+        "event_type": "invoice_write_off",
+        "channel": "telegram",
+        "name": "Invoice Write-off (Telegram)",
+        "subject": None,
+        "body": (
+            "🧾 <b>Invoice written off</b>\n\n"
+            "Invoice: <b>{{ invoice_no }}</b>\n"
+            "{% if party_name %}Party: {{ party_name }}\n{% endif %}"
+            "Amount: <b>₹{{ amount }}</b>\n"
+            "Balance after: ₹{{ balance_after }}\n"
+            "Reason: {{ reason }}\n\n— {{ company_name }}"
+        ),
+    },
+    {
+        "event_type": "invoice_write_off",
+        "channel": "email",
+        "name": "Invoice Write-off (Email)",
+        "subject": "Write-off {{ invoice_no }} — ₹{{ amount }} — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;color:#b45309;">Invoice written off</h2>
+<p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;">
+  <tr><td><b>Invoice</b></td><td>{{ invoice_no }}</td></tr>
+  <tr><td><b>Party</b></td><td>{{ party_name }}</td></tr>
+  <tr><td><b>Amount</b></td><td>&#8377;{{ amount }}</td></tr>
+  <tr><td><b>Balance after</b></td><td>&#8377;{{ balance_after }}</td></tr>
+  <tr><td><b>Reason</b></td><td>{{ reason }}</td></tr>
+</table>""",
+    },
+
+    # ── Diesel / fuel transaction (every fill) ────────────────────────────────
+    {
+        "event_type": "diesel_transaction",
+        "channel": "telegram",
+        "name": "Diesel Transaction (Telegram)",
+        "subject": None,
+        "body": (
+            "⛽ <b>Diesel fill</b>\n\n"
+            "Vehicle: <b>{{ vehicle_no }}</b>\n"
+            "Litres: <b>{{ litres }} L</b>\n"
+            "{% if rate %}Rate: ₹{{ rate }}/L\n{% endif %}"
+            "{% if amount %}Amount: <b>₹{{ amount }}</b>\n{% endif %}"
+            "Odometer: {{ odometer_km }} km\n"
+            "Source: {{ fuel_source }}\n\n— {{ company_name }}"
+        ),
+    },
+    {
+        "event_type": "diesel_transaction",
+        "channel": "email",
+        "name": "Diesel Transaction (Email)",
+        "subject": "Diesel fill: {{ vehicle_no }} — {{ litres }} L — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;">Diesel fill</h2>
+<p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;">
+  <tr><td><b>Vehicle</b></td><td>{{ vehicle_no }}</td></tr>
+  <tr><td><b>Litres</b></td><td>{{ litres }} L</td></tr>
+  <tr><td><b>Rate</b></td><td>&#8377;{{ rate }}/L</td></tr>
+  <tr><td><b>Amount</b></td><td>&#8377;{{ amount }}</td></tr>
+  <tr><td><b>Odometer</b></td><td>{{ odometer_km }} km</td></tr>
+  <tr><td><b>Source</b></td><td>{{ fuel_source }}</td></tr>
+</table>""",
+    },
+
+    # ── Payment made (money out — supplier / advance) ─────────────────────────
+    {
+        "event_type": "payment_made",
+        "channel": "telegram",
+        "name": "Payment Made (Telegram)",
+        "subject": None,
+        "body": (
+            "💸 <b>Payment made</b>\n\n"
+            "To: <b>{{ party_name }}</b>\n"
+            "Amount: <b>₹{{ amount }}</b>\n"
+            "Voucher: {{ voucher_no }}\n"
+            "Mode: {{ payment_mode }}\n"
+            "Date: {{ voucher_date }}\n\n— {{ company_name }}"
+        ),
+    },
+    {
+        "event_type": "payment_made",
+        "channel": "email",
+        "name": "Payment Made (Email)",
+        "subject": "Payment made: ₹{{ amount }} to {{ party_name }} — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;">Payment made</h2>
+<p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;">
+  <tr><td><b>To</b></td><td>{{ party_name }}</td></tr>
+  <tr><td><b>Amount</b></td><td>&#8377;{{ amount }}</td></tr>
+  <tr><td><b>Voucher</b></td><td>{{ voucher_no }}</td></tr>
+  <tr><td><b>Mode</b></td><td>{{ payment_mode }}</td></tr>
+  <tr><td><b>Date</b></td><td>{{ voucher_date }}</td></tr>
+</table>""",
+    },
+
+    # ── Worker payment (salary / wage / advance / bonus / deduction) ──────────
+    {
+        "event_type": "worker_payment",
+        "channel": "telegram",
+        "name": "Worker Payment (Telegram)",
+        "subject": None,
+        "body": (
+            "👷 <b>Worker payment — {{ payment_type }}</b>\n\n"
+            "Worker: <b>{{ worker_name }}</b>\n"
+            "Amount: <b>₹{{ amount }}</b>\n"
+            "{% if mode %}Mode: {{ mode }}\n{% endif %}"
+            "Date: {{ pay_date }}\n\n— {{ company_name }}"
+        ),
+    },
+    {
+        "event_type": "worker_payment",
+        "channel": "email",
+        "name": "Worker Payment (Email)",
+        "subject": "Worker {{ payment_type }}: {{ worker_name }} — ₹{{ amount }} — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;">Worker payment — {{ payment_type }}</h2>
+<p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;">
+  <tr><td><b>Worker</b></td><td>{{ worker_name }}</td></tr>
+  <tr><td><b>Type</b></td><td>{{ payment_type }}</td></tr>
+  <tr><td><b>Amount</b></td><td>&#8377;{{ amount }}</td></tr>
+  <tr><td><b>Mode</b></td><td>{{ mode }}</td></tr>
+  <tr><td><b>Date</b></td><td>{{ pay_date }}</td></tr>
+</table>""",
+    },
 ]
 
 

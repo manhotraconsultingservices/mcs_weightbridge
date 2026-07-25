@@ -249,6 +249,26 @@ async def create_gate_pass(
             _bg_capture_entry_photo, company_id, gp_id, _ctx_tenant_slug()
         )
 
+    # Fire-and-forget "gate pass created" notification (Telegram / email per config)
+    try:
+        _co_name_row = (await db.execute(text("SELECT name FROM companies LIMIT 1"))).fetchone()
+        _notify_ctx = {
+            "gate_pass_no": created.gate_pass_no,
+            "vehicle_no": body.get("vehicle_no") or "—",
+            "driver_name": body.get("driver_name") or "",
+            "material": body.get("material") or "",
+            "purpose": body.get("purpose", "weighbridge"),
+            "entry_time": created.entry_time.strftime("%d-%m-%Y %H:%M") if created.entry_time else "—",
+            "company_name": _co_name_row.name if _co_name_row else "",
+        }
+        background_tasks.add_task(
+            _send_notification_bg,
+            current_user.company_id, "gate_pass_created", _notify_ctx,
+            "gate_pass", gp_id, _ctx_tenant_slug(),
+        )
+    except Exception:
+        pass  # never block gate-pass creation on notification wiring
+
     return {
         "id": gp_id,
         "gate_pass_no": created.gate_pass_no,
@@ -289,6 +309,23 @@ def _ctx_tenant_slug() -> str | None:
         return current_tenant_slug.get()
     except Exception:
         return None
+
+
+async def _send_notification_bg(
+    company_id, event_type: str, context: dict,
+    entity_type: str | None = None, entity_id: str | None = None,
+    tenant_slug: str | None = None,
+) -> None:
+    """Background-task wrapper: opens its own tenant-routed session and fires a
+    notification (Telegram / email / etc. per configured templates + recipients)."""
+    import logging as _logging
+    try:
+        from app.database import get_tenant_session
+        from app.integrations.notifications.service import send_notification
+        async with await get_tenant_session(tenant_slug) as db:
+            await send_notification(db, company_id, event_type, context, entity_type, entity_id)
+    except Exception as exc:
+        _logging.getLogger(__name__).warning("Gate notification failed [%s]: %s", event_type, exc)
 
 
 async def _bg_capture_entry_photo(company_id: str, gate_pass_id: str, tenant_slug: str | None = None):
@@ -539,7 +576,7 @@ async def record_exit(
 
     # Fetch current state
     existing = await db.execute(
-        text("SELECT purpose, token_id, status FROM gate_passes WHERE id = :id"),
+        text("SELECT purpose, token_id, status, gate_pass_no, vehicle_no FROM gate_passes WHERE id = :id"),
         {"id": gp_id},
     )
     gp = existing.fetchone()
@@ -596,6 +633,24 @@ async def record_exit(
 
     if body.get("capture_photo", True):
         background_tasks.add_task(_bg_capture_exit_photo, company_id, gp_id, _ctx_tenant_slug())
+
+    # Fire-and-forget "gate pass exit" notification
+    try:
+        from datetime import datetime as _dt
+        _co = (await db.execute(text("SELECT name FROM companies LIMIT 1"))).fetchone()
+        background_tasks.add_task(
+            _send_notification_bg,
+            current_user.company_id, "gate_pass_exit",
+            {
+                "gate_pass_no": gp.gate_pass_no,
+                "vehicle_no": gp.vehicle_no or "—",
+                "exit_time": _dt.now().strftime("%d-%m-%Y %H:%M"),
+                "company_name": _co.name if _co else "",
+            },
+            "gate_pass", gp_id, _ctx_tenant_slug(),
+        )
+    except Exception:
+        pass
 
     return {"ok": True, "status": "exited"}
 

@@ -279,6 +279,7 @@ async def list_receipts(
 @router.post("/vouchers", response_model=PaymentVoucherResponse, status_code=201)
 async def create_voucher(
     payload: PaymentVoucherCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -324,6 +325,26 @@ async def create_voucher(
     await recompute_party_balance(db, payload.party_id)
     await db.commit()
     await db.refresh(vch)
+    # Fire "payment made" (money out — supplier payment / advance) notification
+    _bg_tenant = None
+    try:
+        from app.multitenancy.context import current_tenant_slug
+        _bg_tenant = current_tenant_slug.get()
+    except Exception:
+        pass
+    background_tasks.add_task(
+        _send_notification_bg,
+        co.id, "payment_made",
+        {
+            "party_name": party.name,
+            "amount": f"{float(vch.amount):.2f}",
+            "voucher_no": vch.voucher_no,
+            "payment_mode": vch.payment_mode or "",
+            "voucher_date": vch.voucher_date.strftime("%d-%m-%Y") if vch.voucher_date else "",
+            "company_name": co.name,
+        },
+        "voucher", str(vch.id), _bg_tenant,
+    )
     return PaymentVoucherResponse(
         id=vch.id, voucher_no=vch.voucher_no, voucher_date=vch.voucher_date,
         party_id=vch.party_id, party_name=party.name,

@@ -22,13 +22,19 @@ const EVENT_TYPES = [
   // ── Sales & billing ──
   { value: 'invoice_finalized', label: 'Invoice Finalized' },
   { value: 'invoice_revised', label: 'Invoice Revised' },
-  { value: 'payment_received', label: 'Payment Received' },
+  { value: 'invoice_write_off', label: 'Invoice Write-off' },
   { value: 'quotation_sent', label: 'Quotation Sent' },
   { value: 'invoice_overdue', label: 'Invoice Overdue' },
   { value: 'payment_overdue_reminder', label: 'Payment Overdue Reminder' },
   { value: 'low_balance', label: 'Low Balance Alert' },
+  // ── Payments (financial transactions) ──
+  { value: 'payment_received', label: 'Payment Received (money in / advance)' },
+  { value: 'payment_made', label: 'Payment Made (money out / supplier)' },
+  { value: 'worker_payment', label: 'Worker Payment (salary / wage / advance)' },
   // ── Weighbridge & gate ──
   { value: 'token_completed', label: 'Token / Weighment Completed' },
+  { value: 'gate_pass_created', label: 'Gate Pass Created (vehicle entry)' },
+  { value: 'gate_pass_exit', label: 'Gate Pass Exit (vehicle out)' },
   { value: 'anpr_entry', label: 'Gate — Vehicle Entry (ANPR)' },
   { value: 'anpr_exit', label: 'Gate — Vehicle Exit (ANPR)' },
   { value: 'anpr_unknown_plate', label: 'Gate — Unknown Plate (ANPR)' },
@@ -38,8 +44,10 @@ const EVENT_TYPES = [
   { value: 'device_recovered', label: 'Device Recovered' },
   { value: 'anpr_camera_down', label: 'ANPR Camera Offline' },
   // ── Inventory · fuel · royalty ──
+  { value: 'inventory_transaction', label: 'Store Inventory Transaction' },
   { value: 'low_product_stock', label: 'Low Product Stock' },
-  { value: 'fuel_leakage_alert', label: 'Fuel / Diesel Leakage Alert' },
+  { value: 'diesel_transaction', label: 'Diesel Transaction (every fill)' },
+  { value: 'fuel_leakage_alert', label: 'Fuel / Mileage Fraud Alert' },
   { value: 'royalty_unaccounted_alert', label: 'Royalty Unaccounted Alert' },
   // ── Owner digests ──
   { value: 'owner_digest', label: 'Daily Owner Digest' },
@@ -98,7 +106,14 @@ interface LogEntry {
 const VARS_HINT: Record<string, string[]> = {
   invoice_finalized: ['party_name', 'party_email', 'party_phone', 'invoice_no', 'invoice_date', 'grand_total', 'company_name'],
   invoice_revised: ['party_name', 'invoice_no', 'revision_no', 'invoice_date', 'grand_total', 'company_name'],
+  invoice_write_off: ['invoice_no', 'party_name', 'amount', 'reason', 'balance_after', 'company_name'],
   payment_received: ['party_name', 'party_email', 'party_phone', 'receipt_no', 'receipt_date', 'amount', 'company_name'],
+  payment_made: ['party_name', 'amount', 'voucher_no', 'payment_mode', 'voucher_date', 'company_name'],
+  worker_payment: ['worker_name', 'payment_type', 'amount', 'mode', 'pay_date', 'company_name'],
+  gate_pass_created: ['gate_pass_no', 'vehicle_no', 'driver_name', 'material', 'purpose', 'entry_time', 'company_name'],
+  gate_pass_exit: ['gate_pass_no', 'vehicle_no', 'exit_time', 'company_name'],
+  inventory_transaction: ['item_name', 'transaction_type', 'quantity', 'unit', 'stock_after', 'reference_no', 'notes', 'done_by', 'company_name'],
+  diesel_transaction: ['vehicle_no', 'litres', 'rate', 'amount', 'odometer_km', 'fuel_source', 'company_name'],
   quotation_sent: ['party_name', 'party_email', 'quotation_no', 'valid_to', 'grand_total', 'company_name'],
   token_completed: ['token_no', 'vehicle_no', 'net_weight', 'completed_at', 'party_name', 'party_phone', 'company_name'],
   invoice_overdue: ['party_name', 'party_phone', 'invoice_no', 'amount_due', 'due_date', 'company_name'],
