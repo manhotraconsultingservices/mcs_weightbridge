@@ -186,6 +186,8 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const [weightMethod, setWeightMethod] = useState<'weighbridge' | 'volume'>('weighbridge');
   const [volumeValue, setVolumeValue] = useState('');
   const [tyreCount, setTyreCount] = useState<number | null>(null);   // 4/6/8/10/12 or null
+  // Tenant's default volume unit (Settings → Units): 'm3' → CBM, 'cft' → CFT.
+  const [volDefault, setVolDefault] = useState('CBM');
   // Owner-defined custom attributes (Moisture %, Quality grade…) captured per weighment
   const [customDefs, setCustomDefs] = useState<CustomFieldDefinition[]>([]);
   const [customValues, setCustomValues] = useState<Record<string, unknown>>({});
@@ -214,7 +216,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   function pickTyreCount(n: number) {
     setTyreCount(n);
     // Auto-fill the quantity in the currently-selected volume unit (operator can still overwrite).
-    const u = form.billing_unit || 'CFT';
+    const u = form.billing_unit || volDefault;
     setVolumeValue(String(round3(fromCft(TYRE_VOLUME_CFT[n] ?? 0, u))));
   }
 
@@ -225,14 +227,14 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   useEffect(() => {
     setForm(f => {
       if (weightMethod === 'weighbridge') return f.billing_unit === weighUnit ? f : { ...f, billing_unit: weighUnit };
-      return (VOLUME_UNITS as readonly string[]).includes(f.billing_unit) ? f : { ...f, billing_unit: 'CFT' };
+      return (VOLUME_UNITS as readonly string[]).includes(f.billing_unit) ? f : { ...f, billing_unit: volDefault };
     });
-  }, [weightMethod, weighUnit]);
+  }, [weightMethod, weighUnit, volDefault]);
 
   // When the operator switches volume unit, convert the entered quantity so the
   // physical volume stays the same (e.g. 600 CFT ⇄ 6 Brass).
   function changeVolumeUnit(next: string) {
-    const cur = form.billing_unit || 'CFT';
+    const cur = form.billing_unit || volDefault;
     const q = parseFloat(volumeValue || '0');
     if (q > 0 && cur !== next) setVolumeValue(String(round3(fromCft(toCft(q, cur), next))));
     setForm(f => ({ ...f, billing_unit: next }));
@@ -326,11 +328,15 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     });
     api.get<{ items: Agent[] }>('/api/v1/agents?page_size=500')
       .then(r => setAgents(r.data.items ?? [])).catch(() => setAgents([]));
+    // Tenant default volume unit (Settings → Units): m3 → CBM, cft → CFT.
+    api.get<{ volume_unit: string }>('/api/v1/app-settings/volume-unit')
+      .then(r => setVolDefault((r.data?.volume_unit || 'm3').toLowerCase() === 'cft' ? 'CFT' : 'CBM'))
+      .catch(() => { /* keep CBM default */ });
     loadGatePasses();
   }, [loadGatePasses]);
 
   function resetForm() {
-    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', agent_id: '', billing_unit: weightMethod === 'weighbridge' ? weightUnit().code : 'CFT', rate: '', payment_mode: '' });
+    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', agent_id: '', billing_unit: weightMethod === 'weighbridge' ? weightUnit().code : volDefault, rate: '', payment_mode: '' });
     setRateSource('none');
     setCustomValues({});
     setVehicleSearch('');
@@ -347,7 +353,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const volumeInput = parseFloat(volumeValue || '0');
   // The operator enters the quantity in the chosen volume unit; convert to the
   // canonical CFT for storage + weight computation.
-  const volUnit = form.billing_unit || 'CFT';
+  const volUnit = form.billing_unit || volDefault;
   const volumeCft = weightMethod === 'volume' ? toCft(volumeInput, volUnit) : volumeInput;
   // weight_kg = volume_cft × bulk_density(kg/CFT)
   const computedWeightKg = selectedProduct?.bulk_density && volumeCft > 0
@@ -397,7 +403,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   }, [form.party_id]);
 
   // The unit the rate is priced in, and its short label, for the Price field.
-  const billUnitCode = weightMethod === 'volume' ? (form.billing_unit || 'CFT') : weightUnit().code;
+  const billUnitCode = weightMethod === 'volume' ? (form.billing_unit || volDefault) : weightUnit().code;
   const billUnitShort = UNIT_SHORT[billUnitCode] ?? billUnitCode;
   const rateNum = parseFloat(form.rate || '0');
 
@@ -849,9 +855,9 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
               {weightUnitLabel()} <span className="ml-1.5 text-[10px]">(auto — weighbridge)</span>
             </div>
           ) : (
-            <Select value={form.billing_unit || 'CFT'} onValueChange={v => changeVolumeUnit(v ?? 'CFT')}>
+            <Select value={form.billing_unit || volDefault} onValueChange={v => changeVolumeUnit(v ?? volDefault)}>
               <SelectTrigger className="h-8 text-xs">
-                <span className="truncate text-left flex-1">{VOLUME_UNIT_LABEL[form.billing_unit] ?? 'Cubic Feet (CFT)'}</span>
+                <span className="truncate text-left flex-1">{VOLUME_UNIT_LABEL[form.billing_unit] ?? VOLUME_UNIT_LABEL[volDefault]}</span>
               </SelectTrigger>
               <SelectContent>
                 {VOLUME_UNITS.map(u => <SelectItem key={u} value={u}>{VOLUME_UNIT_LABEL[u]}</SelectItem>)}
