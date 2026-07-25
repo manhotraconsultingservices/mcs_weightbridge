@@ -1331,7 +1331,9 @@ async def print_token(
             from app.services.pricing import token_quantity
             amount = rate * float(token_quantity(token, _bunit, _prod))
     if total_amount is None:
-        total_amount = amount
+        # No linked invoice — fold vehicle rent into the slip total so it foots.
+        _rent = float(token.vehicle_rent) if token.vehicle_rent else 0.0
+        total_amount = (amount or 0.0) + _rent if (amount or _rent) else amount
 
     # Operator who created the token (for the slip + accountability).
     operator_name = None
@@ -1377,6 +1379,7 @@ async def print_token(
         "slip_custom_fields": slip_custom_fields,
         "rate": rate,
         "amount": amount,
+        "vehicle_rent": float(token.vehicle_rent) if token.vehicle_rent else 0.0,
         "total_amount": total_amount,
         "operator_name": operator_name,
     })
