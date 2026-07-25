@@ -205,6 +205,9 @@
     {% if amount is defined and amount %}
     <tr><td class="lbl">{{ bl('amount') }}</td><td class="val">₹{{ '%.2f' % amount }}</td></tr>
     {% endif %}
+    {% if vehicle_rent is defined and vehicle_rent and vehicle_rent > 0 %}
+    <tr><td class="lbl">Vehicle Rent</td><td class="val">₹{{ '%.2f' % vehicle_rent }}</td></tr>
+    {% endif %}
     {% if total_amount is defined and total_amount and total_amount > 0 and (not amount or (total_amount|float) != (amount|float)) %}
     <tr class="total"><td class="lbl">TOTAL</td><td class="val">₹{{ '%.2f' % total_amount }}</td></tr>
     {% endif %}

@@ -326,6 +326,9 @@
 {% if amount is defined and amount %}
 <div class="row"><span class="row-label">{{ bl('amount') | upper }}</span><span class="row-value">₹{{ '%.2f'|format(amount) }}</span></div>
 {% endif %}
+{% if vehicle_rent is defined and vehicle_rent and vehicle_rent > 0 %}
+<div class="row"><span class="row-label">VEHICLE RENT</span><span class="row-value">₹{{ '%.2f'|format(vehicle_rent) }}</span></div>
+{% endif %}
 {% if total_amount is defined and total_amount and total_amount > 0 and (not amount or (total_amount|float) != (amount|float)) %}
 <div class="row total-row"><span class="row-label">TOTAL</span><span class="row-value">₹{{ '%.2f'|format(total_amount) }}</span></div>
 {% endif %}
