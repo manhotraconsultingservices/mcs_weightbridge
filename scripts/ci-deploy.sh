@@ -34,6 +34,25 @@ SERVICE="${SERVICE:-weighbridge}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:9001/api/v1/health}"
 LOG_FILE="${LOG_FILE:-/var/log/weighbridge-deploy.log}"
 LOCK_FILE="/var/lock/weighbridge-deploy.lock"
+
+# ── Self-update + re-exec guard (MUST run before any real work) ──────────────
+# The `git reset --hard origin/main` further down rewrites THIS very file. bash
+# executes a script by byte offset, so if the file changes length mid-run the
+# remaining lines are read from the wrong offset and execution corrupts — the
+# step then exits non-zero even though the app deployed fine. That is the cause
+# of the CI "failure" on any push that also changed this script. Fix: pull the
+# latest deploy script FIRST, then re-exec the fresh copy exactly once. This
+# whole `if` is one compound command, fully parsed before it runs, so the reset
+# inside can never corrupt the parse of the `exec` that follows it.
+if [ -z "${CI_DEPLOY_REEXECED:-}" ]; then
+    cd "$APP_DIR"
+    DEPLOY_BEFORE="$(git rev-parse HEAD 2>/dev/null || echo none)"
+    git fetch --quiet origin main || true
+    git reset --hard --quiet origin/main || true
+    export CI_DEPLOY_REEXECED=1 DEPLOY_BEFORE
+    exec bash "$APP_DIR/scripts/ci-deploy.sh"
+fi
+
 # Marker recording the commit we last actually BUILT + promoted to nginx.
 # Change detection compares the new HEAD against this, NOT against git's
 # pre-pull HEAD — so a manual `git pull` on the VPS (which leaves the script's
@@ -56,8 +75,9 @@ log "━━━ CI/CD deploy started"
 
 cd "$APP_DIR"
 
-# Capture commit hashes for logging + summary
-BEFORE=$(git rev-parse HEAD 2>/dev/null || echo "none")
+# Capture commit hashes for logging + summary. On the re-exec pass the pull
+# already happened, so use the pre-pull HEAD captured by the guard above.
+BEFORE="${DEPLOY_BEFORE:-$(git rev-parse HEAD 2>/dev/null || echo "none")}"
 log "  Git HEAD before pull: $BEFORE"
 
 # Hard reset to remote main — this discards any local commits on the VPS.
