@@ -44,6 +44,7 @@ interface MileageRow {
   distance_km: number; litres: number; actual_kmpl: number | null;
   benchmark_kmpl: number | null; benchmark_source: string;
   deviation_pct: number | null; expected_litres: number | null;
+  expected_km: number | null; km_shortfall: number | null;
   excess_litres: number | null; excess_cost: number | null;
   status: string; flags: string[];
 }
@@ -312,7 +313,13 @@ function MileageReportTab() {
 
   const COLS: ColumnDef<MileageRow>[] = [
     { key: 'registration_no', label: 'Vehicle', accessor: r => r.registration_no },
-    { key: 'distance_km', label: 'Distance', type: 'number', align: 'right', accessor: r => r.distance_km, format: v => `${num(Number(v))} km` },
+    { key: 'distance_km', label: 'Distance (actual)', type: 'number', align: 'right', accessor: r => r.distance_km, format: v => `${num(Number(v))} km` },
+    { key: 'expected_km', label: 'Expected KM', type: 'number', align: 'right', accessor: r => r.expected_km ?? 0,
+      format: (_v, r) => r.expected_km == null ? '—' : <span className="text-slate-600" title="Diesel consumed × benchmark km/l — the distance this vehicle should have covered">{num(r.expected_km)} km</span>,
+      exportValue: r => r.expected_km ?? '' },
+    { key: 'km_shortfall', label: 'KM Short', type: 'number', align: 'right', accessor: r => r.km_shortfall ?? 0,
+      format: (_v, r) => r.km_shortfall == null ? '—' : <span className={r.km_shortfall > 0 ? 'text-red-600 font-semibold' : 'text-emerald-600'} title="Expected KM − actual distance. Positive = covered fewer km than the fuel should have delivered (leak / idling / theft).">{num(r.km_shortfall)} km</span>,
+      exportValue: r => r.km_shortfall ?? '' },
     { key: 'litres', label: 'Diesel', type: 'number', align: 'right', accessor: r => r.litres, format: v => `${num(Number(v), 1)} L` },
     { key: 'actual_kmpl', label: 'Actual km/l', type: 'number', align: 'right', accessor: r => r.actual_kmpl ?? 0, format: (_v, r) => r.actual_kmpl == null ? '—' : num(r.actual_kmpl, 2), exportValue: r => r.actual_kmpl ?? '' },
     { key: 'benchmark_kmpl', label: 'Benchmark', type: 'number', align: 'right', accessor: r => r.benchmark_kmpl ?? 0, format: (_v, r) => r.benchmark_kmpl == null ? '—' : `${num(r.benchmark_kmpl, 2)}${r.benchmark_source === 'auto' ? ' (auto)' : ''}`, exportValue: r => r.benchmark_kmpl ?? '' },

@@ -432,17 +432,24 @@ async def _vehicle_summaries(db: AsyncSession, user: User, date_from: date, date
 
         actual = round(dist / litres, 2) if litres > 0 and dist > 0 else None
         deviation = expected = excess = excess_cost = None
+        expected_km = km_shortfall = None
         if actual is not None and bench:
             deviation = round((bench - actual) / bench * 100, 1)
             expected = round(dist / bench, 2)
             excess = round(litres - expected, 2)
+            # Distance the vehicle SHOULD have covered on the diesel it burned, at
+            # its benchmark efficiency; shortfall vs the actual odometer distance =
+            # km "lost" to leakage / idling / theft.
+            expected_km = round(litres * bench, 1)
+            km_shortfall = round(expected_km - dist, 1)
             if cost > 0:
                 excess_cost = round(excess * (cost / litres), 2)
         summaries.append({
             "vehicle_id": str(vid), "registration_no": veh.registration_no,
             "distance_km": round(dist, 1), "litres": round(litres, 2),
             "actual_kmpl": actual, "benchmark_kmpl": bench, "benchmark_source": bench_src,
-            "deviation_pct": deviation, "expected_litres": expected,
+            "deviation_pct": deviation, "expected_km": expected_km, "km_shortfall": km_shortfall,
+            "expected_litres": expected,
             "excess_litres": excess, "excess_cost": excess_cost,
             "status": fuel_svc.status_for(deviation, threshold),
             "flags": sorted(flags),

@@ -91,6 +91,8 @@ def aggregate(
         "actual_kmpl": None,
         "benchmark_kmpl": round(benchmark_kmpl, 2) if benchmark_kmpl else None,
         "deviation_pct": None,
+        "expected_km": None,
+        "km_shortfall": None,
         "expected_litres": None,
         "excess_litres": None,
         "excess_cost": None,
@@ -122,6 +124,11 @@ def aggregate(
         result["actual_kmpl"] = round(actual, 2)
         if benchmark_kmpl and benchmark_kmpl > 0:
             result["deviation_pct"] = round((benchmark_kmpl - actual) / benchmark_kmpl * 100, 1)
+            # Distance the vehicle SHOULD have covered on the diesel it consumed,
+            # at its benchmark efficiency (litres × benchmark km/l). Shortfall vs
+            # the actual odometer distance = km "lost" to leakage / idling / theft.
+            result["expected_km"] = round(total_litres * benchmark_kmpl, 1)
+            result["km_shortfall"] = round(result["expected_km"] - total_dist, 1)
             expected = total_dist / benchmark_kmpl
             result["expected_litres"] = round(expected, 2)
             excess = total_litres - expected
