@@ -15,13 +15,35 @@ import { Textarea } from '@/components/ui/textarea';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 
+// The value strings MUST match the backend event_type keys seeded in
+// integrations/notifications/service.py::DEFAULT_TEMPLATES. Recipients subscribe
+// to these, and the template editor / delivery-log filter read the same list.
 const EVENT_TYPES = [
+  // ── Sales & billing ──
   { value: 'invoice_finalized', label: 'Invoice Finalized' },
+  { value: 'invoice_revised', label: 'Invoice Revised' },
   { value: 'payment_received', label: 'Payment Received' },
   { value: 'quotation_sent', label: 'Quotation Sent' },
-  { value: 'token_completed', label: 'Token / Weighment Completed' },
   { value: 'invoice_overdue', label: 'Invoice Overdue' },
+  { value: 'payment_overdue_reminder', label: 'Payment Overdue Reminder' },
   { value: 'low_balance', label: 'Low Balance Alert' },
+  // ── Weighbridge & gate ──
+  { value: 'token_completed', label: 'Token / Weighment Completed' },
+  { value: 'anpr_entry', label: 'Gate — Vehicle Entry (ANPR)' },
+  { value: 'anpr_exit', label: 'Gate — Vehicle Exit (ANPR)' },
+  { value: 'anpr_unknown_plate', label: 'Gate — Unknown Plate (ANPR)' },
+  { value: 'anpr_daily_summary', label: 'Gate — Daily Movement Report' },
+  // ── Device health & monitoring ──
+  { value: 'device_down', label: 'Device Down (Camera / Scale)' },
+  { value: 'device_recovered', label: 'Device Recovered' },
+  { value: 'anpr_camera_down', label: 'ANPR Camera Offline' },
+  // ── Inventory · fuel · royalty ──
+  { value: 'low_product_stock', label: 'Low Product Stock' },
+  { value: 'fuel_leakage_alert', label: 'Fuel / Diesel Leakage Alert' },
+  { value: 'royalty_unaccounted_alert', label: 'Royalty Unaccounted Alert' },
+  // ── Owner digests ──
+  { value: 'owner_digest', label: 'Daily Owner Digest' },
+  { value: 'eod_summary', label: 'Day Book — EOD Summary' },
 ];
 
 const CHANNELS = [
@@ -75,11 +97,29 @@ interface LogEntry {
 
 const VARS_HINT: Record<string, string[]> = {
   invoice_finalized: ['party_name', 'party_email', 'party_phone', 'invoice_no', 'invoice_date', 'grand_total', 'company_name'],
+  invoice_revised: ['party_name', 'invoice_no', 'revision_no', 'invoice_date', 'grand_total', 'company_name'],
   payment_received: ['party_name', 'party_email', 'party_phone', 'receipt_no', 'receipt_date', 'amount', 'company_name'],
   quotation_sent: ['party_name', 'party_email', 'quotation_no', 'valid_to', 'grand_total', 'company_name'],
-  token_completed: ['token_no', 'vehicle_no', 'net_weight', 'completed_at', 'party_phone', 'company_name'],
+  token_completed: ['token_no', 'vehicle_no', 'net_weight', 'completed_at', 'party_name', 'party_phone', 'company_name'],
   invoice_overdue: ['party_name', 'party_phone', 'invoice_no', 'amount_due', 'due_date', 'company_name'],
+  payment_overdue_reminder: ['party_name', 'balance', 'oldest_overdue_days', 'company_name'],
   low_balance: ['party_name', 'party_phone', 'current_balance', 'company_name'],
+  // Weighbridge & gate
+  anpr_entry: ['vehicle_no', 'gate_pass_no', 'entry_time'],
+  anpr_exit: ['vehicle_no', 'gate_pass_no', 'token_no', 'net_weight', 'exit_time', 'dwell_minutes'],
+  anpr_unknown_plate: ['plate', 'captured_at'],
+  anpr_daily_summary: ['date', 'entries', 'exits', 'currently_inside', 'tonnage_mt', 'revenue', 'avg_dwell', 'trip_count', 'trip_list', 'company_name'],
+  // Device health & monitoring
+  device_down: ['device_type', 'device_label', 'site', 'down_minutes', 'reason', 'company_name'],
+  device_recovered: ['device_type', 'device_label', 'site', 'company_name'],
+  anpr_camera_down: ['camera_id', 'down_minutes', 'company_name'],
+  // Inventory · fuel · royalty
+  low_product_stock: ['product_name', 'current_stock', 'unit', 'min_stock_level', 'status', 'company_name'],
+  fuel_leakage_alert: ['vehicle_no', 'actual_kmpl', 'benchmark_kmpl', 'deviation_pct', 'litres', 'distance_km'],
+  royalty_unaccounted_alert: ['date', 'inbound_mt', 'consumed_mt', 'unaccounted_mt', 'threshold_mt', 'company_name'],
+  // Owner digests
+  owner_digest: ['date', 'tokens_today', 'tonnage_today', 'revenue_today', 'collected_today', 'status_emoji', 'status_headline', 'overdue_count', 'overdue_total', 'low_stock_count', 'compliance_count', 'yield_emoji', 'yield_pct', 'target_yield_pct', 'company_name'],
+  eod_summary: ['date', 'cash_sales', 'electronic_sales', 'total_sales', 'purchases', 'store_inventory', 'diesel', 'salary', 'advance', 'commission', 'total_expenses', 'net_emoji', 'net', 'company_name'],
 };
 
 function statusBadge(status: string) {
