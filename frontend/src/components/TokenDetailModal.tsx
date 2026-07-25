@@ -5,6 +5,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import api from '@/services/api';
 import { getCurrentUser } from '@/hooks/useAuth';
 import type { Token, SnapshotResult, TokenSnapshotsResponse } from '@/types';
@@ -170,6 +171,40 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
   const [snapshots, setSnapshots] = useState<SnapshotResult[]>([]);
   const [lightbox, setLightbox] = useState<{ src: string; label: string } | null>(null);
   const [approving, setApproving] = useState(false);
+  const [collectOpen, setCollectOpen] = useState(false);
+  const [collectQty, setCollectQty] = useState('');
+  const [collectRate, setCollectRate] = useState('');
+  const [collectUnit, setCollectUnit] = useState('');
+  const [collecting, setCollecting] = useState(false);
+
+  async function openCollect() {
+    if (!token?.linked_invoice?.id) return;
+    try {
+      const { data } = await api.get<{ items?: { quantity: number; rate: number; unit: string }[] }>(`/api/v1/invoices/${token.linked_invoice.id}`);
+      const it = data.items?.[0];
+      setCollectQty(it ? String(it.quantity) : '');
+      setCollectRate(it ? String(it.rate) : '');
+      setCollectUnit(it?.unit ?? '');
+      setCollectOpen(true);
+    } catch { toast.error('Could not load the bill'); }
+  }
+
+  async function doCollect() {
+    if (!token?.id) return;
+    const q = parseFloat(collectQty), r = parseFloat(collectRate);
+    if (!q || q <= 0 || isNaN(r) || r < 0) { toast.error('Enter a valid quantity and rate'); return; }
+    setCollecting(true);
+    try {
+      const { data } = await api.post<{ invoice_no: string; grand_total: number; receipt_no: string }>(
+        `/api/v1/tokens/${token.id}/collect-cash`, { quantity: q, rate: r });
+      toast.success(`Bill ${data.invoice_no} finalised · ${INR(data.grand_total)} cash collected`);
+      setCollectOpen(false);
+      fetchToken();
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(typeof d === 'string' ? d : 'Failed to collect cash');
+    } finally { setCollecting(false); }
+  }
 
   // Fetch token details (refetchable — the approve action reloads it)
   const fetchToken = useCallback(() => {
@@ -217,6 +252,8 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
   // Only managers approve — consistent online AND offline. Non-managers see the
   // amount (read-only) with an "awaiting manager" note, never the button.
   const canApprove = APPROVE_ROLES.includes(getCurrentUser()?.role ?? '');
+  const canCollect = ['operator', 'admin', 'accountant', 'store_manager'].includes(getCurrentUser()?.role ?? '');
+  const collectAmount = (parseFloat(collectQty) || 0) * (parseFloat(collectRate) || 0);
 
   // Fetch snapshots
   const fetchSnapshots = useCallback(() => {
@@ -504,6 +541,12 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                 </div>
               )}
 
+              {token.operator_name && (
+                <div className="text-xs text-muted-foreground px-1">
+                  Operator: <span className="font-medium text-foreground">{token.operator_name}</span>
+                </div>
+              )}
+
               {/* Linked Invoice */}
               {token.linked_invoice && (
                 <div className="rounded-lg border overflow-hidden">
@@ -546,6 +589,11 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                        invoice is still a draft (pending approval), to managers only. */}
                   {token.linked_invoice.status === 'draft' && (
                     <div className="px-4 pb-3 pt-1 border-t bg-amber-50/40">
+                      {canCollect && (
+                        <Button size="sm" className="w-full mb-2 gap-1.5 bg-emerald-600 hover:bg-emerald-700" onClick={openCollect}>
+                          <CreditCard className="h-3.5 w-3.5" /> Collect Cash — see rate, finalise bill{token.linked_invoice.grand_total != null ? ` · ${INR(token.linked_invoice.grand_total)}` : ''}
+                        </Button>
+                      )}
                       {canApprove ? (
                         <>
                           <p className="text-[11px] text-muted-foreground mb-2">
@@ -613,6 +661,37 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Collect Cash — operator confirms qty/rate, finalises the bill + records cash */}
+      <Dialog open={collectOpen} onOpenChange={(o) => { if (!o) setCollectOpen(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Collect Cash</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Confirm the quantity &amp; rate, then finalise the bill and collect the cash. The rate is pulled from your pricing — adjust it here if needed.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Quantity{collectUnit ? ` (${collectUnit})` : ''}</label>
+                <Input type="number" min="0" step="0.001" value={collectQty} onChange={e => setCollectQty(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Rate (₹{collectUnit ? `/${collectUnit}` : ''})</label>
+                <Input type="number" min="0" value={collectRate} onChange={e => setCollectRate(e.target.value)} />
+              </div>
+            </div>
+            <div className="flex items-center justify-between rounded-md bg-emerald-50 px-3 py-2">
+              <span className="text-sm font-medium">Amount</span>
+              <span className="text-lg font-bold text-emerald-700">{INR(collectAmount)}</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">GST (if applicable) is added on the bill — the final total is on the invoice.</p>
+            <Button onClick={doCollect} disabled={collecting} className="w-full gap-1.5 bg-emerald-600 hover:bg-emerald-700">
+              {collecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+              Finalise bill &amp; collect cash
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

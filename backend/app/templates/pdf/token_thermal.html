@@ -318,8 +318,23 @@
 <hr class="sep">
 {% endif %}
 
-{# Rate/amount intentionally omitted from the weight slip — pricing is sensitive
-   (accountant-only) and lives on the invoice, not on the operational token. #}
+{# ── Cash bill: Rate × Qty = Amount (the operator collects cash against this slip) ── #}
+{% if (rate is defined and rate and rate > 0) or (amount is defined and amount) or (total_amount is defined and total_amount and total_amount > 0) %}
+{% if rate is defined and rate and rate > 0 %}
+<div class="row"><span class="row-label">{{ bl('rate') | upper }}</span><span class="row-value">₹{{ '%.2f'|format(rate) }}/{{ unit_lbl }}</span></div>
+{% endif %}
+{% if amount is defined and amount %}
+<div class="row"><span class="row-label">{{ bl('amount') | upper }}</span><span class="row-value">₹{{ '%.2f'|format(amount) }}</span></div>
+{% endif %}
+{% if total_amount is defined and total_amount and total_amount > 0 and (not amount or (total_amount|float) != (amount|float)) %}
+<div class="row total-row"><span class="row-label">TOTAL</span><span class="row-value">₹{{ '%.2f'|format(total_amount) }}</span></div>
+{% endif %}
+<hr class="sep">
+{% endif %}
+{% if operator_name %}
+<div class="row"><span class="row-label">OPERATOR</span><span class="row-value">{{ operator_name }}</span></div>
+<hr class="sep">
+{% endif %}
 
 <div class="thank-you">Thank You</div>
 

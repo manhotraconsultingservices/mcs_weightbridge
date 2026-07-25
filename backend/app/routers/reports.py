@@ -6,14 +6,15 @@ import io
 import json
 import logging
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Optional
 
 logger = logging.getLogger("reports")
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, text
 
@@ -1324,6 +1325,149 @@ async def eod_summary_detail(
     """Drill-down: every individual transaction behind one Day-Book day, for the
     click-through breakup + Excel export."""
     return await compute_eod_detail(db, current_user.company_id, on_date)
+
+
+@router.get("/operator-cash-eod")
+async def operator_cash_eod(
+    on_date: date = Query(None, alias="date"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """End-of-day cash-in-hand per operator: cash collected today (cash receipts
+    they recorded) vs cash handed over + acknowledged, and the balance still to
+    hand over. For handover / deposit to accounts and reconciliation."""
+    d = on_date or date.today()
+    cid = str(current_user.company_id)
+
+    rows = (await db.execute(text(
+        "SELECT r.created_by AS oid, COALESCE(u.full_name, u.username, 'Unknown') AS name, "
+        "COUNT(*) AS receipts, SUM(r.amount) AS cash "
+        "FROM payment_receipts r LEFT JOIN users u ON u.id = r.created_by "
+        "WHERE r.company_id=:cid AND LOWER(COALESCE(r.payment_mode,''))='cash' "
+        "AND r.receipt_date=:d GROUP BY r.created_by, u.full_name, u.username"
+    ), {"cid": cid, "d": d})).all()
+    collected = {(str(r.oid) if r.oid else "none"): {
+        "name": r.name, "receipts": int(r.receipts or 0), "cash": _r2(r.cash)} for r in rows}
+
+    handovers: dict[str, dict] = {}
+    try:
+        async with db.begin_nested():
+            hrows = (await db.execute(text(
+                "SELECT operator_id AS oid, MAX(operator_name) AS name, SUM(amount) AS amt "
+                "FROM cash_handovers WHERE company_id=:cid AND handover_date=:d "
+                "AND status='acknowledged' GROUP BY operator_id"
+            ), {"cid": cid, "d": d})).all()
+        for h in hrows:
+            handovers[str(h.oid) if h.oid else "none"] = {"name": h.name, "amt": _r2(h.amt)}
+    except Exception as e:  # noqa: BLE001 — table may not exist yet on a fresh tenant
+        logger.warning("operator handover sum skipped: %s", str(e)[:120])
+
+    operators = []
+    for k in (set(collected) | set(handovers)):
+        c = collected.get(k, {"name": None, "receipts": 0, "cash": 0.0})
+        ho = handovers.get(k, {"name": None, "amt": 0.0})
+        operators.append({
+            "operator_id": None if k == "none" else k,
+            "operator_name": c["name"] or ho["name"] or "Unknown",
+            "receipts": c["receipts"],
+            "cash_total": c["cash"],
+            "handed_over": ho["amt"],
+            "balance": _r2(c["cash"] - ho["amt"]),
+        })
+    operators.sort(key=lambda o: -o["cash_total"])
+    return {
+        "date": d.isoformat(),
+        "operators": operators,
+        "total_cash": _r2(sum(o["cash_total"] for o in operators)),
+        "total_handed_over": _r2(sum(o["handed_over"] for o in operators)),
+        "total_balance": _r2(sum(o["balance"] for o in operators)),
+        "operator_count": len(operators),
+    }
+
+
+class CashHandoverIn(BaseModel):
+    operator_id: Optional[str] = None
+    operator_name: Optional[str] = None
+    amount: float
+    handover_date: Optional[date] = None
+    notes: Optional[str] = None
+    acknowledge: bool = False   # accountant/admin recording it = immediate acknowledgment
+
+
+@router.post("/cash-handover", status_code=201)
+async def create_cash_handover(
+    payload: CashHandoverIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Record an end-of-day cash handover from an operator to the accountant.
+    When an accountant/admin records it (or acknowledge=True) it is stored as
+    ACKNOWLEDGED (received_by = the accountant) — the acknowledgment audit trail;
+    otherwise it is PENDING until an accountant acknowledges it."""
+    if payload.amount is None or float(payload.amount) <= 0:
+        raise HTTPException(400, "amount must be greater than zero")
+    d = payload.handover_date or date.today()
+    is_receiver = current_user.role in ("admin", "accountant", "store_manager")
+    ack = payload.acknowledge or is_receiver
+    hid = uuid.uuid4()
+    uname = current_user.full_name or current_user.username
+    await db.execute(text(
+        "INSERT INTO cash_handovers (id, company_id, operator_id, operator_name, handover_date, "
+        "amount, notes, status, received_by, received_by_name, acknowledged_at, created_by, created_at) "
+        "VALUES (:id, :cid, :oid, :oname, :d, :amt, :notes, :status, :rby, :rname, :ackat, :cby, NOW())"
+    ), {
+        "id": hid, "cid": str(current_user.company_id),
+        "oid": payload.operator_id, "oname": payload.operator_name,
+        "d": d, "amt": payload.amount, "notes": payload.notes,
+        "status": "acknowledged" if ack else "pending",
+        "rby": str(current_user.id) if ack else None,
+        "rname": uname if ack else None,
+        "ackat": datetime.utcnow() if ack else None,
+        "cby": str(current_user.id),
+    })
+    await db.commit()
+    return {"id": str(hid), "status": "acknowledged" if ack else "pending", "date": d.isoformat()}
+
+
+@router.post("/cash-handover/{handover_id}/acknowledge")
+async def acknowledge_cash_handover(
+    handover_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Accountant/admin acknowledges receipt of a pending cash handover."""
+    if current_user.role not in ("admin", "accountant", "store_manager"):
+        raise HTTPException(403, "Only an accountant or admin can acknowledge a handover")
+    res = await db.execute(text(
+        "UPDATE cash_handovers SET status='acknowledged', received_by=:rby, "
+        "received_by_name=:rname, acknowledged_at=NOW() "
+        "WHERE id=:id AND company_id=:cid AND status<>'acknowledged'"
+    ), {"rby": str(current_user.id), "rname": current_user.full_name or current_user.username,
+        "id": handover_id, "cid": str(current_user.company_id)})
+    await db.commit()
+    if res.rowcount == 0:
+        raise HTTPException(404, "Handover not found or already acknowledged")
+    return {"ok": True, "id": str(handover_id), "status": "acknowledged"}
+
+
+@router.get("/cash-handover")
+async def list_cash_handovers(
+    on_date: date = Query(None, alias="date"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List cash handovers for a date (default today)."""
+    d = on_date or date.today()
+    rows = (await db.execute(text(
+        "SELECT id, operator_name, amount, status, received_by_name, acknowledged_at, notes "
+        "FROM cash_handovers WHERE company_id=:cid AND handover_date=:d ORDER BY created_at DESC"
+    ), {"cid": str(current_user.company_id), "d": d})).all()
+    return {"date": d.isoformat(), "handovers": [{
+        "id": str(r.id), "operator_name": r.operator_name, "amount": _r2(r.amount),
+        "status": r.status, "received_by_name": r.received_by_name,
+        "acknowledged_at": r.acknowledged_at.isoformat() if r.acknowledged_at else None,
+        "notes": r.notes,
+    } for r in rows]}
 
 
 # ── Stock Summary ────────────────────────────────────────────────────────────

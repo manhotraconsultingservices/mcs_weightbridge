@@ -195,8 +195,25 @@
     </table>
   {% endif %}
 
-  {# Rate/amount intentionally omitted from the weight slip — pricing is sensitive
-     (accountant-only) and lives on the invoice, not on the operational token. #}
+  {# ── Cash bill: Rate × Qty = Amount (the operator collects cash against this slip) ── #}
+  {% if (rate is defined and rate and rate > 0) or (amount is defined and amount) or (total_amount is defined and total_amount and total_amount > 0) %}
+  <div class="sep"></div>
+  <table class="fin-tbl">
+    {% if rate is defined and rate and rate > 0 %}
+    <tr><td class="lbl">{{ bl('rate') }}</td><td class="val">₹{{ '%.2f' % rate }}/{{ unit_label(token.product) | trim }}</td></tr>
+    {% endif %}
+    {% if amount is defined and amount %}
+    <tr><td class="lbl">{{ bl('amount') }}</td><td class="val">₹{{ '%.2f' % amount }}</td></tr>
+    {% endif %}
+    {% if total_amount is defined and total_amount and total_amount > 0 and (not amount or (total_amount|float) != (amount|float)) %}
+    <tr class="total"><td class="lbl">TOTAL</td><td class="val">₹{{ '%.2f' % total_amount }}</td></tr>
+    {% endif %}
+  </table>
+  {% endif %}
+
+  {% if operator_name %}
+  <div style="margin-top:4px; font-size:10px;"><span style="font-weight:bold;">Operator:</span> {{ operator_name }}</div>
+  {% endif %}
 
   {% if token.remarks %}
   <div style="margin-top:4px; font-size:10px;"><span style="font-weight:bold;">Remarks:</span> {{ token.remarks }}</div>
