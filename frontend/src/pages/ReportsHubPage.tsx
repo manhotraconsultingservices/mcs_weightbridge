@@ -1,13 +1,14 @@
 /**
- * Reports hub — everything an accountant/owner needs to look back at.
- *
- *   Payments · Account Statement · GST · P&L + Sales · Compliance · Activity Log
+ * Reports hub — a grouped left sub-nav (sub-categories) + the selected report on
+ * the right. Replaces the old 14-tab horizontal strip: each report is a command
+ * in the left list, organised into sub-categories. `?tab=` keeps deep-links
+ * working (e.g. the Day Book sidebar item → /reports?tab=eod). Mobile gets a
+ * single grouped dropdown.
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield, XCircle, PieChart, TrendingUp, ShieldAlert, DoorOpen, Ticket, Wallet } from 'lucide-react';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import PaymentsPage from './PaymentsPage';
 import LedgerPage from './LedgerPage';
@@ -30,35 +31,17 @@ export default function ReportsHubPage() {
   const { t } = useTranslation();
   const nav = useNavigate();
   const loc = useLocation();
-  // Default to "reports" so /reports URL behaves like the old /reports page.
-  // Sidebar links can override via ?tab=<x>.
+  // Default to "reports" (P&L) so the /reports URL behaves like before.
   const initial = (new URLSearchParams(loc.search).get('tab') as Tab) || 'reports';
   const [tab, setTab] = useState<Tab>(initial);
 
-  // User picks a tab → update state + URL.
+  // User picks a report → update state + URL.
   const selectTab = (v: Tab) => {
     setTab(v);
     const params = new URLSearchParams(loc.search);
     params.set('tab', v);
     nav({ search: params.toString() }, { replace: true });
   };
-
-  const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
-    { value: 'payments', label: t('payment.title'), icon: CreditCard },
-    { value: 'eod', label: 'Day Book (EOD)', icon: Wallet },
-    { value: 'statement', label: t('reports.accountStatement'), icon: BookOpen },
-    { value: 'gst', label: t('reports.gstReturns'), icon: FileBarChart },
-    { value: 'gstr2b', label: t('reports.gstr2b'), icon: FileBarChart },
-    { value: 'gst-split', label: t('reports.gstVsCash'), icon: PieChart },
-    { value: 'sales-status', label: t('reports.salesByStatus'), icon: TrendingUp },
-    { value: 'reports', label: t('reports.plSales'), icon: BarChart3 },
-    { value: 'write-offs', label: t('reports.writeoffs'), icon: XCircle },
-    { value: 'compliance', label: t('reports.documents'), icon: ShieldCheck },
-    { value: 'activity', label: t('reports.activityLog'), icon: Shield },
-    { value: 'anomaly', label: t('reports.anomaly'), icon: ShieldAlert },
-    { value: 'gate-passes', label: t('hubs.reports.gatePassRegister'), icon: DoorOpen },
-    { value: 'token-register', label: t('hubs.reports.tokenRegister'), icon: Ticket },
-  ];
 
   // Deep-link / sidebar nav (e.g. /reports?tab=eod) → sync URL into state.
   useEffect(() => {
@@ -67,35 +50,102 @@ export default function ReportsHubPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loc.search]);
 
+  const META: Record<Tab, { label: string; icon: React.ElementType }> = {
+    payments: { label: t('payment.title'), icon: CreditCard },
+    eod: { label: 'Day Book (EOD)', icon: Wallet },
+    statement: { label: t('reports.accountStatement'), icon: BookOpen },
+    gst: { label: t('reports.gstReturns'), icon: FileBarChart },
+    gstr2b: { label: t('reports.gstr2b'), icon: FileBarChart },
+    'gst-split': { label: t('reports.gstVsCash'), icon: PieChart },
+    'sales-status': { label: t('reports.salesByStatus'), icon: TrendingUp },
+    reports: { label: t('reports.plSales'), icon: BarChart3 },
+    'write-offs': { label: t('reports.writeoffs'), icon: XCircle },
+    compliance: { label: t('reports.documents'), icon: ShieldCheck },
+    activity: { label: t('reports.activityLog'), icon: Shield },
+    anomaly: { label: t('reports.anomaly'), icon: ShieldAlert },
+    'gate-passes': { label: t('hubs.reports.gatePassRegister'), icon: DoorOpen },
+    'token-register': { label: t('hubs.reports.tokenRegister'), icon: Ticket },
+  };
+
+  // Sub-categories — the grouped left nav.
+  const GROUPS: { label: string; items: Tab[] }[] = [
+    { label: 'Daily & Operations', items: ['eod', 'gate-passes', 'token-register'] },
+    { label: 'Sales & GST',        items: ['gst', 'gstr2b', 'gst-split', 'sales-status'] },
+    { label: 'Financials',         items: ['reports', 'statement', 'payments', 'write-offs'] },
+    { label: 'Compliance & Audit', items: ['compliance', 'activity', 'anomaly'] },
+  ];
+
+  // Mobile: one flat dropdown, ordered + prefixed by sub-category.
+  const mobileOptions = GROUPS.flatMap(g =>
+    g.items.map(v => ({ value: v, label: `${g.label} · ${META[v].label}` })));
+
+  function renderReport(x: Tab) {
+    switch (x) {
+      case 'payments': return <PaymentsPage />;
+      case 'eod': return <EodSummaryReportPage />;
+      case 'statement': return <LedgerPage />;
+      case 'gst': return <GstReportsPage />;
+      case 'gstr2b': return <Gstr2bReconcilePage />;
+      case 'gst-split': return <GstSplitReportPage />;
+      case 'sales-status': return <SalesStatusReportPage />;
+      case 'reports': return <ReportsPage />;
+      case 'write-offs': return <WriteOffsReportPage />;
+      case 'compliance': return <CompliancePage />;
+      case 'activity': return <AuditPage />;
+      case 'anomaly': return <AnomalyReportPage />;
+      case 'gate-passes': return <GatePassRegisterPage />;
+      case 'token-register': return <TokenRegisterPage />;
+      default: return null;
+    }
+  }
+
+  const active = META[tab];
+
   return (
     <div className="space-y-3">
-      <Tabs value={tab} onValueChange={(v) => selectTab(v as Tab)}>
-        <MobileTabSelect value={tab} onValueChange={(v) => selectTab(v as Tab)} options={TABS.map(tab => ({ value: tab.value, label: tab.label }))} />
-        <TabsList className="hidden sm:inline-flex flex-wrap h-auto">
-          {TABS.map(t => {
-            const Icon = t.icon;
-            return (
-              <TabsTrigger key={t.value} value={t.value} className="gap-1.5">
-                <Icon className="h-3.5 w-3.5" /> {t.label}
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
-        <TabsContent value="payments" className="mt-4"><PaymentsPage /></TabsContent>
-        <TabsContent value="eod" className="mt-4"><EodSummaryReportPage /></TabsContent>
-        <TabsContent value="statement" className="mt-4"><LedgerPage /></TabsContent>
-        <TabsContent value="gst" className="mt-4"><GstReportsPage /></TabsContent>
-        <TabsContent value="gstr2b" className="mt-4"><Gstr2bReconcilePage /></TabsContent>
-        <TabsContent value="gst-split" className="mt-4"><GstSplitReportPage /></TabsContent>
-        <TabsContent value="sales-status" className="mt-4"><SalesStatusReportPage /></TabsContent>
-        <TabsContent value="reports" className="mt-4"><ReportsPage /></TabsContent>
-        <TabsContent value="write-offs" className="mt-4"><WriteOffsReportPage /></TabsContent>
-        <TabsContent value="compliance" className="mt-4"><CompliancePage /></TabsContent>
-        <TabsContent value="activity" className="mt-4"><AuditPage /></TabsContent>
-        <TabsContent value="anomaly" className="mt-4"><AnomalyReportPage /></TabsContent>
-        <TabsContent value="gate-passes" className="mt-4"><GatePassRegisterPage /></TabsContent>
-        <TabsContent value="token-register" className="mt-4"><TokenRegisterPage /></TabsContent>
-      </Tabs>
+      {/* Mobile: grouped dropdown */}
+      <div className="md:hidden">
+        <MobileTabSelect value={tab} onValueChange={(v) => selectTab(v as Tab)} options={mobileOptions} />
+      </div>
+
+      <div className="md:flex md:gap-5">
+        {/* Desktop left sub-nav — sub-categories with report commands */}
+        <aside className="hidden md:block w-56 shrink-0">
+          <nav className="sticky top-2 space-y-4">
+            {GROUPS.map(g => (
+              <div key={g.label}>
+                <p className="px-2 mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{g.label}</p>
+                <ul className="space-y-0.5">
+                  {g.items.map(v => {
+                    const Icon = META[v].icon;
+                    const isActive = tab === v;
+                    return (
+                      <li key={v}>
+                        <button
+                          onClick={() => selectTab(v)}
+                          className={`w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-left transition-colors ${isActive ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
+                        >
+                          <Icon className="h-4 w-4 shrink-0" />
+                          <span className="truncate">{META[v].label}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </nav>
+        </aside>
+
+        {/* Selected report */}
+        <div className="flex-1 min-w-0">
+          <div className="mb-3 flex items-center gap-2 md:hidden">
+            {active && <active.icon className="h-4 w-4 text-muted-foreground" />}
+            <h2 className="text-base font-semibold">{active?.label}</h2>
+          </div>
+          {renderReport(tab)}
+        </div>
+      </div>
     </div>
   );
 }

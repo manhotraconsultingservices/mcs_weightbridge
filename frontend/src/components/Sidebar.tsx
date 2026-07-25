@@ -105,7 +105,7 @@ const NAV_SECTIONS: NavSection[] = [
       { to: '/workforce',       icon: HardHat,      labelKey: 'sidebar.workforce' },
       { to: '/compliance',      icon: FileCheck2,   labelKey: 'sidebar.compliance' },
       { to: '/gst-compliance',  icon: FileBarChart, labelKey: 'sidebar.gstCompliance' },
-      { to: '/analytics',       icon: TrendingUp,   labelKey: 'sidebar.analytics' },
+      { to: '/reports',         icon: TrendingUp,   labelKey: 'sidebar.reports', permKey: '/analytics' },
       { to: '/fraud-registers', icon: ShieldAlert,  labelKey: 'sidebar.fraudRegisters' },
     ],
   },
