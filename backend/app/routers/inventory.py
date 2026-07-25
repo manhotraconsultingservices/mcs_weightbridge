@@ -9,7 +9,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select, text, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -72,6 +72,40 @@ async def _get_company(db: AsyncSession) -> Company:
     if not co:
         raise HTTPException(500, "Company not configured")
     return co
+
+
+def _ctx_tenant_slug() -> Optional[str]:
+    """Current request's tenant slug, for routing a bg task's DB session."""
+    try:
+        from app.multitenancy.context import current_tenant_slug
+        return current_tenant_slug.get()
+    except Exception:
+        return None
+
+
+async def _send_notification_bg(
+    company_id, event_type: str, context: dict,
+    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
+    tenant_slug: Optional[str] = None,
+) -> None:
+    """Background-task wrapper: own tenant-routed session → send_notification."""
+    import logging as _logging
+    try:
+        from app.database import get_tenant_session
+        from app.integrations.notifications.service import send_notification
+        async with await get_tenant_session(tenant_slug) as db:
+            await send_notification(db, company_id, event_type, context, entity_type, entity_id)
+    except Exception as exc:
+        _logging.getLogger(__name__).warning("Inventory notification failed [%s]: %s", event_type, exc)
+
+
+def _fmt_qty(v) -> str:
+    """Trim trailing zeros for a clean qty in the message (e.g. 5.000 → 5)."""
+    try:
+        f = float(v)
+        return str(int(f)) if f == int(f) else f"{f:g}"
+    except Exception:
+        return str(v)
 
 
 async def _get_active_fy(db: AsyncSession, company_id: uuid.UUID) -> Optional[FinancialYear]:
@@ -619,6 +653,7 @@ async def delete_item(
 @router.post("/issue", response_model=InventoryTransactionResponse, status_code=201)
 async def issue_stock(
     payload: IssueStockRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -662,12 +697,25 @@ async def issue_stock(
     await _maybe_trigger_auto_po(db, item, co)
     await db.commit()
     await db.refresh(txn)
+    background_tasks.add_task(
+        _send_notification_bg, co.id, "inventory_transaction",
+        {
+            "item_name": item.name, "transaction_type": "Issued",
+            "quantity": _fmt_qty(payload.quantity), "unit": item.unit or "",
+            "stock_after": _fmt_qty(item.current_stock), "reference_no": "",
+            "notes": payload.notes or "",
+            "done_by": getattr(current_user, "full_name", None) or current_user.username,
+            "company_name": co.name,
+        },
+        "inventory", str(txn.id), _ctx_tenant_slug(),
+    )
     return _txn_to_response(txn, item.name)
 
 
 @router.post("/adjust", response_model=InventoryTransactionResponse, status_code=201)
 async def adjust_stock(
     payload: AdjustStockRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*_INV_MANAGERS)),
 ):
@@ -706,6 +754,19 @@ async def adjust_stock(
         await _maybe_trigger_auto_po(db, item, co)
     await db.commit()
     await db.refresh(txn)
+    _sign = "+" if payload.quantity >= 0 else "−"
+    background_tasks.add_task(
+        _send_notification_bg, co.id, "inventory_transaction",
+        {
+            "item_name": item.name, "transaction_type": "Adjusted",
+            "quantity": f"{_sign}{_fmt_qty(abs(payload.quantity))}", "unit": item.unit or "",
+            "stock_after": _fmt_qty(item.current_stock), "reference_no": "",
+            "notes": payload.reason or "",
+            "done_by": getattr(current_user, "full_name", None) or current_user.username,
+            "company_name": co.name,
+        },
+        "inventory", str(txn.id), _ctx_tenant_slug(),
+    )
     return _txn_to_response(txn, item.name)
 
 
@@ -1003,6 +1064,7 @@ async def reject_purchase_order(
 async def receive_goods(
     po_id: uuid.UUID,
     payload: ReceiveGoodsRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*_INV_MANAGERS)),
 ):
@@ -1015,6 +1077,7 @@ async def receive_goods(
 
     co = await _get_company(db)
     by_name = getattr(current_user, "full_name", None) or current_user.username
+    _notify_lines: list[dict] = []
 
     for line in payload.items:
         # Lock PO item
@@ -1055,6 +1118,13 @@ async def receive_goods(
             created_by_name=by_name,
         )
         db.add(txn)
+        _notify_lines.append({
+            "item_name": inv_item.name, "transaction_type": "Received",
+            "quantity": _fmt_qty(line.quantity_received), "unit": inv_item.unit or "",
+            "stock_after": _fmt_qty(inv_item.current_stock),
+            "reference_no": po.po_no, "notes": f"Received against {po.po_no}",
+            "done_by": by_name, "company_name": co.name,
+        })
 
     await db.flush()
 
@@ -1067,6 +1137,12 @@ async def receive_goods(
 
     await db.commit()
     await db.refresh(po)
+    _tenant = _ctx_tenant_slug()
+    for _ctx in _notify_lines:
+        background_tasks.add_task(
+            _send_notification_bg, co.id, "inventory_transaction", _ctx,
+            "inventory", str(po.id), _tenant,
+        )
     return _po_to_response(po, list(all_items))
 
 

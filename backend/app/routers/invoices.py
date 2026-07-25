@@ -2094,6 +2094,7 @@ async def cancel_invoice(
 async def write_off_invoice(
     invoice_id: uuid.UUID,
     payload: WriteOffRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin", "accountant")),
 ):
@@ -2157,6 +2158,26 @@ async def write_off_invoice(
             },
         )
     await db.commit()
+    # Fire-and-forget write-off notification
+    _woff_tenant = None
+    try:
+        from app.multitenancy.context import current_tenant_slug as _cts
+        _woff_tenant = _cts.get()
+    except Exception:
+        pass
+    background_tasks.add_task(
+        _send_notification_bg,
+        current_user.company_id, "invoice_write_off",
+        {
+            "invoice_no": inv.invoice_no or "—",
+            "party_name": getattr(getattr(inv, "party", None), "name", "") or "",
+            "amount": f"{requested:.2f}",
+            "reason": payload.reason.strip(),
+            "balance_after": f"{Decimal(str(inv.amount_due or 0)):.2f}",
+            "company_name": co.name if co else "",
+        },
+        "invoice", str(invoice_id), _woff_tenant,
+    )
     return await _load_invoice(db, invoice_id)
 
 
@@ -2173,6 +2194,7 @@ class _BulkWriteOffRequest(_BulkBaseModel):
 @router.post("/write-off-bulk")
 async def write_off_bulk(
     payload: _BulkWriteOffRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin", "accountant")),
 ):
@@ -2251,6 +2273,27 @@ async def write_off_bulk(
         await recompute_party_balance(db, pid)
 
     await db.commit()
+    # Fire-and-forget one summary write-off notification for the bulk action
+    if written > 0:
+        _woff_tenant = None
+        try:
+            from app.multitenancy.context import current_tenant_slug as _cts
+            _woff_tenant = _cts.get()
+        except Exception:
+            pass
+        background_tasks.add_task(
+            _send_notification_bg,
+            current_user.company_id, "invoice_write_off",
+            {
+                "invoice_no": f"{written} invoice(s) — bulk",
+                "party_name": f"{len(party_deltas)} customer(s)",
+                "amount": f"{total_amount:.2f}",
+                "reason": reason_clean,
+                "balance_after": "0.00",
+                "company_name": co.name if co else "",
+            },
+            "invoice", None, _woff_tenant,
+        )
     return {
         "written": written,
         "skipped": len(skipped),
