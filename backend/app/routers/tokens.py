@@ -927,17 +927,80 @@ async def update_token(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    token = await _load_token(db, token_id)
-    if token.status in ("COMPLETED", "CANCELLED"):
-        raise HTTPException(400, f"Cannot edit a {token.status} token")
+    """Edit a token's details — fix a typo (vehicle no, party, material, driver,
+    remarks…). Allowed even after the token is COMPLETED (that is exactly when a
+    typo is noticed, once the slip prints). A CANCELLED token stays locked. If the
+    party or material changes, the linked DRAFT invoice is rebuilt so billing stays
+    correct; if that invoice is already FINALISED the party/material can't change
+    (cancel or revise the bill first) — cosmetic fields still edit freely."""
+    from app.models.invoice import Invoice, InvoiceItem
 
-    for field, value in payload.model_dump(exclude_none=True).items():
+    token = await _load_token(db, token_id)
+    if token.status == "CANCELLED":
+        raise HTTPException(400, "Cannot edit a cancelled token.")
+
+    data = payload.model_dump(exclude_none=True)
+    party_changed = "party_id" in data and data["party_id"] != token.party_id
+    product_changed = "product_id" in data and data["product_id"] != token.product_id
+
+    # Any invoice linked to this token (drives what edits are safe).
+    inv = (await db.execute(
+        select(Invoice).where(
+            Invoice.token_id == token_id,
+            Invoice.invoice_type.in_(("sale", "purchase")),
+        ).order_by(Invoice.created_at.desc()).limit(1)
+    )).scalar_one_or_none()
+
+    if inv and inv.status == "final" and (party_changed or product_changed):
+        raise HTTPException(
+            400,
+            f"Invoice {inv.invoice_no or ''} is finalised — its party/material can't be changed here. "
+            f"Cancel or revise the invoice first.",
+        )
+
+    for field, value in data.items():
         setattr(token, field, value)
     if payload.vehicle_no:
         token.vehicle_no = payload.vehicle_no.upper().strip()
+    # A material change invalidates the stored rate — let the resolver re-price.
+    if product_changed:
+        token.rate = None
+
+    # Keep the linked invoice consistent with the corrected token.
+    if inv:
+        if inv.status == "draft" and (party_changed or product_changed):
+            # Rebuild the draft from the corrected token (reuses all the pricing /
+            # GST / tax-type logic — no partial re-derivation to get wrong).
+            for it in (await db.execute(
+                select(InvoiceItem).where(InvoiceItem.invoice_id == inv.id)
+            )).scalars().all():
+                await db.delete(it)
+            await db.delete(inv)
+            await db.flush()
+            company, _active_fy = await _get_company_and_fy(db)
+            # Rebuild in the token's OWN financial year (robust if editing an old token).
+            fy = (await db.execute(
+                select(FinancialYear).where(FinancialYear.id == token.fy_id)
+            )).scalar_one_or_none() or _active_fy
+            if token.party_id and token.product_id and token.token_type in ("sale", "purchase"):
+                await _auto_create_invoice(db, token, company, fy, current_user.id,
+                                           invoice_type=token.token_type)
+        else:
+            # Cosmetic change → keep the invoice's denormalised transport field in step.
+            inv.vehicle_no = token.vehicle_no
 
     await db.commit()
-    return await _load_token(db, token_id)
+
+    # Audit trail (best-effort) — who fixed what.
+    try:
+        from app.routers.audit import log_action
+        company, _ = await _get_company_and_fy(db)
+        await log_action(db, company.id, current_user.id, "update", "token",
+                         str(token.id), {"fields": list(data.keys()), "vehicle_no": token.vehicle_no})
+    except Exception:
+        pass
+
+    return await get_token(token_id, db, current_user)
 
 
 @router.post("/{token_id}/first-weight", response_model=TokenResponse)

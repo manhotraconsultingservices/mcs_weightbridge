@@ -1,14 +1,17 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Truck, Package, User, Scale, Clock, Calendar, Loader2, FileText, CreditCard, UserCheck, Building2, Camera, ImageOff, RefreshCw, ZoomIn, CheckCircle2 } from 'lucide-react';
+import { Truck, Package, User, Scale, Clock, Calendar, Loader2, FileText, CreditCard, UserCheck, Building2, Camera, ImageOff, RefreshCw, ZoomIn, CheckCircle2, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle
 } from '@/components/ui/dialog';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+} from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import api from '@/services/api';
 import { getCurrentUser } from '@/hooks/useAuth';
-import type { Token, SnapshotResult, TokenSnapshotsResponse } from '@/types';
+import type { Token, SnapshotResult, TokenSnapshotsResponse, Party, Product } from '@/types';
 
 const INR = (v: number | string | null | undefined) =>
   '₹' + Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -193,6 +196,57 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
   const [editRate, setEditRate] = useState('');
   const [editMode, setEditMode] = useState('cash');
   const [editing, setEditing] = useState(false);
+  // Edit details — fix a typo (vehicle no, party, material, remarks). Works on
+  // completed tokens; a party/material change rebuilds the linked draft bill.
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [dParties, setDParties] = useState<Party[]>([]);
+  const [dProducts, setDProducts] = useState<Product[]>([]);
+  const [dVehicleNo, setDVehicleNo] = useState('');
+  const [dPartyId, setDPartyId] = useState('');
+  const [dProductId, setDProductId] = useState('');
+  const [dRemarks, setDRemarks] = useState('');
+  const [savingDetails, setSavingDetails] = useState(false);
+
+  async function openDetails() {
+    if (!token) return;
+    setDVehicleNo(token.vehicle_no ?? '');
+    setDPartyId(token.party?.id ?? '');
+    setDProductId(token.product?.id ?? '');
+    setDRemarks(token.remarks ?? '');
+    setDetailsOpen(true);
+    // Lazy-load the master lists the first time.
+    if (dParties.length === 0) {
+      api.get<{ items?: Party[] } | Party[]>('/api/v1/parties?page_size=500')
+        .then(r => setDParties(Array.isArray(r.data) ? r.data : (r.data.items ?? [])))
+        .catch(() => setDParties([]));
+    }
+    if (dProducts.length === 0) {
+      api.get<{ items?: Product[] } | Product[]>('/api/v1/products')
+        .then(r => setDProducts(Array.isArray(r.data) ? r.data : (r.data.items ?? [])))
+        .catch(() => setDProducts([]));
+    }
+  }
+
+  async function doDetails() {
+    if (!token) return;
+    const vno = dVehicleNo.trim();
+    if (!vno) { toast.error('Vehicle number is required'); return; }
+    setSavingDetails(true);
+    try {
+      await api.put(`/api/v1/tokens/${token.id}`, {
+        vehicle_no: vno,
+        party_id: dPartyId || undefined,
+        product_id: dProductId || undefined,
+        remarks: dRemarks.trim() || undefined,
+      });
+      toast.success('Token updated');
+      setDetailsOpen(false);
+      fetchToken();
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(typeof d === 'string' ? d : 'Failed to update the token');
+    } finally { setSavingDetails(false); }
+  }
 
   async function openCollect() {
     if (!token?.linked_invoice?.id) return;
@@ -378,9 +432,16 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <span className="font-medium">{token.token_date}</span>
                 </div>
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[token.status] ?? 'bg-muted text-muted-foreground'}`}>
-                  {token.status}
-                </span>
+                <div className="flex items-center gap-2">
+                  {canCollect && token.status !== 'CANCELLED' && (
+                    <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={openDetails}>
+                      <Pencil className="h-3 w-3" /> Edit
+                    </Button>
+                  )}
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[token.status] ?? 'bg-muted text-muted-foreground'}`}>
+                    {token.status}
+                  </span>
+                </div>
               </div>
 
               {/* Vehicle + Type */}
@@ -850,6 +911,52 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
             </div>
             <Button onClick={doEdit} disabled={editing} className="w-full gap-1.5">
               {editing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Save changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit details — fix a typo (vehicle no, party, material, remarks) */}
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Edit token details</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Correct a typo. Changing the party or material re-prices the draft bill automatically; a finalised bill must be revised instead.
+            </p>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Vehicle number</label>
+              <Input
+                value={dVehicleNo}
+                onChange={e => setDVehicleNo(e.target.value.toUpperCase())}
+                placeholder="e.g. RJ14GA1234"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Party</label>
+              <Select value={dPartyId || undefined} onValueChange={v => setDPartyId(v ?? '')}>
+                <SelectTrigger><SelectValue placeholder="Select party…" /></SelectTrigger>
+                <SelectContent>
+                  {dParties.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Material</label>
+              <Select value={dProductId || undefined} onValueChange={v => setDProductId(v ?? '')}>
+                <SelectTrigger><SelectValue placeholder="Select material…" /></SelectTrigger>
+                <SelectContent>
+                  {dProducts.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Remarks</label>
+              <Input value={dRemarks} onChange={e => setDRemarks(e.target.value)} placeholder="Optional note" />
+            </div>
+            <Button onClick={doDetails} disabled={savingDetails} className="w-full gap-1.5">
+              {savingDetails ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               Save changes
             </Button>
           </div>
