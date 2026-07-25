@@ -259,7 +259,8 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
 
   const subTotalEst = lines.reduce((s, l) => s + lineBase(l), 0);
   const gstTotalEst = lines.reduce((s, l) => s + lineGstAmt(l), 0);
-  const grandEstimate = subTotalEst + gstTotalEst;
+  const grandEstimate = subTotalEst + gstTotalEst
+    + (parseFloat(form.freight) || 0) + (parseFloat(form.vehicle_rent) || 0);
 
   async function handleSubmit() {
     if (!walkIn && !form.party_id) { setError('Select a party or use Walk-in mode'); return; }
@@ -752,7 +753,8 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
 
   const subTotalEst = lines.reduce((s, l) => s + lineBase(l), 0);
   const gstTotalEst = lines.reduce((s, l) => s + lineGstAmt(l), 0);
-  const grandEstimate = subTotalEst + gstTotalEst;
+  const grandEstimate = subTotalEst + gstTotalEst
+    + (parseFloat(form.freight) || 0) + (parseFloat(form.vehicle_rent) || 0);
 
   async function handleSave() {
     if (!walkIn && !form.party_id) { setError('Select a party or use Walk-in mode'); return; }
