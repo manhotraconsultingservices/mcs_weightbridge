@@ -11,12 +11,13 @@
  *   POST /api/v1/reports/eod-summary/send   (admin — fire email + Telegram now)
  */
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, AlertCircle, Calendar, Wallet, Landmark, TrendingDown, Scale, Send } from 'lucide-react';
+import { Loader2, AlertCircle, Calendar, Wallet, Landmark, TrendingDown, Scale, Send, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { DataTable, type ColumnDef } from '@/components/DataTable';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DataTable, type ColumnDef, downloadCsv } from '@/components/DataTable';
 import api from '@/services/api';
 import { getCurrentUser } from '@/hooks/useAuth';
 
@@ -41,6 +42,20 @@ interface EodResponse {
   days: EodDay[];
   summary: EodSummary;
 }
+interface EodDetailItem {
+  category: string;
+  ref: string;
+  party: string;
+  detail: string;
+  amount: number;
+  direction: 'in' | 'out';
+}
+interface EodDetailResponse {
+  date: string;
+  items: EodDetailItem[];
+  summary: EodSummary;
+}
+const CATEGORY_ORDER = ['Cash Sale', 'Credit Sale', 'Purchase', 'Store', 'Diesel', 'Salary', 'Advance', 'Commission'];
 
 const INR = (v: number | string | null | undefined) =>
   '₹' + Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -72,6 +87,31 @@ export default function EodSummaryReportPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isAdmin = getCurrentUser()?.role === 'admin';
+  const [detailDate, setDetailDate] = useState<string | null>(null);
+  const [detail, setDetail] = useState<EodDetailResponse | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const openDetail = useCallback(async (d: string) => {
+    setDetailDate(d); setDetail(null); setDetailLoading(true);
+    try {
+      const { data } = await api.get<EodDetailResponse>(`/api/v1/reports/eod-summary/detail?date=${d}`);
+      setDetail(data);
+    } catch {
+      toast.error('Failed to load the day breakup');
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
+
+  function downloadDetailCsv() {
+    if (!detail) return;
+    const header = ['Date', 'Category', 'In/Out', 'Reference', 'Party / Item', 'Detail', 'Amount'];
+    const rows = detail.items.map(it => [
+      detail.date, it.category, it.direction === 'in' ? 'IN' : 'OUT',
+      it.ref, it.party, it.detail, String(it.amount),
+    ]);
+    downloadCsv(`day-book-${detail.date}.csv`, [header, ...rows]);
+  }
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -110,8 +150,16 @@ export default function EodSummaryReportPage() {
   const money = (k: keyof EodSummary) => (s ? s[k] : 0);
 
   const columns: ColumnDef<EodDay>[] = [
-    { key: 'date', label: 'Date', accessor: r => r.date,
-      format: v => new Date(String(v)).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) },
+    { key: 'date', label: 'Date', accessor: r => r.date, exportValue: r => r.date,
+      format: v => (
+        <button
+          onClick={() => openDetail(String(v))}
+          className="text-blue-600 hover:underline font-medium"
+          title="Click for the transaction breakup"
+        >
+          {new Date(String(v)).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+        </button>
+      ) },
     { key: 'cash_sales', label: 'Cash Sales', type: 'number', align: 'right', accessor: r => r.cash_sales,
       format: v => <span className="text-emerald-700">{INR(v as number)}</span>, exportValue: r => r.cash_sales },
     { key: 'electronic_sales', label: 'Credit (Bank/UPI)', type: 'number', align: 'right', accessor: r => r.electronic_sales,
@@ -172,6 +220,7 @@ export default function EodSummaryReportPage() {
         Day book: sales split by how money came in (<b>Cash</b> vs <b>Credit</b> = bank / card / UPI), and every rupee out
         (purchases · store · diesel · salary · advances · commission). Advances are counted as cash-out here.
         Sent automatically to subscribed recipients every evening (email + Telegram).
+        <b> Click any date</b> for the full transaction breakup + Excel download.
       </p>
 
       {error && (
@@ -241,6 +290,62 @@ export default function EodSummaryReportPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Per-day transaction breakup */}
+      <Dialog open={detailDate !== null} onOpenChange={(o) => { if (!o) { setDetailDate(null); setDetail(null); } }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              Day Book — {detailDate ? new Date(detailDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
+            </DialogTitle>
+          </DialogHeader>
+          {detailLoading ? (
+            <div className="py-10 text-center text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin inline" /> Loading…
+            </div>
+          ) : detail && detail.items.length === 0 ? (
+            <div className="py-10 text-center text-muted-foreground">No transactions on this day.</div>
+          ) : detail ? (
+            <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
+              {CATEGORY_ORDER.map(cat => {
+                const rows = detail.items.filter(i => i.category === cat);
+                if (rows.length === 0) return null;
+                const subtotal = rows.reduce((sum, r) => sum + Number(r.amount), 0);
+                const isIn = rows[0].direction === 'in';
+                return (
+                  <div key={cat} className="rounded-lg border overflow-hidden">
+                    <div className={`flex items-center justify-between px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${isIn ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                      <span>{cat} · {rows.length}</span>
+                      <span>{isIn ? '+' : '−'}{INR(subtotal)}</span>
+                    </div>
+                    <table className="w-full text-sm">
+                      <tbody>
+                        {rows.map((r, i) => (
+                          <tr key={i} className="border-t">
+                            <td className="px-3 py-1 text-muted-foreground whitespace-nowrap">{r.ref || '—'}</td>
+                            <td className="px-3 py-1">
+                              {r.party || '—'}
+                              {r.detail ? <span className="text-muted-foreground text-xs"> · {r.detail}</span> : null}
+                            </td>
+                            <td className="px-3 py-1 text-right font-mono whitespace-nowrap">{INR(r.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })}
+              <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-100 font-bold">
+                <span>Net (Sales − Expenses)</span>
+                <span className={Number(detail.summary.net) >= 0 ? 'text-emerald-700' : 'text-rose-700'}>{INR(detail.summary.net)}</span>
+              </div>
+              <Button onClick={downloadDetailCsv} variant="outline" size="sm" className="w-full gap-1.5">
+                <Download className="h-3.5 w-3.5" /> Download this day (Excel / CSV)
+              </Button>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

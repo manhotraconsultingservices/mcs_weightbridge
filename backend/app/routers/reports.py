@@ -1184,6 +1184,95 @@ async def build_eod_summary_context(db: AsyncSession, company_id, company_name: 
     }
 
 
+async def compute_eod_detail(db: AsyncSession, company_id, target_date: date) -> dict:
+    """Line-item breakup behind a single Day-Book day — every individual receipt,
+    purchase, store issue, diesel fill, wage/advance and commission — so the owner
+    can drill from a day's totals into the underlying transactions (and export)."""
+    params = {"cid": str(company_id), "d": target_date}
+    items: list[dict] = []
+
+    async def _rows(sql: str):
+        try:
+            async with db.begin_nested():
+                return (await db.execute(text(sql), params)).all()
+        except Exception as e:  # noqa: BLE001 — missing feature-module table, etc.
+            logger.warning("EOD detail line skipped: %s", str(e)[:140])
+            return []
+
+    # SALES IN — receipts split by payment mode
+    for r in await _rows(
+        "SELECT r.receipt_no AS ref, COALESCE(p.name,'') AS party, "
+        "LOWER(COALESCE(r.payment_mode,'')) AS mode, r.amount AS amount "
+        "FROM payment_receipts r LEFT JOIN parties p ON p.id=r.party_id "
+        "WHERE r.company_id=:cid AND r.receipt_date=:d ORDER BY r.amount DESC"):
+        is_cash = (r.mode == "cash")
+        items.append({"category": "Cash Sale" if is_cash else "Credit Sale",
+                      "ref": r.ref or "", "party": r.party or "",
+                      "detail": (r.mode or "").upper(), "amount": _r2(r.amount), "direction": "in"})
+
+    # MONEY OUT — purchases
+    for r in await _rows(
+        "SELECT i.invoice_no AS ref, COALESCE(p.name,'') AS party, i.grand_total AS amount "
+        "FROM invoices i LEFT JOIN parties p ON p.id=i.party_id "
+        "WHERE i.company_id=:cid AND i.invoice_type='purchase' AND i.status='final' "
+        "AND i.invoice_date=:d ORDER BY i.grand_total DESC"):
+        items.append({"category": "Purchase", "ref": r.ref or "", "party": r.party or "",
+                      "detail": "", "amount": _r2(r.amount), "direction": "out"})
+
+    # Store inventory receipts (at PO price)
+    for r in await _rows(
+        "SELECT COALESCE(po.po_no,'') AS ref, COALESCE(pi.item_name,'') AS item, "
+        "t.quantity AS qty, COALESCE(pi.unit_price,0) AS price, "
+        "(t.quantity*COALESCE(pi.unit_price,0)) AS amount "
+        "FROM inventory_transactions t "
+        "JOIN inventory_po_items pi ON pi.po_id=t.reference_id AND pi.item_id=t.item_id "
+        "LEFT JOIN inventory_purchase_orders po ON po.id=t.reference_id "
+        "WHERE t.company_id=:cid AND t.transaction_type='receipt' AND CAST(t.created_at AS date)=:d"):
+        items.append({"category": "Store", "ref": r.ref or "", "party": r.item or "",
+                      "detail": f"{float(r.qty or 0):g} @ {float(r.price or 0):g}",
+                      "amount": _r2(r.amount), "direction": "out"})
+
+    # Diesel (plant_tank excluded — already counted in store)
+    for r in await _rows(
+        "SELECT COALESCE(v.registration_no,'') AS party, f.litres AS litres, "
+        "COALESCE(f.fuel_source,'') AS src, f.amount AS amount "
+        "FROM vehicle_fuel_entries f LEFT JOIN vehicles v ON v.id=f.vehicle_id "
+        "WHERE f.company_id=:cid AND COALESCE(f.fuel_source,'')<>'plant_tank' AND f.entry_date=:d"):
+        items.append({"category": "Diesel", "ref": "", "party": r.party or "",
+                      "detail": f"{float(r.litres or 0):g} L {r.src or ''}".strip(),
+                      "amount": _r2(r.amount), "direction": "out"})
+
+    # Salary / wages (deduction negative)
+    for r in await _rows(
+        "SELECT COALESCE(w.name,'') AS party, wp.payment_type AS mode, "
+        "(CASE WHEN wp.payment_type='deduction' THEN -wp.amount ELSE wp.amount END) AS amount "
+        "FROM worker_payments wp LEFT JOIN workers w ON w.id=wp.worker_id "
+        "WHERE wp.company_id=:cid AND wp.payment_type IN ('wage','salary','bonus','deduction') "
+        "AND wp.pay_date=:d"):
+        items.append({"category": "Salary", "ref": "", "party": r.party or "",
+                      "detail": r.mode or "", "amount": _r2(r.amount), "direction": "out"})
+
+    # Advances
+    for r in await _rows(
+        "SELECT COALESCE(w.name,'') AS party, wp.amount AS amount "
+        "FROM worker_payments wp LEFT JOIN workers w ON w.id=wp.worker_id "
+        "WHERE wp.company_id=:cid AND wp.payment_type='advance' AND wp.pay_date=:d"):
+        items.append({"category": "Advance", "ref": "", "party": r.party or "",
+                      "detail": "advance", "amount": _r2(r.amount), "direction": "out"})
+
+    # Agent commission
+    for r in await _rows(
+        "SELECT i.invoice_no AS ref, COALESCE(a.name,'') AS party, COALESCE(i.commission_amount,0) AS amount "
+        "FROM invoices i LEFT JOIN agents a ON a.id=i.agent_id "
+        "WHERE i.company_id=:cid AND i.invoice_type='sale' AND i.status='final' "
+        "AND COALESCE(i.commission_amount,0)>0 AND i.invoice_date=:d"):
+        items.append({"category": "Commission", "ref": r.ref or "", "party": r.party or "",
+                      "detail": "", "amount": _r2(r.amount), "direction": "out"})
+
+    summ = await compute_eod_summary(db, company_id, target_date, target_date)
+    return {"date": target_date.isoformat(), "items": items, "summary": summ["summary"]}
+
+
 @router.get("/eod-summary")
 async def eod_summary(
     from_date: date = Query(None),
@@ -1224,6 +1313,17 @@ async def send_eod_summary(
     await send_notification(db, co.id, "eod_summary", ctx,
                             entity_type="company", entity_id=str(co.id))
     return {"ok": True, "date": d.isoformat()}
+
+
+@router.get("/eod-summary/detail")
+async def eod_summary_detail(
+    on_date: date = Query(..., alias="date"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Drill-down: every individual transaction behind one Day-Book day, for the
+    click-through breakup + Excel export."""
+    return await compute_eod_detail(db, current_user.company_id, on_date)
 
 
 # ── Stock Summary ────────────────────────────────────────────────────────────
