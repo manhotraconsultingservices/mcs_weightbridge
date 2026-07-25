@@ -942,3 +942,28 @@ export interface GateCameraEvent {
   linked_at: string | null;
 }
 
+
+// ── Device Health (scale + camera watchdog) ──────────────────────────────────
+export interface DeviceHealthItem {
+  device_key: string;
+  device_type: string;          // scale | camera | agent
+  label: string;
+  site: string | null;
+  status: 'online' | 'offline' | 'stale';
+  last_seen_at: string | null;
+  last_seen_age_secs: number | null;
+  last_ok_at: string | null;
+  last_error: string | null;
+}
+
+export interface DeviceHealthConfig {
+  enabled: boolean;
+  down_threshold_min: number;
+  stale_min: number;
+}
+
+export interface DeviceHealthResponse {
+  devices: DeviceHealthItem[];
+  summary: { total: number; online: number; down: number };
+  config: DeviceHealthConfig;
+}

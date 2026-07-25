@@ -82,6 +82,7 @@ _ROUTE_TO_MODULE: dict[str, str] = {
     "/api/v1/import":         "data_import",
     "/api/v1/fuel":           "fuel",
     "/api/v1/workforce":      "workforce",
+    "/api/v1/monitor":        "device_health",
 }
 
 # Module cache alongside status cache: slug → (modules_dict, timestamp)
