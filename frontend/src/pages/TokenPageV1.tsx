@@ -183,6 +183,9 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     payment_mode: '',      // cash | credit | upi | bank_transfer — drives the invoice tax type
   });
   const [rateSource, setRateSource] = useState<'party' | 'default' | 'none'>('none');
+  // Once the operator types a rate, the auto-prefill stops overwriting it (until
+  // the party/product changes) — so a manually-entered price is never reset to 0.
+  const rateEditedRef = useRef(false);
   // Volume-based weighment (skips the bridge)
   const [weightMethod, setWeightMethod] = useState<'weighbridge' | 'volume'>('weighbridge');
   const [volumeValue, setVolumeValue] = useState('');
@@ -339,6 +342,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   function resetForm() {
     setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', agent_id: '', billing_unit: weightMethod === 'weighbridge' ? weightUnit().code : volDefault, rate: '', payment_mode: '' });
     setRateSource('none');
+    rateEditedRef.current = false;
     setCustomValues({});
     setVehicleSearch('');
     setSelectedVehicle(null);
@@ -363,9 +367,12 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
   const selectedParty = form.party_id ? parties.find(p => p.id === form.party_id) ?? null : null;
 
+  // A new party/material is a new pricing context — allow the prefill to run again.
+  useEffect(() => { rateEditedRef.current = false; }, [form.party_id, form.product_id]);
+
   // Prefill the material price for the current party + product + unit: the
-  // customer-wise rate if one is set, otherwise the product default. The operator
-  // can override the value; changing party/product/unit re-fetches it.
+  // customer-wise rate if one is set, otherwise the product default. Never
+  // overwrites a rate the operator has typed (rateEditedRef).
   useEffect(() => {
     if (!form.product_id) { setRateSource('none'); return; }
     const unit = form.billing_unit || undefined;
@@ -379,13 +386,13 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           );
           if (cancelled) return;
           setRateSource(data.source === 'party_rate' ? 'party' : (data.rate > 0 ? 'default' : 'none'));
-          setForm(f => ({ ...f, rate: data.rate ? String(data.rate) : '' }));
+          if (!rateEditedRef.current) setForm(f => ({ ...f, rate: data.rate ? String(data.rate) : '' }));
         } else {
           // No party (walk-in) → fall back to the product's base default rate.
           const dr = selectedProduct?.default_rate;
           if (cancelled) return;
           setRateSource(dr ? 'default' : 'none');
-          setForm(f => ({ ...f, rate: dr ? String(dr) : '' }));
+          if (!rateEditedRef.current) setForm(f => ({ ...f, rate: dr ? String(dr) : '' }));
         }
       } catch { if (!cancelled) setRateSource('none'); }
     })();
@@ -969,7 +976,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
               <Input
                 type="number" min="0" step="0.01" className="h-8 text-xs"
                 value={form.rate}
-                onChange={e => { setForm(f => ({ ...f, rate: e.target.value })); setRateSource('none'); }}
+                onChange={e => { rateEditedRef.current = true; setForm(f => ({ ...f, rate: e.target.value })); setRateSource('none'); }}
                 placeholder="0.00"
               />
             </div>

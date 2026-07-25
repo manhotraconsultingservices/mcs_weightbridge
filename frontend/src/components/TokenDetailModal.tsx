@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Truck, Package, User, Scale, Clock, Calendar, Loader2, FileText, CreditCard, UserCheck, Building2, Camera, ImageOff, RefreshCw, ZoomIn, CheckCircle2, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -190,31 +190,53 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
   const [collectRate, setCollectRate] = useState('');
   const [collectUnit, setCollectUnit] = useState('');
   const [collecting, setCollecting] = useState(false);
-  // Edit qty & price (+ payment mode) — re-syncs the linked draft invoice.
+  // ── The ONE token editor: vehicle / party / material + quantity + rate +
+  //    vehicle rent + payment mode + remarks. Saves in a single PUT /tokens/{id};
+  //    billing fields are sent ONLY when actually changed, so a cosmetic edit
+  //    never trips the finalised-invoice guard.
   const [editOpen, setEditOpen] = useState(false);
-  const [editQty, setEditQty] = useState('');
-  const [editRate, setEditRate] = useState('');
-  const [editMode, setEditMode] = useState('cash');
-  const [editing, setEditing] = useState(false);
-  // Edit details — fix a typo (vehicle no, party, material, remarks). Works on
-  // completed tokens; a party/material change rebuilds the linked draft bill.
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [dParties, setDParties] = useState<Party[]>([]);
   const [dProducts, setDProducts] = useState<Product[]>([]);
   const [dVehicleNo, setDVehicleNo] = useState('');
   const [dPartyId, setDPartyId] = useState('');
   const [dProductId, setDProductId] = useState('');
+  const [dQty, setDQty] = useState('');
+  const [dRate, setDRate] = useState('');
+  const [dRent, setDRent] = useState('');
+  const [dPayMode, setDPayMode] = useState('cash');
   const [dRemarks, setDRemarks] = useState('');
-  const [savingDetails, setSavingDetails] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const editInit = useRef({ qty: '', rate: '', rent: '', mode: 'cash' });
 
-  async function openDetails() {
+  async function openEdit() {
     if (!token) return;
+    const u = editUnit();
+    const qty = token.weight_method === 'volume'
+      ? Number(token.volume_cft ?? 0) / (VOL_TO_CFT[u] ?? 1)
+      : Number(token.net_weight ?? 0) / (WT_TO_KG[u] ?? 1000);
+    const qtyStr = qty ? String(round3(qty)) : '';
+    const rentStr = token.vehicle_rent != null ? String(token.vehicle_rent) : '';
+    const modeStr = token.payment_mode || 'cash';
+    setDQty(qtyStr);
     setDVehicleNo(token.vehicle_no ?? '');
     setDPartyId(token.party?.id ?? '');
     setDProductId(token.product?.id ?? '');
+    setDRent(rentStr);
+    setDPayMode(modeStr);
     setDRemarks(token.remarks ?? '');
-    setDetailsOpen(true);
-    // Lazy-load the master lists the first time.
+    // Rate: prefer the token's stored rate; else the linked invoice's line rate
+    // (so the create-page price shows here instead of resetting to 0).
+    let rate: number | null = token.rate != null ? Number(token.rate) : null;
+    if (rate == null && token.linked_invoice?.id) {
+      try {
+        const { data } = await api.get<{ items?: { rate: number }[] }>(`/api/v1/invoices/${token.linked_invoice.id}`);
+        rate = data.items?.[0]?.rate ?? null;
+      } catch { /* ignore */ }
+    }
+    const rateStr = rate != null ? String(rate) : '';
+    setDRate(rateStr);
+    editInit.current = { qty: qtyStr, rate: rateStr, rent: rentStr, mode: modeStr };
+    setEditOpen(true);
     if (dParties.length === 0) {
       api.get<{ items?: Party[] } | Party[]>('/api/v1/parties?page_size=500')
         .then(r => setDParties(Array.isArray(r.data) ? r.data : (r.data.items ?? [])))
@@ -227,25 +249,43 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
     }
   }
 
-  async function doDetails() {
+  async function doEdit() {
     if (!token) return;
     const vno = dVehicleNo.trim();
     if (!vno) { toast.error('Vehicle number is required'); return; }
-    setSavingDetails(true);
+    const u = editUnit();
+    // Always send the detail fields; send each BILLING field only if it changed.
+    const payload: Record<string, unknown> = {
+      vehicle_no: vno,
+      party_id: dPartyId || undefined,
+      product_id: dProductId || undefined,
+      remarks: dRemarks.trim() || undefined,
+    };
+    if (dRate !== editInit.current.rate) {
+      const r = parseFloat(dRate);
+      if (dRate !== '' && (isNaN(r) || r < 0)) { toast.error('Enter a valid rate'); return; }
+      if (dRate !== '') payload.rate = r;
+    }
+    if (dQty !== editInit.current.qty) {
+      const q = parseFloat(dQty);
+      if (!q || q <= 0) { toast.error('Quantity must be greater than zero'); return; }
+      if (token.weight_method === 'volume') payload.volume_cft = q * (VOL_TO_CFT[u] ?? 1);
+      else payload.net_weight = q * (WT_TO_KG[u] ?? 1000);
+      payload.billing_unit = u;
+    }
+    if (dRent !== editInit.current.rent) payload.vehicle_rent = dRent === '' ? 0 : (parseFloat(dRent) || 0);
+    if (dPayMode !== editInit.current.mode) payload.payment_mode = dPayMode;
+
+    setSaving(true);
     try {
-      await api.put(`/api/v1/tokens/${token.id}`, {
-        vehicle_no: vno,
-        party_id: dPartyId || undefined,
-        product_id: dProductId || undefined,
-        remarks: dRemarks.trim() || undefined,
-      });
+      await api.put(`/api/v1/tokens/${token.id}`, payload);
       toast.success('Token updated');
-      setDetailsOpen(false);
+      setEditOpen(false);
       fetchToken();
     } catch (e: unknown) {
       const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       toast.error(typeof d === 'string' ? d : 'Failed to update the token');
-    } finally { setSavingDetails(false); }
+    } finally { setSaving(false); }
   }
 
   async function openCollect() {
@@ -281,47 +321,6 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
   function editUnit(): string {
     if (!token) return 'MT';
     return (token.billing_unit || (token.weight_method === 'volume' ? 'CFT' : 'MT')).toUpperCase();
-  }
-
-  async function openEdit() {
-    if (!token) return;
-    const u = editUnit();
-    // Current quantity in the billing unit.
-    let qty = 0;
-    if (token.weight_method === 'volume') qty = Number(token.volume_cft ?? 0) / (VOL_TO_CFT[u] ?? 1);
-    else qty = Number(token.net_weight ?? 0) / (WT_TO_KG[u] ?? 1000);
-    setEditQty(qty ? String(round3(qty)) : '');
-    // Rate: prefer the token's stored rate, else the linked invoice's line rate.
-    let rate: number | null = token.rate != null ? Number(token.rate) : null;
-    if (rate == null && token.linked_invoice?.id) {
-      try {
-        const { data } = await api.get<{ items?: { rate: number }[] }>(`/api/v1/invoices/${token.linked_invoice.id}`);
-        rate = data.items?.[0]?.rate ?? null;
-      } catch { /* ignore */ }
-    }
-    setEditRate(rate != null ? String(rate) : '');
-    setEditMode(token.payment_mode || 'cash');
-    setEditOpen(true);
-  }
-
-  async function doEdit() {
-    if (!token) return;
-    const q = parseFloat(editQty), r = parseFloat(editRate);
-    if (!q || q <= 0 || isNaN(r) || r < 0) { toast.error('Enter a valid quantity and rate'); return; }
-    const u = editUnit();
-    const payload: Record<string, unknown> = { rate: r, payment_mode: editMode, billing_unit: u };
-    if (token.weight_method === 'volume') payload.volume_cft = q * (VOL_TO_CFT[u] ?? 1);
-    else payload.net_weight = q * (WT_TO_KG[u] ?? 1000);
-    setEditing(true);
-    try {
-      await api.put(`/api/v1/tokens/${token.id}/pricing`, payload);
-      toast.success('Updated — the draft bill was re-priced');
-      setEditOpen(false);
-      fetchToken();
-    } catch (e: unknown) {
-      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      toast.error(typeof d === 'string' ? d : 'Failed to update the token');
-    } finally { setEditing(false); }
   }
 
   // Fetch token details (refetchable — the approve action reloads it)
@@ -434,7 +433,7 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                 </div>
                 <div className="flex items-center gap-2">
                   {canCollect && token.status !== 'CANCELLED' && (
-                    <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={openDetails}>
+                    <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={openEdit}>
                       <Pencil className="h-3 w-3" /> Edit
                     </Button>
                   )}
@@ -757,11 +756,6 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                   {token.linked_invoice.status === 'draft' && (
                     <div className="px-4 pb-3 pt-1 border-t bg-amber-50/40">
                       {canCollect && (
-                        <Button size="sm" variant="outline" className="w-full mb-2 gap-1.5" onClick={openEdit}>
-                          <Package className="h-3.5 w-3.5" /> Edit qty &amp; price
-                        </Button>
-                      )}
-                      {canCollect && (
                         <Button size="sm" className="w-full mb-2 gap-1.5 bg-emerald-600 hover:bg-emerald-700" onClick={openCollect}>
                           <CreditCard className="h-3.5 w-3.5" /> Collect Cash — see rate, finalise bill{token.linked_invoice.grand_total != null ? ` · ${INR(token.linked_invoice.grand_total)}` : ''}
                         </Button>
@@ -867,23 +861,51 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
         </DialogContent>
       </Dialog>
 
-      {/* Edit qty & price — updates the token and re-prices the linked draft invoice */}
+      {/* The ONE token editor — details + quantity + price + vehicle rent + payment mode */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Edit quantity &amp; price</DialogTitle></DialogHeader>
+        <DialogContent className="max-w-sm max-h-[90dvh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Edit token</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              Change the billable quantity, the material rate, or the payment mode. The linked draft bill is re-priced automatically.
+              Fix anything here. Changing quantity, rate, vehicle rent, payment mode, party or material re-prices the draft bill automatically; a finalised bill must be revised instead.
             </p>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Vehicle number</label>
+              <Input value={dVehicleNo} onChange={e => setDVehicleNo(e.target.value.toUpperCase())} placeholder="e.g. RJ14GA1234" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Party</label>
+                <Select value={dPartyId || undefined} onValueChange={v => setDPartyId(v ?? '')}>
+                  <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                  <SelectContent>
+                    {dParties.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Material</label>
+                <Select value={dProductId || undefined} onValueChange={v => setDProductId(v ?? '')}>
+                  <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                  <SelectContent>
+                    {dProducts.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <label className="text-xs font-medium">Quantity ({editUnit()})</label>
-                <Input type="number" min="0" step="0.001" value={editQty} onChange={e => setEditQty(e.target.value)} />
+                <Input type="number" min="0" step="0.001" value={dQty} onChange={e => setDQty(e.target.value)} />
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-medium">Rate (₹/{editUnit()})</label>
-                <Input type="number" min="0" step="0.01" value={editRate} onChange={e => setEditRate(e.target.value)} />
+                <Input type="number" min="0" step="0.01" value={dRate} onChange={e => setDRate(e.target.value)} />
               </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Vehicle rent (₹)</label>
+              <Input type="number" min="0" step="0.01" value={dRent} onChange={e => setDRent(e.target.value)} placeholder="0.00" />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">Payment mode</label>
@@ -892,71 +914,29 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                   <button
                     key={m.value}
                     type="button"
-                    onClick={() => setEditMode(m.value)}
+                    onClick={() => setDPayMode(m.value)}
                     className={`rounded-md border px-1 py-1.5 text-xs font-medium transition-colors ${
-                      editMode === m.value ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:bg-muted'
+                      dPayMode === m.value ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:bg-muted'
                     }`}
                   >{m.label}</button>
                 ))}
               </div>
               <p className="text-[10px] text-muted-foreground">
-                {editMode === 'cash' ? 'Cash → Bill of Supply (no GST).' : 'Credit / UPI / Bank → GST Tax Invoice.'}
+                {dPayMode === 'cash' ? 'Cash → Bill of Supply (no GST).' : 'Credit / UPI / Bank → GST Tax Invoice.'}
               </p>
-            </div>
-            <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2">
-              <span className="text-sm font-medium">Amount</span>
-              <span className="text-lg font-bold">
-                {INR((parseFloat(editQty) || 0) * (parseFloat(editRate) || 0))}
-              </span>
-            </div>
-            <Button onClick={doEdit} disabled={editing} className="w-full gap-1.5">
-              {editing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              Save changes
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit details — fix a typo (vehicle no, party, material, remarks) */}
-      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Edit token details</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">
-              Correct a typo. Changing the party or material re-prices the draft bill automatically; a finalised bill must be revised instead.
-            </p>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Vehicle number</label>
-              <Input
-                value={dVehicleNo}
-                onChange={e => setDVehicleNo(e.target.value.toUpperCase())}
-                placeholder="e.g. RJ14GA1234"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Party</label>
-              <Select value={dPartyId || undefined} onValueChange={v => setDPartyId(v ?? '')}>
-                <SelectTrigger><SelectValue placeholder="Select party…" /></SelectTrigger>
-                <SelectContent>
-                  {dParties.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Material</label>
-              <Select value={dProductId || undefined} onValueChange={v => setDProductId(v ?? '')}>
-                <SelectTrigger><SelectValue placeholder="Select material…" /></SelectTrigger>
-                <SelectContent>
-                  {dProducts.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">Remarks</label>
               <Input value={dRemarks} onChange={e => setDRemarks(e.target.value)} placeholder="Optional note" />
             </div>
-            <Button onClick={doDetails} disabled={savingDetails} className="w-full gap-1.5">
-              {savingDetails ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2">
+              <span className="text-sm font-medium">Material amount</span>
+              <span className="text-lg font-bold">
+                {INR((parseFloat(dQty) || 0) * (parseFloat(dRate) || 0))}
+              </span>
+            </div>
+            <Button onClick={doEdit} disabled={saving} className="w-full gap-1.5">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               Save changes
             </Button>
           </div>

@@ -96,6 +96,13 @@ class TokenUpdate(BaseModel):
     agent_id: Optional[UUID] = None
     remarks: Optional[str] = None
     custom_fields: Optional[dict[str, Any]] = None
+    # Billing fields — the one editor updates these too and re-prices the draft invoice.
+    rate: Optional[Decimal] = None            # ₹ per billing_unit
+    net_weight: Optional[Decimal] = None      # kg — weighbridge quantity override
+    volume_cft: Optional[Decimal] = None      # volume quantity (volume tokens)
+    vehicle_rent: Optional[Decimal] = None    # transport rent billed on the invoice
+    payment_mode: Optional[str] = None        # cash | credit | upi | bank_transfer → tax_type
+    billing_unit: Optional[str] = None
 
 
 class PartyBrief(BaseModel):
