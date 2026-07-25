@@ -222,6 +222,8 @@ export interface Token {
   weight_method: 'weighbridge' | 'volume';   // measurement method
   volume_cft: number | null;                  // cubic feet — populated only when weight_method === 'volume'
   billing_unit: string | null;                // operator-chosen billing unit (MT/CFT/CBM/BRASS…)
+  rate?: number | null;                        // operator-set ₹ per billing_unit (customer-wise/default, editable)
+  payment_mode?: string | null;               // cash | credit | upi | bank_transfer — drives invoice tax type
   operator_name?: string | null;              // who created the token (cash accountability)
   gate_pass: string | null;                   // legacy free-text gate-pass note
   gate_pass_no: string | null;                // auto-allocated GP/25-26/0001

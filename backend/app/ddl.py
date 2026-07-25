@@ -1043,6 +1043,10 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS transit_pass_id UUID REFERENCES royalty_passes(id)",
         # Vehicle rent — payment to truck owner per trip (stone crusher practice)
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS vehicle_rent NUMERIC(14,2) DEFAULT 0",
+        # Operator-set material price (₹ per billing_unit); auto-invoice uses it, else the resolver
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS rate NUMERIC(12,2)",
+        # Operator-chosen payment mode (cash|credit|upi|bank_transfer); overrides party default → tax_type
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(20)",
 
         # ── Tokens backfill: the `tokens` table is created by SQLAlchemy
         # create_all (NOT a runtime CREATE TABLE), so a tenant whose tokens table

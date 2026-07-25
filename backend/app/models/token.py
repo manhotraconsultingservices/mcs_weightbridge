@@ -67,6 +67,15 @@ class Token(Base):
     source: Mapped[str] = mapped_column(String(20), default="manual")
     transit_pass_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("royalty_passes.id"), nullable=True)
     vehicle_rent: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), default=0)
+    # Operator-set material price (₹ per billing_unit). Shown on the create/edit
+    # token form and used by the auto-invoice (falls back to the pricing resolver
+    # when NULL). Editable via PUT /tokens/{id}/pricing, which re-syncs the linked
+    # draft invoice.
+    rate: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Operator-chosen payment mode for this trip: cash | credit | upi | bank_transfer.
+    # Overrides the party's default_payment_mode when deciding the auto-invoice's
+    # tax_type — 'cash' → non-GST Bill of Supply, everything else → GST Tax Invoice.
+    payment_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text)
     # Owner-defined custom attributes, keyed by custom_field_definitions.field_key
     # (e.g. {"moisture_pct": 13.5, "quality": "A"}). Definitions drive the UI/slip.
