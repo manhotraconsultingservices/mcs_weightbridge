@@ -206,6 +206,7 @@ function EditTenantDialog({ tenant, open, onClose, onSaved }: {
     { key: 'gate',          label: 'Gate Register',       description: 'Controlled-access gate pass register' },
     { key: 'fuel',          label: 'Fuel & Mileage',      description: 'Diesel log, mileage vs benchmark, leakage detection' },
     { key: 'workforce',     label: 'Workforce & Payroll', description: 'Workers, attendance muster, wages/salary & advances' },
+    { key: 'device_health', label: 'Device Health',       description: 'Scale & camera uptime dashboard + Telegram down-alerts' },
   ];
 
   if (!tenant) return null;

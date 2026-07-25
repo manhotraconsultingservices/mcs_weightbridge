@@ -20,7 +20,7 @@ import {
   BookOpen, TrendingUp, Package,
   LogOut, Usb, Settings,
   Bell, HardDrive, Upload, UserCog, Lock, ImageIcon, Building2,
-  Camera, Cog, FileBarChart, ShieldAlert, FileCheck2, Tags, Users, Truck, Fuel, HardHat, IndianRupee, Handshake, Wallet,
+  Camera, Cog, FileBarChart, ShieldAlert, FileCheck2, Tags, Users, Truck, Fuel, HardHat, IndianRupee, Handshake, Wallet, Activity,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getTenantModules } from '@/hooks/useAuth';
@@ -39,6 +39,7 @@ import type { User } from '@/types';
 const HUB_MODULES: Record<string, string[]> = {
   '/weighbridge':   ['weighing'],
   '/cameras-anpr':  ['cameras', 'anpr'],
+  '/device-health': ['device_health'],
   '/sales':         ['invoicing', 'quotations'],
   '/procurement':   ['invoicing'],
   '/production-hub': ['production'],
@@ -75,6 +76,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/weighbridge',  icon: Scale,  labelKey: 'sidebar.weighbridge' },
       { to: '/cameras-anpr', icon: Camera, labelKey: 'sidebar.camerasAnpr' },
+      { to: '/device-health', icon: Activity, labelKey: 'sidebar.deviceHealth' },
     ],
   },
   {

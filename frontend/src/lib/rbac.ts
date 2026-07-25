@@ -31,6 +31,7 @@ export const CATALOGUE_GROUPS: CatalogueGroup[] = [
     pages: [
       { path: '/weighbridge',  label: 'Weighbridge',    hint: 'Gate Register · Weigh Tickets · Movement Report' },
       { path: '/cameras-anpr', label: 'Cameras & ANPR', hint: 'Camera & Scale · Snapshots · ANPR · Plate Review' },
+      { path: '/device-health', label: 'Device Health',  hint: 'Scale & camera uptime monitor + down-alerts' },
     ],
   },
   {

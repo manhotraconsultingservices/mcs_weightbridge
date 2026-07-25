@@ -13,7 +13,7 @@ from app.routers import (
     usb_guard, private_invoices, notifications, audit, backup, import_data,
     tally, tally_connector, app_settings, license, compliance, cameras, inventory,
     product_stock, production, anpr, delivery_challans, royalty, portal, branches, gstr2b,
-    anomalies, gate, custom_fields, agents, fuel, workforce, offline,
+    anomalies, gate, custom_fields, agents, fuel, workforce, offline, monitor,
 )
 from app.middleware.license_guard import LicenseGuardMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -344,6 +344,126 @@ async def _low_stock_alert_loop():
             raise
         except Exception as exc:
             logger.warning("low-stock alert loop error: %s", exc)
+
+
+# ── Device-health (camera/scale heartbeat) alert loop ─────────────────────────
+# Runs every 60 s. A standalone watchdog agent on each site PC pushes per-device
+# heartbeats to POST /api/v1/monitor/heartbeat. A device is "down" when it either
+# reports a failure (fresh heartbeat, ok=false) or stops sending heartbeats
+# (stale → the watchdog/PC itself is offline). When a device stays down past the
+# configured threshold we fire a Telegram `device_down` alert once, and a
+# `device_recovered` alert when it comes back. Config lives in app_settings
+# key `device_health` (enabled / down_threshold_min / stale_min). No change to
+# the scale or camera agents is required.
+
+async def _device_health_loop():
+    """Per-tenant scan every 60 s: alert once when a device is down past the
+    threshold, and once again when it recovers."""
+    import json as _json
+    from sqlalchemy import text as _sql
+
+    while True:
+        await asyncio.sleep(60)
+        try:
+            async def _scan_one(session_factory, label: str = "default"):
+                from app.models.company import Company
+                from app.integrations.notifications.service import send_notification
+                from sqlalchemy import select as _select
+
+                async with session_factory() as db:
+                    co = (await db.execute(_select(Company).limit(1))).scalar_one_or_none()
+                    if not co:
+                        return
+                    raw = (await db.execute(
+                        _sql("SELECT value FROM app_settings WHERE key = 'device_health'")
+                    )).scalar()
+                    cfg = {"enabled": True, "down_threshold_min": 5, "stale_min": 3}
+                    if raw:
+                        try:
+                            v = _json.loads(raw)
+                            if isinstance(v, dict):
+                                cfg.update(v)
+                        except Exception:
+                            pass
+                    if not bool(cfg.get("enabled", True)):
+                        return
+                    down_secs = max(1, int(cfg.get("down_threshold_min", 5))) * 60
+                    stale_secs = max(1, int(cfg.get("stale_min", 3))) * 60
+
+                    rows = (await db.execute(_sql("""
+                        SELECT device_key, device_type, label, site, status, last_error, alerted,
+                               EXTRACT(EPOCH FROM (NOW() - last_seen_at)) AS age_secs,
+                               EXTRACT(EPOCH FROM (NOW() - last_ok_at))  AS down_secs
+                        FROM device_health
+                        WHERE company_id = :cid
+                    """), {"cid": str(co.id)})).fetchall()
+
+                    for r in rows:
+                        age = float(r.age_secs) if r.age_secs is not None else 10 ** 9
+                        down_for = float(r.down_secs) if r.down_secs is not None else 10 ** 9
+                        stale = age > stale_secs
+                        unhealthy = (r.status == "down") or stale
+                        healthy = (r.status == "ok") and not stale
+
+                        try:
+                            if unhealthy and down_for >= down_secs and not r.alerted:
+                                reason = ("no heartbeat — watchdog/PC offline" if stale
+                                          else (r.last_error or "device not responding"))
+                                ctx = {
+                                    "device_label": r.label,
+                                    "device_type": r.device_type,
+                                    "site": r.site or "-",
+                                    "down_minutes": str(int(down_for // 60)),
+                                    "reason": reason,
+                                    "company_name": co.name,
+                                }
+                                await send_notification(
+                                    db, co.id, "device_down", ctx,
+                                    entity_type="device", entity_id=r.device_key,
+                                )
+                                await db.execute(_sql(
+                                    "UPDATE device_health SET alerted = TRUE "
+                                    "WHERE company_id = :cid AND device_key = :k"
+                                ), {"cid": str(co.id), "k": r.device_key})
+                                await db.commit()
+                                logger.info("device_down alert: %s [%s]", r.label, label)
+                            elif healthy and r.alerted:
+                                ctx = {
+                                    "device_label": r.label,
+                                    "device_type": r.device_type,
+                                    "site": r.site or "-",
+                                    "company_name": co.name,
+                                }
+                                await send_notification(
+                                    db, co.id, "device_recovered", ctx,
+                                    entity_type="device", entity_id=r.device_key,
+                                )
+                                await db.execute(_sql(
+                                    "UPDATE device_health SET alerted = FALSE "
+                                    "WHERE company_id = :cid AND device_key = :k"
+                                ), {"cid": str(co.id), "k": r.device_key})
+                                await db.commit()
+                                logger.info("device_recovered alert: %s [%s]", r.label, label)
+                        except Exception as e:
+                            logger.warning("device-health send failed [%s] %s: %s", label, r.label, e)
+
+            from app.config import get_settings as _gs
+            if _gs().MULTI_TENANT:
+                from app.multitenancy.registry import tenant_registry
+                for t in await tenant_registry.list_active_tenants():
+                    try:
+                        factory = await tenant_registry.get_session_factory(t.slug)
+                        await _scan_one(factory, label=t.slug)
+                    except Exception as e:
+                        logger.warning("device-health scan failed for tenant %s: %s", t.slug, e)
+            else:
+                from app.database import async_session
+                await _scan_one(async_session, label="default")
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("device-health loop error: %s", exc)
 
 
 # ── Google Drive snapshot cleanup loop ────────────────────────────────────────
@@ -759,6 +879,9 @@ async def lifespan(app: FastAPI):
     gdrive_cleanup_task = asyncio.create_task(
         _supervised("gdrive-cleanup", _gdrive_cleanup_loop(), restart_delay=300)
     )
+    device_health_task = asyncio.create_task(
+        _supervised("device-health", _device_health_loop(), restart_delay=120)
+    )
 
     # ── Startup ─────────────────────────────────────────────────────────────
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -918,6 +1041,8 @@ async def lifespan(app: FastAPI):
     amc_task.cancel()
     low_stock_task.cancel()
     owner_digest_task.cancel()
+    gdrive_cleanup_task.cancel()
+    device_health_task.cancel()
     from app.integrations.serial_port.manager import get_weight_manager
     mgr = get_weight_manager()
     if mgr:
@@ -1030,6 +1155,7 @@ app.include_router(gate.router)
 app.include_router(custom_fields.router)
 app.include_router(agents.router)
 app.include_router(offline.router)  # Offline edge sync — agent-authed masters mirror + intent replay
+app.include_router(monitor.router)  # Device health — scale/camera heartbeat + Telegram down-alerts
 
 
 @app.get("/api/v1/health")

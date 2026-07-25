@@ -1212,6 +1212,30 @@ def get_column_migrations() -> list[str]:
         "CREATE INDEX IF NOT EXISTS ix_gate_cam_events_company ON gate_camera_events(company_id, detected_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_gate_cam_events_pass ON gate_camera_events(gate_pass_id)",
 
+        # ── Device health (scale + camera heartbeat monitoring) ───────────────
+        # A local watchdog agent (backend/agents/watchdog_agent.py) reads the
+        # existing scale/camera agents' /status endpoints + probes the cameras and
+        # POSTs a heartbeat per device here. The server-side _device_health_loop
+        # fires a Telegram alert when a device is down / silent past the configured
+        # threshold. One row per (company, device_key), upserted on each heartbeat.
+        """
+        CREATE TABLE IF NOT EXISTS device_health (
+            id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id   UUID REFERENCES companies(id),
+            device_key   VARCHAR(80)  NOT NULL,   -- stable id, e.g. 'pc1:scale', 'pc2:cam:entry'
+            device_type  VARCHAR(20)  NOT NULL,   -- scale | camera
+            label        VARCHAR(120),            -- 'Weighing Scale', 'Gate Entry Camera'
+            site         VARCHAR(80),             -- 'PC1 Weighbridge' / 'PC2 Gate'
+            status       VARCHAR(10)  NOT NULL DEFAULT 'ok',  -- last reported: ok | down
+            last_seen_at TIMESTAMPTZ,             -- last heartbeat received (any result)
+            last_ok_at   TIMESTAMPTZ,             -- last time this device was healthy
+            last_error   VARCHAR(300),
+            alerted      BOOLEAN      NOT NULL DEFAULT FALSE,  -- down alert already sent this outage
+            updated_at   TIMESTAMPTZ  DEFAULT NOW()
+        )
+        """,
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_device_health_key ON device_health(company_id, device_key)",
+
         # ── Document-number uniqueness (offline-ops prerequisite) ─────────────
         # Until now NOTHING enforced these at the DB level: invoice numbers relied
         # on the row-locked NumberSequence, and token_no on a read-then-write

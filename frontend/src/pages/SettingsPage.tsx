@@ -3754,6 +3754,106 @@ function BarrierSettingsTab() {
   );
 }
 
+// ── Device Health (scale + camera watchdog) settings ──────────────────────────
+interface DeviceHealthCfg { enabled: boolean; down_threshold_min: number; stale_min: number }
+const DEVICE_HEALTH_DEFAULT: DeviceHealthCfg = { enabled: true, down_threshold_min: 5, stale_min: 3 };
+
+function DeviceHealthSettingsTab() {
+  const [cfg, setCfg] = useState<DeviceHealthCfg>(DEVICE_HEALTH_DEFAULT);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    api.get<DeviceHealthCfg>('/api/v1/monitor/config')
+      .then(r => setCfg(r.data))
+      .catch(() => { /* leave defaults */ })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const set = <K extends keyof DeviceHealthCfg>(k: K, v: DeviceHealthCfg[K]) =>
+    setCfg(c => ({ ...c, [k]: v }));
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const { data } = await api.put<DeviceHealthCfg>('/api/v1/monitor/config', cfg);
+      setCfg(data);
+      setMsg({ kind: 'ok', text: 'Device health settings saved.' });
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setMsg({ kind: 'err', text: typeof detail === 'string' ? detail : 'Failed to save settings' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card><CardContent className="pt-6 flex items-center justify-center text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading device health settings…
+      </CardContent></Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Server className="h-4 w-4 text-primary" /> Device Health — Scale &amp; Camera Monitoring
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <p className="text-sm text-muted-foreground">
+          A Watchdog Agent on each plant PC reports the scale and cameras here. When a device stays
+          down past the threshold below, the owner gets a Telegram alert. Choose who receives it on the{' '}
+          <a href="/notifications" className="text-primary underline">Notifications</a> page (events
+          <b> device_down</b> and <b> device_recovered</b>). Live status is on the{' '}
+          <a href="/device-health" className="text-primary underline">Device Health</a> page.
+        </p>
+
+        <div className="flex items-center justify-between rounded-lg border p-3">
+          <div>
+            <Label>Send down/recovery alerts</Label>
+            <p className="text-xs text-muted-foreground">Turn off to stop all device alerts (dashboard keeps working).</p>
+          </div>
+          <Switch checked={cfg.enabled} onCheckedChange={v => set('enabled', v)} />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label>Alert after down for (minutes)</Label>
+            <Input type="number" min={1} value={cfg.down_threshold_min}
+                   onChange={e => set('down_threshold_min', Math.max(1, parseInt(e.target.value) || 1))} />
+            <p className="text-[11px] text-muted-foreground">
+              How long a camera/scale must stay down before the owner is notified.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <Label>Treat as "no signal" after (minutes)</Label>
+            <Input type="number" min={1} value={cfg.stale_min}
+                   onChange={e => set('stale_min', Math.max(1, parseInt(e.target.value) || 1))} />
+            <p className="text-[11px] text-muted-foreground">
+              No heartbeat for this long ⇒ the watchdog / PC itself is offline.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button onClick={save} disabled={saving}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+            Save
+          </Button>
+          {msg && (
+            <p className={`text-sm ${msg.kind === 'ok' ? 'text-emerald-600' : 'text-rose-600'}`}>{msg.text}</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SettingsPage() {
   const isSaas = sessionStorage.getItem('multi_tenant') === '1';
   const [tab, setTab] = useState('company');
@@ -3841,6 +3941,7 @@ export default function SettingsPage() {
             ...(!isSaas ? [{ value: 'barrier', label: 'Barrier' }] : []),
             { value: 'units', label: 'Units' },
             { value: 'gate-cameras', label: 'Gate Cameras' },
+            { value: 'device-health', label: 'Device Health' },
             { value: 'print', label: 'Print' },
           ]}
         />
@@ -3880,6 +3981,7 @@ export default function SettingsPage() {
           )}
           <TabsTrigger value="units">Units</TabsTrigger>
           <TabsTrigger value="gate-cameras">Gate Cameras</TabsTrigger>
+          <TabsTrigger value="device-health">Device Health</TabsTrigger>
           <TabsTrigger value="print">Print</TabsTrigger>
         </TabsList>
 
@@ -4045,6 +4147,11 @@ export default function SettingsPage() {
         {/* Gate Cameras config */}
         <TabsContent value="gate-cameras" className="mt-4">
           <GateCameraSettingsTab />
+        </TabsContent>
+
+        {/* Device Health */}
+        <TabsContent value="device-health" className="mt-4">
+          <DeviceHealthSettingsTab />
         </TabsContent>
 
         {/* Print Settings */}

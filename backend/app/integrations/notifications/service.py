@@ -292,6 +292,33 @@ DEFAULT_TEMPLATES = [
             "\n— {{ company_name }}"
         ),
     },
+    # ── Device health (camera / scale watchdog) ───────────────────────────────
+    {
+        "event_type": "device_down",
+        "channel": "telegram",
+        "name": "Device Offline (Telegram)",
+        "subject": None,
+        "body": (
+            "🔴 <b>{{ device_type|capitalize }} offline</b>\n\n"
+            "Device: <b>{{ device_label }}</b>\n"
+            "{% if site and site != '-' %}Site: {{ site }}\n{% endif %}"
+            "Down for: <b>{{ down_minutes }} min</b>\n"
+            "Reason: {{ reason }}\n\n"
+            "Please check the device / its PC.\n— {{ company_name }}"
+        ),
+    },
+    {
+        "event_type": "device_recovered",
+        "channel": "telegram",
+        "name": "Device Back Online (Telegram)",
+        "subject": None,
+        "body": (
+            "🟢 <b>{{ device_type|capitalize }} back online</b>\n\n"
+            "Device: <b>{{ device_label }}</b>\n"
+            "{% if site and site != '-' %}Site: {{ site }}\n{% endif %}"
+            "Recovered and reporting normally.\n— {{ company_name }}"
+        ),
+    },
     # ── Royalty / Transit-pass reconciliation alert ───────────────────────────
     {
         "event_type": "royalty_unaccounted_alert",

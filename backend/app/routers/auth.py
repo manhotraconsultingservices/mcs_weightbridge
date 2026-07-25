@@ -47,6 +47,7 @@ DEFAULT_MODULES = {
     "gate":          True,      # Controlled-access gate register
     "fuel":          True,      # Fleet Fuel & Mileage / diesel-leakage detection
     "workforce":     True,      # Workers, attendance muster, payroll & advances
+    "device_health": True,      # Scale/camera heartbeat dashboard + down-alerts
 }
 
 from fastapi import Request
