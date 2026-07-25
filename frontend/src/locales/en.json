@@ -241,6 +241,7 @@
     "discountFlat": "Flat Amount (₹)",
     "discountValue": "Discount Value",
     "freight": "Freight (₹)",
+    "vehicleRent": "Vehicle Rent (₹)",
     "transportDetails": "Transport & Dispatch Details",
     "createInvoice": "Create Invoice",
     "editDraftInvoice": "Edit Draft Invoice",

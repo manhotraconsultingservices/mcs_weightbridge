@@ -202,6 +202,7 @@ async def create_invoice(
         tcs_rate=payload.tcs_rate,
         intra_state=intra,
         tax_type=effective_tax_type,
+        vehicle_rent=payload.vehicle_rent or Decimal("0"),
     )
 
     gross_weight = payload.gross_weight
@@ -251,6 +252,7 @@ async def create_invoice(
         payment_mode=payload.payment_mode,
         notes=payload.notes,
         tcs_rate=payload.tcs_rate,
+        vehicle_rent=payload.vehicle_rent or Decimal("0"),   # transport rent → billed (in grand_total)
         # Transport & dispatch metadata
         royalty_no=payload.royalty_no,
         delivery_note=payload.delivery_note,
@@ -771,7 +773,7 @@ async def update_invoice(
             inv.tax_type = payload.tax_type
 
     for field in ("vehicle_no", "transporter_name", "eway_bill_no",
-                  "discount_type", "discount_value", "freight",
+                  "discount_type", "discount_value", "freight", "vehicle_rent",
                   "tcs_rate", "payment_mode", "notes",
                   "royalty_no", "delivery_note", "supplier_ref",
                   "buyer_order_no", "buyer_order_date",
@@ -799,6 +801,7 @@ async def update_invoice(
             tcs_rate=inv.tcs_rate,
             intra_state=intra,
             tax_type=inv.tax_type,
+            vehicle_rent=inv.vehicle_rent or Decimal("0"),
         )
         for k, v in totals.items():
             if k != "computed_items":

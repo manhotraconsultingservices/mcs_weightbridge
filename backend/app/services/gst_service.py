@@ -67,6 +67,7 @@ def calculate_invoice_totals(
     tcs_rate: Decimal,
     intra_state: bool,
     tax_type: str = "gst",      # "gst" | "non_gst"
+    vehicle_rent: Decimal = Decimal("0"),   # transport/vehicle rent — non-taxed charge, like freight
 ) -> dict:
     """
     Compute full invoice totals.
@@ -132,7 +133,8 @@ def calculate_invoice_totals(
     total_igst = _round2(total_igst)
 
     total_tax = total_cgst + total_sgst + total_igst
-    total_amount = taxable_amount + total_tax + _round2(freight)
+    # freight + vehicle_rent are non-taxed charges added to the total (post-tax).
+    total_amount = taxable_amount + total_tax + _round2(freight) + _round2(vehicle_rent)
 
     # 4. TCS (Tax Collected at Source) — on invoice value
     tcs_amount = _round2(total_amount * tcs_rate / 100) if tcs_rate > 0 else Decimal("0")

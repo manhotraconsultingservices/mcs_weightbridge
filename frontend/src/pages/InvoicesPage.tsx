@@ -143,7 +143,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
   const [form, setForm] = useState({
     party_id: '', tax_type: 'gst', token_id: '',
     vehicle_no: '', transporter_name: '', eway_bill_no: '',
-    discount_type: '', discount_value: '0', freight: '0', tcs_rate: '0',
+    discount_type: '', discount_value: '0', freight: '0', vehicle_rent: '0', tcs_rate: '0',
     payment_mode: '', notes: '', invoice_date: new Date().toISOString().split('T')[0],
     // Transport & dispatch metadata
     royalty_no: '', delivery_note: '', supplier_ref: '', buyer_order_no: '',
@@ -163,7 +163,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
     setForm({
       party_id: '', tax_type: 'gst', token_id: '',
       vehicle_no: '', transporter_name: '', eway_bill_no: '',
-      discount_type: '', discount_value: '0', freight: '0', tcs_rate: '0',
+      discount_type: '', discount_value: '0', freight: '0', vehicle_rent: '0', tcs_rate: '0',
       payment_mode: '', notes: '', invoice_date: today,
       royalty_no: '', delivery_note: '', supplier_ref: '', buyer_order_no: '',
       buyer_order_date: '', dispatch_doc_no: '', dispatch_through: '',
@@ -282,6 +282,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
         discount_type: form.discount_type || undefined,
         discount_value: parseFloat(form.discount_value) || 0,
         freight: parseFloat(form.freight) || 0,
+        vehicle_rent: parseFloat(form.vehicle_rent) || 0,
         tcs_rate: parseFloat(form.tcs_rate) || 0,
         payment_mode: form.payment_mode || undefined,
         notes: form.notes || undefined,
@@ -528,6 +529,11 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
                 onChange={e => setForm(f => ({ ...f, freight: e.target.value }))} />
             </div>
             <div className="space-y-1">
+              <Label>{t('invoice.vehicleRent')}</Label>
+              <Input type="number" min="0" value={form.vehicle_rent}
+                onChange={e => setForm(f => ({ ...f, vehicle_rent: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
               <Label>{t('payment.paymentMode')}</Label>
               <Select value={form.payment_mode || 'credit'}
                 onValueChange={v => setForm(f => ({ ...f, payment_mode: v ?? '' }))}>
@@ -634,7 +640,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
   const [form, setForm] = useState({
     party_id: '', tax_type: 'gst',
     vehicle_no: '', transporter_name: '', eway_bill_no: '',
-    discount_type: '', discount_value: '0', freight: '0', tcs_rate: '0',
+    discount_type: '', discount_value: '0', freight: '0', vehicle_rent: '0', tcs_rate: '0',
     payment_mode: '', notes: '', invoice_date: '',
     // Transport & dispatch metadata
     royalty_no: '', delivery_note: '', supplier_ref: '', buyer_order_no: '',
@@ -664,6 +670,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
       discount_type: invoice.discount_type ?? '',
       discount_value: String(invoice.discount_value ?? 0),
       freight: String(invoice.freight ?? 0),
+      vehicle_rent: String(invoice.vehicle_rent ?? 0),
       tcs_rate: String(invoice.tcs_rate ?? 0),
       payment_mode: invoice.payment_mode ?? '',
       notes: invoice.notes ?? '',
@@ -766,6 +773,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
         discount_type: form.discount_type || null,
         discount_value: parseFloat(form.discount_value) || 0,
         freight: parseFloat(form.freight) || 0,
+        vehicle_rent: parseFloat(form.vehicle_rent) || 0,
         tcs_rate: parseFloat(form.tcs_rate) || 0,
         payment_mode: form.payment_mode || null,
         notes: form.notes || null,
@@ -1000,6 +1008,11 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
               <Label>{t('invoice.freight')}</Label>
               <Input type="number" min="0" value={form.freight}
                 onChange={e => setForm(f => ({ ...f, freight: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>{t('invoice.vehicleRent')}</Label>
+              <Input type="number" min="0" value={form.vehicle_rent}
+                onChange={e => setForm(f => ({ ...f, vehicle_rent: e.target.value }))} />
             </div>
             <div className="space-y-1">
               <Label>{t('payment.paymentMode')}</Label>

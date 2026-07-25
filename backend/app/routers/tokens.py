@@ -327,6 +327,7 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
         tcs_rate=Decimal("0"),
         intra_state=intra,
         tax_type=effective_tax_type,
+        vehicle_rent=token.vehicle_rent or Decimal("0"),   # transport rent → billed to customer
     )
 
     from app.models.invoice import Invoice, InvoiceItem
@@ -367,6 +368,7 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
         payment_status="unpaid",
         amount_paid=Decimal("0"),
         created_by=user_id,
+        vehicle_rent=token.vehicle_rent or Decimal("0"),   # transport rent → billed (in grand_total)
         **{k: v for k, v in totals.items() if k != "computed_items"},
     )
     db.add(invoice)
@@ -1313,6 +1315,7 @@ async def collect_cash(
             discount_type=inv.discount_type, discount_value=inv.discount_value or Decimal("0"),
             freight=inv.freight or Decimal("0"), tcs_rate=inv.tcs_rate or Decimal("0"),
             intra_state=intra, tax_type=inv.tax_type,
+            vehicle_rent=inv.vehicle_rent or Decimal("0"),
         )
         for k, v in totals.items():
             if k != "computed_items" and hasattr(inv, k):
