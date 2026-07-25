@@ -789,6 +789,25 @@ def get_column_migrations() -> list[str]:
         "CREATE INDEX IF NOT EXISTS ix_worker_att_date ON worker_attendance (company_id, att_date)",
         "CREATE INDEX IF NOT EXISTS ix_worker_pay_date ON worker_payments (company_id, pay_date)",
         "CREATE INDEX IF NOT EXISTS ix_worker_pay_worker ON worker_payments (worker_id)",
+        # Operator → accountant end-of-day cash handover (acknowledgment audit trail)
+        """
+        CREATE TABLE IF NOT EXISTS cash_handovers (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id UUID NOT NULL REFERENCES companies(id),
+            operator_id UUID,
+            operator_name VARCHAR(120),
+            handover_date DATE NOT NULL,
+            amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+            notes VARCHAR(300),
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            received_by UUID,
+            received_by_name VARCHAR(120),
+            acknowledged_at TIMESTAMPTZ,
+            created_by UUID,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_cash_handover_date ON cash_handovers (company_id, handover_date)",
         # Append-only audit of every movement
         """
         CREATE TABLE IF NOT EXISTS product_stock_movements (

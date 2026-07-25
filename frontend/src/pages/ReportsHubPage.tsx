@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield, XCircle, PieChart, TrendingUp, ShieldAlert, DoorOpen, Ticket, Wallet } from 'lucide-react';
+import { CreditCard, BookOpen, FileBarChart, BarChart3, ShieldCheck, Shield, XCircle, PieChart, TrendingUp, ShieldAlert, DoorOpen, Ticket, Wallet, HandCoins } from 'lucide-react';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import PaymentsPage from './PaymentsPage';
 import LedgerPage from './LedgerPage';
@@ -24,8 +24,9 @@ import AnomalyReportPage from './AnomalyReportPage';
 import GatePassRegisterPage from './GatePassRegisterPage';
 import TokenRegisterPage from './TokenRegisterPage';
 import EodSummaryReportPage from './EodSummaryReportPage';
+import OperatorCashEodPage from './OperatorCashEodPage';
 
-type Tab = 'payments' | 'eod' | 'statement' | 'gst' | 'gstr2b' | 'gst-split' | 'sales-status' | 'reports' | 'write-offs' | 'compliance' | 'activity' | 'anomaly' | 'gate-passes' | 'token-register';
+type Tab = 'payments' | 'eod' | 'operator-cash' | 'statement' | 'gst' | 'gstr2b' | 'gst-split' | 'sales-status' | 'reports' | 'write-offs' | 'compliance' | 'activity' | 'anomaly' | 'gate-passes' | 'token-register';
 
 export default function ReportsHubPage() {
   const { t } = useTranslation();
@@ -53,6 +54,7 @@ export default function ReportsHubPage() {
   const META: Record<Tab, { label: string; icon: React.ElementType }> = {
     payments: { label: t('payment.title'), icon: CreditCard },
     eod: { label: 'Day Book (EOD)', icon: Wallet },
+    'operator-cash': { label: 'Operator Cash (EOD)', icon: HandCoins },
     statement: { label: t('reports.accountStatement'), icon: BookOpen },
     gst: { label: t('reports.gstReturns'), icon: FileBarChart },
     gstr2b: { label: t('reports.gstr2b'), icon: FileBarChart },
@@ -69,7 +71,7 @@ export default function ReportsHubPage() {
 
   // Sub-categories — the grouped left nav.
   const GROUPS: { label: string; items: Tab[] }[] = [
-    { label: 'Daily & Operations', items: ['eod', 'gate-passes', 'token-register'] },
+    { label: 'Daily & Operations', items: ['eod', 'operator-cash', 'gate-passes', 'token-register'] },
     { label: 'Sales & GST',        items: ['gst', 'gstr2b', 'gst-split', 'sales-status'] },
     { label: 'Financials',         items: ['reports', 'statement', 'payments', 'write-offs'] },
     { label: 'Compliance & Audit', items: ['compliance', 'activity', 'anomaly'] },
@@ -83,6 +85,7 @@ export default function ReportsHubPage() {
     switch (x) {
       case 'payments': return <PaymentsPage />;
       case 'eod': return <EodSummaryReportPage />;
+      case 'operator-cash': return <OperatorCashEodPage />;
       case 'statement': return <LedgerPage />;
       case 'gst': return <GstReportsPage />;
       case 'gstr2b': return <Gstr2bReconcilePage />;

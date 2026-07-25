@@ -18,6 +18,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from app.services import idempotency
 from fastapi.responses import HTMLResponse
@@ -880,6 +881,15 @@ async def get_token(
     token = await _load_token(db, token_id)
     resp = TokenResponse.model_validate(token)
 
+    # Operator who created the token (cash accountability)
+    if token.created_by:
+        from app.models.user import User as _User
+        u = (await db.execute(
+            select(_User.full_name, _User.username).where(_User.id == token.created_by)
+        )).first()
+        if u:
+            resp.operator_name = u.full_name or u.username
+
     inv_row = (await db.execute(
         select(
             Invoice.id,
@@ -1159,9 +1169,48 @@ async def print_token(
     company, _ = await _get_company_and_fy(db)
     volume_unit = (await _get_raw(db, VOLUME_UNIT_KEY)) or "cft"
 
-    # NOTE: rate / amount / royalty / vehicle-rent are intentionally NOT computed
-    # or rendered on the weight slip — pricing is sensitive (accountant-only) and
-    # belongs on the invoice, not on the operational token.
+    # Rate + amount for the cash slip — the bridge operator collects cash against
+    # this slip, so it must show Qty × Rate = Amount. Prefer the linked invoice's
+    # line item (authoritative once the operator edits/finalises); else derive from
+    # the unit-aware party/product rate.
+    from app.models.invoice import Invoice, InvoiceItem
+    rate: float = 0.0
+    amount: float | None = None
+    total_amount: float | None = None
+    inv_row = (await db.execute(
+        select(Invoice.id, Invoice.grand_total)
+        .where(Invoice.token_id == token_id, Invoice.status != "cancelled")
+        .order_by(Invoice.created_at.desc()).limit(1)
+    )).first()
+    if inv_row:
+        total_amount = float(inv_row.grand_total) if inv_row.grand_total else None
+        item_row = (await db.execute(
+            select(InvoiceItem.rate, InvoiceItem.amount)
+            .where(InvoiceItem.invoice_id == inv_row.id).limit(1)
+        )).first()
+        if item_row:
+            rate = float(item_row.rate)
+            amount = float(item_row.amount)
+    if rate == 0.0:
+        from app.models.product import Product as _Prod
+        _prod = (await db.execute(select(_Prod).where(_Prod.id == token.product_id))).scalar_one_or_none() if token.product_id else None
+        _bunit = token.billing_unit or (_prod.unit if _prod else None)
+        rate = float(await _fetch_rate(db, token.party_id, token.product_id, _bunit))
+        if rate > 0 and _prod:
+            from app.services.pricing import token_quantity
+            amount = rate * float(token_quantity(token, _bunit, _prod))
+    if total_amount is None:
+        total_amount = amount
+
+    # Operator who created the token (for the slip + accountability).
+    operator_name = None
+    if token.created_by:
+        from app.models.user import User as _User
+        u = (await db.execute(
+            select(_User.full_name, _User.username).where(_User.id == token.created_by)
+        )).first()
+        if u:
+            operator_name = (u.full_name or u.username)
 
     # Owner-defined custom attributes flagged to print on the slip (e.g. Moisture %)
     slip_custom_fields: list[dict] = []
@@ -1195,5 +1244,113 @@ async def print_token(
         "company": company,
         "volume_unit": volume_unit,
         "slip_custom_fields": slip_custom_fields,
+        "rate": rate,
+        "amount": amount,
+        "total_amount": total_amount,
+        "operator_name": operator_name,
     })
     return HTMLResponse(content=html)
+
+
+class CollectCashIn(BaseModel):
+    quantity: float | None = None
+    rate: float | None = None
+    payment_mode: str = "cash"
+
+
+@router.post("/{token_id}/collect-cash")
+async def collect_cash(
+    token_id: uuid.UUID,
+    payload: CollectCashIn,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Operator cash collection in ONE step: optionally adjust the linked draft
+    invoice's qty/rate, finalise it (assign the legal bill number + all the usual
+    side-effects) and record the cash payment (settles the bill to PAID). Reuses
+    the canonical finalise + receipt endpoints so nothing is re-implemented."""
+    from app.models.invoice import Invoice, InvoiceItem
+    from app.models.party import Party as PartyModel
+    from app.services.gst_service import calculate_invoice_totals, is_intra_state, party_place_of_supply
+    from app.schemas.payment import PaymentReceiptCreate, InvoiceAllocation
+    from app.routers.invoices import finalise_invoice
+    from app.routers.payments import create_receipt
+
+    token = await _load_token(db, token_id)
+    inv = (await db.execute(
+        select(Invoice).where(
+            Invoice.token_id == token_id,
+            Invoice.invoice_type == "sale",
+            Invoice.status == "draft",
+        ).order_by(Invoice.created_at.desc()).limit(1)
+    )).scalar_one_or_none()
+    if not inv:
+        raise HTTPException(404, "No draft invoice for this token — complete the weighment first.")
+
+    items = (await db.execute(
+        select(InvoiceItem).where(InvoiceItem.invoice_id == inv.id).order_by(InvoiceItem.sort_order)
+    )).scalars().all()
+    if not items:
+        raise HTTPException(400, "The invoice has no line items.")
+
+    # Optionally adjust qty/rate on the (single) line item, then recompute totals.
+    if payload.quantity is not None or payload.rate is not None:
+        it = items[0]
+        new_qty = Decimal(str(payload.quantity)) if payload.quantity is not None else (it.quantity or Decimal("0"))
+        new_rate = Decimal(str(payload.rate)) if payload.rate is not None else (it.rate or Decimal("0"))
+        if new_qty <= 0 or new_rate < 0:
+            raise HTTPException(400, "Quantity must be greater than zero and rate cannot be negative.")
+        party = (await db.execute(select(PartyModel).where(PartyModel.id == inv.party_id))).scalar_one_or_none()
+        company, _ = await _get_company_and_fy(db)
+        intra = is_intra_state(company.state_code, party_place_of_supply(party) if party else company.state_code)
+        totals = calculate_invoice_totals(
+            items=[{
+                "product_id": str(it.product_id), "description": it.description, "hsn_code": it.hsn_code,
+                "quantity": new_qty, "unit": it.unit, "rate": new_rate,
+                "gst_rate": it.gst_rate or Decimal("0"), "sort_order": 0,
+            }],
+            discount_type=inv.discount_type, discount_value=inv.discount_value or Decimal("0"),
+            freight=inv.freight or Decimal("0"), tcs_rate=inv.tcs_rate or Decimal("0"),
+            intra_state=intra, tax_type=inv.tax_type,
+        )
+        for k, v in totals.items():
+            if k != "computed_items" and hasattr(inv, k):
+                setattr(inv, k, v)
+        cd = totals["computed_items"][0]
+        it.quantity = Decimal(str(cd["quantity"])); it.rate = Decimal(str(cd["rate"]))
+        it.amount = cd["amount"]; it.gst_rate = Decimal(str(cd.get("gst_rate", 0)))
+        it.cgst_amount = cd["cgst_amount"]; it.sgst_amount = cd["sgst_amount"]
+        it.igst_amount = cd["igst_amount"]; it.total_amount = cd["total_amount"]
+        await db.commit()
+
+    inv_id = inv.id
+    party_id = inv.party_id
+
+    # Finalise (assigns the bill number + all side-effects; commits internally).
+    await finalise_invoice(inv_id, background_tasks, db, current_user)
+    inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+    grand = inv.grand_total or Decimal("0")
+
+    # Record the cash payment → settles the bill to PAID.
+    receipt_no = None
+    if grand > 0 and inv.payment_status != "paid":
+        rec = await create_receipt(
+            PaymentReceiptCreate(
+                receipt_date=inv.invoice_date or date.today(),
+                party_id=party_id, amount=grand,
+                payment_mode=(payload.payment_mode or "cash"),
+                allocations=[InvoiceAllocation(invoice_id=inv_id, amount=grand)],
+            ),
+            background_tasks, db, current_user,
+        )
+        receipt_no = getattr(rec, "receipt_no", None)
+        inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+
+    return {
+        "invoice_id": str(inv_id),
+        "invoice_no": inv.invoice_no,
+        "grand_total": float(grand),
+        "receipt_no": receipt_no,
+        "payment_status": inv.payment_status,
+    }
