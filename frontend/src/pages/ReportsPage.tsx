@@ -51,8 +51,8 @@ interface SalesRegister { items: SalesRow[]; totals: SalesTotals; count: number;
 interface WeightRow { id: string; token_no: number; token_date: string; token_type: string; vehicle_no: string | null; party_name: string | null; product_name: string | null; gross_weight: number | null; tare_weight: number | null; net_weight: number | null; is_manual_weight: boolean; }
 interface WeightRegister { items: WeightRow[]; total_net_weight: number; count: number; }
 
-interface PLMonth { month: string; label: string; revenue: number; cogs: number; gross_profit: number; labour: number; store_inventory: number; fuel: number; commission: number; write_off: number; operating_expenses: number; total_expenses: number; net_profit: number; margin_pct: number; sale_count: number; purchase_count: number; }
-interface PLData { period: string; summary: { total_revenue: number; total_cogs: number; gross_profit: number; labour: number; store_inventory: number; fuel: number; commission: number; total_write_off: number; operating_expenses: number; total_expenses: number; net_profit: number; margin_pct: number; }; monthly: PLMonth[]; }
+interface PLMonth { month: string; label: string; revenue: number; cogs: number; gross_profit: number; labour: number; store_inventory: number; fuel: number; commission: number; overhead?: number; write_off: number; operating_expenses: number; total_expenses: number; net_profit: number; margin_pct: number; sale_count: number; purchase_count: number; }
+interface PLData { period: string; summary: { total_revenue: number; total_cogs: number; gross_profit: number; labour: number; store_inventory: number; fuel: number; commission: number; overhead?: number; total_write_off: number; operating_expenses: number; total_expenses: number; net_profit: number; margin_pct: number; }; monthly: PLMonth[]; }
 
 interface StockItem { product_name: string; hsn_code: string; unit: string; rate: number; qty_purchased: number; value_purchased: number; qty_sold: number; value_sold: number; closing_qty: number; closing_value: number; }
 interface StockData { period: string; items: StockItem[]; totals: { qty_purchased_by_unit: Record<string, number>; qty_sold_by_unit: Record<string, number>; value_purchased: number; value_sold: number; closing_value: number; }; }
@@ -122,6 +122,8 @@ const PL_COLS: ColumnDef<PLMonth>[] = [
     format: v => <span className="text-red-600">{fmt(v as number)}</span>, exportValue: r => r.fuel, defaultVisible: false },
   { key: 'commission',     label: 'Commission',  accessor: r => r.commission, type: 'number', align: 'right',
     format: v => <span className="text-red-600">{fmt(v as number)}</span>, exportValue: r => r.commission, defaultVisible: false },
+  { key: 'overhead',       label: 'Overhead',    accessor: r => r.overhead ?? 0, type: 'number', align: 'right',
+    format: v => <span className="text-red-600">{fmt(v as number)}</span>, exportValue: r => r.overhead ?? 0, defaultVisible: false },
   { key: 'total_expenses', label: 'Expenses',    accessor: r => r.total_expenses, type: 'number', align: 'right',
     format: v => <span className="text-red-600 font-medium">{fmt(v as number)}</span>, exportValue: r => r.total_expenses },
   { key: 'net_profit',     label: 'Net Profit',  accessor: r => r.net_profit, type: 'number', align: 'right',
@@ -357,6 +359,7 @@ export default function ReportsPage() {
                         <Row label="Store inventory (purchased)" value={s.store_inventory} kind="out" />
                         <Row label="Fuel / diesel" value={s.fuel} kind="out" />
                         <Row label="Agent commission" value={s.commission} kind="out" />
+                        <Row label="Overhead expenses" value={s.overhead ?? 0} kind="out" />
                         <Row label="Bad-debt write-offs" value={s.total_write_off} kind="out" />
                         <Row label="Total operating expenses" value={s.total_expenses} kind="sub" />
                         <Row label="Net Profit" value={s.net_profit} kind="net" />

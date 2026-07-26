@@ -28,11 +28,13 @@ interface EodDay {
   electronic_sales: number;
   total_sales: number;
   purchases: number;
+  supplier_payments: number;
   store_inventory: number;
   diesel: number;
   salary: number;
   advance: number;
   commission: number;
+  overhead: number;
   total_expenses: number;
   net: number;
 }
@@ -40,9 +42,11 @@ interface EodSummary extends Omit<EodDay, 'date'> {}
 interface EodResponse {
   from_date: string;
   to_date: string;
+  basis?: 'accrual' | 'cash';
   days: EodDay[];
   summary: EodSummary;
 }
+type Basis = 'accrual' | 'cash';
 interface EodDetailItem {
   category: string;
   ref: string;
@@ -56,7 +60,7 @@ interface EodDetailResponse {
   items: EodDetailItem[];
   summary: EodSummary;
 }
-const CATEGORY_ORDER = ['Cash Sale', 'Credit Sale', 'Purchase', 'Store', 'Diesel', 'Salary', 'Advance', 'Commission'];
+const CATEGORY_ORDER = ['Cash Sale', 'Credit Sale', 'Purchase', 'Supplier Payment', 'Store', 'Diesel', 'Salary', 'Advance', 'Commission', 'Expense'];
 
 const INR = (v: number | string | null | undefined) =>
   '₹' + Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -83,6 +87,7 @@ function monthStartISO(): string {
 export default function EodSummaryReportPage() {
   const [fromDate, setFromDate] = useState(todayISO());
   const [toDate, setToDate] = useState(todayISO());
+  const [basis, setBasis] = useState<Basis>('accrual');
   const [data, setData] = useState<EodResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -118,11 +123,12 @@ export default function EodSummaryReportPage() {
   // Per-day CSV (used by the mobile card view, which has no DataTable export).
   function downloadDaysCsv() {
     if (!data) return;
-    const header = ['Date', 'Cash Sales', 'Credit (Bank/UPI)', 'Total Sales', 'Purchases', 'Store', 'Diesel', 'Salary', 'Advance', 'Commission', 'Total Expenses', 'Net'];
+    const outLabel = basis === 'cash' ? 'Supplier Paid' : 'Purchases';
+    const header = ['Date', 'Cash Sales', 'Credit (Bank/UPI)', 'Total Sales', outLabel, 'Store', 'Diesel', 'Salary', 'Advance', ...(basis === 'accrual' ? ['Commission'] : []), 'Expenses', 'Total Expenses', 'Net'];
     const rows = data.days.map(d => [
       d.date, String(d.cash_sales), String(d.electronic_sales), String(d.total_sales),
-      String(d.purchases), String(d.store_inventory), String(d.diesel), String(d.salary),
-      String(d.advance), String(d.commission), String(d.total_expenses), String(d.net),
+      String(basis === 'cash' ? d.supplier_payments : d.purchases), String(d.store_inventory), String(d.diesel), String(d.salary),
+      String(d.advance), ...(basis === 'accrual' ? [String(d.commission)] : []), String(d.overhead), String(d.total_expenses), String(d.net),
     ]);
     downloadCsv(`day-book-${fromDate}-to-${toDate}.csv`, [header, ...rows]);
   }
@@ -131,7 +137,7 @@ export default function EodSummaryReportPage() {
     setLoading(true); setError(null);
     try {
       const { data } = await api.get<EodResponse>(
-        `/api/v1/reports/eod-summary?from_date=${fromDate}&to_date=${toDate}`);
+        `/api/v1/reports/eod-summary?from_date=${fromDate}&to_date=${toDate}&basis=${basis}`);
       setData(data);
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -139,7 +145,7 @@ export default function EodSummaryReportPage() {
     } finally {
       setLoading(false);
     }
-  }, [fromDate, toDate]);
+  }, [fromDate, toDate, basis]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -180,8 +186,12 @@ export default function EodSummaryReportPage() {
       format: v => <span className="text-sky-700">{INR(v as number)}</span>, exportValue: r => r.electronic_sales },
     { key: 'total_sales', label: 'Total Sales', type: 'number', align: 'right', accessor: r => r.total_sales,
       format: v => <span className="font-semibold">{INR(v as number)}</span>, exportValue: r => r.total_sales },
-    { key: 'purchases', label: 'Purchases', type: 'number', align: 'right', accessor: r => r.purchases,
-      format: v => INR(v as number), exportValue: r => r.purchases },
+    // Money-out: accrual books the purchase INVOICE; cash books the supplier PAYMENT (voucher).
+    ...(basis === 'cash'
+      ? [{ key: 'supplier_payments', label: 'Supplier Paid', type: 'number', align: 'right', accessor: (r: EodDay) => r.supplier_payments,
+          format: (v: unknown) => INR(v as number), exportValue: (r: EodDay) => r.supplier_payments } as ColumnDef<EodDay>]
+      : [{ key: 'purchases', label: 'Purchases', type: 'number', align: 'right', accessor: (r: EodDay) => r.purchases,
+          format: (v: unknown) => INR(v as number), exportValue: (r: EodDay) => r.purchases } as ColumnDef<EodDay>]),
     { key: 'store_inventory', label: 'Store', type: 'number', align: 'right', accessor: r => r.store_inventory,
       format: v => INR(v as number), exportValue: r => r.store_inventory },
     { key: 'diesel', label: 'Diesel', type: 'number', align: 'right', accessor: r => r.diesel,
@@ -190,8 +200,13 @@ export default function EodSummaryReportPage() {
       format: v => INR(v as number), exportValue: r => r.salary },
     { key: 'advance', label: 'Advance', type: 'number', align: 'right', accessor: r => r.advance,
       format: v => INR(v as number), exportValue: r => r.advance },
-    { key: 'commission', label: 'Commission', type: 'number', align: 'right', accessor: r => r.commission,
-      format: v => INR(v as number), exportValue: r => r.commission },
+    // Accrued commission is an accrual-basis cost only (cash view excludes it).
+    ...(basis === 'accrual'
+      ? [{ key: 'commission', label: 'Commission', type: 'number', align: 'right', accessor: (r: EodDay) => r.commission,
+          format: (v: unknown) => INR(v as number), exportValue: (r: EodDay) => r.commission } as ColumnDef<EodDay>]
+      : []),
+    { key: 'overhead', label: 'Expenses', type: 'number', align: 'right', accessor: r => r.overhead,
+      format: v => INR(v as number), exportValue: r => r.overhead },
     { key: 'total_expenses', label: 'Total Expenses', type: 'number', align: 'right', accessor: r => r.total_expenses,
       format: v => <span className="font-semibold text-rose-700">{INR(v as number)}</span>, exportValue: r => r.total_expenses },
     { key: 'net', label: 'Net', type: 'number', align: 'right', accessor: r => r.net,
@@ -219,6 +234,15 @@ export default function EodSummaryReportPage() {
           <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => preset(shiftISO(-6), todayISO())}>Last 7</Button>
           <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => preset(monthStartISO(), todayISO())}>This Month</Button>
         </div>
+        {/* Basis toggle: Accrual (bills) vs Cash (actual money paid) */}
+        <div className="flex items-center rounded-md border overflow-hidden">
+          {(['accrual', 'cash'] as Basis[]).map(b => (
+            <button key={b} type="button" onClick={() => setBasis(b)}
+              className={`h-8 px-3 text-xs font-medium capitalize ${basis === b ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
+              title={b === 'cash' ? 'Cash basis — actual money paid (supplier payments), commission excluded' : 'Accrual basis — purchases booked on the bill date + accrued commission'}
+            >{b === 'cash' ? 'Cash' : 'Accrual'}</button>
+          ))}
+        </div>
         <Button onClick={load} disabled={loading} variant="outline" size="sm">
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Refresh'}
         </Button>
@@ -231,9 +255,10 @@ export default function EodSummaryReportPage() {
       </div>
 
       <p className="text-xs text-muted-foreground -mt-1">
-        Day book: sales split by how money came in (<b>Cash</b> vs <b>Credit</b> = bank / card / UPI), and every rupee out
-        (purchases · store · diesel · salary · advances · commission). Advances are counted as cash-out here.
-        Sent automatically to subscribed recipients every evening (email + Telegram).
+        Day book: sales split by how money came in (<b>Cash</b> vs <b>Credit</b> = bank / card / UPI), and every rupee out.
+        <b> Accrual</b> books purchases on the bill date + accrued commission; <b>Cash</b> books actual supplier payments
+        (vouchers) and drops accrued commission — use it for a true cash position. Store · diesel · salary · advances · overhead
+        expenses appear in both. Sent automatically to subscribed recipients every evening (email + Telegram).
         <b> Click any date</b> for the full transaction breakup + Excel download.
       </p>
 
@@ -325,7 +350,7 @@ export default function EodSummaryReportPage() {
           <CardContent className="p-0">
             <div className="text-sm font-semibold text-slate-700 px-3 pt-3 pb-1">Daily breakdown</div>
             <DataTable<EodDay>
-              id="eod.daily"
+              id={`eod.daily.${basis}`}
               data={data.days}
               columns={columns}
               rowKey={r => r.date}

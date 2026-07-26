@@ -69,14 +69,19 @@ async def party_advance_remaining(db: AsyncSession, party_id) -> dict:
     )).scalar() or 0
     receipt_adv = Decimal(str(rec_total)) - Decimal(str(rec_alloc))
 
+    # Exclude direct-expense vouchers (expense_category set) — an overhead payment
+    # is a P&L expense, NOT a supplier prepayment, so it must never net into the
+    # party's balance as an advance.
     vou_total = (await db.execute(
         select(func.coalesce(func.sum(PaymentVoucher.amount), 0))
-        .where(PaymentVoucher.party_id == party_id)
+        .where(PaymentVoucher.party_id == party_id,
+               PaymentVoucher.expense_category.is_(None))
     )).scalar() or 0
     vou_alloc = (await db.execute(
         select(func.coalesce(func.sum(InvoicePayment.amount), 0))
         .join(PaymentVoucher, InvoicePayment.voucher_id == PaymentVoucher.id)
-        .where(PaymentVoucher.party_id == party_id)
+        .where(PaymentVoucher.party_id == party_id,
+               PaymentVoucher.expense_category.is_(None))
     )).scalar() or 0
     voucher_adv = Decimal(str(vou_total)) - Decimal(str(vou_alloc))
 

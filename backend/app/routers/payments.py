@@ -284,16 +284,29 @@ async def create_voucher(
     current_user: User = Depends(get_current_user),
 ):
     co, fy = await _get_company_fy(db)
-    party = (await db.execute(select(Party).where(Party.id == payload.party_id))).scalar_one_or_none()
-    if not party:
-        raise HTTPException(404, "Party not found")
+    is_expense = bool((payload.expense_category or "").strip())
+    party = None
+    if is_expense:
+        # Direct expense (overhead): party optional, allocations not allowed.
+        if payload.allocations:
+            raise HTTPException(400, "An expense voucher cannot be allocated to invoices")
+        if payload.party_id:
+            party = (await db.execute(select(Party).where(Party.id == payload.party_id))).scalar_one_or_none()
+    else:
+        # Supplier payment: party required.
+        if not payload.party_id:
+            raise HTTPException(400, "A supplier payment needs a party (or set an expense category)")
+        party = (await db.execute(select(Party).where(Party.id == payload.party_id))).scalar_one_or_none()
+        if not party:
+            raise HTTPException(404, "Party not found")
 
     voucher_no = await _next_seq(db, co.id, fy.id, "voucher", "PMT", fy.label)
     vch = PaymentVoucher(
         company_id=co.id, fy_id=fy.id,
         voucher_no=voucher_no,
         voucher_date=payload.voucher_date,
-        party_id=payload.party_id,
+        party_id=payload.party_id if not is_expense else payload.party_id,  # nullable for expenses
+        expense_category=(payload.expense_category or "").strip() or None,
         amount=payload.amount,
         payment_mode=payload.payment_mode,
         reference_no=payload.reference_no,
@@ -310,7 +323,8 @@ async def create_voucher(
             select(Invoice).where(Invoice.id.in_(inv_ids)).with_for_update()
         )).scalars().all():
             invoices_by_id[str(inv.id)] = inv
-    _validate_allocations(co.id, payload.party_id, payload.amount, payload.allocations, invoices_by_id)
+    if not is_expense:
+        _validate_allocations(co.id, payload.party_id, payload.amount, payload.allocations, invoices_by_id)
 
     db.add(vch)
     await db.flush()
@@ -322,7 +336,8 @@ async def create_voucher(
         db.add(InvoicePayment(invoice_id=inv.id, voucher_id=vch.id, amount=alloc.amount))
         _settle_invoice(inv, alloc.amount)
 
-    await recompute_party_balance(db, payload.party_id)
+    if payload.party_id:  # expense vouchers may have no party
+        await recompute_party_balance(db, payload.party_id)
     await db.commit()
     await db.refresh(vch)
     # Fire "payment made" (money out — supplier payment / advance) notification
@@ -336,7 +351,7 @@ async def create_voucher(
         _send_notification_bg,
         co.id, "payment_made",
         {
-            "party_name": party.name,
+            "party_name": (party.name if party else (vch.expense_category or "Expense")),
             "amount": f"{float(vch.amount):.2f}",
             "voucher_no": vch.voucher_no,
             "payment_mode": vch.payment_mode or "",
@@ -347,7 +362,8 @@ async def create_voucher(
     )
     return PaymentVoucherResponse(
         id=vch.id, voucher_no=vch.voucher_no, voucher_date=vch.voucher_date,
-        party_id=vch.party_id, party_name=party.name,
+        party_id=vch.party_id, party_name=(party.name if party else None),
+        expense_category=vch.expense_category,
         amount=vch.amount, payment_mode=vch.payment_mode,
         reference_no=vch.reference_no, bank_name=vch.bank_name,
         notes=vch.notes, tally_synced=vch.tally_synced, created_at=vch.created_at,
@@ -358,6 +374,7 @@ async def create_voucher(
 async def list_vouchers(
     party_id: uuid.UUID | None = None,
     search: str | None = None,
+    kind: str | None = None,   # 'expense' | 'supplier' | None(all)
     date_from: date | None = None,
     date_to: date | None = None,
     page: int = Query(1, ge=1),
@@ -369,10 +386,16 @@ async def list_vouchers(
     filters = [PaymentVoucher.company_id == co.id]
     if party_id:
         filters.append(PaymentVoucher.party_id == party_id)
+    # kind: 'expense' → only direct expenses · 'supplier' → only supplier payments
+    if kind == "expense":
+        filters.append(PaymentVoucher.expense_category.isnot(None))
+    elif kind == "supplier":
+        filters.append(PaymentVoucher.expense_category.is_(None))
     if search:
         like = f"%{search}%"
         filters.append(or_(
             PaymentVoucher.voucher_no.ilike(like),
+            PaymentVoucher.expense_category.ilike(like),
             Party.name.ilike(like),
         ))
     if date_from:
@@ -380,16 +403,17 @@ async def list_vouchers(
     if date_to:
         filters.append(PaymentVoucher.voucher_date <= date_to)
 
+    # OUTER join: expense vouchers have no party — an inner join would hide them.
     total = (await db.execute(
         select(func.count())
         .select_from(PaymentVoucher)
-        .join(Party, PaymentVoucher.party_id == Party.id)
+        .outerjoin(Party, PaymentVoucher.party_id == Party.id)
         .where(and_(*filters))
     )).scalar()
 
     rows = (await db.execute(
         select(PaymentVoucher, Party.name.label("party_name"))
-        .join(Party, PaymentVoucher.party_id == Party.id)
+        .outerjoin(Party, PaymentVoucher.party_id == Party.id)
         .where(and_(*filters))
         .order_by(PaymentVoucher.voucher_date.desc(), PaymentVoucher.created_at.desc())
         .offset((page - 1) * page_size).limit(page_size)
@@ -399,7 +423,8 @@ async def list_vouchers(
         PaymentVoucherResponse(
             id=r.PaymentVoucher.id, voucher_no=r.PaymentVoucher.voucher_no,
             voucher_date=r.PaymentVoucher.voucher_date, party_id=r.PaymentVoucher.party_id,
-            party_name=r.party_name, amount=r.PaymentVoucher.amount,
+            party_name=r.party_name, expense_category=r.PaymentVoucher.expense_category,
+            amount=r.PaymentVoucher.amount,
             payment_mode=r.PaymentVoucher.payment_mode, reference_no=r.PaymentVoucher.reference_no,
             bank_name=r.PaymentVoucher.bank_name, notes=r.PaymentVoucher.notes,
             tally_synced=r.PaymentVoucher.tally_synced, created_at=r.PaymentVoucher.created_at,

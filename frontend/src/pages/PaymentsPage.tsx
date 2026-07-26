@@ -22,8 +22,9 @@ interface PaymentRecord {
   voucher_no?: string;
   receipt_date?: string;
   voucher_date?: string;
-  party_id: string;
-  party_name: string;
+  party_id: string | null;
+  party_name: string | null;
+  expense_category?: string | null;
   amount: number;
   payment_mode: string;
   reference_no: string | null;
@@ -61,18 +62,28 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
   const [allocations, setAllocations] = useState<AllocationRow[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // Direct-expense (overhead) mode — vouchers only. No party/allocation required.
+  const [isExpense, setIsExpense] = useState(false);
+  const [expenseCategory, setExpenseCategory] = useState('');
+  const [expenseCats, setExpenseCats] = useState<string[]>([]);
 
   useEffect(() => {
     if (open) {
       setPartyId(''); setDate(new Date().toISOString().slice(0, 10));
       setAmount(''); setMode('cash'); setRefNo(''); setBankName('');
       setNotes(''); setAllocations([]); setError('');
+      setIsExpense(false); setExpenseCategory('');
       api.get<Party[] | { items: Party[] }>('/api/v1/parties').then(r => {
         const d = r.data;
         setParties(Array.isArray(d) ? d : (d.items ?? []));
       }).catch(() => {});
+      if (type === 'voucher') {
+        api.get<string[]>('/api/v1/app-settings/expense-categories')
+          .then(r => setExpenseCats(Array.isArray(r.data) ? r.data : []))
+          .catch(() => setExpenseCats([]));
+      }
     }
-  }, [open]);
+  }, [open, type]);
 
   useEffect(() => {
     if (!partyId) { setOutstandingInvoices([]); setAllocations([]); return; }
@@ -94,18 +105,24 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
   const totalAllocated = allocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
 
   async function handleSave() {
-    if (!partyId) { setError('Select a party'); return; }
+    const expense = type === 'voucher' && isExpense;
+    if (expense) {
+      if (!expenseCategory) { setError('Choose an expense category'); return; }
+    } else if (!partyId) {
+      setError('Select a party'); return;
+    }
     if (!amount || parseFloat(amount) <= 0) { setError('Enter a valid amount'); return; }
     setSaving(true); setError('');
     try {
-      const allocs = allocations
+      const allocs = expense ? [] : allocations
         .filter(a => parseFloat(a.amount) > 0)
         .map(a => ({ invoice_id: a.invoice_id, amount: parseFloat(a.amount) }));
       const url = type === 'receipt' ? '/api/v1/payments/receipts' : '/api/v1/payments/vouchers';
       const dateKey = type === 'receipt' ? 'receipt_date' : 'voucher_date';
       await api.post(url, {
         [dateKey]: date,
-        party_id: partyId,
+        party_id: partyId || null,
+        expense_category: expense ? expenseCategory : null,
         amount: parseFloat(amount),
         payment_mode: mode,
         reference_no: refNo || null,
@@ -135,8 +152,33 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
         <div className="space-y-4">
           {error && <p className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
 
+          {/* Voucher-only: record a direct overhead expense (electricity, rent…) */}
+          {type === 'voucher' && (
+            <label className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2 text-sm cursor-pointer">
+              <input type="checkbox" className="h-4 w-4" checked={isExpense}
+                onChange={e => setIsExpense(e.target.checked)} />
+              <span className="font-medium">Direct expense (overhead)</span>
+              <span className="text-xs text-muted-foreground">— electricity, rent, repairs… (no supplier invoice)</span>
+            </label>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
+              {isExpense ? (
+                <>
+                  <Label>Expense category *</Label>
+                  <Select value={expenseCategory || undefined} onValueChange={v => setExpenseCategory(v ?? '')}>
+                    <SelectTrigger>
+                      <span className="truncate text-left flex-1">
+                        {expenseCategory || <span className="text-muted-foreground">Choose a category</span>}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {expenseCats.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </>
+              ) : (<>
               <Label>{type === 'receipt' ? t('payment.customer') : t('payment.supplier')} *</Label>
               <Select value={partyId || undefined} onValueChange={v => setPartyId(v ?? '')}>
                 <SelectTrigger>
@@ -154,6 +196,7 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
                     .map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+              </>)}
             </div>
             <div className="space-y-1">
               <Label>{t('common.date')} *</Label>
@@ -195,8 +238,8 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
             <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('payment.optionalRemarks')} />
           </div>
 
-          {/* Invoice allocation */}
-          {outstandingInvoices.length > 0 && (
+          {/* Invoice allocation (not applicable to a direct expense) */}
+          {!isExpense && outstandingInvoices.length > 0 && (
             <div className="border-t pt-3 space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">{t('payment.settleInvoices')}</p>
@@ -345,7 +388,8 @@ function PaymentsTable({
       format: v => v ? new Date(String(v)).toLocaleDateString('en-IN') : '—',
       className: 'text-muted-foreground',
     },
-    { key: 'party_name', label: t('payment.party'), accessor: r => r.party_name },
+    { key: 'party_name', label: t('payment.party'),
+      accessor: r => r.party_name || (r.expense_category ? `${r.expense_category} (expense)` : '—') },
     {
       key: 'payment_mode', label: t('payment.modeCol'), type: 'enum',
       enumOptions: PAYMENT_MODES,

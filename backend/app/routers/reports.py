@@ -92,11 +92,14 @@ async def party_balances(
     rec_alloc = await _sum_map(select(PaymentReceipt.party_id, func.coalesce(func.sum(InvoicePayment.amount), 0))
                                .join(PaymentReceipt, InvoicePayment.receipt_id == PaymentReceipt.id)
                                .where(PaymentReceipt.company_id == cid).group_by(PaymentReceipt.party_id))
+    # Exclude direct-expense vouchers (overheads) — they are not supplier prepayments.
     vou_total = await _sum_map(select(PaymentVoucher.party_id, func.coalesce(func.sum(PaymentVoucher.amount), 0))
-                               .where(PaymentVoucher.company_id == cid).group_by(PaymentVoucher.party_id))
+                               .where(PaymentVoucher.company_id == cid,
+                                      PaymentVoucher.expense_category.is_(None)).group_by(PaymentVoucher.party_id))
     vou_alloc = await _sum_map(select(PaymentVoucher.party_id, func.coalesce(func.sum(InvoicePayment.amount), 0))
                                .join(PaymentVoucher, InvoicePayment.voucher_id == PaymentVoucher.id)
-                               .where(PaymentVoucher.company_id == cid).group_by(PaymentVoucher.party_id))
+                               .where(PaymentVoucher.company_id == cid,
+                                      PaymentVoucher.expense_category.is_(None)).group_by(PaymentVoucher.party_id))
 
     Z = Decimal("0")
     rows = []
@@ -951,6 +954,14 @@ async def profit_loss(
         "AND invoice_type='sale' AND status='final' AND COALESCE(commission_amount,0) > 0 "
         "AND invoice_date >= :fd AND invoice_date <= :td GROUP BY 1, 2")
 
+    # OVERHEAD EXPENSES: direct-expense vouchers (electricity, rent, repairs…) —
+    # a voucher tagged with an expense_category. Recognised on the voucher date.
+    overhead_by_month = await _expense_by_month(
+        "SELECT EXTRACT(year FROM voucher_date) AS yr, EXTRACT(month FROM voucher_date) AS mo, "
+        "SUM(amount) AS total FROM payment_vouchers WHERE company_id = :cid "
+        "AND expense_category IS NOT NULL "
+        "AND voucher_date >= :fd AND voucher_date <= :td GROUP BY 1, 2")
+
     rev_by_month: dict[str, dict] = {}
     for r in rev_result.all():
         key, label = _month_label(r.yr, r.mo)
@@ -986,10 +997,10 @@ async def profit_loss(
     all_months = sorted(set(
         list(rev_by_month) + list(cogs_by_month) + list(wo_by_month)
         + list(note_net_by_month) + list(labour_by_month) + list(store_by_month)
-        + list(fuel_by_month) + list(commission_by_month)))
+        + list(fuel_by_month) + list(commission_by_month) + list(overhead_by_month)))
     monthly = []
     total_revenue = total_cogs = total_write_off = 0.0
-    total_labour = total_store = total_fuel = total_commission = 0.0
+    total_labour = total_store = total_fuel = total_commission = total_overhead = 0.0
     for key in all_months:
         rev = rev_by_month.get(key, {})
         cogs = cogs_by_month.get(key, {})
@@ -1004,8 +1015,9 @@ async def profit_loss(
         store = store_by_month.get(key, 0.0)
         fuel = fuel_by_month.get(key, 0.0)
         commission = commission_by_month.get(key, 0.0)
+        overhead = overhead_by_month.get(key, 0.0)
         gross_profit = _r2(revenue - cost)
-        operating_expenses = _r2(labour + store + fuel + commission)
+        operating_expenses = _r2(labour + store + fuel + commission + overhead)
         total_expenses = _r2(operating_expenses + write_off)
         net_profit = _r2(gross_profit - total_expenses)
         margin = _r2((net_profit / revenue * 100) if revenue > 0 else 0)
@@ -1016,6 +1028,7 @@ async def profit_loss(
         total_store += store
         total_fuel += fuel
         total_commission += commission
+        total_overhead += overhead
         monthly.append({
             "month": key, "label": label,
             "revenue": revenue, "cogs": cost,
@@ -1026,6 +1039,7 @@ async def profit_loss(
             "store_inventory": store,
             "fuel": fuel,
             "commission": commission,
+            "overhead": overhead,
             "write_off": write_off,
             "operating_expenses": operating_expenses,
             "total_expenses": total_expenses,
@@ -1037,7 +1051,7 @@ async def profit_loss(
         })
 
     total_gross = _r2(total_revenue - total_cogs)
-    total_opex = _r2(total_labour + total_store + total_fuel + total_commission)
+    total_opex = _r2(total_labour + total_store + total_fuel + total_commission + total_overhead)
     total_expenses_all = _r2(total_opex + total_write_off)
     total_net = _r2(total_gross - total_expenses_all)
     return {
@@ -1050,6 +1064,7 @@ async def profit_loss(
             "store_inventory": _r2(total_store),
             "fuel": _r2(total_fuel),
             "commission": _r2(total_commission),
+            "overhead": _r2(total_overhead),
             "total_write_off": _r2(total_write_off),
             "operating_expenses": total_opex,
             "total_expenses": total_expenses_all,
@@ -1070,9 +1085,21 @@ async def profit_loss(
 # Optional feature-module tables (worker_payments / inventory / fuel) each run in
 # their own SAVEPOINT and degrade to zero on a tenant that doesn't have them.
 
-async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_date: date) -> dict:
+async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_date: date,
+                              basis: str = "accrual") -> dict:
     """Per-day cash-in (cash vs electronic) + money-out breakdown, plus totals.
-    Shared by the HTTP endpoint and the scheduled EOD notification."""
+    Shared by the HTTP endpoint and the scheduled EOD notification.
+
+    ``basis`` selects how money-OUT is measured:
+      • 'accrual' (default, unchanged): purchases booked on the purchase-invoice
+        date + accrued agent commission. This is what the Day Book has always shown.
+      • 'cash': money actually paid — supplier payments (vouchers) on the payment
+        date instead of purchase invoices, and accrued commission excluded (it's
+        paid later). Store/diesel/salary/advance are already cash-when-recorded and
+        are unchanged; overhead expense-vouchers appear in BOTH bases.
+    Cash-IN (receipts) is identical in both bases — it is already a cash event.
+    """
+    basis = "cash" if str(basis).lower() == "cash" else "accrual"
     params = {"cid": str(company_id), "fd": from_date, "td": to_date}
 
     async def _daily(sql: str) -> dict[str, float]:
@@ -1130,36 +1157,56 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
         "FROM invoices WHERE company_id=:cid AND invoice_type='sale' AND status='final' "
         "AND COALESCE(commission_amount,0)>0 "
         "AND invoice_date>=:fd AND invoice_date<=:td GROUP BY 1")
+    # Overhead expenses (direct-expense vouchers) — real cash out, both bases.
+    overhead = await _daily(
+        "SELECT CAST(voucher_date AS date) AS d, SUM(amount) AS total FROM payment_vouchers "
+        "WHERE company_id=:cid AND expense_category IS NOT NULL "
+        "AND voucher_date>=:fd AND voucher_date<=:td GROUP BY 1")
+    # Supplier payments (non-expense vouchers) — actual cash paid to suppliers; the
+    # CASH-basis replacement for the accrual 'purchases' (invoice) line.
+    supplier_pay = await _daily(
+        "SELECT CAST(voucher_date AS date) AS d, SUM(amount) AS total FROM payment_vouchers "
+        "WHERE company_id=:cid AND expense_category IS NULL "
+        "AND voucher_date>=:fd AND voucher_date<=:td GROUP BY 1")
 
     all_days = sorted(set(
         list(cash) + list(electronic) + list(purchases) + list(store)
-        + list(diesel) + list(salary) + list(advance) + list(commission)))
+        + list(diesel) + list(salary) + list(advance) + list(commission)
+        + list(overhead) + list(supplier_pay)))
     days = []
-    tot = {k: 0.0 for k in ("cash_sales", "electronic_sales", "purchases",
-                            "store_inventory", "diesel", "salary", "advance", "commission")}
+    tot = {k: 0.0 for k in ("cash_sales", "electronic_sales", "purchases", "supplier_payments",
+                            "store_inventory", "diesel", "salary", "advance", "commission", "overhead")}
     for d in all_days:
         cs, es = cash.get(d, 0.0), electronic.get(d, 0.0)
         pu, st, di = purchases.get(d, 0.0), store.get(d, 0.0), diesel.get(d, 0.0)
         sa, ad, co = salary.get(d, 0.0), advance.get(d, 0.0), commission.get(d, 0.0)
+        oh, sp = overhead.get(d, 0.0), supplier_pay.get(d, 0.0)
         total_sales = _r2(cs + es)
-        total_exp = _r2(pu + st + di + sa + ad + co)
+        # Money-out depends on the basis: accrual uses purchase invoices + accrued
+        # commission; cash uses actual supplier payments (vouchers) and drops accrued
+        # commission. store/diesel/salary/advance/overhead are common to both.
+        common_out = st + di + sa + ad + oh
+        total_exp = _r2(common_out + (sp if basis == "cash" else pu + co))
         days.append({
             "date": d, "cash_sales": cs, "electronic_sales": es, "total_sales": total_sales,
-            "purchases": pu, "store_inventory": st, "diesel": di, "salary": sa,
-            "advance": ad, "commission": co, "total_expenses": total_exp,
-            "net": _r2(total_sales - total_exp),
+            "purchases": pu, "supplier_payments": sp, "store_inventory": st, "diesel": di,
+            "salary": sa, "advance": ad, "commission": co, "overhead": oh,
+            "total_expenses": total_exp, "net": _r2(total_sales - total_exp),
         })
         tot["cash_sales"] += cs; tot["electronic_sales"] += es
-        tot["purchases"] += pu; tot["store_inventory"] += st; tot["diesel"] += di
-        tot["salary"] += sa; tot["advance"] += ad; tot["commission"] += co
+        tot["purchases"] += pu; tot["supplier_payments"] += sp
+        tot["store_inventory"] += st; tot["diesel"] += di
+        tot["salary"] += sa; tot["advance"] += ad; tot["commission"] += co; tot["overhead"] += oh
     summary = {k: _r2(v) for k, v in tot.items()}
     summary["total_sales"] = _r2(summary["cash_sales"] + summary["electronic_sales"])
-    summary["total_expenses"] = _r2(
-        summary["purchases"] + summary["store_inventory"] + summary["diesel"]
-        + summary["salary"] + summary["advance"] + summary["commission"])
+    _common = (summary["store_inventory"] + summary["diesel"] + summary["salary"]
+               + summary["advance"] + summary["overhead"])
+    summary["total_expenses"] = _r2(_common + (
+        summary["supplier_payments"] if basis == "cash"
+        else summary["purchases"] + summary["commission"]))
     summary["net"] = _r2(summary["total_sales"] - summary["total_expenses"])
     return {"from_date": from_date.isoformat(), "to_date": to_date.isoformat(),
-            "days": days, "summary": summary}
+            "basis": basis, "days": days, "summary": summary}
 
 
 async def build_eod_summary_context(db: AsyncSession, company_id, company_name: str, target_date: date) -> dict:
@@ -1270,6 +1317,22 @@ async def compute_eod_detail(db: AsyncSession, company_id, target_date: date) ->
         items.append({"category": "Commission", "ref": r.ref or "", "party": r.party or "",
                       "detail": "", "amount": _r2(r.amount), "direction": "out"})
 
+    # Overhead expenses (direct-expense vouchers)
+    for r in await _rows(
+        "SELECT v.voucher_no AS ref, COALESCE(p.name,'') AS party, v.expense_category AS cat, v.amount AS amount "
+        "FROM payment_vouchers v LEFT JOIN parties p ON p.id=v.party_id "
+        "WHERE v.company_id=:cid AND v.expense_category IS NOT NULL AND v.voucher_date=:d ORDER BY v.amount DESC"):
+        items.append({"category": "Expense", "ref": r.ref or "", "party": r.party or "",
+                      "detail": r.cat or "", "amount": _r2(r.amount), "direction": "out"})
+
+    # Supplier payments (non-expense vouchers) — cash paid to suppliers
+    for r in await _rows(
+        "SELECT v.voucher_no AS ref, COALESCE(p.name,'') AS party, v.payment_mode AS mode, v.amount AS amount "
+        "FROM payment_vouchers v LEFT JOIN parties p ON p.id=v.party_id "
+        "WHERE v.company_id=:cid AND v.expense_category IS NULL AND v.voucher_date=:d ORDER BY v.amount DESC"):
+        items.append({"category": "Supplier Payment", "ref": r.ref or "", "party": r.party or "",
+                      "detail": (r.mode or "").upper(), "amount": _r2(r.amount), "direction": "out"})
+
     summ = await compute_eod_summary(db, company_id, target_date, target_date)
     return {"date": target_date.isoformat(), "items": items, "summary": summ["summary"]}
 
@@ -1278,18 +1341,19 @@ async def compute_eod_detail(db: AsyncSession, company_id, target_date: date) ->
 async def eod_summary(
     from_date: date = Query(None),
     to_date: date = Query(None),
+    basis: str = Query("accrual"),   # 'accrual' (default) | 'cash'
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """EOD Daily Business Summary — cash vs electronic sales + itemised expenses.
     Defaults to TODAY when no range is given (the daily EOD view); accepts a
-    range for the report page + CSV."""
+    range for the report page + CSV. ``basis`` = 'accrual' (default) or 'cash'."""
     today = date.today()
     fd = from_date or today
     td = to_date or today
     if td < fd:
         fd, td = td, fd
-    return await compute_eod_summary(db, current_user.company_id, fd, td)
+    return await compute_eod_summary(db, current_user.company_id, fd, td, basis=basis)
 
 
 @router.post("/eod-summary/send")
