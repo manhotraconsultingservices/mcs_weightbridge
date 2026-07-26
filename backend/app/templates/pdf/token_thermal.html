@@ -204,7 +204,7 @@
 </div>
 <div class="row">
   <span class="row-label">TYPE</span>
-  <span class="row-value">{{ (token.token_type or 'SALE') | upper }}</span>
+  <span class="row-value">{% set tt = (token.token_type or 'sale')|lower %}{% if tt == 'purchase' %}BUY (PURCHASE){% elif tt == 'sale' %}SELL (SALE){% else %}{{ tt|upper }}{% endif %}</span>
 </div>
 {% if token.gate_pass_no or token.gate_pass %}
 <div class="row">
@@ -262,8 +262,16 @@
 {% endif %}
 <hr class="sep">
 
+{# ===== Same layout for both modes: detail block above + big Net Weight below ===== #}
 {% if is_volume %}
-  {# ===== VOLUME MODE — quantity shown in the net block below, in the unit entered (no MT conversion) ===== #}
+  {# Volume token: show the volume in the block (parallel to gross/tare) #}
+  {% set _bu = (token.billing_unit or 'CFT')|upper %}
+  <div class="weight-block">
+    <div class="weight-row">
+      <span class="wlabel">{{ bl('volume') | upper }}:</span>
+      <span class="wval">{% if token.volume_cft %}{% if _bu == 'CBM' or _bu == 'CUM' %}{{ '%.2f'|format(token.volume_cft|float / 35.3147) }} CBM{% elif _bu == 'BRASS' %}{{ '%.2f'|format(token.volume_cft|float / 100) }} Brass{% else %}{{ '%.2f'|format(token.volume_cft|float) }} CFT{% endif %}{% else %}—{% endif %}</span>
+    </div>
+  </div>
 {% else %}
   {# ===== WEIGHBRIDGE MODE ===== #}
   <div class="weight-block">
@@ -278,20 +286,12 @@
   </div>
 {% endif %}
 
-{# Net quantity — in the unit the token was recorded in (no cross-unit conversion) #}
+{# Net weight — big, for BOTH modes (volume token net = volume_cft × bulk_density) #}
 <div class="net-big">
-  {% if is_volume %}
-  {% set _bu = (token.billing_unit or 'CFT')|upper %}
-  <div class="lbl">{{ bl('volume') | upper }}</div>
-  <div class="val">
-    {% if token.volume_cft %}{% if _bu == 'CBM' or _bu == 'CUM' %}{{ '%.2f'|format(token.volume_cft|float / 35.3147) }} CBM{% elif _bu == 'BRASS' %}{{ '%.2f'|format(token.volume_cft|float / 100) }} Brass{% else %}{{ '%.2f'|format(token.volume_cft|float) }} CFT{% endif %}{% else %}—{% endif %}
-  </div>
-  {% else %}
   <div class="lbl">{{ bl('net_weight') | upper }}</div>
   <div class="val">
     {% if token.net_weight %}{{ '%.3f'|format(token.net_weight|float / bill_div) }} {{ unit_lbl }}{% else %}—{% endif %}
   </div>
-  {% endif %}
 </div>
 
 <hr class="sep">

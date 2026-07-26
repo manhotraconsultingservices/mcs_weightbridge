@@ -73,7 +73,7 @@
       <td class="k">Material</td><td class="v">{{ token.product.name if token.product else '—' }}{% if is_volume and token.product and token.product.bulk_density %} · {{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT{% endif %}</td>
     </tr>
     <tr>
-      <td class="k">Type</td><td class="v">{{ (token.token_type or 'sale')|capitalize }}{% if is_volume %} · Volume{% endif %}</td>
+      <td class="k">Type</td><td class="v">{% set tt = (token.token_type or 'sale')|lower %}{% if tt == 'purchase' %}Buy (Purchase){% elif tt == 'sale' %}Sell (Sale){% else %}{{ tt|capitalize }}{% endif %}{% if is_volume %} · Volume{% endif %}</td>
       <td class="k">Operator</td><td class="v">{{ operator_name or '—' }}</td>
     </tr>
     {% if token.driver and token.driver.name %}
