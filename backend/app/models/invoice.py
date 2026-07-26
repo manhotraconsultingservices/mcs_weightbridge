@@ -74,6 +74,7 @@ class Invoice(Base):
     tcs_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     freight: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     vehicle_rent: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)  # transport/vehicle rent charge
+    royalty_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)  # govt mineral royalty charge
     total_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     round_off: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=0)
     grand_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)

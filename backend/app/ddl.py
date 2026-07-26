@@ -482,6 +482,7 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE inventory_purchase_orders ADD COLUMN IF NOT EXISTS tally_sync_at TIMESTAMPTZ",
         # eInvoice (GST IRN) columns on invoices
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS vehicle_rent NUMERIC(14,2) DEFAULT 0",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS royalty_amount NUMERIC(14,2) DEFAULT 0",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS irn VARCHAR(64)",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS irn_ack_no VARCHAR(30)",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS irn_ack_date TIMESTAMPTZ",
@@ -1050,6 +1051,10 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS rate NUMERIC(12,2)",
         # Operator-chosen payment mode (cash|credit|upi|bank_transfer); overrides party default → tax_type
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(20)",
+        # Royalty (govt mineral levy): per-item rate ₹/CUM + per-token CUM volume + computed charge
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS royalty_per_cum NUMERIC(12,2)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS royalty_cum NUMERIC(12,3)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS royalty_amount NUMERIC(14,2) DEFAULT 0",
 
         # ── Tokens backfill: the `tokens` table is created by SQLAlchemy
         # create_all (NOT a runtime CREATE TABLE), so a tenant whose tokens table

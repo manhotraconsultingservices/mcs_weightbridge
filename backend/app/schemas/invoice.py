@@ -35,6 +35,7 @@ class InvoiceCreate(BaseModel):
     discount_value: Decimal = Decimal("0")
     freight: Decimal = Decimal("0")
     vehicle_rent: Decimal = Decimal("0")   # transport/vehicle rent — added to total post-tax like freight
+    royalty_amount: Decimal = Decimal("0")  # govt mineral royalty — added to total post-tax like freight
     tcs_rate: Decimal = Decimal("0")
     payment_mode: Optional[str] = None
     notes: Optional[str] = None
@@ -67,6 +68,7 @@ class InvoiceUpdate(BaseModel):
     discount_value: Optional[Decimal] = None
     freight: Optional[Decimal] = None
     vehicle_rent: Optional[Decimal] = None   # transport/vehicle rent — added to total post-tax like freight
+    royalty_amount: Optional[Decimal] = None  # govt mineral royalty — added to total post-tax like freight
     tcs_rate: Optional[Decimal] = None
     payment_mode: Optional[str] = None
     notes: Optional[str] = None
@@ -157,6 +159,7 @@ class InvoiceResponse(BaseModel):
     tcs_amount: Decimal
     freight: Decimal
     vehicle_rent: Decimal = Decimal("0")   # transport/vehicle rent billed on the invoice
+    royalty_amount: Decimal = Decimal("0")  # govt mineral royalty billed on the invoice
     total_amount: Decimal
     round_off: Decimal
     grand_total: Decimal
