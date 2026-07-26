@@ -144,6 +144,7 @@ async def create_receipt(
         bank_name=payload.bank_name,
         notes=payload.notes,
         created_by=current_user.id,
+        collected_by=payload.collected_by or current_user.id,
     )
     # Fetch + validate all allocations BEFORE persisting anything.
     # FOR UPDATE locks the invoice rows to prevent concurrent double-settlement.

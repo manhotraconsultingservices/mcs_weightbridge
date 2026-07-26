@@ -24,8 +24,9 @@ interface DayBook {
   notes?: string[];
 }
 
+import { todayISO } from '@/lib/dateLocal';
 const INR = (v: number) => (v || 0) === 0 ? '—' : Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const today = () => new Date().toISOString().split('T')[0];
+const today = () => todayISO();   // local wall-clock day (toISOString would give UTC)
 
 export default function DayBookPage() {
   const isManager = ['admin', 'accountant'].includes(getCurrentUser()?.role || '');

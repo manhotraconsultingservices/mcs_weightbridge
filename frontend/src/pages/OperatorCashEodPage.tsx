@@ -45,9 +45,10 @@ interface Handover {
   notes: string | null;
 }
 
+// Cash reconciliation → show paise (2dp), never drop sub-rupee differences.
 const INR = (v: number | string | null | undefined) =>
-  '₹' + Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-const todayISO = () => new Date().toISOString().split('T')[0];
+  '₹' + Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { todayISO } from '@/lib/dateLocal';   // local wall-clock day (toISOString → UTC)
 
 export default function OperatorCashEodPage() {
   const [date, setDate] = useState(todayISO());
@@ -83,7 +84,7 @@ export default function OperatorCashEodPage() {
 
   function openHandover(op: OpRow) {
     setDlg(op);
-    setAmount(op.balance > 0 ? String(Math.round(op.balance)) : '');
+    setAmount(op.balance > 0 ? op.balance.toFixed(2) : '');   // exact paise, no rounding
     setNotes('');
   }
 
@@ -120,7 +121,12 @@ export default function OperatorCashEodPage() {
     { key: 'handed_over', label: 'Handed Over', type: 'number', align: 'right', accessor: r => r.handed_over,
       format: v => INR(v as number), exportValue: r => r.handed_over },
     { key: 'balance', label: 'Balance to Hand Over', type: 'number', align: 'right', accessor: r => r.balance,
-      format: v => <span className={Number(v) > 0 ? 'text-rose-700 font-semibold' : 'text-emerald-600'}>{INR(v as number)}</span>, exportValue: r => r.balance },
+      format: v => {
+        const n = Number(v);
+        // >0 = still owed to accounts; <0 = OVER-handed (anomaly) → flag amber, not "settled".
+        if (n < -0.005) return <span className="text-amber-700 font-semibold" title="Handed over MORE than collected — check for a duplicate/back-dated handover">⚠ {INR(Math.abs(n))} over</span>;
+        return <span className={n > 0.005 ? 'text-rose-700 font-semibold' : 'text-emerald-600'}>{INR(n)}</span>;
+      }, exportValue: r => r.balance },
     ...(canReceive ? [{
       key: 'act', label: '', accessor: (r: OpRow) => '',
       format: (_v: unknown, r: OpRow) => r.balance > 0

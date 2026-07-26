@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
 import { TokenDetailModal } from '@/components/TokenDetailModal';
 import api from '@/services/api';
+import { fmtKg, weightUnitLabel } from '@/lib/weightUnit';
 
 interface TokenRow {
   id: string;
@@ -21,6 +22,9 @@ interface TokenRow {
   party_name: string | null;
   product_name: string | null;
   weight_method: string;
+  gross_weight_kg: number | null;
+  tare_weight_kg: number | null;
+  net_weight_kg: number | null;
   gross_weight_mt: number | null;
   tare_weight_mt: number | null;
   net_weight_mt: number | null;
@@ -37,6 +41,7 @@ interface TokenRegister {
   count: number;
   from_date: string;
   to_date: string;
+  total_net_weight_kg: number;
   total_net_weight_mt: number;
   completed_count: number;
   cancelled_count: number;
@@ -103,6 +108,7 @@ export default function TokenRegisterPage() {
 
   useEffect(() => { fetch(); }, [fetch]);
 
+  const wLabel = weightUnitLabel();   // MT, or Qtl for maize tenants
   const COLUMNS: ColumnDef<TokenRow>[] = [
     { key: 'token_no', label: 'Token #', type: 'number', accessor: r => r.token_no ?? '',
       format: (v, row) => v !== '' ? (
@@ -117,7 +123,7 @@ export default function TokenRegisterPage() {
     { key: 'token_date', label: 'Date', type: 'date', accessor: r => r.token_date,
       format: v => new Date(String(v)).toLocaleDateString('en-IN') },
     { key: 'created_at', label: 'Time (IST)', accessor: r => r.created_at ?? '',
-      format: v => fmtIST(v as string | null) },
+      format: v => fmtIST(v as string | null), exportValue: r => fmtIST(r.created_at) },
     { key: 'token_type', label: 'Type', type: 'enum',
       enumOptions: ['sale', 'purchase', 'general'],
       accessor: r => r.token_type,
@@ -135,17 +141,19 @@ export default function TokenRegisterPage() {
     { key: 'vehicle_no', label: 'Vehicle', accessor: r => r.vehicle_no ?? '—' },
     { key: 'party_name', label: 'Party', accessor: r => r.party_name ?? '—' },
     { key: 'product_name', label: 'Material', accessor: r => r.product_name ?? '—' },
-    { key: 'net_weight_mt', label: 'Net (MT)', type: 'number', align: 'right',
-      accessor: r => r.net_weight_mt ?? '',
-      format: v => v !== '' ? `${Number(v).toFixed(3)} MT` : '—' },
-    { key: 'gross_weight_mt', label: 'Gross (MT)', type: 'number', align: 'right',
+    // Weight shown in the tenant's unit (MT, or Quintal for maize) from raw kg.
+    { key: 'net_weight_kg', label: `Net (${wLabel})`, type: 'number', align: 'right',
+      accessor: r => r.net_weight_kg ?? '',
+      format: v => v !== '' ? fmtKg(v as number) : '—',
+      exportValue: r => r.net_weight_kg != null ? fmtKg(r.net_weight_kg, 3, false) : '' },
+    { key: 'gross_weight_kg', label: `Gross (${wLabel})`, type: 'number', align: 'right',
       defaultVisible: false,
-      accessor: r => r.gross_weight_mt ?? '',
-      format: v => v !== '' ? `${Number(v).toFixed(3)} MT` : '—' },
-    { key: 'tare_weight_mt', label: 'Tare (MT)', type: 'number', align: 'right',
+      accessor: r => r.gross_weight_kg ?? '',
+      format: v => v !== '' ? fmtKg(v as number) : '—' },
+    { key: 'tare_weight_kg', label: `Tare (${wLabel})`, type: 'number', align: 'right',
       defaultVisible: false,
-      accessor: r => r.tare_weight_mt ?? '',
-      format: v => v !== '' ? `${Number(v).toFixed(3)} MT` : '—' },
+      accessor: r => r.tare_weight_kg ?? '',
+      format: v => v !== '' ? fmtKg(v as number) : '—' },
     { key: 'volume_cft', label: 'Volume (CFT)', type: 'number', align: 'right',
       defaultVisible: false,
       accessor: r => r.volume_cft ?? '',
@@ -240,7 +248,7 @@ export default function TokenRegisterPage() {
             { label: 'Total Tokens', value: data.count },
             { label: 'Completed', value: data.completed_count },
             { label: 'Cancelled', value: data.cancelled_count },
-            { label: 'Total Net Weight', value: `${Number(data.total_net_weight_mt ?? 0).toFixed(2)} MT` },
+            { label: 'Total Net Weight', value: fmtKg(data.total_net_weight_kg ?? (data.total_net_weight_mt ?? 0) * 1000, 2) },
           ].map(c => (
             <div key={c.label} className="rounded-lg border bg-card p-3">
               <p className="text-xs text-muted-foreground">{c.label}</p>
