@@ -78,6 +78,8 @@
 {% macro slip_title(token) %}
   {% if token.weight_method == 'volume' %}Volume Slip{% else %}Weight Slip{% endif %}
 {% endmacro %}
+{# Token type as the customer-facing Buy/Sell word #}
+{% macro type_label(token) %}{% set tt = (token.token_type or 'sale')|lower %}{% if tt == 'purchase' %}BUY (Purchase){% elif tt == 'sale' %}SELL (Sale){% else %}{{ tt|capitalize }}{% endif %}{% endmacro %}
 
 {% macro token_copy(label) %}
 {% set is_volume = (token.weight_method == 'volume') %}
@@ -106,6 +108,8 @@
       <span>{{ format_dt(token.completed_at or token.first_weight_at) or format_date(token.token_date) }}</span>
     </div>
   </div>
+
+  <div class="row"><span class="lbl">TYPE:</span><span class="val">{{ type_label(token) }}</span></div>
 
   {% if token.gate_pass_no or token.gate_pass %}
   <div class="row"><span class="lbl">Gate Pass:</span><span class="val">{{ token.gate_pass_no or token.gate_pass }}{% if token.gate_pass_no and token.gate_pass %} · {{ token.gate_pass }}{% endif %}</span></div>
@@ -154,18 +158,32 @@
     {% endfor %}
   {% endif %}
 
-  {# ── Mode-specific body ── #}
+  {# ── Body: same table format for weighbridge AND volume tokens ── #}
+  <div class="sep" style="margin-top:4px;"></div>
   {% if is_volume %}
-    {# Quantity shown in the unit the operator entered — no volume→weight conversion #}
-    <div class="vol-block">
-      <div class="vol-net">
-        <div class="lbl">{{ bl('volume') }}</div>
-        <div class="val">{{ vol_unit_fmt(token.volume_cft, token) }}</div>
-        <div class="sub">Recorded on {{ format_dt(token.completed_at) }}</div>
-      </div>
-    </div>
+    {# Volume token: same table layout as a weighment — Volume + Net Weight rows #}
+    <table class="wt-tbl">
+      <thead>
+        <tr>
+          <td class="col-label">{{ bl('description') | upper }}</td>
+          <td class="col-wt">QUANTITY</td>
+          <td class="col-dt">Date Time</td>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>{{ bl('volume') }}</td>
+          <td class="col-wt">{{ vol_unit_fmt(token.volume_cft, token) }}</td>
+          <td class="col-dt">{{ format_dt(token.completed_at) }}</td>
+        </tr>
+        <tr class="net">
+          <td>{{ bl('net_weight') }}</td>
+          <td class="col-wt">{{ format_wt(token.net_weight, token.product) }}</td>
+          <td class="col-dt">{{ format_dt(token.completed_at) }}</td>
+        </tr>
+      </tbody>
+    </table>
   {% else %}
-    <div class="sep" style="margin-top:4px;"></div>
     <table class="wt-tbl">
       <thead>
         <tr>
