@@ -436,6 +436,7 @@ def get_column_migrations() -> list[str]:
         # Fleet fuel & mileage — benchmark km/l + tank capacity on the vehicle master.
         "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS benchmark_mileage_kmpl NUMERIC(6,2)",
         "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS tank_capacity_litres NUMERIC(8,2)",
+        "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS rent_rate_per_km_per_mt NUMERIC(12,4)",
         # Custom-attribute values (owner-defined fields) per weighment.
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS custom_fields JSONB",
         "ALTER TABLE compliance_items ADD COLUMN IF NOT EXISTS policy_holder VARCHAR(200)",
@@ -1043,6 +1044,8 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS transit_pass_id UUID REFERENCES royalty_passes(id)",
         # Vehicle rent — payment to truck owner per trip (stone crusher practice)
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS vehicle_rent NUMERIC(14,2) DEFAULT 0",
+        # Operator-entered trip distance (km) → vehicle_rent = vehicle rate × km × net MT
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS rent_km NUMERIC(10,2)",
         # Operator-set material price (₹ per billing_unit); auto-invoice uses it, else the resolver
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS rate NUMERIC(12,2)",
         # Operator-chosen payment mode (cash|credit|upi|bank_transfer); overrides party default → tax_type

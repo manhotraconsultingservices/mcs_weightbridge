@@ -67,6 +67,10 @@ class Token(Base):
     source: Mapped[str] = mapped_column(String(20), default="manual")
     transit_pass_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("royalty_passes.id"), nullable=True)
     vehicle_rent: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), default=0)
+    # Operator-entered trip distance (km) — vehicle_rent auto-computed as
+    # vehicle.rent_rate_per_km_per_mt × rent_km × net_weight_MT (weight known at
+    # completion). vehicle_rent stays an editable override after that.
+    rent_km: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     # Operator-set material price (₹ per billing_unit). Shown on the create/edit
     # token form and used by the auto-invoice (falls back to the pricing resolver
     # when NULL). Editable via PUT /tokens/{id}/pricing, which re-syncs the linked

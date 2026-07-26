@@ -131,6 +131,7 @@ export interface Vehicle {
   default_tare_weight: number;
   benchmark_mileage_kmpl: number | null;
   tank_capacity_litres: number | null;
+  rent_rate_per_km_per_mt: number | null;
   is_active: boolean;
 }
 
@@ -232,6 +233,7 @@ export interface Token {
   anpr_exit_at: string | null;
   transit_pass_id: string | null;
   vehicle_rent: number | null;
+  rent_km: number | null;
   remarks: string | null;
   custom_fields: Record<string, unknown> | null;   // owner-defined attribute values
   created_at: string;
