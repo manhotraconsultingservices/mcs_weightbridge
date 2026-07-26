@@ -514,6 +514,66 @@ async def update_rate_units(
     return cleaned
 
 
+# ── Tyre-class → default load volume (CUM) ────────────────────────────────────
+# Per-tenant tyre→volume mapping. When the operator picks a tyre count on the
+# token form (volume mode), the volume auto-fills from this map. The admin sets
+# the default in CUM (cubic metre); the frontend converts to the canonical CFT
+# (× 35.3147) for storage. Stored in app_settings key "tyre_volumes" as
+# [{"tyre": 4, "cum": 3.0}, ...] (sorted by tyre).
+TYRE_VOLUMES_KEY = "tyre_volumes"
+TYRE_VOLUMES_DEFAULTS = [
+    {"tyre": 4, "cum": 3.0},     # mini-truck / pickup (~106 CFT)
+    {"tyre": 6, "cum": 7.0},     # small truck (~247 CFT)
+    {"tyre": 8, "cum": 10.0},    # medium truck (~353 CFT)
+    {"tyre": 10, "cum": 13.0},   # heavy truck (~459 CFT)
+    {"tyre": 12, "cum": 17.0},   # multi-axle (~600 CFT)
+]
+
+
+@router.get("/tyre-volumes")
+async def get_tyre_volumes(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Tyre-class → default load volume (CUM) used by the token form. Any user."""
+    raw = await _get_raw(db, TYRE_VOLUMES_KEY)
+    if raw:
+        try:
+            val = json.loads(raw)
+            if isinstance(val, list) and val:
+                return val
+        except Exception:
+            pass
+    return TYRE_VOLUMES_DEFAULTS
+
+
+@router.put("/tyre-volumes")
+async def update_tyre_volumes(
+    payload: list[dict],
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Save the tyre→volume (CUM) mapping. Admin only. Validates positive
+    tyre-count + cum, de-duplicates by tyre, sorts ascending."""
+    cleaned: list[dict] = []
+    seen: set[int] = set()
+    for row in (payload or []):
+        try:
+            t = int(row.get("tyre"))
+            c = float(row.get("cum"))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if t <= 0 or c <= 0 or t in seen:
+            continue
+        seen.add(t)
+        cleaned.append({"tyre": t, "cum": round(c, 3)})
+    if not cleaned:
+        raise HTTPException(400, "At least one tyre-volume mapping is required")
+    cleaned.sort(key=lambda r: r["tyre"])
+    await _upsert(db, TYRE_VOLUMES_KEY, json.dumps(cleaned))
+    return cleaned
+
+
 @router.delete("/wallpaper")
 async def delete_wallpaper(
     db: AsyncSession = Depends(get_db),
