@@ -1060,6 +1060,7 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS royalty_per_mt NUMERIC(12,2)",
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS royalty_cum NUMERIC(12,3)",
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS royalty_unit VARCHAR(8)",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS royalty_rate NUMERIC(12,2)",
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS royalty_amount NUMERIC(14,2) DEFAULT 0",
 
         # ── Tokens backfill: the `tokens` table is created by SQLAlchemy

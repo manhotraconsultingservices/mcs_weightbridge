@@ -181,7 +181,9 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     rent_rate_mt: '',      // ₹/km/MT (prefilled from vehicle master, operator-editable) — weighed loads
     rent_rate_cum: '',     // ₹/km/CUM (prefilled from vehicle master, operator-editable) — volume loads
     royalty_on: false,     // operator opts in to royalty for this load
-    royalty_cum: '',       // CUM the royalty is charged on → royalty = product.royalty_per_cum × CUM
+    royalty_unit: '',      // operator-selected basis: 'mt' (× net weight) | 'cum' (× volume)
+    royalty_rate: '',      // ₹/unit rate — prefilled from the product master, operator-editable
+    royalty_cum: '',       // CUM the royalty is charged on (CUM basis) → royalty = rate × CUM
     agent_id: '',          // broker/dalal — carried to the invoice for commission
     billing_unit: '',      // operator-chosen billing unit ('' = auto = product's unit)
     rate: '',              // ₹ per billing_unit (prefilled from customer-wise/default price, editable)
@@ -345,7 +347,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   }, [loadGatePasses]);
 
   function resetForm() {
-    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', rent_rate_mt: '', rent_rate_cum: '', royalty_on: false, royalty_cum: '', agent_id: '', billing_unit: weightMethod === 'weighbridge' ? weightUnit().code : volDefault, rate: '', payment_mode: '' });
+    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', rent_rate_mt: '', rent_rate_cum: '', royalty_on: false, royalty_unit: '', royalty_rate: '', royalty_cum: '', agent_id: '', billing_unit: weightMethod === 'weighbridge' ? weightUnit().code : volDefault, rate: '', payment_mode: '' });
     setRateSource('none');
     rateEditedRef.current = false;
     setCustomValues({});
@@ -421,7 +423,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const rateNum = parseFloat(form.rate || '0');
 
   const handleTypeChange = (type: string) => {
-    setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', rent_rate_mt: '', rent_rate_cum: '', royalty_on: false, royalty_cum: '' }));
+    setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', rent_rate_mt: '', rent_rate_cum: '', royalty_on: false, royalty_unit: '', royalty_rate: '', royalty_cum: '' }));
     if (type === 'purchase' && moduleEnabled('royalty')) {
       api.get('/api/v1/royalty/passes', { params: { status: 'active', page_size: 100 } })
         .then(r => {
@@ -526,11 +528,13 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           rate: form.rate ? Number(form.rate) : undefined,
           payment_mode: form.payment_mode || undefined,
           gate_pass_id: form.gate_pass_id || undefined,
-          vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
-          rent_km: form.rent_km ? Number(form.rent_km) : undefined,
-          rent_rate_per_km_per_mt: form.rent_rate_mt ? Number(form.rent_rate_mt) : undefined,
-          rent_rate_per_km_per_cum: form.rent_rate_cum ? Number(form.rent_rate_cum) : undefined,
-          royalty_unit: form.royalty_on ? 'cum' : undefined,   // volume load → royalty per CUM
+          // Vehicle rent only for OWN vehicles (in the master → vehicle_id set).
+          vehicle_rent: form.vehicle_id && form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
+          rent_km: form.vehicle_id && form.rent_km ? Number(form.rent_km) : undefined,
+          rent_rate_per_km_per_mt: form.vehicle_id && form.rent_rate_mt ? Number(form.rent_rate_mt) : undefined,
+          rent_rate_per_km_per_cum: form.vehicle_id && form.rent_rate_cum ? Number(form.rent_rate_cum) : undefined,
+          royalty_unit: form.royalty_on ? (form.royalty_unit || 'cum') : undefined,   // operator-selected basis
+          royalty_rate: form.royalty_on && form.royalty_rate !== '' ? Number(form.royalty_rate) : undefined,  // ₹/unit override
           royalty_cum: form.royalty_on && form.royalty_cum ? Number(form.royalty_cum) : undefined,
           remarks: form.remarks
             ? `${form.remarks}${tyreCount ? ` | ${tyreCount}-tyre truck` : ''}`
@@ -581,11 +585,13 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       rate: form.rate ? Number(form.rate) : undefined,
       payment_mode: form.payment_mode || undefined,
       gate_pass_id: form.gate_pass_id || undefined,
-      vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
-      rent_km: form.rent_km ? Number(form.rent_km) : undefined,
-      rent_rate_per_km_per_mt: form.rent_rate_mt ? Number(form.rent_rate_mt) : undefined,
-      rent_rate_per_km_per_cum: form.rent_rate_cum ? Number(form.rent_rate_cum) : undefined,
-      royalty_unit: form.royalty_on ? 'mt' : undefined,   // weighed load → royalty per MT (× net weight)
+      // Vehicle rent only for OWN vehicles (in the master → vehicle_id set).
+      vehicle_rent: form.vehicle_id && form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
+      rent_km: form.vehicle_id && form.rent_km ? Number(form.rent_km) : undefined,
+      rent_rate_per_km_per_mt: form.vehicle_id && form.rent_rate_mt ? Number(form.rent_rate_mt) : undefined,
+      rent_rate_per_km_per_cum: form.vehicle_id && form.rent_rate_cum ? Number(form.rent_rate_cum) : undefined,
+      royalty_unit: form.royalty_on ? (form.royalty_unit || 'mt') : undefined,   // operator-selected basis
+      royalty_rate: form.royalty_on && form.royalty_rate !== '' ? Number(form.royalty_rate) : undefined,  // ₹/unit override
       royalty_cum: form.royalty_on && form.royalty_cum ? Number(form.royalty_cum) : undefined,
       remarks: form.remarks || undefined,
       custom_fields: Object.keys(customValues).length ? customValues : undefined,
@@ -1163,7 +1169,10 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
 
         {/* Vehicle rent — rate × distance × quantity. Basis follows the load:
             weighed → ₹/km/MT × net MT · volume → ₹/km/CUM × CUM. Rates prefill from
-            the vehicle master and are operator-editable; amount shows as Vehicle Rent. */}
+            the vehicle master and are operator-editable; amount shows as Vehicle Rent.
+            Shown ONLY for OWN vehicles (selected from the master → vehicle_id set); a
+            non-owned quick-entry plate never bills vehicle rent. */}
+        {form.vehicle_id && (<>
         <div className="space-y-1 rounded-md border border-slate-200 bg-slate-50/60 px-2 py-2">
           <Label className="text-xs font-medium">Vehicle Rent — Distance (km)</Label>
           <Input
@@ -1224,15 +1233,36 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             placeholder="auto"
           />
         </div>
+        </>)}
 
-        {/* Royalty — govt mineral levy. Basis follows the token: weighed → ₹/MT × net
-            weight (total after weighing); volume → ₹/CUM × CUM (total shown now). */}
+        {/* Royalty — govt mineral levy billed to the customer. The operator picks the
+            basis (Per MT × net weight · Per CUM × volume), the rate is prefilled from
+            the product master and editable, and the qty comes from the load. */}
         {selectedProduct && (() => {
-          const royUnit = weightMethod === 'weighbridge' ? 'mt' : 'cum';
-          const royRate = royUnit === 'mt' ? selectedProduct.royalty_per_mt : selectedProduct.royalty_per_cum;
+          // Effective basis: operator's choice, else the method default.
+          const royUnit = (form.royalty_unit || (weightMethod === 'weighbridge' ? 'mt' : 'cum')) as 'mt' | 'cum';
+          const masterRate = royUnit === 'mt' ? selectedProduct.royalty_per_mt : selectedProduct.royalty_per_cum;
+          const effRate = form.royalty_rate !== '' ? Number(form.royalty_rate)
+            : (masterRate != null ? Number(masterRate) : null);
           const royLabel = royUnit === 'mt' ? 'MT' : 'CUM';
-          const royTotal = (royRate != null && royUnit === 'cum' && Number(form.royalty_cum) > 0)
-            ? Number(royRate) * Number(form.royalty_cum) : null;
+          // Load qty in the chosen unit: MT → net weight (known now only for volume
+          // tokens, else after weighing); CUM → the entered/derived volume.
+          const netMt = weightMethod === 'volume' && selectedProduct.bulk_density && volumeCft > 0
+            ? (volumeCft * Number(selectedProduct.bulk_density)) / 1000 : null;
+          const royQty = royUnit === 'mt' ? netMt : (Number(form.royalty_cum) || null);
+          const royTotal = (effRate != null && royQty != null && royQty > 0) ? effRate * royQty : null;
+          // Prefill the rate (+ auto CUM) from the master when the unit changes / royalty turns on.
+          const rateFor = (u: 'mt' | 'cum') => {
+            const r = u === 'mt' ? selectedProduct.royalty_per_mt : selectedProduct.royalty_per_cum;
+            return r != null ? String(r) : '';
+          };
+          const setRoyUnit = (u: 'mt' | 'cum') => setForm(f => ({
+            ...f,
+            royalty_unit: u,
+            royalty_rate: rateFor(u),
+            royalty_cum: u === 'cum' && weightMethod === 'volume' && volumeCft > 0
+              ? (volumeCft / 35.3147).toFixed(3) : (u === 'cum' ? f.royalty_cum : ''),
+          }));
           return (
           <div className="space-y-1 rounded-md border border-amber-200 bg-amber-50/60 px-2 py-2">
             <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
@@ -1240,23 +1270,58 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
                 type="checkbox"
                 className="h-4 w-4"
                 checked={form.royalty_on}
-                onChange={e => setForm(f => ({
-                  ...f,
-                  royalty_on: e.target.checked,
-                  royalty_cum: e.target.checked && weightMethod === 'volume' && volumeCft > 0
-                    ? (volumeCft / 35.3147).toFixed(3)
-                    : (e.target.checked ? f.royalty_cum : ''),
-                }))}
+                onChange={e => {
+                  const on = e.target.checked;
+                  const u = (form.royalty_unit || (weightMethod === 'weighbridge' ? 'mt' : 'cum')) as 'mt' | 'cum';
+                  setForm(f => ({
+                    ...f,
+                    royalty_on: on,
+                    royalty_unit: on ? u : '',
+                    royalty_rate: on ? rateFor(u) : '',
+                    royalty_cum: on && u === 'cum' && weightMethod === 'volume' && volumeCft > 0
+                      ? (volumeCft / 35.3147).toFixed(3) : (on ? f.royalty_cum : ''),
+                  }));
+                }}
               />
               Add Royalty
-              {royRate != null
-                ? <span className="font-normal text-muted-foreground">(₹{royRate}/{royLabel})</span>
-                : <span className="font-normal text-amber-600">— set “Royalty (₹/{royLabel})” on this product first</span>}
             </label>
             {form.royalty_on && (
-              <div className="space-y-1 pt-1">
+              <div className="space-y-2 pt-1">
+                {/* Basis selector — operator chooses MT or CUM */}
+                <div className="space-y-1">
+                  <Label className="text-xs">Charge royalty per</Label>
+                  <div className="flex gap-1">
+                    {(['mt', 'cum'] as const).map(u => (
+                      <button
+                        key={u} type="button" onClick={() => setRoyUnit(u)}
+                        className={`flex-1 h-8 rounded border text-xs font-medium ${
+                          royUnit === u
+                            ? 'border-amber-500 bg-amber-500 text-white'
+                            : 'border-amber-300 bg-white text-amber-700 hover:bg-amber-100'}`}
+                      >
+                        {u === 'mt' ? 'MT (weight)' : 'CUM (volume)'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Rate — prefilled from master, editable */}
+                <div className="space-y-1">
+                  <Label className="text-xs">Royalty rate (₹/{royLabel})</Label>
+                  <Input
+                    className="h-8 text-xs" type="number" min="0" step="0.01"
+                    value={form.royalty_rate}
+                    onChange={e => setForm(f => ({ ...f, royalty_rate: e.target.value }))}
+                    placeholder={masterRate != null ? String(masterRate) : `enter ₹/${royLabel}`}
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    {masterRate != null
+                      ? <>Master: ₹{masterRate}/{royLabel} — editable for this load</>
+                      : <>No master rate for {royLabel} — set one on the product, or enter it here</>}
+                  </p>
+                </div>
+                {/* Qty: CUM → volume input; MT → net weight from the load */}
                 {royUnit === 'cum' ? (
-                  <>
+                  <div className="space-y-1">
                     <Label className="text-xs">Volume (CUM)</Label>
                     <Input
                       className="h-8 text-xs" type="number" min="0" step="0.001"
@@ -1264,20 +1329,25 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
                       onChange={e => setForm(f => ({ ...f, royalty_cum: e.target.value }))}
                       placeholder={weightMethod === 'volume' ? 'auto from volume — edit if needed' : 'e.g. 6.5'}
                     />
-                    {royTotal != null && (
-                      <p className="text-[10px] text-muted-foreground">
-                        Total Royalty = ₹{royRate}/CUM × {form.royalty_cum} CUM ={' '}
-                        <span className="font-semibold">₹{royTotal.toFixed(2)}</span>
-                      </p>
-                    )}
-                  </>
+                  </div>
                 ) : (
                   <p className="text-[10px] text-muted-foreground">
-                    {royRate != null
-                      ? <>Total Royalty = ₹{royRate}/MT × net weight (MT) — <span className="font-medium">calculated after weighing</span>.</>
-                      : <>Set “Royalty (₹/MT)” on this product to charge royalty on weighed loads.</>}
+                    Quantity = net weight{netMt != null
+                      ? <> ≈ <span className="font-medium">{netMt.toFixed(3)} MT</span></>
+                      : <> (MT) — <span className="font-medium">calculated after weighing</span></>}.
                   </p>
                 )}
+                {/* Live total */}
+                {royTotal != null ? (
+                  <p className="text-[10px]">
+                    Total Royalty = ₹{effRate}/{royLabel} × {royUnit === 'mt' ? `${royQty!.toFixed(3)} MT` : `${form.royalty_cum} CUM`} ={' '}
+                    <span className="font-semibold">₹{royTotal.toFixed(2)}</span>
+                  </p>
+                ) : (royUnit === 'mt' && effRate != null) ? (
+                  <p className="text-[10px] text-muted-foreground">
+                    Total Royalty = ₹{effRate}/MT × net weight — <span className="font-medium">shown after weighing</span>.
+                  </p>
+                ) : null}
               </div>
             )}
           </div>

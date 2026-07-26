@@ -86,6 +86,9 @@ class Token(Base):
     # (legacy tokens with royalty_cum set are treated as 'cum'). Follows the token's
     # measurement — weighed → mt, volume → cum.
     royalty_unit: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    # Operator override of the ₹-per-unit royalty rate (prefilled from the product
+    # master on the form). NULL → use product.royalty_per_mt / royalty_per_cum.
+    royalty_rate: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     royalty_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), default=0)
     # Operator-set material price (₹ per billing_unit). Shown on the create/edit
     # token form and used by the auto-invoice (falls back to the pricing resolver

@@ -204,11 +204,13 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
   const [dRate, setDRate] = useState('');
   const [dRent, setDRent] = useState('');
   const [dRoyaltyOn, setDRoyaltyOn] = useState(false);
+  const [dRoyaltyUnit, setDRoyaltyUnit] = useState<'mt' | 'cum'>('mt');
+  const [dRoyaltyRate, setDRoyaltyRate] = useState('');
   const [dRoyaltyCum, setDRoyaltyCum] = useState('');
   const [dPayMode, setDPayMode] = useState('cash');
   const [dRemarks, setDRemarks] = useState('');
   const [saving, setSaving] = useState(false);
-  const editInit = useRef({ qty: '', rate: '', rent: '', mode: 'cash', royaltyCum: '', royaltyOn: false });
+  const editInit = useRef({ qty: '', rate: '', rent: '', mode: 'cash', royaltyCum: '', royaltyOn: false, royaltyUnit: 'mt' as 'mt' | 'cum', royaltyRate: '' });
 
   async function openEdit() {
     if (!token) return;
@@ -220,7 +222,17 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
     const rentStr = token.vehicle_rent != null ? String(token.vehicle_rent) : '';
     const royStr = token.royalty_cum != null ? String(token.royalty_cum) : '';
     const royOn = token.royalty_unit != null || token.royalty_cum != null || Number(token.royalty_amount ?? 0) > 0;
+    // Basis: the token's stored unit, else the method default (weighed → mt, volume → cum).
+    const royUnit: 'mt' | 'cum' = (token.royalty_unit === 'mt' || token.royalty_unit === 'cum')
+      ? token.royalty_unit
+      : (token.weight_method === 'volume' ? 'cum' : 'mt');
+    // Rate: the token's override, else the product master rate for the unit.
+    const masterRate = royUnit === 'mt' ? token.product?.royalty_per_mt : token.product?.royalty_per_cum;
+    const royRateStr = token.royalty_rate != null ? String(token.royalty_rate)
+      : (masterRate != null ? String(masterRate) : '');
     setDRoyaltyOn(royOn);
+    setDRoyaltyUnit(royUnit);
+    setDRoyaltyRate(royRateStr);
     const modeStr = token.payment_mode || 'cash';
     setDQty(qtyStr);
     setDVehicleNo(token.vehicle_no ?? '');
@@ -241,7 +253,7 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
     }
     const rateStr = rate != null ? String(rate) : '';
     setDRate(rateStr);
-    editInit.current = { qty: qtyStr, rate: rateStr, rent: rentStr, mode: modeStr, royaltyCum: royStr, royaltyOn: royOn };
+    editInit.current = { qty: qtyStr, rate: rateStr, rent: rentStr, mode: modeStr, royaltyCum: royStr, royaltyOn: royOn, royaltyUnit: royUnit, royaltyRate: royRateStr };
     setEditOpen(true);
     if (dParties.length === 0) {
       api.get<{ items?: Party[] } | Party[]>('/api/v1/parties?page_size=500')
@@ -279,12 +291,20 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
       else payload.net_weight = q * (WT_TO_KG[u] ?? 1000);
       payload.billing_unit = u;
     }
-    if (dRent !== editInit.current.rent) payload.vehicle_rent = dRent === '' ? 0 : (parseFloat(dRent) || 0);
-    // Royalty: basis follows the token (weighed → mt × net weight, volume → cum × CUM).
-    if (dRoyaltyOn !== editInit.current.royaltyOn || dRoyaltyCum !== editInit.current.royaltyCum) {
-      const royUnit = token.weight_method === 'volume' ? 'cum' : 'mt';
-      if (!dRoyaltyOn) { payload.royalty_unit = ''; payload.royalty_cum = 0; }
-      else { payload.royalty_unit = royUnit; payload.royalty_cum = royUnit === 'cum' ? (dRoyaltyCum === '' ? 0 : (parseFloat(dRoyaltyCum) || 0)) : 0; }
+    // Vehicle rent only for OWN vehicles (in the master).
+    if (token.vehicle?.id && dRent !== editInit.current.rent) payload.vehicle_rent = dRent === '' ? 0 : (parseFloat(dRent) || 0);
+    // Royalty: operator picks the basis (mt × net weight | cum × volume), the rate is
+    // editable (override, else product master), qty comes from the load.
+    if (dRoyaltyOn !== editInit.current.royaltyOn
+        || dRoyaltyUnit !== editInit.current.royaltyUnit
+        || dRoyaltyRate !== editInit.current.royaltyRate
+        || dRoyaltyCum !== editInit.current.royaltyCum) {
+      if (!dRoyaltyOn) { payload.royalty_unit = ''; payload.royalty_rate = 0; payload.royalty_cum = 0; }
+      else {
+        payload.royalty_unit = dRoyaltyUnit;
+        if (dRoyaltyRate !== '') payload.royalty_rate = parseFloat(dRoyaltyRate) || 0;
+        payload.royalty_cum = dRoyaltyUnit === 'cum' ? (dRoyaltyCum === '' ? 0 : (parseFloat(dRoyaltyCum) || 0)) : 0;
+      }
     }
     if (dPayMode !== editInit.current.mode) payload.payment_mode = dPayMode;
 
@@ -915,41 +935,72 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                 <Input type="number" min="0" step="0.01" value={dRate} onChange={e => setDRate(e.target.value)} />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            {/* Vehicle rent only for OWN vehicles (in the master). */}
+            {token?.vehicle?.id && (
               <div className="space-y-1">
                 <label className="text-xs font-medium">Vehicle rent (₹)</label>
                 <Input type="number" min="0" step="0.01" value={dRent} onChange={e => setDRent(e.target.value)} placeholder="0.00" />
               </div>
-              {(() => {
-                const prod = dProducts.find(p => p.id === dProductId);
-                const royUnit = token?.weight_method === 'volume' ? 'cum' : 'mt';
-                const royRate = royUnit === 'mt' ? (prod?.royalty_per_mt ?? null) : (prod?.royalty_per_cum ?? null);
-                const netMT = Number(token?.net_weight ?? 0) / 1000;
-                const total = dRoyaltyOn && royRate != null
-                  ? (royUnit === 'mt' ? Number(royRate) * netMT : Number(royRate) * (Number(dRoyaltyCum) || 0))
-                  : 0;
-                const uLabel = royUnit === 'mt' ? 'MT' : 'CUM';
-                return (
-                  <div className="space-y-1">
-                    <label className="flex items-center gap-1.5 text-xs font-medium cursor-pointer">
-                      <input type="checkbox" className="h-3.5 w-3.5" checked={dRoyaltyOn} onChange={e => setDRoyaltyOn(e.target.checked)} />
-                      Royalty {royRate != null
-                        ? <span className="font-normal text-muted-foreground">(₹{royRate}/{uLabel})</span>
-                        : <span className="font-normal text-amber-600">set ₹/{uLabel} on product</span>}
-                    </label>
-                    {dRoyaltyOn && royUnit === 'cum' && (
-                      <Input type="number" min="0" step="0.001" value={dRoyaltyCum} onChange={e => setDRoyaltyCum(e.target.value)} placeholder="Volume (CUM)" />
-                    )}
-                    {dRoyaltyOn && royRate != null && (
-                      <p className="text-[10px] text-muted-foreground">
-                        Royalty: <span className="font-semibold">₹{total.toFixed(2)}</span>
-                        {royUnit === 'mt' ? ` (₹${royRate}/MT × ${netMT.toFixed(3)} MT)` : ''}
-                      </p>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
+            )}
+            {(() => {
+              const prod = dProducts.find(p => p.id === dProductId);
+              const masterRate = dRoyaltyUnit === 'mt' ? (prod?.royalty_per_mt ?? null) : (prod?.royalty_per_cum ?? null);
+              const effRate = dRoyaltyRate !== '' ? Number(dRoyaltyRate) : (masterRate != null ? Number(masterRate) : null);
+              const netMT = Number(token?.net_weight ?? 0) / 1000;
+              const uLabel = dRoyaltyUnit === 'mt' ? 'MT' : 'CUM';
+              const royQty = dRoyaltyUnit === 'mt' ? netMT : (Number(dRoyaltyCum) || 0);
+              const total = dRoyaltyOn && effRate != null ? effRate * royQty : 0;
+              const rateFor = (u: 'mt' | 'cum') => {
+                const r = u === 'mt' ? (prod?.royalty_per_mt ?? null) : (prod?.royalty_per_cum ?? null);
+                return r != null ? String(r) : '';
+              };
+              return (
+                <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/60 px-2 py-2">
+                  <label className="flex items-center gap-1.5 text-xs font-medium cursor-pointer">
+                    <input type="checkbox" className="h-3.5 w-3.5" checked={dRoyaltyOn}
+                      onChange={e => { setDRoyaltyOn(e.target.checked); if (e.target.checked && dRoyaltyRate === '') setDRoyaltyRate(rateFor(dRoyaltyUnit)); }} />
+                    Royalty
+                  </label>
+                  {dRoyaltyOn && (
+                    <>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium">Charge royalty per</label>
+                        <div className="flex gap-1">
+                          {(['mt', 'cum'] as const).map(u => (
+                            <button key={u} type="button"
+                              onClick={() => { setDRoyaltyUnit(u); setDRoyaltyRate(rateFor(u)); }}
+                              className={`flex-1 h-8 rounded border text-xs font-medium ${
+                                dRoyaltyUnit === u ? 'border-amber-500 bg-amber-500 text-white' : 'border-amber-300 bg-white text-amber-700 hover:bg-amber-100'}`}
+                            >{u === 'mt' ? 'MT (weight)' : 'CUM (volume)'}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium">Royalty rate (₹/{uLabel})</label>
+                        <Input type="number" min="0" step="0.01" value={dRoyaltyRate}
+                          onChange={e => setDRoyaltyRate(e.target.value)}
+                          placeholder={masterRate != null ? String(masterRate) : `enter ₹/${uLabel}`} />
+                        <p className="text-[10px] text-muted-foreground">
+                          {masterRate != null ? <>Master: ₹{masterRate}/{uLabel} — editable</> : <>No master rate for {uLabel}</>}
+                        </p>
+                      </div>
+                      {dRoyaltyUnit === 'cum' && (
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium">Volume (CUM)</label>
+                          <Input type="number" min="0" step="0.001" value={dRoyaltyCum} onChange={e => setDRoyaltyCum(e.target.value)} placeholder="e.g. 6.5" />
+                        </div>
+                      )}
+                      {effRate != null && (
+                        <p className="text-[10px] text-muted-foreground">
+                          Royalty: <span className="font-semibold">₹{total.toFixed(2)}</span>
+                          {dRoyaltyUnit === 'mt' ? ` (₹${effRate}/MT × ${netMT.toFixed(3)} MT)` : ` (₹${effRate}/CUM × ${(Number(dRoyaltyCum) || 0)} CUM)`}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
             <div className="space-y-1">
               <label className="text-xs font-medium">Payment mode</label>
               <div className="grid grid-cols-4 gap-1">
@@ -976,11 +1027,11 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
               const material = (parseFloat(dQty) || 0) * (parseFloat(dRate) || 0);
               const fare = parseFloat(dRent) || 0;
               const prod = dProducts.find(p => p.id === dProductId);
-              const royUnit = token?.weight_method === 'volume' ? 'cum' : 'mt';
-              const royRate = royUnit === 'mt' ? (prod?.royalty_per_mt ?? null) : (prod?.royalty_per_cum ?? null);
+              const masterRate = dRoyaltyUnit === 'mt' ? (prod?.royalty_per_mt ?? null) : (prod?.royalty_per_cum ?? null);
+              const effRate = dRoyaltyRate !== '' ? Number(dRoyaltyRate) : (masterRate != null ? Number(masterRate) : null);
               const netMT = Number(token?.net_weight ?? 0) / 1000;
-              const royalty = dRoyaltyOn && royRate != null
-                ? (royUnit === 'mt' ? Number(royRate) * netMT : Number(royRate) * (Number(dRoyaltyCum) || 0))
+              const royalty = dRoyaltyOn && effRate != null
+                ? (dRoyaltyUnit === 'mt' ? effRate * netMT : effRate * (Number(dRoyaltyCum) || 0))
                 : 0;
               const grand = material + fare + royalty;
               return (

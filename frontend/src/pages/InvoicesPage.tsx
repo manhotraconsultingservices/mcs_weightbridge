@@ -19,7 +19,7 @@ import api from '@/services/api';
 import { fetchUnits, DEFAULT_UNITS, withUnit } from '@/lib/units';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
 import { useAuth } from '@/hooks/useAuth';
-import type { Invoice, InvoiceListResponse, Party, Product, Token } from '@/types';
+import type { Invoice, InvoiceListResponse, Party, Product, Token, Vehicle } from '@/types';
 
 const INR = (v: number) => '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2 });
 
@@ -138,6 +138,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
   const [parties, setParties] = useState<Party[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [completedTokens, setCompletedTokens] = useState<Token[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);   // master — gates Vehicle Rent to own vehicles
   const [walkIn, setWalkIn] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [form, setForm] = useState({
@@ -179,14 +180,20 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
       api.get<Party[]>('/api/v1/parties'),
       api.get<Product[]>('/api/v1/products'),
       api.get<{ items: Token[] }>('/api/v1/tokens?status=COMPLETED&page_size=100'),
-    ]).then(([p, pr, t]) => {
+      api.get<Vehicle[] | { items: Vehicle[] }>('/api/v1/vehicles'),
+    ]).then(([p, pr, t, v]) => {
       const pData = p.data as Party[] | { items: Party[] };
       setParties(Array.isArray(pData) ? pData : (pData.items ?? []));
       const prData = pr.data as Product[] | { items: Product[] };
       setProducts(Array.isArray(prData) ? prData : (prData.items ?? []));
       setCompletedTokens(t.data.items ?? []);
+      setVehicles(Array.isArray(v.data) ? v.data : (v.data.items ?? []));
     }).catch(() => {});
   }, [open]);
+
+  // Vehicle rent applies ONLY to own vehicles (plate present in the master).
+  const isOwnVehicle = !!form.vehicle_no.trim()
+    && vehicles.some(v => v.registration_no.toUpperCase().trim() === form.vehicle_no.toUpperCase().trim());
 
   // When token is selected, populate line items from it
   function handleTokenSelect(tokenId: string) {
@@ -260,7 +267,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
   const subTotalEst = lines.reduce((s, l) => s + lineBase(l), 0);
   const gstTotalEst = lines.reduce((s, l) => s + lineGstAmt(l), 0);
   const grandEstimate = subTotalEst + gstTotalEst
-    + (parseFloat(form.freight) || 0) + (parseFloat(form.vehicle_rent) || 0) + (parseFloat(form.royalty_amount) || 0);
+    + (parseFloat(form.freight) || 0) + (isOwnVehicle ? (parseFloat(form.vehicle_rent) || 0) : 0) + (parseFloat(form.royalty_amount) || 0);
 
   async function handleSubmit() {
     if (!walkIn && !form.party_id) { setError('Select a party or use Walk-in mode'); return; }
@@ -283,7 +290,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
         discount_type: form.discount_type || undefined,
         discount_value: parseFloat(form.discount_value) || 0,
         freight: parseFloat(form.freight) || 0,
-        vehicle_rent: parseFloat(form.vehicle_rent) || 0,
+        vehicle_rent: isOwnVehicle ? (parseFloat(form.vehicle_rent) || 0) : 0,
         royalty_amount: parseFloat(form.royalty_amount) || 0,
         tcs_rate: parseFloat(form.tcs_rate) || 0,
         payment_mode: form.payment_mode || undefined,
@@ -530,11 +537,14 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
               <Input type="number" min="0" value={form.freight}
                 onChange={e => setForm(f => ({ ...f, freight: e.target.value }))} />
             </div>
+            {/* Vehicle rent only for OWN vehicles (plate in the master). */}
+            {isOwnVehicle && (
             <div className="space-y-1">
               <Label>{t('invoice.vehicleRent')}</Label>
               <Input type="number" min="0" value={form.vehicle_rent}
                 onChange={e => setForm(f => ({ ...f, vehicle_rent: e.target.value }))} />
             </div>
+            )}
             <div className="space-y-1">
               <Label>Royalty ₹</Label>
               <Input type="number" min="0" value={form.royalty_amount}
@@ -642,6 +652,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
   const { authorized: usbAuthorized } = useUsbGuard();
   const [parties, setParties] = useState<Party[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);   // master — gates Vehicle Rent to own vehicles
   const [walkIn, setWalkIn] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [form, setForm] = useState({
@@ -717,13 +728,19 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
     Promise.all([
       api.get<Party[]>('/api/v1/parties'),
       api.get<Product[]>('/api/v1/products'),
-    ]).then(([p, pr]) => {
+      api.get<Vehicle[] | { items: Vehicle[] }>('/api/v1/vehicles'),
+    ]).then(([p, pr, v]) => {
       const pData = p.data as Party[] | { items: Party[] };
       setParties(Array.isArray(pData) ? pData : (pData.items ?? []));
       const prData = pr.data as Product[] | { items: Product[] };
       setProducts(Array.isArray(prData) ? prData : (prData.items ?? []));
+      setVehicles(Array.isArray(v.data) ? v.data : (v.data.items ?? []));
     }).catch(() => {});
   }, [open, invoice]);
+
+  // Vehicle rent applies ONLY to own vehicles (plate present in the master).
+  const isOwnVehicle = !!form.vehicle_no.trim()
+    && vehicles.some(v => v.registration_no.toUpperCase().trim() === form.vehicle_no.toUpperCase().trim());
 
   function handleProductSelect(idx: number, productId: string) {
     const p = products.find(x => x.id === productId);
@@ -761,7 +778,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
   const subTotalEst = lines.reduce((s, l) => s + lineBase(l), 0);
   const gstTotalEst = lines.reduce((s, l) => s + lineGstAmt(l), 0);
   const grandEstimate = subTotalEst + gstTotalEst
-    + (parseFloat(form.freight) || 0) + (parseFloat(form.vehicle_rent) || 0) + (parseFloat(form.royalty_amount) || 0);
+    + (parseFloat(form.freight) || 0) + (isOwnVehicle ? (parseFloat(form.vehicle_rent) || 0) : 0) + (parseFloat(form.royalty_amount) || 0);
 
   async function handleSave() {
     if (!walkIn && !form.party_id) { setError('Select a party or use Walk-in mode'); return; }
@@ -782,7 +799,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
         discount_type: form.discount_type || null,
         discount_value: parseFloat(form.discount_value) || 0,
         freight: parseFloat(form.freight) || 0,
-        vehicle_rent: parseFloat(form.vehicle_rent) || 0,
+        vehicle_rent: isOwnVehicle ? (parseFloat(form.vehicle_rent) || 0) : 0,
         royalty_amount: parseFloat(form.royalty_amount) || 0,
         tcs_rate: parseFloat(form.tcs_rate) || 0,
         payment_mode: form.payment_mode || null,
@@ -1019,11 +1036,14 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
               <Input type="number" min="0" value={form.freight}
                 onChange={e => setForm(f => ({ ...f, freight: e.target.value }))} />
             </div>
+            {/* Vehicle rent only for OWN vehicles (plate in the master). */}
+            {isOwnVehicle && (
             <div className="space-y-1">
               <Label>{t('invoice.vehicleRent')}</Label>
               <Input type="number" min="0" value={form.vehicle_rent}
                 onChange={e => setForm(f => ({ ...f, vehicle_rent: e.target.value }))} />
             </div>
+            )}
             <div className="space-y-1">
               <Label>Royalty ₹</Label>
               <Input type="number" min="0" value={form.royalty_amount}

@@ -156,6 +156,8 @@ export interface TokenProduct {
   name: string;
   unit: string;
   bulk_density: number | null;   // kg/CFT — enables MT ↔ volume conversion in UI
+  royalty_per_mt: number | null;    // ₹/MT master rate — prefills the token royalty field
+  royalty_per_cum: number | null;   // ₹/CUM master rate — prefills the token royalty field
 }
 
 export interface TokenVehicle {
@@ -241,6 +243,7 @@ export interface Token {
   rent_rate_per_km_per_cum: number | null;  // rent rate used (₹/km/CUM)
   royalty_cum: number | null;      // CUM the royalty was charged on
   royalty_unit: string | null;     // 'mt' | 'cum' — royalty basis
+  royalty_rate: number | null;     // ₹/unit rate used (operator override or product master)
   royalty_amount: number | null;   // computed royalty charge (rate × qty)
   remarks: string | null;
   custom_fields: Record<string, unknown> | null;   // owner-defined attribute values
