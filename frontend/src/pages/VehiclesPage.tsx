@@ -122,6 +122,7 @@ function VehicleDialog({ open, editing, vehicleTypes, onClose, onSaved }: {
   const [form, setForm] = useState({
     registration_no: '', vehicle_type: 'truck', owner_name: '', owner_phone: '',
     default_tare_weight: 0, benchmark_mileage_kmpl: 0, tank_capacity_litres: 0,
+    rent_rate_per_km_per_mt: 0,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -136,7 +137,8 @@ function VehicleDialog({ open, editing, vehicleTypes, onClose, onSaved }: {
         default_tare_weight: editing.default_tare_weight,
         benchmark_mileage_kmpl: editing.benchmark_mileage_kmpl ?? 0,
         tank_capacity_litres: editing.tank_capacity_litres ?? 0,
-      } : { registration_no: '', vehicle_type: 'truck', owner_name: '', owner_phone: '', default_tare_weight: 0, benchmark_mileage_kmpl: 0, tank_capacity_litres: 0 });
+        rent_rate_per_km_per_mt: editing.rent_rate_per_km_per_mt ?? 0,
+      } : { registration_no: '', vehicle_type: 'truck', owner_name: '', owner_phone: '', default_tare_weight: 0, benchmark_mileage_kmpl: 0, tank_capacity_litres: 0, rent_rate_per_km_per_mt: 0 });
       setError('');
     }
   }, [open, editing]);
@@ -154,6 +156,7 @@ function VehicleDialog({ open, editing, vehicleTypes, onClose, onSaved }: {
         registration_no: form.registration_no.toUpperCase().trim(),
         benchmark_mileage_kmpl: form.benchmark_mileage_kmpl || null,
         tank_capacity_litres: form.tank_capacity_litres || null,
+        rent_rate_per_km_per_mt: form.rent_rate_per_km_per_mt || null,
       });
       onSaved(data);
       onClose();
@@ -227,6 +230,17 @@ function VehicleDialog({ open, editing, vehicleTypes, onClose, onSaved }: {
                 onChange={e => set('tank_capacity_litres', parseFloat(e.target.value) || 0)}
                 placeholder="e.g. 300" />
               <p className="text-[10px] text-muted-foreground">Flags a fill larger than the tank.</p>
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Rent rate (₹ / km / MT)</Label>
+              <Input type="number" min="0" step="0.01"
+                value={form.rent_rate_per_km_per_mt || ''}
+                onChange={e => set('rent_rate_per_km_per_mt', parseFloat(e.target.value) || 0)}
+                placeholder="e.g. 2.00" />
+              <p className="text-[10px] text-muted-foreground">
+                Vehicle rent auto-calculates as <b>rate × distance (km) × net weight (MT)</b>. The
+                operator enters the distance on the token; blank = enter rent manually.
+              </p>
             </div>
           </div>
         </div>

@@ -176,7 +176,8 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     gate_pass_id: '',
     remarks: '',
     transit_pass_id: '',   // P1: link purchase token to its royalty/transit pass
-    vehicle_rent: '',      // optional payment to truck owner per trip
+    vehicle_rent: '',      // optional manual override (blank → auto Rate×Km×MT)
+    rent_km: '',           // trip distance → vehicle_rent = vehicle rate × km × net MT
     agent_id: '',          // broker/dalal — carried to the invoice for commission
     billing_unit: '',      // operator-chosen billing unit ('' = auto = product's unit)
     rate: '',              // ₹ per billing_unit (prefilled from customer-wise/default price, editable)
@@ -340,7 +341,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   }, [loadGatePasses]);
 
   function resetForm() {
-    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', agent_id: '', billing_unit: weightMethod === 'weighbridge' ? weightUnit().code : volDefault, rate: '', payment_mode: '' });
+    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', agent_id: '', billing_unit: weightMethod === 'weighbridge' ? weightUnit().code : volDefault, rate: '', payment_mode: '' });
     setRateSource('none');
     rateEditedRef.current = false;
     setCustomValues({});
@@ -416,7 +417,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const rateNum = parseFloat(form.rate || '0');
 
   const handleTypeChange = (type: string) => {
-    setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '', vehicle_rent: '' }));
+    setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '', vehicle_rent: '', rent_km: '' }));
     if (type === 'purchase' && moduleEnabled('royalty')) {
       api.get('/api/v1/royalty/passes', { params: { status: 'active', page_size: 100 } })
         .then(r => {
@@ -519,6 +520,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           payment_mode: form.payment_mode || undefined,
           gate_pass_id: form.gate_pass_id || undefined,
           vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
+          rent_km: form.rent_km ? Number(form.rent_km) : undefined,
           remarks: form.remarks
             ? `${form.remarks}${tyreCount ? ` | ${tyreCount}-tyre truck` : ''}`
             : (tyreCount ? `${tyreCount}-tyre truck` : undefined),
@@ -569,6 +571,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       payment_mode: form.payment_mode || undefined,
       gate_pass_id: form.gate_pass_id || undefined,
       vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
+      rent_km: form.rent_km ? Number(form.rent_km) : undefined,
       remarks: form.remarks || undefined,
       custom_fields: Object.keys(customValues).length ? customValues : undefined,
     };
@@ -1143,9 +1146,33 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           </div>
         )}
 
-        {/* Vehicle Rent */}
+        {/* Vehicle rent — auto = vehicle rate (₹/km/MT) × distance × net weight (MT) */}
         <div className="space-y-1">
-          <Label className="text-xs">Vehicle Rent ₹ <span className="text-muted-foreground">(optional)</span></Label>
+          <Label className="text-xs">Distance (km) <span className="text-muted-foreground">(vehicle rent)</span></Label>
+          <Input
+            className="h-8 text-xs"
+            type="number"
+            min="0"
+            step="0.1"
+            value={form.rent_km}
+            onChange={e => setForm(f => ({ ...f, rent_km: e.target.value }))}
+            placeholder="e.g. 50"
+          />
+          {selectedVehicle?.rent_rate_per_km_per_mt ? (
+            <p className="text-[10px] text-muted-foreground">
+              Rent = ₹{selectedVehicle.rent_rate_per_km_per_mt}/km/MT × {form.rent_km || '0'} km × net wt (MT)
+              {' '}— auto {weightMethod === 'weighbridge' ? 'after weighing' : 'now'}.
+            </p>
+          ) : form.rent_km ? (
+            <p className="text-[10px] text-amber-600">
+              No rent rate on this vehicle — set “Rent rate (₹/km/MT)” in Vehicle Master, or enter rent manually below.
+            </p>
+          ) : null}
+        </div>
+
+        {/* Optional manual override of the auto-calculated rent */}
+        <div className="space-y-1">
+          <Label className="text-xs">Vehicle Rent ₹ <span className="text-muted-foreground">(override, optional)</span></Label>
           <Input
             className="h-8 text-xs"
             type="number"
@@ -1153,7 +1180,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             step="0.01"
             value={form.vehicle_rent}
             onChange={e => setForm(f => ({ ...f, vehicle_rent: e.target.value }))}
-            placeholder="0.00"
+            placeholder="auto"
           />
         </div>
 

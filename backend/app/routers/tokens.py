@@ -272,6 +272,22 @@ async def _fetch_rate(db: AsyncSession, party_id: uuid.UUID | None,
     return await resolve_rate(db, party_id, product_id, unit)
 
 
+async def _compute_vehicle_rent(db: AsyncSession, token: Token, net_kg) -> Decimal | None:
+    """Auto vehicle rent = vehicle.rent_rate_per_km_per_mt × token.rent_km × net_MT.
+    Returns None (→ leave rent as-is / manual) unless the vehicle has a rate AND a
+    distance was entered. Net weight is known at completion (weighbridge) or at
+    create (volume)."""
+    if not token.vehicle_id or token.rent_km is None:
+        return None
+    from app.models.vehicle import Vehicle
+    veh = (await db.execute(select(Vehicle).where(Vehicle.id == token.vehicle_id))).scalar_one_or_none()
+    if not veh or veh.rent_rate_per_km_per_mt is None:
+        return None
+    net_mt = Decimal(str(net_kg or 0)) / Decimal("1000")
+    rent = Decimal(str(veh.rent_rate_per_km_per_mt)) * Decimal(str(token.rent_km)) * net_mt
+    return rent.quantize(Decimal("0.01"))
+
+
 async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
                                fy: FinancialYear, user_id: uuid.UUID,
                                invoice_type: str = "sale"):
@@ -518,6 +534,7 @@ async def create_token(
         gate_pass_no=resolved_gate_pass_no,
         transit_pass_id=payload.transit_pass_id,
         vehicle_rent=payload.vehicle_rent,
+        rent_km=payload.rent_km,              # distance → vehicle_rent auto-computed (Rate × Km × MT)
         remarks=payload.remarks,
         custom_fields=payload.custom_fields,
         created_by=current_user.id,
@@ -676,6 +693,7 @@ async def create_volume_token(
         gate_pass_no=resolved_vol_gate_pass_no,
         transit_pass_id=payload.transit_pass_id,
         vehicle_rent=payload.vehicle_rent,
+        rent_km=payload.rent_km,              # distance → vehicle_rent auto-computed (Rate × Km × MT)
         remarks=payload.remarks,
         custom_fields=payload.custom_fields,
         created_by=current_user.id,
@@ -691,6 +709,11 @@ async def create_volume_token(
     )
     db.add(token)
     await db.flush()
+
+    # Auto vehicle rent (Rate × Km × MT) — net weight is known now (volume token)
+    _auto_rent = await _compute_vehicle_rent(db, token, net_kg)
+    if _auto_rent is not None:
+        token.vehicle_rent = _auto_rent
 
     # Link gate pass record if supplied (same-transaction)
     if payload.gate_pass_id:
@@ -1178,6 +1201,11 @@ async def record_second_weight(
     else:
         token.token_no = await _next_token_no(db, company.id, fy.id, token.token_date)
 
+    # Auto vehicle rent (Rate × Km × MT) — net weight is now known
+    _auto_rent = await _compute_vehicle_rent(db, token, token.net_weight)
+    if _auto_rent is not None:
+        token.vehicle_rent = _auto_rent
+
     # Auto-create a draft invoice for both sale and purchase tokens
     if token.token_type in ("sale", "purchase"):
         await _auto_create_invoice(db, token, company, fy, current_user.id,
@@ -1532,6 +1560,8 @@ class TokenPricingIn(BaseModel):
     volume_cft: Decimal | None = None      # volume qty override (volume tokens)
     billing_unit: str | None = None        # change the billing unit
     payment_mode: str | None = None        # cash | credit | upi | bank_transfer → invoice tax_type
+    rent_km: Decimal | None = None         # trip distance → recompute vehicle_rent (Rate × Km × MT)
+    vehicle_rent: Decimal | None = None    # explicit manual override of the auto rent
 
 
 @router.put("/{token_id}/pricing", response_model=TokenResponse)
@@ -1601,6 +1631,17 @@ async def update_token_pricing(
             if payload.net_weight <= 0:
                 raise HTTPException(400, "Weight must be greater than zero.")
             token.net_weight = payload.net_weight
+
+    # Vehicle rent: explicit override wins; else recompute Rate × Km × MT from the
+    # (possibly updated) distance + weight.
+    if payload.rent_km is not None:
+        token.rent_km = payload.rent_km
+    if payload.vehicle_rent is not None:
+        token.vehicle_rent = payload.vehicle_rent
+    else:
+        _auto_rent = await _compute_vehicle_rent(db, token, token.net_weight)
+        if _auto_rent is not None:
+            token.vehicle_rent = _auto_rent
 
     # Re-sync the linked DRAFT invoice (if any) from the token's new qty + rate.
     inv = (await db.execute(
