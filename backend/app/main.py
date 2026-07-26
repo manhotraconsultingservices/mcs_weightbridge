@@ -958,6 +958,24 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.error("DDL migration FAILED for tenant %s: %s", _t.slug, e)
 
+            # Seed any MISSING notification templates for this tenant. Idempotent —
+            # inserts only absent (event_type, channel) pairs (seed_default_templates).
+            # Runs EVERY startup so a newly-added event type auto-seeds on deploy for
+            # ALL tenants, instead of silently missing until an admin happens to open
+            # the Notifications page (the old lazy-only behaviour → alerts never fired).
+            # Named recipients are still never auto-seeded (each tenant adds its own).
+            try:
+                from app.integrations.notifications.service import seed_default_templates
+                from app.models.company import Company as _Company
+                _seed_factory = await tenant_registry.get_session_factory(_t.slug)
+                async with _seed_factory() as _sdb:
+                    _sco = (await _sdb.execute(select(_Company).limit(1))).scalar_one_or_none()
+                    if _sco:
+                        await seed_default_templates(_sdb, _sco.id)  # commits internally
+                        logger.info("Notification templates seeded for tenant: %s", _t.slug)
+            except Exception as e:
+                logger.warning("Template seed FAILED for tenant %s: %s", _t.slug, e)
+
         # Skip serial port init in multi-tenant mode (agents handle weight per-tenant)
         logger.info("Multi-tenant: serial port init skipped (use agent per client)")
     else:
