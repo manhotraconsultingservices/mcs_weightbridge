@@ -67,6 +67,34 @@ DEFAULT_INVOICE_PRINT_SETTINGS = {
 TEMPLATES_DIR = Path(__file__).parent.parent / "templates" / "pdf"
 jinja_env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)))
 
+# ── IST datetime helper ─────────────────────────────────────────────────────
+# All timestamps are stored as UTC (TIMESTAMPTZ / naive-UTC). PDFs must print in
+# IST (Asia/Kolkata, UTC+5:30). This converts a *datetime* to IST; plain `date`
+# values (invoice_date, due_date, token_date) are returned untouched — a calendar
+# date has no timezone and must not be shifted.
+from datetime import datetime as _dt, date as _date, timezone as _tz, timedelta as _td
+
+_IST = _tz(_td(hours=5, minutes=30))
+
+
+def _to_ist(value):
+    """UTC/naive datetime → IST datetime. Non-datetime (date/None) passes through."""
+    if value is None:
+        return None
+    # A pure date is not a datetime — leave it (isinstance date is True for datetime,
+    # so check datetime FIRST).
+    if isinstance(value, _dt):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=_tz.utc)  # stored values are UTC
+        return value.astimezone(_IST)
+    if isinstance(value, _date):
+        return value
+    return value
+
+
+jinja_env.filters['ist'] = _to_ist
+jinja_env.globals['to_ist'] = _to_ist
+
 # Bilingual label helper — available in all PDF templates as {{ bl('key') }}
 from app.utils.pdf_labels import bl as _bl
 jinja_env.globals['bl'] = _bl

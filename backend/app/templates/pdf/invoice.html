@@ -213,7 +213,7 @@
         <span class="b">IRN:</span> {{ invoice.irn }}<br>
         <span class="b">Ack No:</span> {{ invoice.irn_ack_no or '—' }}
         &nbsp;&nbsp;<span class="b">Ack Date:</span>
-        {{ invoice.irn_ack_date.strftime('%d-%b-%Y %H:%M') if invoice.irn_ack_date else '—' }}
+        {{ (invoice.irn_ack_date | ist).strftime('%d-%b-%Y %H:%M') if invoice.irn_ack_date else '—' }}
       </td>
       <td class="qr">
         <img src="data:image/png;base64,{{ qr_code_img }}" style="width:70px; height:70px;" alt="QR"/>

@@ -90,7 +90,7 @@
   <div class="ewb">
     <span class="badge">E-Way Bill</span>
     <b>{{ challan.ewb_no }}</b>
-    {% if challan.ewb_valid_till %} · valid till {{ challan.ewb_valid_till.strftime('%d-%b-%Y %H:%M') }}{% endif %}
+    {% if challan.ewb_valid_till %} · valid till {{ (challan.ewb_valid_till | ist).strftime('%d-%b-%Y %H:%M') }}{% endif %}
   </div>
   {% endif %}
 

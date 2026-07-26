@@ -43,7 +43,7 @@
   <table class="kv">
     <tr>
       <td class="k">Token No</td><td class="v"><b>{{ token.token_no or '—' }}</b></td>
-      <td class="k">Date</td><td class="v">{{ token.token_date.strftime('%d-%m-%Y') if token.token_date else (token.created_at.strftime('%d-%m-%Y %H:%M') if token.created_at else '—') }}</td>
+      <td class="k">Date</td><td class="v">{{ token.token_date.strftime('%d-%m-%Y') if token.token_date else ((token.created_at | ist).strftime('%d-%m-%Y %H:%M') if token.created_at else '—') }}</td>
     </tr>
     <tr>
       <td class="k">Vehicle</td><td class="v"><b>{{ token.vehicle_no or '—' }}</b>{% if token.vehicle_type %} ({{ token.vehicle_type }}){% endif %}</td>

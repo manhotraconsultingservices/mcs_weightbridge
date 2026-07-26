@@ -62,8 +62,8 @@
       <td class="k">Token No</td><td>{{ gp.token_no or '—' }}</td>
     </tr>
     <tr>
-      <td class="k">Entry Time</td><td>{{ gp.entry_time.strftime('%d-%m-%Y %H:%M') if gp.entry_time else '—' }}</td>
-      <td class="k">Exit Time</td><td>{{ gp.exit_time.strftime('%d-%m-%Y %H:%M') if gp.exit_time else '—' }}</td>
+      <td class="k">Entry Time</td><td>{{ (gp.entry_time | ist).strftime('%d-%m-%Y %H:%M') if gp.entry_time else '—' }}</td>
+      <td class="k">Exit Time</td><td>{{ (gp.exit_time | ist).strftime('%d-%m-%Y %H:%M') if gp.exit_time else '—' }}</td>
     </tr>
     <tr>
       <td class="k">Net Weight</td>
