@@ -510,6 +510,48 @@ async def get_gate_pass(
     return _serialize_one(dict(gp._mapping))
 
 
+@router.get("/passes/{gp_id}/print")
+async def print_gate_pass(
+    gp_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """A4 gate-pass print — pass details + entry/exit camera snapshots (embedded)."""
+    from fastapi.responses import HTMLResponse
+    from app.utils.pdf_generator import render_html, image_data_uri
+    _guard_check(current_user)
+    row = await db.execute(
+        text("""
+            SELECT gp.*,
+                   v.registration_no AS vehicle_registration,
+                   t.token_no, t.net_weight,
+                   COALESCE(gp.vehicle_type, t.vehicle_type) AS vehicle_type,
+                   u.full_name AS created_by_name,
+                   p.name AS product_name
+            FROM gate_passes gp
+            LEFT JOIN vehicles v ON v.id = gp.vehicle_id
+            LEFT JOIN tokens t ON t.id = gp.token_id
+            LEFT JOIN users u ON u.id = gp.created_by
+            LEFT JOIN products p ON p.id = gp.product_id
+            WHERE gp.id = :id
+        """),
+        {"id": gp_id},
+    )
+    gp = row.fetchone()
+    if not gp:
+        raise HTTPException(404, "Gate pass not found")
+    d = dict(gp._mapping)
+    co_row = (await db.execute(text("SELECT * FROM companies LIMIT 1"))).fetchone()
+    company = dict(co_row._mapping) if co_row else {}
+    html = render_html("gate_pass_a4.html", {
+        "gp": d,
+        "company": company,
+        "entry_photo": image_data_uri(d.get("entry_photo_path")),
+        "exit_photo": image_data_uri(d.get("exit_photo_path")),
+    })
+    return HTMLResponse(content=html)
+
+
 @router.put("/passes/{gp_id}")
 async def update_gate_pass(
     gp_id: str,

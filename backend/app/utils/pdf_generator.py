@@ -134,6 +134,41 @@ def render_html(template_name: str, context: dict) -> str:
     return tpl.render(**context)
 
 
+def image_data_uri(stored_path: str | None) -> str | None:
+    """Turn a stored snapshot reference into a value usable as an <img src>.
+
+    Print HTML is opened by the frontend as a *blob* URL (no origin), so a
+    relative path like ``uploads/camera/...`` can't be fetched by the browser.
+    So:
+      - an http(s) URL (cloud storage — Drive / R2) is returned as-is (absolute,
+        loads fine even inside a blob), and
+      - a local path is read from disk and returned as a base64 ``data:`` URI so
+        the bytes travel inside the HTML itself.
+    Returns None if the reference is empty or the file can't be read.
+    """
+    import base64
+    import os as _os
+    if not stored_path:
+        return None
+    s = str(stored_path).strip()
+    if s.startswith("http://") or s.startswith("https://") or s.startswith("data:"):
+        return s
+    # Stored relative to the project root (e.g. "uploads/camera/<id>/<file>.jpg").
+    # pdf_generator.py lives at backend/app/utils/ → 4 dirnames up = project root.
+    root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+    abspath = _os.path.join(root, s.lstrip("/\\").replace("/", _os.sep))
+    try:
+        with open(abspath, "rb") as fh:
+            data = fh.read()
+        if not data:
+            return None
+        ext = (_os.path.splitext(abspath)[1].lower().lstrip(".") or "jpeg")
+        mime = "jpeg" if ext in ("jpg", "jpeg") else ext
+        return f"data:image/{mime};base64," + base64.b64encode(data).decode("ascii")
+    except Exception:
+        return None
+
+
 def generate_pdf(template_name: str, context: dict) -> bytes:
     import logging
     log = logging.getLogger(__name__)

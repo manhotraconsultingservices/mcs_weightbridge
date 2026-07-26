@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Gate Pass {{ gp.gate_pass_no }}</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 0; }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  .hdr { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+  .co { font-size: 20px; font-weight: bold; }
+  .co-sub { font-size: 11px; color: #444; margin-top: 2px; }
+  .title { font-size: 15px; font-weight: bold; letter-spacing: 2px; margin-top: 8px; }
+  table.kv { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 12px; }
+  table.kv td { border: 1px solid #bbb; padding: 5px 8px; vertical-align: top; }
+  table.kv td.k { background: #f2f2f2; font-weight: bold; width: 22%; white-space: nowrap; }
+  .status { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: bold; }
+  .st-inside { background: #dcfce7; color: #166534; }
+  .st-exited { background: #e0e7ff; color: #3730a3; }
+  .st-cancelled { background: #fee2e2; color: #991b1b; }
+  .photos { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  .photos th { font-size: 12px; background: #f0f0f0; border: 1px solid #bbb; padding: 4px; }
+  .photos td { border: 1px solid #bbb; padding: 6px; text-align: center; vertical-align: top; width: 50%; }
+  .photos img { width: 100%; max-height: 340px; object-fit: contain; }
+  .no-photo { color: #999; font-size: 11px; padding: 40px 0; }
+  .foot { margin-top: 26px; display: flex; justify-content: space-between; font-size: 11px; }
+  .sig { border-top: 1px solid #000; padding-top: 3px; width: 200px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <div class="co">{{ company.name or 'Company' }}</div>
+    {% if company.address %}<div class="co-sub">{{ company.address }}</div>{% endif %}
+    <div class="co-sub">
+      {% if company.gstin %}GSTIN: {{ company.gstin }}{% endif %}
+      {% if company.phone %} · Ph: {{ company.phone }}{% endif %}
+    </div>
+    <div class="title">GATE PASS</div>
+  </div>
+
+  <table class="kv">
+    <tr>
+      <td class="k">Gate Pass No</td><td><b>{{ gp.gate_pass_no }}</b></td>
+      <td class="k">Status</td>
+      <td>
+        {% set st = gp.status or 'inside' %}
+        <span class="status st-{{ st }}">{{ st|upper }}</span>
+      </td>
+    </tr>
+    <tr>
+      <td class="k">Vehicle No</td><td><b>{{ gp.vehicle_no or gp.vehicle_registration or '—' }}</b></td>
+      <td class="k">Vehicle Type</td><td>{{ gp.vehicle_type or '—' }}</td>
+    </tr>
+    <tr>
+      <td class="k">Driver</td><td>{{ gp.driver_name or '—' }}{% if gp.driver_phone %} ({{ gp.driver_phone }}){% endif %}</td>
+      <td class="k">Purpose</td><td>{{ (gp.purpose or 'weighbridge')|replace('_', ' ')|title }}</td>
+    </tr>
+    <tr>
+      <td class="k">Material</td><td>{{ gp.material or gp.product_name or '—' }}</td>
+      <td class="k">Token No</td><td>{{ gp.token_no or '—' }}</td>
+    </tr>
+    <tr>
+      <td class="k">Entry Time</td><td>{{ gp.entry_time.strftime('%d-%m-%Y %H:%M') if gp.entry_time else '—' }}</td>
+      <td class="k">Exit Time</td><td>{{ gp.exit_time.strftime('%d-%m-%Y %H:%M') if gp.exit_time else '—' }}</td>
+    </tr>
+    <tr>
+      <td class="k">Net Weight</td>
+      <td>{% if gp.net_weight %}{{ '%.3f'|format(gp.net_weight|float / 1000) }} MT{% else %}—{% endif %}</td>
+      <td class="k">Issued By</td><td>{{ gp.created_by_name or '—' }}</td>
+    </tr>
+    {% if gp.notes %}
+    <tr><td class="k">Notes</td><td colspan="3">{{ gp.notes }}</td></tr>
+    {% endif %}
+  </table>
+
+  <table class="photos">
+    <tr>
+      <th>ENTRY PHOTO</th>
+      <th>EXIT PHOTO</th>
+    </tr>
+    <tr>
+      <td>
+        {% if entry_photo %}<img src="{{ entry_photo }}" alt="Entry">
+        {% else %}<div class="no-photo">No entry photo captured</div>{% endif %}
+      </td>
+      <td>
+        {% if exit_photo %}<img src="{{ exit_photo }}" alt="Exit">
+        {% else %}<div class="no-photo">No exit photo captured</div>{% endif %}
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">
+    <div class="sig">Security / Guard</div>
+    <div class="sig">Authorised Signatory</div>
+  </div>
+</div>
+<script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; };</script>
+</body>
+</html>
