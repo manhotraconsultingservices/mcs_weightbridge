@@ -203,10 +203,11 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
   const [dQty, setDQty] = useState('');
   const [dRate, setDRate] = useState('');
   const [dRent, setDRent] = useState('');
+  const [dRoyaltyCum, setDRoyaltyCum] = useState('');
   const [dPayMode, setDPayMode] = useState('cash');
   const [dRemarks, setDRemarks] = useState('');
   const [saving, setSaving] = useState(false);
-  const editInit = useRef({ qty: '', rate: '', rent: '', mode: 'cash' });
+  const editInit = useRef({ qty: '', rate: '', rent: '', mode: 'cash', royaltyCum: '' });
 
   async function openEdit() {
     if (!token) return;
@@ -216,12 +217,14 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
       : Number(token.net_weight ?? 0) / (WT_TO_KG[u] ?? 1000);
     const qtyStr = qty ? String(round3(qty)) : '';
     const rentStr = token.vehicle_rent != null ? String(token.vehicle_rent) : '';
+    const royStr = token.royalty_cum != null ? String(token.royalty_cum) : '';
     const modeStr = token.payment_mode || 'cash';
     setDQty(qtyStr);
     setDVehicleNo(token.vehicle_no ?? '');
     setDPartyId(token.party?.id ?? '');
     setDProductId(token.product?.id ?? '');
     setDRent(rentStr);
+    setDRoyaltyCum(royStr);
     setDPayMode(modeStr);
     setDRemarks(token.remarks ?? '');
     // Rate: prefer the token's stored rate; else the linked invoice's line rate
@@ -235,7 +238,7 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
     }
     const rateStr = rate != null ? String(rate) : '';
     setDRate(rateStr);
-    editInit.current = { qty: qtyStr, rate: rateStr, rent: rentStr, mode: modeStr };
+    editInit.current = { qty: qtyStr, rate: rateStr, rent: rentStr, mode: modeStr, royaltyCum: royStr };
     setEditOpen(true);
     if (dParties.length === 0) {
       api.get<{ items?: Party[] } | Party[]>('/api/v1/parties?page_size=500')
@@ -274,6 +277,7 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
       payload.billing_unit = u;
     }
     if (dRent !== editInit.current.rent) payload.vehicle_rent = dRent === '' ? 0 : (parseFloat(dRent) || 0);
+    if (dRoyaltyCum !== editInit.current.royaltyCum) payload.royalty_cum = dRoyaltyCum === '' ? 0 : (parseFloat(dRoyaltyCum) || 0);
     if (dPayMode !== editInit.current.mode) payload.payment_mode = dPayMode;
 
     setSaving(true);
@@ -903,9 +907,23 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                 <Input type="number" min="0" step="0.01" value={dRate} onChange={e => setDRate(e.target.value)} />
               </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Vehicle rent (₹)</label>
-              <Input type="number" min="0" step="0.01" value={dRent} onChange={e => setDRent(e.target.value)} placeholder="0.00" />
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Vehicle rent (₹)</label>
+                <Input type="number" min="0" step="0.01" value={dRent} onChange={e => setDRent(e.target.value)} placeholder="0.00" />
+              </div>
+              {(() => {
+                const royRate = dProducts.find(p => p.id === dProductId)?.royalty_per_cum ?? null;
+                return (
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Royalty — Vol (CUM)</label>
+                    <Input type="number" min="0" step="0.001" value={dRoyaltyCum} onChange={e => setDRoyaltyCum(e.target.value)} placeholder="0" />
+                    {royRate != null && Number(dRoyaltyCum) > 0
+                      ? <p className="text-[10px] text-muted-foreground">₹{royRate}/CUM × {dRoyaltyCum} = ₹{(Number(royRate) * Number(dRoyaltyCum)).toFixed(2)}</p>
+                      : royRate == null ? <p className="text-[10px] text-amber-600">set ₹/CUM on the product</p> : null}
+                  </div>
+                );
+              })()}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">Payment mode</label>
