@@ -1494,10 +1494,12 @@ async def print_token(
         if rate > 0 and _prod:
             from app.services.pricing import token_quantity
             amount = rate * float(token_quantity(token, _bunit, _prod))
+    # Royalty (govt mineral levy) billed to the customer — shown as its own slip line.
+    royalty = float(token.royalty_amount) if token.royalty_amount else 0.0
     if total_amount is None:
-        # No linked invoice — fold vehicle rent into the slip total so it foots.
+        # No linked invoice — fold vehicle rent + royalty into the slip total so it foots.
         _rent = float(token.vehicle_rent) if token.vehicle_rent else 0.0
-        total_amount = (amount or 0.0) + _rent if (amount or _rent) else amount
+        total_amount = (amount or 0.0) + _rent + royalty if (amount or _rent or royalty) else amount
 
     # Operator who created the token (for the slip + accountability).
     operator_name = None
