@@ -572,6 +572,10 @@ async def create_token(
         if op_id and origin == "edge" and payload.gate_pass_no:
             # #172: keep the gate-pass number printed on the offline slip.
             resolved_gate_pass_no = payload.gate_pass_no
+        elif payload.token_type == "purchase":
+            # Gate pass is OPTIONAL for purchase (inbound) tokens — don't auto-issue
+            # one; honour an explicitly-supplied number, else leave it unset.
+            resolved_gate_pass_no = payload.gate_pass_no or None
         else:
             resolved_gate_pass_no = await next_gate_pass_no(db, company.id, fy.id, branch_id)
     else:
@@ -741,7 +745,8 @@ async def create_volume_token(
     # Resolve gate pass number — link to an existing guard-created pass if supplied,
     # otherwise auto-generate from number_sequences (backward-compat / no Gate Register).
     if not payload.gate_pass_id:
-        resolved_vol_gate_pass_no = await next_gate_pass_no(db, company.id, fy.id, branch_id)
+        # Gate pass is OPTIONAL for purchase (inbound) tokens — don't auto-issue one.
+        resolved_vol_gate_pass_no = None if payload.token_type == "purchase" else await next_gate_pass_no(db, company.id, fy.id, branch_id)
     else:
         vgp_row = await db.execute(
             text("SELECT gate_pass_no, token_id, status FROM gate_passes WHERE id = :id AND company_id = :cid"),
