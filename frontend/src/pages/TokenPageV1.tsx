@@ -178,6 +178,8 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     transit_pass_id: '',   // P1: link purchase token to its royalty/transit pass
     vehicle_rent: '',      // optional manual override (blank → auto Rate×Km×MT)
     rent_km: '',           // trip distance → vehicle_rent = vehicle rate × km × net MT
+    royalty_on: false,     // operator opts in to royalty for this load
+    royalty_cum: '',       // CUM the royalty is charged on → royalty = product.royalty_per_cum × CUM
     agent_id: '',          // broker/dalal — carried to the invoice for commission
     billing_unit: '',      // operator-chosen billing unit ('' = auto = product's unit)
     rate: '',              // ₹ per billing_unit (prefilled from customer-wise/default price, editable)
@@ -341,7 +343,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   }, [loadGatePasses]);
 
   function resetForm() {
-    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', agent_id: '', billing_unit: weightMethod === 'weighbridge' ? weightUnit().code : volDefault, rate: '', payment_mode: '' });
+    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', royalty_on: false, royalty_cum: '', agent_id: '', billing_unit: weightMethod === 'weighbridge' ? weightUnit().code : volDefault, rate: '', payment_mode: '' });
     setRateSource('none');
     rateEditedRef.current = false;
     setCustomValues({});
@@ -417,7 +419,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const rateNum = parseFloat(form.rate || '0');
 
   const handleTypeChange = (type: string) => {
-    setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '', vehicle_rent: '', rent_km: '' }));
+    setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', royalty_on: false, royalty_cum: '' }));
     if (type === 'purchase' && moduleEnabled('royalty')) {
       api.get('/api/v1/royalty/passes', { params: { status: 'active', page_size: 100 } })
         .then(r => {
@@ -521,6 +523,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           gate_pass_id: form.gate_pass_id || undefined,
           vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
           rent_km: form.rent_km ? Number(form.rent_km) : undefined,
+          royalty_cum: form.royalty_on && form.royalty_cum ? Number(form.royalty_cum) : undefined,
           remarks: form.remarks
             ? `${form.remarks}${tyreCount ? ` | ${tyreCount}-tyre truck` : ''}`
             : (tyreCount ? `${tyreCount}-tyre truck` : undefined),
@@ -572,6 +575,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       gate_pass_id: form.gate_pass_id || undefined,
       vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
       rent_km: form.rent_km ? Number(form.rent_km) : undefined,
+      royalty_cum: form.royalty_on && form.royalty_cum ? Number(form.royalty_cum) : undefined,
       remarks: form.remarks || undefined,
       custom_fields: Object.keys(customValues).length ? customValues : undefined,
     };
@@ -1183,6 +1187,51 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             placeholder="auto"
           />
         </div>
+
+        {/* Royalty — govt mineral levy: ₹/CUM × CUM, billed on the token + invoice */}
+        {selectedProduct && (
+        <div className="space-y-1 rounded-md border border-amber-200 bg-amber-50/60 px-2 py-2">
+          <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={form.royalty_on}
+              onChange={e => setForm(f => ({
+                ...f,
+                royalty_on: e.target.checked,
+                // Volume load → auto-fill CUM from the entered volume (operator can edit).
+                royalty_cum: e.target.checked && weightMethod === 'volume' && volumeCft > 0
+                  ? (volumeCft / 35.3147).toFixed(3)
+                  : (e.target.checked ? f.royalty_cum : ''),
+              }))}
+            />
+            Add Royalty
+            {selectedProduct.royalty_per_cum != null
+              ? <span className="font-normal text-muted-foreground">(₹{selectedProduct.royalty_per_cum}/CUM)</span>
+              : <span className="font-normal text-amber-600">— set “Royalty (₹/CUM)” on this product first</span>}
+          </label>
+          {form.royalty_on && (
+            <div className="space-y-1 pt-1">
+              <Label className="text-xs">Volume (CUM)</Label>
+              <Input
+                className="h-8 text-xs"
+                type="number"
+                min="0"
+                step="0.001"
+                value={form.royalty_cum}
+                onChange={e => setForm(f => ({ ...f, royalty_cum: e.target.value }))}
+                placeholder={weightMethod === 'volume' ? 'auto from volume — edit if needed' : 'e.g. 6.5'}
+              />
+              {selectedProduct.royalty_per_cum != null && Number(form.royalty_cum) > 0 && (
+                <p className="text-[10px] text-muted-foreground">
+                  Royalty = ₹{selectedProduct.royalty_per_cum}/CUM × {form.royalty_cum} CUM ={' '}
+                  <span className="font-semibold">₹{(Number(selectedProduct.royalty_per_cum) * Number(form.royalty_cum)).toFixed(2)}</span>
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+        )}
 
         {/* Remarks */}
         <div className="space-y-1">

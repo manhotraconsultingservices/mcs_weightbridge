@@ -445,6 +445,9 @@
     {% if invoice.vehicle_rent and invoice.vehicle_rent > 0 %}
     <tr><td class="tl-lbl">Vehicle Rent</td><td class="tl-amt">{{ fmt(invoice.vehicle_rent) }}</td></tr>
     {% endif %}
+    {% if invoice.royalty_amount and invoice.royalty_amount > 0 %}
+    <tr><td class="tl-lbl">Royalty</td><td class="tl-amt">{{ fmt(invoice.royalty_amount) }}</td></tr>
+    {% endif %}
     {% if is_gst and invoice.tcs_amount and invoice.tcs_amount > 0 %}
     <tr><td class="tl-lbl">TCS{% if invoice.tcs_rate %} @ {{ '%g' % (invoice.tcs_rate | float) }}%{% endif %}</td><td class="tl-amt">{{ fmt(invoice.tcs_amount) }}</td></tr>
     {% endif %}

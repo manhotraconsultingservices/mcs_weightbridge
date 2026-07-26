@@ -32,6 +32,7 @@ interface ProductForm {
   default_rate: string;
   gst_rate: string;
   bulk_density: string;
+  royalty_per_cum: string;
   is_raw_material: boolean;
   description: string;
   is_active: boolean;
@@ -41,6 +42,7 @@ const emptyForm = (): ProductForm => ({
   name: '', code: '', category_id: '', hsn_code: '',
   unit: 'MT', default_rate: '0', gst_rate: '5',
   bulk_density: '',
+  royalty_per_cum: '',
   is_raw_material: false,
   description: '', is_active: true,
 });
@@ -74,6 +76,7 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
           default_rate: String(editing.default_rate),
           gst_rate: String(editing.gst_rate),
           bulk_density: editing.bulk_density != null ? String(editing.bulk_density) : '',
+          royalty_per_cum: editing.royalty_per_cum != null ? String(editing.royalty_per_cum) : '',
           is_raw_material: !!editing.is_raw_material,
           description: editing.description ?? '',
           is_active: editing.is_active,
@@ -102,6 +105,7 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
         default_rate: parseFloat(form.default_rate) || 0,
         gst_rate: parseFloat(form.gst_rate) || 0,
         bulk_density: form.bulk_density.trim() ? parseFloat(form.bulk_density) : null,
+        royalty_per_cum: form.royalty_per_cum.trim() ? parseFloat(form.royalty_per_cum) : null,
         is_raw_material: form.is_raw_material,
         description: form.description.trim() || null,
         is_active: form.is_active,
@@ -208,6 +212,21 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
             </p>
           </div>
           )}
+
+          <div className="col-span-2 space-y-1">
+            <Label>Royalty (₹/CUM)</Label>
+            <Input
+              type="number"
+              value={form.royalty_per_cum}
+              onChange={e => set('royalty_per_cum', e.target.value)}
+              min="0"
+              step="0.01"
+              placeholder="e.g. 60.00 — leave blank if no royalty"
+            />
+            <p className="text-xs text-muted-foreground">
+              Govt mineral royalty per cubic metre. When the operator adds royalty on a token, the charge is this rate × the load's CUM, billed on the token &amp; invoice.
+            </p>
+          </div>
 
           {SHOW_PRODUCTION_FIELDS && (
           <div className="col-span-2 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
@@ -454,6 +473,12 @@ function ProductsTable({
       key: 'bulk_density', label: t('product.colDensity'), type: 'number', align: 'right',
       accessor: p => p.bulk_density,
       format: v => v == null ? '—' : Number(v).toFixed(2),
+      className: 'text-muted-foreground',
+    },
+    {
+      key: 'royalty_per_cum', label: 'Royalty ₹/CUM', type: 'number', align: 'right',
+      accessor: p => p.royalty_per_cum,
+      format: v => v == null ? '—' : `₹${Number(v).toFixed(2)}`,
       className: 'text-muted-foreground',
     },
     {

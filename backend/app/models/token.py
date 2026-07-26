@@ -71,6 +71,13 @@ class Token(Base):
     # vehicle.rent_rate_per_km_per_mt × rent_km × net_weight_MT (weight known at
     # completion). vehicle_rent stays an editable override after that.
     rent_km: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # Royalty (govt mineral levy billed to the customer). Operator opts in per token.
+    # royalty_cum = the CUM (cubic metre) volume the royalty is charged on — entered
+    # manually on a weighed (MT) load, or auto-derived from volume_cft (÷35.3147) on a
+    # volume token. royalty_amount = product.royalty_per_cum × royalty_cum (editable
+    # override). NULL royalty_cum → no royalty. Flows to the invoice like vehicle_rent.
+    royalty_cum: Mapped[Decimal | None] = mapped_column(Numeric(12, 3), nullable=True)
+    royalty_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), default=0)
     # Operator-set material price (₹ per billing_unit). Shown on the create/edit
     # token form and used by the auto-invoice (falls back to the pricing resolver
     # when NULL). Editable via PUT /tokens/{id}/pricing, which re-syncs the linked
