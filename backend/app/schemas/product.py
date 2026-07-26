@@ -29,6 +29,7 @@ class ProductCreate(BaseModel):
     gst_rate: Decimal = Decimal("5.00")
     bulk_density: Decimal | None = None   # kg/CFT
     royalty_per_cum: Decimal | None = None   # ₹ royalty per cubic metre (CUM)
+    royalty_per_mt: Decimal | None = None    # ₹ royalty per metric tonne (MT)
     is_raw_material: bool = False         # mark inputs to production
     description: str | None = None
 
@@ -43,6 +44,7 @@ class ProductUpdate(BaseModel):
     gst_rate: Decimal | None = None
     bulk_density: Decimal | None = None
     royalty_per_cum: Decimal | None = None   # ₹ royalty per cubic metre (CUM)
+    royalty_per_mt: Decimal | None = None    # ₹ royalty per metric tonne (MT)
     is_raw_material: bool | None = None
     description: str | None = None
     is_active: bool | None = None
@@ -81,6 +83,7 @@ class ProductResponse(BaseModel):
     gst_rate: Decimal
     bulk_density: Decimal | None = None
     royalty_per_cum: Decimal | None = None   # ₹ royalty per cubic metre (CUM)
+    royalty_per_mt: Decimal | None = None    # ₹ royalty per metric tonne (MT)
     is_raw_material: bool = False
     description: str | None
     is_active: bool

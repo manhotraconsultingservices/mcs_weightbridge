@@ -203,11 +203,12 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
   const [dQty, setDQty] = useState('');
   const [dRate, setDRate] = useState('');
   const [dRent, setDRent] = useState('');
+  const [dRoyaltyOn, setDRoyaltyOn] = useState(false);
   const [dRoyaltyCum, setDRoyaltyCum] = useState('');
   const [dPayMode, setDPayMode] = useState('cash');
   const [dRemarks, setDRemarks] = useState('');
   const [saving, setSaving] = useState(false);
-  const editInit = useRef({ qty: '', rate: '', rent: '', mode: 'cash', royaltyCum: '' });
+  const editInit = useRef({ qty: '', rate: '', rent: '', mode: 'cash', royaltyCum: '', royaltyOn: false });
 
   async function openEdit() {
     if (!token) return;
@@ -218,6 +219,8 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
     const qtyStr = qty ? String(round3(qty)) : '';
     const rentStr = token.vehicle_rent != null ? String(token.vehicle_rent) : '';
     const royStr = token.royalty_cum != null ? String(token.royalty_cum) : '';
+    const royOn = token.royalty_unit != null || token.royalty_cum != null || Number(token.royalty_amount ?? 0) > 0;
+    setDRoyaltyOn(royOn);
     const modeStr = token.payment_mode || 'cash';
     setDQty(qtyStr);
     setDVehicleNo(token.vehicle_no ?? '');
@@ -238,7 +241,7 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
     }
     const rateStr = rate != null ? String(rate) : '';
     setDRate(rateStr);
-    editInit.current = { qty: qtyStr, rate: rateStr, rent: rentStr, mode: modeStr, royaltyCum: royStr };
+    editInit.current = { qty: qtyStr, rate: rateStr, rent: rentStr, mode: modeStr, royaltyCum: royStr, royaltyOn: royOn };
     setEditOpen(true);
     if (dParties.length === 0) {
       api.get<{ items?: Party[] } | Party[]>('/api/v1/parties?page_size=500')
@@ -277,7 +280,12 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
       payload.billing_unit = u;
     }
     if (dRent !== editInit.current.rent) payload.vehicle_rent = dRent === '' ? 0 : (parseFloat(dRent) || 0);
-    if (dRoyaltyCum !== editInit.current.royaltyCum) payload.royalty_cum = dRoyaltyCum === '' ? 0 : (parseFloat(dRoyaltyCum) || 0);
+    // Royalty: basis follows the token (weighed → mt × net weight, volume → cum × CUM).
+    if (dRoyaltyOn !== editInit.current.royaltyOn || dRoyaltyCum !== editInit.current.royaltyCum) {
+      const royUnit = token.weight_method === 'volume' ? 'cum' : 'mt';
+      if (!dRoyaltyOn) { payload.royalty_unit = ''; payload.royalty_cum = 0; }
+      else { payload.royalty_unit = royUnit; payload.royalty_cum = royUnit === 'cum' ? (dRoyaltyCum === '' ? 0 : (parseFloat(dRoyaltyCum) || 0)) : 0; }
+    }
     if (dPayMode !== editInit.current.mode) payload.payment_mode = dPayMode;
 
     setSaving(true);
@@ -913,14 +921,31 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                 <Input type="number" min="0" step="0.01" value={dRent} onChange={e => setDRent(e.target.value)} placeholder="0.00" />
               </div>
               {(() => {
-                const royRate = dProducts.find(p => p.id === dProductId)?.royalty_per_cum ?? null;
+                const prod = dProducts.find(p => p.id === dProductId);
+                const royUnit = token?.weight_method === 'volume' ? 'cum' : 'mt';
+                const royRate = royUnit === 'mt' ? (prod?.royalty_per_mt ?? null) : (prod?.royalty_per_cum ?? null);
+                const netMT = Number(token?.net_weight ?? 0) / 1000;
+                const total = dRoyaltyOn && royRate != null
+                  ? (royUnit === 'mt' ? Number(royRate) * netMT : Number(royRate) * (Number(dRoyaltyCum) || 0))
+                  : 0;
+                const uLabel = royUnit === 'mt' ? 'MT' : 'CUM';
                 return (
                   <div className="space-y-1">
-                    <label className="text-xs font-medium">Royalty — Vol (CUM)</label>
-                    <Input type="number" min="0" step="0.001" value={dRoyaltyCum} onChange={e => setDRoyaltyCum(e.target.value)} placeholder="0" />
-                    {royRate != null && Number(dRoyaltyCum) > 0
-                      ? <p className="text-[10px] text-muted-foreground">₹{royRate}/CUM × {dRoyaltyCum} = ₹{(Number(royRate) * Number(dRoyaltyCum)).toFixed(2)}</p>
-                      : royRate == null ? <p className="text-[10px] text-amber-600">set ₹/CUM on the product</p> : null}
+                    <label className="flex items-center gap-1.5 text-xs font-medium cursor-pointer">
+                      <input type="checkbox" className="h-3.5 w-3.5" checked={dRoyaltyOn} onChange={e => setDRoyaltyOn(e.target.checked)} />
+                      Royalty {royRate != null
+                        ? <span className="font-normal text-muted-foreground">(₹{royRate}/{uLabel})</span>
+                        : <span className="font-normal text-amber-600">set ₹/{uLabel} on product</span>}
+                    </label>
+                    {dRoyaltyOn && royUnit === 'cum' && (
+                      <Input type="number" min="0" step="0.001" value={dRoyaltyCum} onChange={e => setDRoyaltyCum(e.target.value)} placeholder="Volume (CUM)" />
+                    )}
+                    {dRoyaltyOn && royRate != null && (
+                      <p className="text-[10px] text-muted-foreground">
+                        Royalty: <span className="font-semibold">₹{total.toFixed(2)}</span>
+                        {royUnit === 'mt' ? ` (₹${royRate}/MT × ${netMT.toFixed(3)} MT)` : ''}
+                      </p>
+                    )}
                   </div>
                 );
               })()}
@@ -947,12 +972,26 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
               <label className="text-xs font-medium">Remarks</label>
               <Input value={dRemarks} onChange={e => setDRemarks(e.target.value)} placeholder="Optional note" />
             </div>
-            <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2">
-              <span className="text-sm font-medium">Material amount</span>
-              <span className="text-lg font-bold">
-                {INR((parseFloat(dQty) || 0) * (parseFloat(dRate) || 0))}
-              </span>
-            </div>
+            {(() => {
+              const material = (parseFloat(dQty) || 0) * (parseFloat(dRate) || 0);
+              const fare = parseFloat(dRent) || 0;
+              const prod = dProducts.find(p => p.id === dProductId);
+              const royUnit = token?.weight_method === 'volume' ? 'cum' : 'mt';
+              const royRate = royUnit === 'mt' ? (prod?.royalty_per_mt ?? null) : (prod?.royalty_per_cum ?? null);
+              const netMT = Number(token?.net_weight ?? 0) / 1000;
+              const royalty = dRoyaltyOn && royRate != null
+                ? (royUnit === 'mt' ? Number(royRate) * netMT : Number(royRate) * (Number(dRoyaltyCum) || 0))
+                : 0;
+              const grand = material + fare + royalty;
+              return (
+                <div className="rounded-md bg-muted px-3 py-2 space-y-1">
+                  <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">Material amount</span><span className="font-medium">{INR(material)}</span></div>
+                  {fare > 0 && <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">Vehicle fare</span><span className="font-medium">{INR(fare)}</span></div>}
+                  {royalty > 0 && <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">Royalty</span><span className="font-medium">{INR(royalty)}</span></div>}
+                  <div className="flex items-center justify-between border-t pt-1 mt-1"><span className="text-sm font-semibold">Total</span><span className="text-lg font-bold">{INR(grand)}</span></div>
+                </div>
+              );
+            })()}
             <Button onClick={doEdit} disabled={saving} className="w-full gap-1.5">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               Save changes

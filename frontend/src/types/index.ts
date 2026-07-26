@@ -88,6 +88,7 @@ export interface Product {
   gst_rate: number;
   bulk_density: number | null;   // kg/CFT — enables volume → weight conversion in tokens
   royalty_per_cum: number | null;   // ₹ royalty per cubic metre (CUM)
+  royalty_per_mt: number | null;    // ₹ royalty per metric tonne (MT)
   is_raw_material: boolean;       // marks raw inputs to production (e.g., raw boulder)
   description: string | null;
   is_active: boolean;
@@ -239,7 +240,8 @@ export interface Token {
   rent_rate_per_km_per_mt: number | null;   // rent rate used (₹/km/MT)
   rent_rate_per_km_per_cum: number | null;  // rent rate used (₹/km/CUM)
   royalty_cum: number | null;      // CUM the royalty was charged on
-  royalty_amount: number | null;   // computed royalty charge (₹/CUM × CUM)
+  royalty_unit: string | null;     // 'mt' | 'cum' — royalty basis
+  royalty_amount: number | null;   // computed royalty charge (rate × qty)
   remarks: string | null;
   custom_fields: Record<string, unknown> | null;   // owner-defined attribute values
   created_at: string;

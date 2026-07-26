@@ -35,6 +35,9 @@ class Product(Base):
     # the Products page. When an operator applies royalty on a token, the charge is
     # royalty_per_cum × the token's CUM volume, billed on the token + invoice.
     royalty_per_cum: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    # Alternate royalty basis: ₹ per metric tonne (MT). Used when the token is
+    # weighed (billed by weight); the token's royalty_unit picks mt vs cum.
+    royalty_per_mt: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     # Bulk density in kg/CFT — enables volume → weight conversion at token creation.
     # NULL means volume mode is not available for this product.
     # Industry typicals (per CFT, kg): aggregate ≈ 42.5, sand ≈ 48.1, GSB ≈ 53.8,

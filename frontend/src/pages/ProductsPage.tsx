@@ -33,6 +33,7 @@ interface ProductForm {
   gst_rate: string;
   bulk_density: string;
   royalty_per_cum: string;
+  royalty_per_mt: string;
   is_raw_material: boolean;
   description: string;
   is_active: boolean;
@@ -43,6 +44,7 @@ const emptyForm = (): ProductForm => ({
   unit: 'MT', default_rate: '0', gst_rate: '5',
   bulk_density: '',
   royalty_per_cum: '',
+  royalty_per_mt: '',
   is_raw_material: false,
   description: '', is_active: true,
 });
@@ -77,6 +79,7 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
           gst_rate: String(editing.gst_rate),
           bulk_density: editing.bulk_density != null ? String(editing.bulk_density) : '',
           royalty_per_cum: editing.royalty_per_cum != null ? String(editing.royalty_per_cum) : '',
+          royalty_per_mt: editing.royalty_per_mt != null ? String(editing.royalty_per_mt) : '',
           is_raw_material: !!editing.is_raw_material,
           description: editing.description ?? '',
           is_active: editing.is_active,
@@ -213,7 +216,7 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
           </div>
           )}
 
-          <div className="col-span-2 space-y-1">
+          <div className="space-y-1">
             <Label>Royalty (₹/CUM)</Label>
             <Input
               type="number"
@@ -221,12 +224,23 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
               onChange={e => set('royalty_per_cum', e.target.value)}
               min="0"
               step="0.01"
-              placeholder="e.g. 60.00 — leave blank if no royalty"
+              placeholder="e.g. 60.00"
             />
-            <p className="text-xs text-muted-foreground">
-              Govt mineral royalty per cubic metre. When the operator adds royalty on a token, the charge is this rate × the load's CUM, billed on the token &amp; invoice.
-            </p>
           </div>
+          <div className="space-y-1">
+            <Label>Royalty (₹/MT)</Label>
+            <Input
+              type="number"
+              value={form.royalty_per_mt}
+              onChange={e => set('royalty_per_mt', e.target.value)}
+              min="0"
+              step="0.01"
+              placeholder="e.g. 40.00"
+            />
+          </div>
+          <p className="col-span-2 text-xs text-muted-foreground -mt-1">
+            Govt mineral royalty. The token uses the rate matching its unit — volume loads bill ₹/CUM × CUM, weighed loads bill ₹/MT × net weight. Set the one(s) you charge; leave blank for none.
+          </p>
 
           {SHOW_PRODUCTION_FIELDS && (
           <div className="col-span-2 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
@@ -478,6 +492,12 @@ function ProductsTable({
     {
       key: 'royalty_per_cum', label: 'Royalty ₹/CUM', type: 'number', align: 'right',
       accessor: p => p.royalty_per_cum,
+      format: v => v == null ? '—' : `₹${Number(v).toFixed(2)}`,
+      className: 'text-muted-foreground',
+    },
+    {
+      key: 'royalty_per_mt', label: 'Royalty ₹/MT', type: 'number', align: 'right',
+      accessor: p => p.royalty_per_mt,
       format: v => v == null ? '—' : `₹${Number(v).toFixed(2)}`,
       className: 'text-muted-foreground',
     },
