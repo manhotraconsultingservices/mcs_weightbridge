@@ -167,6 +167,14 @@ async def create_receipt(
         _settle_invoice(inv, alloc.amount)
 
     await recompute_party_balance(db, payload.party_id)
+    # Audit trail — record the money-in (financial transaction)
+    from app.routers.audit import log_action
+    await log_action(db, co.id, current_user.id, "create", "payment",
+                     entity_id=str(rec.id),
+                     details={"kind": "receipt", "receipt_no": rec.receipt_no,
+                              "amount": str(rec.amount), "mode": rec.payment_mode,
+                              "party": party.name if party else None,
+                              "allocations": len([a for a in payload.allocations if a.amount and Decimal(str(a.amount)) > 0])})
     await db.commit()
     await db.refresh(rec)
 
@@ -338,6 +346,16 @@ async def create_voucher(
 
     if payload.party_id:  # expense vouchers may have no party
         await recompute_party_balance(db, payload.party_id)
+    # Audit trail — record the money-out (financial transaction): supplier payment or direct expense
+    from app.routers.audit import log_action
+    await log_action(db, co.id, current_user.id, "create", "payment",
+                     entity_id=str(vch.id),
+                     details={"kind": "expense" if is_expense else "voucher",
+                              "voucher_no": vch.voucher_no,
+                              "amount": str(vch.amount), "mode": vch.payment_mode,
+                              "expense_category": vch.expense_category,
+                              "party": party.name if party else None,
+                              "allocations": len([a for a in payload.allocations if a.amount and Decimal(str(a.amount)) > 0])})
     await db.commit()
     await db.refresh(vch)
     # Fire "payment made" (money out — supplier payment / advance) notification
