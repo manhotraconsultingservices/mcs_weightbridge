@@ -14,8 +14,9 @@ import { Loader2, AlertCircle, Calendar, Wallet, HandCoins, Scale, CheckCircle2 
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { DataTable, type ColumnDef, downloadCsv } from '@/components/DataTable';
 import api from '@/services/api';
 import { getCurrentUser } from '@/hooks/useAuth';
@@ -24,9 +25,13 @@ interface OpRow {
   operator_id: string | null;
   operator_name: string;
   receipts: number;
+  opening_float: number;
   cash_total: number;
   handed_over: number;
   balance: number;
+  expected_cash: number;
+  counted_cash: number | null;
+  variance: number | null;
 }
 interface EodResp {
   date: string;
@@ -34,6 +39,8 @@ interface EodResp {
   total_cash: number;
   total_handed_over: number;
   total_balance: number;
+  total_opening_float: number;
+  total_variance: number;
 }
 interface Handover {
   id: string;
@@ -60,6 +67,10 @@ export default function OperatorCashEodPage() {
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  // Drawer-count dialog (opening float + physically counted cash)
+  const [cntDlg, setCntDlg] = useState<OpRow | null>(null);
+  const [opening, setOpening] = useState('');
+  const [counted, setCounted] = useState('');
   const role = getCurrentUser()?.role ?? '';
   const canReceive = ['admin', 'accountant', 'store_manager'].includes(role);
 
@@ -86,6 +97,33 @@ export default function OperatorCashEodPage() {
     setDlg(op);
     setAmount(op.balance > 0 ? op.balance.toFixed(2) : '');   // exact paise, no rounding
     setNotes('');
+  }
+
+  function openCount(op: OpRow) {
+    setCntDlg(op);
+    setOpening(op.opening_float ? op.opening_float.toFixed(2) : '');
+    setCounted(op.counted_cash != null ? op.counted_cash.toFixed(2) : '');
+  }
+
+  async function saveCount() {
+    if (!cntDlg) return;
+    setSaving(true);
+    try {
+      await api.post('/api/v1/reports/operator-cash-count', {
+        operator_id: cntDlg.operator_id,
+        count_date: date,
+        opening_float: opening === '' ? 0 : Number(opening),
+        counted_cash: counted === '' ? null : Number(counted),
+      });
+      toast.success(`Drawer count saved for ${cntDlg.operator_name}.`);
+      setCntDlg(null);
+      load();
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(typeof d === 'string' ? d : 'Failed to save count (admin/accountant only)');
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function recordHandover() {
@@ -116,6 +154,8 @@ export default function OperatorCashEodPage() {
   const cols: ColumnDef<OpRow>[] = [
     { key: 'operator_name', label: 'Operator', accessor: r => r.operator_name },
     { key: 'receipts', label: 'Receipts', type: 'number', align: 'right', accessor: r => r.receipts },
+    { key: 'opening_float', label: 'Opening Float', type: 'number', align: 'right', defaultVisible: false,
+      accessor: r => r.opening_float, format: v => INR(v as number), exportValue: r => r.opening_float },
     { key: 'cash_total', label: 'Cash Collected', type: 'number', align: 'right', accessor: r => r.cash_total,
       format: v => <span className="text-emerald-700 font-medium">{INR(v as number)}</span>, exportValue: r => r.cash_total },
     { key: 'handed_over', label: 'Handed Over', type: 'number', align: 'right', accessor: r => r.handed_over,
@@ -127,11 +167,27 @@ export default function OperatorCashEodPage() {
         if (n < -0.005) return <span className="text-amber-700 font-semibold" title="Handed over MORE than collected — check for a duplicate/back-dated handover">⚠ {INR(Math.abs(n))} over</span>;
         return <span className={n > 0.005 ? 'text-rose-700 font-semibold' : 'text-emerald-600'}>{INR(n)}</span>;
       }, exportValue: r => r.balance },
+    { key: 'counted_cash', label: 'Counted', type: 'number', align: 'right', accessor: r => r.counted_cash ?? '',
+      format: v => v === '' || v == null ? <span className="text-muted-foreground text-xs">—</span> : INR(v as number),
+      exportValue: r => r.counted_cash ?? '' },
+    { key: 'variance', label: 'Variance', type: 'number', align: 'right', accessor: r => r.variance ?? '',
+      format: v => {
+        if (v === '' || v == null) return <span className="text-muted-foreground text-xs">not counted</span>;
+        const n = Number(v);
+        if (Math.abs(n) < 0.005) return <span className="text-emerald-600">✓ {INR(0)}</span>;
+        return <span className="text-amber-700 font-semibold" title="Counted − expected (opening + collected − handed)">{n > 0 ? '+' : '−'}{INR(Math.abs(n))}</span>;
+      }, exportValue: r => r.variance ?? '' },
     ...(canReceive ? [{
       key: 'act', label: '', accessor: (r: OpRow) => '',
-      format: (_v: unknown, r: OpRow) => r.balance > 0
-        ? <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => openHandover(r)}><HandCoins className="h-3.5 w-3.5" /> Receive cash</Button>
-        : <span className="text-emerald-600 text-xs flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> settled</span>,
+      format: (_v: unknown, r: OpRow) => (
+        <div className="flex items-center justify-end gap-1.5">
+          <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs" onClick={() => openCount(r)}
+            title="Set opening float + physically counted cash"><Scale className="h-3.5 w-3.5" /> Count</Button>
+          {r.balance > 0
+            ? <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => openHandover(r)}><HandCoins className="h-3.5 w-3.5" /> Receive cash</Button>
+            : <span className="text-emerald-600 text-xs flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> settled</span>}
+        </div>
+      ),
     } as ColumnDef<OpRow>] : []),
   ];
 
@@ -227,6 +283,34 @@ export default function OperatorCashEodPage() {
               Acknowledge &amp; record {amount ? INR(parseFloat(amount)) : ''}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Drawer count: opening float + physically counted cash → variance */}
+      <Dialog open={cntDlg !== null} onOpenChange={(o) => { if (!o) setCntDlg(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Cash count — {cntDlg?.operator_name}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Collected {INR(cntDlg?.cash_total)} · handed {INR(cntDlg?.handed_over)}.
+              Expected in hand = opening float + collected − handed = <b>{INR((cntDlg?.opening_float ?? 0) + (cntDlg?.cash_total ?? 0) - (cntDlg?.handed_over ?? 0))}</b>.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1"><Label className="text-xs">Opening float ₹</Label>
+                <Input type="number" step="0.01" value={opening} onChange={e => setOpening(e.target.value)} placeholder="0.00" /></div>
+              <div className="space-y-1"><Label className="text-xs">Counted cash ₹</Label>
+                <Input type="number" step="0.01" value={counted} onChange={e => setCounted(e.target.value)} placeholder="physically counted" /></div>
+            </div>
+            {counted !== '' && (
+              <p className="text-sm">Variance: <b className={Math.abs(Number(counted) - ((cntDlg?.opening_float ?? 0) + (cntDlg?.cash_total ?? 0) - (cntDlg?.handed_over ?? 0))) < 0.005 ? 'text-emerald-700' : 'text-amber-700'}>
+                {INR(Number(counted) - ((cntDlg?.opening_float ?? 0) + (cntDlg?.cash_total ?? 0) - (cntDlg?.handed_over ?? 0)))}
+              </b> (counted − expected)</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCntDlg(null)}>Cancel</Button>
+            <Button onClick={saveCount} disabled={saving}>{saving ? 'Saving…' : 'Save count'}</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

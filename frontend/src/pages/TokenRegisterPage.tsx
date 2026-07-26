@@ -41,6 +41,9 @@ interface TokenRegister {
   count: number;
   from_date: string;
   to_date: string;
+  total: number;
+  page: number;
+  page_size: number;
   total_net_weight_kg: number;
   total_net_weight_mt: number;
   completed_count: number;
@@ -85,17 +88,33 @@ export default function TokenRegisterPage() {
   const [toDate, setToDate] = useState(today());
   const [tokenType, setTokenType] = useState('all');
   const [status, setStatus] = useState('all');
+  const [vehicleNo, setVehicleNo] = useState('');
+  const [productId, setProductId] = useState('all');
+  const [products, setProducts] = useState<{ id: string; name: string }[]>([]);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 100;
   const [data, setData] = useState<TokenRegister | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
 
+  useEffect(() => {
+    api.get<{ id: string; name: string }[] | { items: { id: string; name: string }[] }>('/api/v1/products')
+      .then(r => { const d = r.data; setProducts(Array.isArray(d) ? d : (d.items ?? [])); })
+      .catch(() => {});
+  }, []);
+  // Reset to page 1 whenever a filter changes (avoids landing on an empty page).
+  useEffect(() => { setPage(1); }, [fromDate, toDate, tokenType, status, vehicleNo, productId]);
+
   const fetch = useCallback(() => {
     setLoading(true);
     setErr('');
-    const p = new URLSearchParams({ from_date: fromDate, to_date: toDate });
+    const p = new URLSearchParams({ from_date: fromDate, to_date: toDate,
+      page: String(page), page_size: String(PAGE_SIZE) });
     if (tokenType !== 'all') p.set('token_type', tokenType);
     if (status !== 'all') p.set('status', status);
+    if (productId !== 'all') p.set('product_id', productId);
+    if (vehicleNo.trim()) p.set('vehicle_no', vehicleNo.trim());
     api.get<TokenRegister>(`/api/v1/reports/token-register?${p}`)
       .then(r => setData(r.data))
       .catch(e => {
@@ -104,9 +123,10 @@ export default function TokenRegisterPage() {
         setErr(typeof detail === 'string' ? detail : 'Failed to load token data. Check the date range.');
       })
       .finally(() => setLoading(false));
-  }, [fromDate, toDate, tokenType, status]);
+  }, [fromDate, toDate, tokenType, status, productId, vehicleNo, page]);
 
   useEffect(() => { fetch(); }, [fetch]);
+  const totalPages = data ? Math.max(1, Math.ceil((data.total ?? 0) / PAGE_SIZE)) : 1;
 
   const wLabel = weightUnitLabel();   // MT, or Qtl for maize tenants
   const COLUMNS: ColumnDef<TokenRow>[] = [
@@ -222,6 +242,21 @@ export default function TokenRegisterPage() {
             </SelectContent>
           </Select>
         </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Material</label>
+          <Select value={productId} onValueChange={v => setProductId(v ?? 'all')}>
+            <SelectTrigger className="h-8 w-40"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Materials</SelectItem>
+              {products.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Vehicle</label>
+          <Input value={vehicleNo} onChange={e => setVehicleNo(e.target.value)}
+            placeholder="Vehicle no…" className="h-8 w-36" />
+        </div>
         <Button size="sm" onClick={fetch} disabled={loading} className="h-8 gap-1.5">
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           {loading ? 'Loading…' : 'Refresh'}
@@ -245,7 +280,7 @@ export default function TokenRegisterPage() {
       {data && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: 'Total Tokens', value: data.count },
+            { label: 'Total Tokens', value: data.total ?? data.count },
             { label: 'Completed', value: data.completed_count },
             { label: 'Cancelled', value: data.cancelled_count },
             { label: 'Total Net Weight', value: fmtKg(data.total_net_weight_kg ?? (data.total_net_weight_mt ?? 0) * 1000, 2) },
@@ -267,6 +302,19 @@ export default function TokenRegisterPage() {
         defaultSort={{ key: 'token_date', direction: 'desc' }}
         emptyMessage="No tokens found for the selected period."
       />
+
+      {data && (data.total ?? 0) > PAGE_SIZE && (
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">
+            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, data.total)} of {data.total}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => setPage(p => p - 1)}>Previous</Button>
+            <span className="self-center text-xs text-muted-foreground">Page {page} / {totalPages}</span>
+            <Button variant="outline" size="sm" disabled={page >= totalPages || loading} onClick={() => setPage(p => p + 1)}>Next</Button>
+          </div>
+        </div>
+      )}
 
       {/* Token detail modal */}
       <TokenDetailModal

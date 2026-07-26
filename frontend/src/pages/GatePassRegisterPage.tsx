@@ -38,6 +38,9 @@ interface GatePassRow {
 interface GatePassRegister {
   items: GatePassRow[];
   count: number;
+  total: number;
+  page: number;
+  page_size: number;
   from_date: string;
   to_date: string;
   total_vehicles: number;
@@ -217,6 +220,8 @@ export default function GatePassRegisterPage() {
   const [status, setStatus] = useState('all');
   const [purpose, setPurpose] = useState('all');
   const [vehicleNo, setVehicleNo] = useState('');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 200;
   const [data, setData] = useState<GatePassRegister | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
@@ -239,7 +244,8 @@ export default function GatePassRegisterPage() {
   const fetch = useCallback(() => {
     setLoading(true);
     setErr('');
-    const p = new URLSearchParams({ from_date: fromDate, to_date: toDate });
+    const p = new URLSearchParams({ from_date: fromDate, to_date: toDate,
+      page: String(page), page_size: String(PAGE_SIZE) });
     if (status !== 'all') p.set('status', status);
     if (purpose !== 'all') p.set('purpose', purpose);
     if (vehicleNo.trim()) p.set('vehicle_no', vehicleNo.trim());
@@ -251,13 +257,17 @@ export default function GatePassRegisterPage() {
         setErr(typeof detail === 'string' ? detail : 'Failed to load gate pass data. Check the date range.');
       })
       .finally(() => setLoading(false));
-  }, [fromDate, toDate, status, purpose, vehicleNo]);
+  }, [fromDate, toDate, status, purpose, vehicleNo, page]);
 
-  // Auto-refetch only on the structured filters — NOT on vehicleNo keystrokes.
+  // Auto-refetch on the structured filters + page — NOT on vehicleNo keystrokes.
   // The free-text vehicle filter applies via Enter / the Refresh button (fetch reads
   // the latest value), so we avoid a backend query per keypress + response races.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetch(); }, [fromDate, toDate, status, purpose]);
+  useEffect(() => { fetch(); }, [fromDate, toDate, status, purpose, page]);
+  // Reset to page 1 when a filter changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setPage(1); }, [fromDate, toDate, status, purpose, vehicleNo]);
+  const totalPages = data ? Math.max(1, Math.ceil((data.total ?? 0) / PAGE_SIZE)) : 1;
 
   const COLUMNS: ColumnDef<GatePassRow>[] = [
     { key: 'gate_pass_no', label: 'Gate Pass No', accessor: r => r.gate_pass_no,
@@ -443,6 +453,19 @@ export default function GatePassRegisterPage() {
         defaultSort={{ key: 'pass_date', direction: 'desc' }}
         emptyMessage="No gate passes found for the selected period."
       />
+
+      {data && (data.total ?? 0) > PAGE_SIZE && (
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">
+            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, data.total)} of {data.total}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => setPage(p => p - 1)}>Previous</Button>
+            <span className="self-center text-xs text-muted-foreground">Page {page} / {totalPages}</span>
+            <Button variant="outline" size="sm" disabled={page >= totalPages || loading} onClick={() => setPage(p => p + 1)}>Next</Button>
+          </div>
+        </div>
+      )}
 
       {/* Gate pass detail dialog */}
       <GatePassDetailDialog
