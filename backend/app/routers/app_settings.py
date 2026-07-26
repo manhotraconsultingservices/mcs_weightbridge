@@ -574,6 +574,52 @@ async def update_tyre_volumes(
     return cleaned
 
 
+# ── Expense categories — for direct-expense (overhead) vouchers ────────────────
+EXPENSE_CATEGORIES_KEY = "expense_categories"
+EXPENSE_CATEGORIES_DEFAULTS = [
+    "Electricity", "Rent", "Repairs & Maintenance", "Office & Admin",
+    "Bank Charges", "Transport", "Telephone & Internet", "Miscellaneous",
+]
+
+
+@router.get("/expense-categories")
+async def get_expense_categories(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Overhead expense categories shown when recording a direct-expense voucher."""
+    raw = await _get_raw(db, EXPENSE_CATEGORIES_KEY)
+    if raw:
+        try:
+            val = json.loads(raw)
+            if isinstance(val, list) and val:
+                return val
+        except Exception:
+            pass
+    return EXPENSE_CATEGORIES_DEFAULTS
+
+
+@router.put("/expense-categories")
+async def update_expense_categories(
+    payload: list[str],
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Save the expense-category list. Admin only. Case preserved, de-duped
+    case-insensitively, blanks stripped."""
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for c in (payload or []):
+        s = (c or "").strip()
+        if s and s.lower() not in seen:
+            seen.add(s.lower())
+            cleaned.append(s)
+    if not cleaned:
+        raise HTTPException(400, "At least one expense category is required")
+    await _upsert(db, EXPENSE_CATEGORIES_KEY, json.dumps(cleaned))
+    return cleaned
+
+
 @router.delete("/wallpaper")
 async def delete_wallpaper(
     db: AsyncSession = Depends(get_db),

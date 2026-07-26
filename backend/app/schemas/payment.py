@@ -50,7 +50,8 @@ class PaymentReceiptListResponse(BaseModel):
 
 class PaymentVoucherCreate(BaseModel):
     voucher_date: date
-    party_id: UUID
+    party_id: Optional[UUID] = None       # required for supplier payments; omitted for expenses
+    expense_category: Optional[str] = None  # set → direct expense (overhead); no party/allocations
     amount: Decimal
     payment_mode: str
     reference_no: Optional[str] = None
@@ -63,8 +64,9 @@ class PaymentVoucherResponse(BaseModel):
     id: UUID
     voucher_no: str
     voucher_date: date
-    party_id: UUID
-    party_name: str
+    party_id: Optional[UUID] = None
+    party_name: Optional[str] = None
+    expense_category: Optional[str] = None
     amount: Decimal
     payment_mode: str
     reference_no: Optional[str] = None

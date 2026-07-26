@@ -423,6 +423,12 @@ def get_runtime_ddl() -> list[str]:
 def get_column_migrations() -> list[str]:
     """Return column migration ALTER TABLE statements."""
     return [
+        # Direct-expense vouchers: a category tags a voucher as an overhead expense
+        # (electricity/rent/…) instead of a supplier payment; such a voucher needs
+        # no party, so party_id becomes nullable. Additive → existing vouchers stay
+        # supplier payments (category NULL, party set).
+        "ALTER TABLE payment_vouchers ADD COLUMN IF NOT EXISTS expense_category VARCHAR(50)",
+        "ALTER TABLE payment_vouchers ALTER COLUMN party_id DROP NOT NULL",
         # Agents (brokers/dalals) — nullable FK on tokens/invoices/gate_passes
         # + commission snapshot on invoices. Additive → existing rows stay NULL.
         # (The `agents` table is created in get_runtime_ddl, which runs first.)

@@ -27,7 +27,16 @@ class PaymentReceipt(Base):
 
 
 class PaymentVoucher(Base):
-    """Outgoing payments to suppliers"""
+    """Outgoing payments: supplier settlements AND direct expenses.
+
+    A voucher with ``expense_category`` set is a DIRECT EXPENSE (overhead —
+    electricity, rent, repairs…): it needs no party, carries no invoice
+    allocation, and is recognised as an operating expense in the P&L + a cash-out
+    in the Day Book. A voucher with ``expense_category`` NULL is a normal supplier
+    payment (settles purchase invoices / supplier advance) — its unallocated
+    remainder still nets into the party balance. Expense vouchers are EXCLUDED
+    from party-balance advance math so they never distort a supplier balance.
+    """
     __tablename__ = "payment_vouchers"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -35,7 +44,10 @@ class PaymentVoucher(Base):
     fy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("financial_years.id"))
     voucher_no: Mapped[str] = mapped_column(String(30))
     voucher_date: Mapped[date] = mapped_column(Date)
-    party_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("parties.id"))
+    # Nullable: a direct expense voucher has no party.
+    party_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("parties.id"), nullable=True)
+    # NULL = supplier payment · non-NULL = direct expense (overhead) category.
+    expense_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     payment_mode: Mapped[str] = mapped_column(String(20))
     reference_no: Mapped[str | None] = mapped_column(String(50))
