@@ -1472,13 +1472,24 @@ async def print_token(
     rate: float = 0.0
     amount: float | None = None
     total_amount: float | None = None
+    # Royalty + vehicle rent shown on the slip — prefer the linked invoice's values
+    # (authoritative: the operator may have edited them on the invoice), else the
+    # token's. Sourcing them from the same invoice as total_amount keeps the slip
+    # consistent (total already folds these in), so a royalty/rent that's in the
+    # total is never dropped from the line breakdown.
+    royalty = float(token.royalty_amount) if token.royalty_amount else 0.0
+    vrent = float(token.vehicle_rent) if token.vehicle_rent else 0.0
     inv_row = (await db.execute(
-        select(Invoice.id, Invoice.grand_total)
+        select(Invoice.id, Invoice.grand_total, Invoice.royalty_amount, Invoice.vehicle_rent)
         .where(Invoice.token_id == token_id, Invoice.status != "cancelled")
         .order_by(Invoice.created_at.desc()).limit(1)
     )).first()
     if inv_row:
         total_amount = float(inv_row.grand_total) if inv_row.grand_total else None
+        if inv_row.royalty_amount is not None:
+            royalty = float(inv_row.royalty_amount)
+        if inv_row.vehicle_rent is not None:
+            vrent = float(inv_row.vehicle_rent)
         item_row = (await db.execute(
             select(InvoiceItem.rate, InvoiceItem.amount)
             .where(InvoiceItem.invoice_id == inv_row.id).limit(1)
@@ -1494,12 +1505,9 @@ async def print_token(
         if rate > 0 and _prod:
             from app.services.pricing import token_quantity
             amount = rate * float(token_quantity(token, _bunit, _prod))
-    # Royalty (govt mineral levy) billed to the customer — shown as its own slip line.
-    royalty = float(token.royalty_amount) if token.royalty_amount else 0.0
     if total_amount is None:
         # No linked invoice — fold vehicle rent + royalty into the slip total so it foots.
-        _rent = float(token.vehicle_rent) if token.vehicle_rent else 0.0
-        total_amount = (amount or 0.0) + _rent + royalty if (amount or _rent or royalty) else amount
+        total_amount = (amount or 0.0) + vrent + royalty if (amount or vrent or royalty) else amount
 
     # Operator who created the token (for the slip + accountability).
     operator_name = None
@@ -1575,7 +1583,8 @@ async def print_token(
         "slip_custom_fields": slip_custom_fields,
         "rate": rate,
         "amount": amount,
-        "vehicle_rent": float(token.vehicle_rent) if token.vehicle_rent else 0.0,
+        "royalty": royalty,
+        "vehicle_rent": vrent,
         "total_amount": total_amount,
         "operator_name": operator_name,
         "snapshots": snapshots,
