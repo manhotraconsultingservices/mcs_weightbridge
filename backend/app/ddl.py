@@ -821,6 +821,23 @@ def get_column_migrations() -> list[str]:
         )
         """,
         "CREATE INDEX IF NOT EXISTS ix_cash_handover_date ON cash_handovers (company_id, handover_date)",
+        # Per-operator per-day cash-drawer reconciliation: opening float + physically
+        # counted cash, so Operator Cash EOD can show variance vs the expected balance.
+        """
+        CREATE TABLE IF NOT EXISTS operator_cash_counts (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id UUID NOT NULL REFERENCES companies(id),
+            operator_id UUID,
+            count_date DATE NOT NULL,
+            opening_float NUMERIC(14,2) NOT NULL DEFAULT 0,
+            counted_cash NUMERIC(14,2),
+            notes VARCHAR(300),
+            created_by UUID,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (company_id, operator_id, count_date)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_op_cash_count_date ON operator_cash_counts (company_id, count_date)",
         # Append-only audit of every movement
         """
         CREATE TABLE IF NOT EXISTS product_stock_movements (

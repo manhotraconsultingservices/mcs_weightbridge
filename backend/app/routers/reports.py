@@ -1811,17 +1811,43 @@ async def operator_cash_eod(
     except Exception as e:  # noqa: BLE001 — table may not exist yet on a fresh tenant
         logger.warning("operator handover sum skipped: %s", str(e)[:120])
 
+    # Opening float + physically-counted cash per operator (drawer reconciliation).
+    counts: dict[str, dict] = {}
+    try:
+        async with db.begin_nested():
+            crows = (await db.execute(text(
+                "SELECT operator_id AS oid, opening_float AS opening, counted_cash AS counted "
+                "FROM operator_cash_counts WHERE company_id=:cid AND count_date=:d"
+            ), {"cid": cid, "d": d})).all()
+        for cr in crows:
+            counts[str(cr.oid) if cr.oid else "none"] = {
+                "opening": _r2(cr.opening or 0),
+                "counted": None if cr.counted is None else _r2(cr.counted),
+            }
+    except Exception as e:  # noqa: BLE001 — table may not exist yet on a fresh tenant
+        logger.warning("operator cash counts skipped: %s", str(e)[:120])
+
     operators = []
-    for k in (set(collected) | set(handovers)):
+    for k in (set(collected) | set(handovers) | set(counts)):
         c = collected.get(k, {"name": None, "receipts": 0, "cash": 0.0})
         ho = handovers.get(k, {"name": None, "amt": 0.0})
+        cnt = counts.get(k, {"opening": 0.0, "counted": None})
+        opening = cnt["opening"]
+        counted = cnt["counted"]
+        # Expected cash-in-hand = opening float + collected − handed over.
+        expected = _r2(opening + c["cash"] - ho["amt"])
+        variance = None if counted is None else _r2(counted - expected)
         operators.append({
             "operator_id": None if k == "none" else k,
             "operator_name": c["name"] or ho["name"] or "Unknown",
             "receipts": c["receipts"],
+            "opening_float": opening,
             "cash_total": c["cash"],
             "handed_over": ho["amt"],
             "balance": _r2(c["cash"] - ho["amt"]),
+            "expected_cash": expected,     # opening + collected − handed
+            "counted_cash": counted,       # None until physically counted
+            "variance": variance,          # counted − expected (None if not counted)
         })
     operators.sort(key=lambda o: -o["cash_total"])
     return {
@@ -1830,8 +1856,48 @@ async def operator_cash_eod(
         "total_cash": _r2(sum(o["cash_total"] for o in operators)),
         "total_handed_over": _r2(sum(o["handed_over"] for o in operators)),
         "total_balance": _r2(sum(o["balance"] for o in operators)),
+        "total_opening_float": _r2(sum(o["opening_float"] for o in operators)),
+        "total_variance": _r2(sum((o["variance"] or 0) for o in operators)),
         "operator_count": len(operators),
     }
+
+
+class OperatorCashCountIn(BaseModel):
+    operator_id: Optional[str] = None
+    count_date: Optional[date] = None
+    opening_float: float = 0
+    counted_cash: Optional[float] = None
+    notes: Optional[str] = None
+
+
+@router.post("/operator-cash-count", status_code=201)
+async def upsert_operator_cash_count(
+    payload: OperatorCashCountIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "accountant", "store_manager")),
+):
+    """Set an operator's opening float + physically-counted cash for a day (drawer
+    reconciliation). Upserted per (operator, date). Admin/accountant/store-manager."""
+    d = payload.count_date or date.today()
+    await db.execute(text("""
+        INSERT INTO operator_cash_counts
+            (company_id, operator_id, count_date, opening_float, counted_cash, notes, created_by, updated_at)
+        VALUES (:cid, :oid, :d, :opening, :counted, :notes, :uid, NOW())
+        ON CONFLICT (company_id, operator_id, count_date) DO UPDATE
+          SET opening_float = EXCLUDED.opening_float,
+              counted_cash  = EXCLUDED.counted_cash,
+              notes         = EXCLUDED.notes,
+              updated_at    = NOW()
+    """), {
+        "cid": str(current_user.company_id),
+        "oid": payload.operator_id, "d": d,
+        "opening": payload.opening_float or 0,
+        "counted": payload.counted_cash,
+        "notes": (payload.notes or "")[:300] or None,
+        "uid": str(current_user.id),
+    })
+    await db.commit()
+    return {"ok": True, "date": d.isoformat()}
 
 
 class CashHandoverIn(BaseModel):
@@ -2336,6 +2402,8 @@ async def gate_pass_register(
     status: Optional[str] = Query(None),        # inside | exited | cancelled
     purpose: Optional[str] = Query(None),        # weighbridge | delivery | …
     vehicle_no: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(200, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -2360,6 +2428,15 @@ async def gate_pass_register(
         params["vehicle_no"] = f"%{vehicle_no}%"
 
     where = " AND ".join(filters)
+    # Summary over the WHOLE filtered range (independent of the page).
+    summ = (await db.execute(text(
+        f"SELECT COUNT(*) AS total, "
+        f"COUNT(DISTINCT gp.vehicle_no) FILTER (WHERE gp.vehicle_no IS NOT NULL) AS vehicles, "
+        f"COUNT(*) FILTER (WHERE gp.status='exited') AS exited, "
+        f"COUNT(*) FILTER (WHERE gp.status='inside') AS inside "
+        f"FROM gate_passes gp WHERE {where}"), params)).mappings().one()
+    params["limit"] = page_size
+    params["offset"] = (page - 1) * page_size
     sql = text(f"""
         SELECT
             gp.id,
@@ -2401,6 +2478,7 @@ async def gate_pass_register(
         ) inv ON gp.token_id IS NOT NULL
         WHERE {where}
         ORDER BY gp.pass_date DESC, gp.entry_time DESC
+        LIMIT :limit OFFSET :offset
     """)
 
     result = await db.execute(sql, params)
@@ -2443,11 +2521,15 @@ async def gate_pass_register(
     return {
         "items": items,
         "count": len(items),
+        "total": int(summ["total"] or 0),
+        "page": page,
+        "page_size": page_size,
         "from_date": from_date.isoformat(),
         "to_date": to_date.isoformat(),
-        "total_vehicles": len({r["vehicle_no"] for r in rows if r["vehicle_no"]}),
-        "total_exited": sum(1 for i in items if i["status"] == "exited"),
-        "total_inside": sum(1 for i in items if i["status"] == "inside"),
+        # Summary over the whole filtered range, not just this page.
+        "total_vehicles": int(summ["vehicles"] or 0),
+        "total_exited": int(summ["exited"] or 0),
+        "total_inside": int(summ["inside"] or 0),
     }
 
 
@@ -2460,57 +2542,72 @@ async def token_register(
     token_type: Optional[str] = Query(None),     # sale | purchase | general
     status: Optional[str] = Query(None),          # OPEN|COMPLETED|CANCELLED|…
     party_id: Optional[str] = Query(None),
+    product_id: Optional[str] = Query(None),
+    vehicle_no: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    q = (
-        select(Token, Party, Product, Invoice)
+    # Shared filter set — applied to BOTH the whole-range summary aggregates and the page.
+    filters = [
+        Token.company_id == current_user.company_id,
+        Token.token_date >= from_date,
+        Token.token_date <= to_date,
+        Token.is_supplement.is_(False),
+    ]
+    if token_type:
+        filters.append(Token.token_type == token_type)
+    if status:
+        filters.append(Token.status == status)
+    if party_id:
+        filters.append(Token.party_id == party_id)
+    if product_id:
+        filters.append(Token.product_id == product_id)
+    if vehicle_no:
+        filters.append(Token.vehicle_no.ilike(f"%{vehicle_no.strip()}%"))
+
+    # Summary over the WHOLE filtered range (not just the page).
+    total = (await db.execute(select(func.count()).select_from(Token).where(*filters))).scalar() or 0
+    completed_count = (await db.execute(
+        select(func.count()).select_from(Token).where(*filters, Token.status == "COMPLETED"))).scalar() or 0
+    cancelled_count = (await db.execute(
+        select(func.count()).select_from(Token).where(*filters, Token.status == "CANCELLED"))).scalar() or 0
+    total_net = (await db.execute(  # net weight = goods weighed out (COMPLETED only)
+        select(func.coalesce(func.sum(Token.net_weight), 0))
+        .where(*filters, Token.status == "COMPLETED"))).scalar() or Decimal(0)
+
+    # Page of tokens (no invoice join here → LIMIT/OFFSET counts tokens, never fans out).
+    offset = (page - 1) * page_size
+    prows = (await db.execute(
+        select(Token, Party, Product)
         .outerjoin(Party, Token.party_id == Party.id)
         .outerjoin(Product, Token.product_id == Product.id)
-        # left join the token's non-cancelled invoice, matching the token's OWN type
-        # (a purchase token creates a purchase invoice — not a sale) so purchase rows
-        # show their invoice too. Ordered newest-invoice-first below so the dedup keeps
-        # the most recent when a token has >1 (split children / revisions).
-        .outerjoin(
-            Invoice,
-            and_(
-                Invoice.token_id == Token.id,
-                Invoice.status != "cancelled",
-                Invoice.invoice_type == Token.token_type,
-            ),
-        )
-        .where(
-            Token.company_id == current_user.company_id,
-            Token.token_date >= from_date,
-            Token.token_date <= to_date,
-            Token.is_supplement.is_(False),
-        )
-        .order_by(Token.token_date.desc(), Token.created_at.desc(), Invoice.created_at.desc())
-    )
-    if token_type:
-        q = q.where(Token.token_type == token_type)
-    if status:
-        q = q.where(Token.status == status)
-    if party_id:
-        q = q.where(Token.party_id == party_id)
+        .where(*filters)
+        .order_by(Token.token_date.desc(), Token.created_at.desc())
+        .limit(page_size).offset(offset)
+    )).all()
 
-    result = await db.execute(q)
-    rows = result.all()
+    # Most-recent non-cancelled invoice per token (type-matched), fetched only for this page.
+    tok_by_id = {str(tk.id): tk for tk, _p, _pr in prows}
+    inv_by_token: dict[str, Invoice] = {}
+    if tok_by_id:
+        inv_rows = (await db.execute(
+            select(Invoice)
+            .where(Invoice.token_id.in_([tk.id for tk, _p, _pr in prows]),
+                   Invoice.status != "cancelled")
+            .order_by(Invoice.created_at.desc())
+        )).scalars().all()
+        for inv in inv_rows:
+            key = str(inv.token_id)
+            tk = tok_by_id.get(key)
+            if tk is not None and inv.invoice_type == tk.token_type and key not in inv_by_token:
+                inv_by_token[key] = inv   # first (newest) type-matching invoice wins
 
     items = []
-    total_net = Decimal(0)
-    seen_token_ids: set = set()          # deduplicate when multiple invoices match
-    for token, party, product, invoice in rows:
+    for token, party, product in prows:
         tid = str(token.id)
-        if tid in seen_token_ids:
-            continue
-        seen_token_ids.add(tid)
-
-        # Headline net weight = goods actually weighed out: COMPLETED tokens only
-        # (a CANCELLED token can still carry a net_weight and must not inflate the total).
-        if token.net_weight and token.status == "COMPLETED":
-            total_net += token.net_weight
-
+        invoice = inv_by_token.get(tid)
         items.append({
             "id": tid,
             "token_no": token.token_no,
@@ -2542,10 +2639,14 @@ async def token_register(
     return {
         "items": items,
         "count": len(items),
+        "total": int(total),
+        "page": page,
+        "page_size": page_size,
         "from_date": from_date.isoformat(),
         "to_date": to_date.isoformat(),
+        # Summary is over the whole filtered range, independent of the page.
         "total_net_weight_kg": _f(total_net),
-        "total_net_weight_mt": _r2(total_net / 1000),
-        "completed_count": sum(1 for i in items if i["status"] == "COMPLETED"),
-        "cancelled_count": sum(1 for i in items if i["status"] == "CANCELLED"),
+        "total_net_weight_mt": _r2(Decimal(str(total_net)) / 1000),
+        "completed_count": int(completed_count),
+        "cancelled_count": int(cancelled_count),
     }
