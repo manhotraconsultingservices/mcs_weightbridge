@@ -85,12 +85,21 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
     }
   }, [open, type]);
 
+  // Auto-offset outstanding invoices by FIFO (oldest bill first) as the amount is entered.
+  const [autoFifo, setAutoFifo] = useState(true);
+
+  // Oldest-first ordering (FIFO): invoice_date asc, tie-break created_at asc.
+  const invTime = (i: Invoice) => new Date((i.invoice_date || (i as { created_at?: string }).created_at || '') as string).getTime() || 0;
+
   useEffect(() => {
     if (!partyId) { setOutstandingInvoices([]); setAllocations([]); return; }
     const invType = type === 'receipt' ? 'sale' : 'purchase';
     api.get<{ items: Invoice[] }>(`/api/v1/invoices?invoice_type=${invType}&party_id=${partyId}&page=1&page_size=50`)
       .then(r => {
-        const unpaid = r.data.items.filter(i => i.payment_status !== 'paid' && i.status === 'final');
+        // FIFO: sort unpaid finalised invoices oldest-first so allocation clears the oldest bills first.
+        const unpaid = r.data.items
+          .filter(i => i.payment_status !== 'paid' && i.status === 'final')
+          .sort((a, b) => invTime(a) - invTime(b));
         setOutstandingInvoices(unpaid);
         setAllocations(unpaid.map(i => ({
           invoice_id: i.id,
@@ -100,7 +109,27 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
         })));
       })
       .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partyId, type]);
+
+  // FIFO auto-fill: distribute `amount` across outstanding invoices oldest-first,
+  // filling each bill's balance until the payment is exhausted. Recomputes whenever
+  // the amount (or the invoice list) changes while auto-offset is ON. Computed purely
+  // from outstandingInvoices balances (not from `allocations`) so there's no update loop.
+  useEffect(() => {
+    if (isExpense || !autoFifo || outstandingInvoices.length === 0) return;
+    let rem = Math.max(0, parseFloat(amount) || 0);
+    setAllocations(outstandingInvoices.map(i => {
+      const bal = i.grand_total - i.amount_paid;
+      let use = 0;
+      if (rem > 0.005) { use = Math.min(rem, bal); rem = Number((rem - use).toFixed(2)); }
+      return {
+        invoice_id: i.id, invoice_no: i.invoice_no, balance: bal,
+        amount: use > 0.005 ? String(Number(use.toFixed(2))) : '',
+      };
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [amount, autoFifo, outstandingInvoices]);
 
   const totalAllocated = allocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
 
@@ -199,6 +228,25 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
                     .map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {partyId && (() => {
+                const bal = Number(parties.find(p => p.id === partyId)?.current_balance ?? 0);
+                const money = '₹' + Math.abs(bal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                const owesUs = bal > 0.005;   // party owes us (receivable)
+                const weOwe = bal < -0.005;   // we owe the party / advance held
+                let txt: React.ReactNode; let cls: string;
+                if (type === 'receipt') {
+                  txt = owesUs ? <><span className="font-semibold">{money}</span> to collect (customer owes)</>
+                      : weOwe ? <><span className="font-semibold">{money}</span> advance already with us</>
+                      : 'Settled — no outstanding';
+                  cls = owesUs ? 'text-amber-700' : weOwe ? 'text-emerald-700' : 'text-muted-foreground';
+                } else {
+                  txt = weOwe ? <><span className="font-semibold">{money}</span> payable (we owe supplier)</>
+                      : owesUs ? <><span className="font-semibold">{money}</span> advance already paid</>
+                      : 'Settled — no outstanding';
+                  cls = weOwe ? 'text-amber-700' : owesUs ? 'text-emerald-700' : 'text-muted-foreground';
+                }
+                return <p className={`text-xs mt-1 ${cls}`}>Outstanding: {txt}</p>;
+              })()}
               </>)}
             </div>
             <div className="space-y-1">
@@ -244,9 +292,15 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
           {/* Invoice allocation (not applicable to a direct expense) */}
           {!isExpense && outstandingInvoices.length > 0 && (
             <div className="border-t pt-3 space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <p className="text-sm font-medium">{t('payment.settleInvoices')}</p>
-                <p className="text-xs text-muted-foreground">{t('payment.allocated')}: ₹{totalAllocated.toLocaleString('en-IN')}</p>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1.5 text-xs cursor-pointer" title="Automatically settle the oldest bills first as you type the amount">
+                    <input type="checkbox" className="h-3.5 w-3.5" checked={autoFifo} onChange={e => setAutoFifo(e.target.checked)} />
+                    <span>Auto-offset (FIFO — oldest first)</span>
+                  </label>
+                  <p className="text-xs text-muted-foreground">{t('payment.allocated')}: ₹{totalAllocated.toLocaleString('en-IN')}</p>
+                </div>
               </div>
               <div className="space-y-2 max-h-48 overflow-y-auto">
                 {allocations.map((alloc, i) => (
@@ -260,9 +314,12 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
                       className="w-32 text-right"
                       placeholder="0"
                       value={alloc.amount}
-                      onChange={e => setAllocations(prev => prev.map((a, j) =>
-                        j === i ? { ...a, amount: e.target.value } : a
-                      ))}
+                      onChange={e => {
+                        setAutoFifo(false);   // manual edit → stop auto-offset clobbering it
+                        setAllocations(prev => prev.map((a, j) =>
+                          j === i ? { ...a, amount: e.target.value } : a
+                        ));
+                      }}
                     />
                   </div>
                 ))}
