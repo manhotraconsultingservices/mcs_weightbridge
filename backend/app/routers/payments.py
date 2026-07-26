@@ -452,25 +452,31 @@ async def party_ledger(
     d_from = from_date or fy.start_date
     d_to = to_date or date.today()
 
+    # Fetch the party's FULL history (no lower bound) so pre-window activity can be
+    # folded into a correct opening balance brought-forward — the statement then
+    # always ties to Party.current_balance regardless of the window (F5).
     invoices = (await db.execute(
         select(Invoice)
         .where(Invoice.company_id == co.id, Invoice.party_id == party_id,
                Invoice.status == "final",
-               Invoice.invoice_date >= d_from, Invoice.invoice_date <= d_to)
+               Invoice.invoice_date <= d_to)
         .order_by(Invoice.invoice_date, Invoice.created_at)
     )).scalars().all()
 
     receipts = (await db.execute(
         select(PaymentReceipt)
         .where(PaymentReceipt.company_id == co.id, PaymentReceipt.party_id == party_id,
-               PaymentReceipt.receipt_date >= d_from, PaymentReceipt.receipt_date <= d_to)
+               PaymentReceipt.receipt_date <= d_to)
         .order_by(PaymentReceipt.receipt_date, PaymentReceipt.created_at)
     )).scalars().all()
 
+    # Exclude direct-expense vouchers — they're not part of the party's
+    # receivable/payable ledger (kept out of current_balance too).
     vouchers = (await db.execute(
         select(PaymentVoucher)
         .where(PaymentVoucher.company_id == co.id, PaymentVoucher.party_id == party_id,
-               PaymentVoucher.voucher_date >= d_from, PaymentVoucher.voucher_date <= d_to)
+               PaymentVoucher.expense_category.is_(None),
+               PaymentVoucher.voucher_date <= d_to)
         .order_by(PaymentVoucher.voucher_date, PaymentVoucher.created_at)
     )).scalars().all()
 
@@ -515,12 +521,21 @@ async def party_ledger(
 
     raw.sort(key=lambda e: (e["date"], e["ts"]))
 
+    # Opening balance brought-forward = static opening + net of ALL activity dated
+    # before the window. Rows within [d_from, d_to] are shown; the running balance
+    # therefore closes at exactly Party.current_balance (F5).
     opening = party.opening_balance or Decimal("0")
+    for e in raw:
+        if e["date"] < d_from:
+            opening = opening + e["debit"] - e["credit"]
+
     balance = opening
     total_debit = Decimal("0")
     total_credit = Decimal("0")
     entries = []
     for e in raw:
+        if e["date"] < d_from:
+            continue   # already folded into the opening b/f
         balance = balance + e["debit"] - e["credit"]
         total_debit += e["debit"]
         total_credit += e["credit"]

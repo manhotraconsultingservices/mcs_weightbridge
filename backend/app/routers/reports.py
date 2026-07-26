@@ -872,6 +872,13 @@ async def profit_loss(
     # Netted on the same TAXABLE (ex-GST) basis as revenue above.
     note_yr = func.extract("year", Invoice.invoice_date)
     note_mo = func.extract("month", Invoice.invoice_date)
+    # Guard (F7): only SALE-side notes net against revenue. A note raised against a
+    # PURCHASE would belong against COGS, not revenue — exclude it here so a future
+    # purchase-side note can't silently mis-hit revenue. A note with no reference is
+    # treated as sale-side (today's only path). `_ref` = the referenced invoice.
+    from sqlalchemy import exists
+    from sqlalchemy.orm import aliased
+    _ref = aliased(Invoice)
     note_result = await db.execute(
         select(
             note_yr.label("yr"), note_mo.label("mo"),
@@ -884,6 +891,8 @@ async def profit_loss(
             Invoice.tax_type == "gst",   # exclude non-GST Bill of Supply returns — consistent with GSTR-1 treatment
             Invoice.company_id == current_user.company_id,
             Invoice.invoice_date >= from_date, Invoice.invoice_date <= to_date,
+            ~exists().where(_ref.id == Invoice.reference_invoice_id,
+                            _ref.invoice_type == "purchase"),
         )
         .group_by(note_yr, note_mo, Invoice.invoice_type)
     )
