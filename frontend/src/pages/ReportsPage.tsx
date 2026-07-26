@@ -52,7 +52,7 @@ interface WeightRow { id: string; token_no: number; token_date: string; token_ty
 interface WeightRegister { items: WeightRow[]; total_net_weight: number; count: number; }
 
 interface PLMonth { month: string; label: string; revenue: number; cogs: number; gross_profit: number; labour: number; store_inventory: number; fuel: number; commission: number; overhead?: number; write_off: number; operating_expenses: number; total_expenses: number; net_profit: number; margin_pct: number; sale_count: number; purchase_count: number; }
-interface PLData { period: string; summary: { total_revenue: number; total_cogs: number; gross_profit: number; labour: number; store_inventory: number; fuel: number; commission: number; overhead?: number; total_write_off: number; operating_expenses: number; total_expenses: number; net_profit: number; margin_pct: number; }; monthly: PLMonth[]; }
+interface PLData { period: string; summary: { total_revenue: number; total_cogs: number; purchases?: number; opening_stock?: number | null; closing_stock?: number | null; stock_adjustment?: number; stock_adjusted?: boolean; gross_profit: number; labour: number; store_inventory: number; fuel: number; commission: number; overhead?: number; total_write_off: number; operating_expenses: number; total_expenses: number; net_profit: number; margin_pct: number; }; monthly: PLMonth[]; notes?: string[]; }
 
 interface StockItem { product_name: string; hsn_code: string; unit: string; rate: number; qty_purchased: number; value_purchased: number; qty_sold: number; value_sold: number; closing_qty: number; closing_value: number; }
 interface StockData { period: string; items: StockItem[]; totals: { qty_purchased_by_unit: Record<string, number>; qty_sold_by_unit: Record<string, number>; value_purchased: number; value_sold: number; closing_value: number; }; }
@@ -178,6 +178,11 @@ export default function ReportsPage() {
   const [plTo, setPlTo] = useState(today());
   const [plData, setPlData] = useState<PLData | null>(null);
   const [plLoading, setPlLoading] = useState(false);
+  // F3 — manual opening/closing stock values (₹) for stock-adjusted COGS
+  const [openingStock, setOpeningStock] = useState('');
+  const [closingStock, setClosingStock] = useState('');
+  const [stockValSaving, setStockValSaving] = useState(false);
+  const [stockValMsg, setStockValMsg] = useState('');
 
   // Stock Summary
   const [stFrom, setStFrom] = useState(yearStart());
@@ -202,10 +207,36 @@ export default function ReportsPage() {
       .then(r => setWtData(r.data)).catch(() => setWtData(null)).finally(() => setWtLoading(false));
   }
 
+  // Pre-fill saved manual stock values (accountant's CA figures) for the P&L tab
+  useEffect(() => {
+    api.get<{ opening: number | null; closing: number | null }>('/api/v1/reports/stock-valuation')
+      .then(r => {
+        if (r.data?.opening != null) setOpeningStock(String(r.data.opening));
+        if (r.data?.closing != null) setClosingStock(String(r.data.closing));
+      }).catch(() => {});
+  }, []);
+
   async function fetchPL() {
     setPlLoading(true);
-    api.get<PLData>(`/api/v1/reports/profit-loss?${new URLSearchParams({ from_date: plFrom, to_date: plTo })}`)
+    const p = new URLSearchParams({ from_date: plFrom, to_date: plTo });
+    if (openingStock.trim() !== '') p.set('opening_stock', openingStock.trim());
+    if (closingStock.trim() !== '') p.set('closing_stock', closingStock.trim());
+    api.get<PLData>(`/api/v1/reports/profit-loss?${p}`)
       .then(r => setPlData(r.data)).catch(() => setPlData(null)).finally(() => setPlLoading(false));
+  }
+
+  async function saveStockVal() {
+    setStockValSaving(true); setStockValMsg('');
+    try {
+      await api.put('/api/v1/reports/stock-valuation', {
+        opening: openingStock.trim() === '' ? null : Number(openingStock),
+        closing: closingStock.trim() === '' ? null : Number(closingStock),
+      });
+      setStockValMsg('Saved');
+      setTimeout(() => setStockValMsg(''), 2500);
+    } catch {
+      setStockValMsg('Save failed (accountant/admin only)');
+    } finally { setStockValSaving(false); }
   }
 
   async function fetchStock() {
@@ -311,8 +342,15 @@ export default function ReportsPage() {
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1"><Label className="text-xs">From</Label><Input type="date" className="w-36" value={plFrom} onChange={e => setPlFrom(e.target.value)} /></div>
             <div className="space-y-1"><Label className="text-xs">To</Label><Input type="date" className="w-36" value={plTo} onChange={e => setPlTo(e.target.value)} /></div>
+            <div className="space-y-1"><Label className="text-xs">Opening stock ₹</Label><Input type="number" min="0" step="0.01" placeholder="optional" className="w-32" value={openingStock} onChange={e => setOpeningStock(e.target.value)} /></div>
+            <div className="space-y-1"><Label className="text-xs">Closing stock ₹</Label><Input type="number" min="0" step="0.01" placeholder="optional" className="w-32" value={closingStock} onChange={e => setClosingStock(e.target.value)} /></div>
             <Button onClick={fetchPL} disabled={plLoading}><Search className="mr-2 h-4 w-4" />{plLoading ? 'Loading…' : 'Generate'}</Button>
+            <Button variant="outline" onClick={saveStockVal} disabled={stockValSaving}>{stockValSaving ? 'Saving…' : 'Save stock values'}</Button>
+            {stockValMsg && <span className="text-xs text-muted-foreground self-center">{stockValMsg}</span>}
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            Enter opening &amp; closing stock value (₹, your CA's figures) for a goods-sold COGS = opening + purchases − closing. Leave blank to use purchases-in-period.
+          </p>
 
           {plData && (
             <div className="space-y-4">
@@ -353,7 +391,16 @@ export default function ReportsPage() {
                     return (
                       <div className="divide-y">
                         <Row label="Revenue (net of credit/debit notes)" value={s.total_revenue} kind="in" />
-                        <Row label="Purchases (COGS)" value={s.total_cogs} kind="out" />
+                        {s.stock_adjusted ? (
+                          <>
+                            <Row label="Opening stock" value={s.opening_stock ?? 0} kind="in" />
+                            <Row label="Purchases in period" value={s.purchases ?? 0} kind="out" />
+                            <Row label="Closing stock" value={s.closing_stock ?? 0} kind="in" />
+                            <Row label="COGS (goods sold = opening + purchases − closing)" value={s.total_cogs} kind="out" />
+                          </>
+                        ) : (
+                          <Row label="Purchases (COGS)" value={s.total_cogs} kind="out" />
+                        )}
                         <Row label="Gross Profit" value={s.gross_profit} kind="sub" />
                         <Row label="Labour (wages + salary)" value={s.labour} kind="out" />
                         <Row label="Store inventory (purchased)" value={s.store_inventory} kind="out" />
@@ -368,6 +415,14 @@ export default function ReportsPage() {
                   })()}
                 </CardContent>
               </Card>
+
+              {plData.notes && plData.notes.length > 0 && (
+                <div className="rounded-md border bg-muted/30 px-4 py-3 space-y-1">
+                  {plData.notes.map((n, i) => (
+                    <p key={i} className="text-[11px] text-muted-foreground">• {n}</p>
+                  ))}
+                </div>
+              )}
 
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Monthly Breakdown</CardTitle></CardHeader>
