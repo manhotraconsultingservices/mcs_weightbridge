@@ -15,8 +15,9 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Activity, Scale, Camera, Server, RefreshCw, CheckCircle2, XCircle, WifiOff } from 'lucide-react';
+import { Activity, Scale, Camera, Server, RefreshCw, CheckCircle2, XCircle, WifiOff, Trash2 } from 'lucide-react';
 import api from '@/services/api';
+import { getCurrentUser } from '@/hooks/useAuth';
 import type { DeviceHealthResponse, DeviceHealthItem } from '@/types';
 
 function ago(secs: number | null): string {
@@ -62,6 +63,19 @@ export default function DeviceHealthPage() {
   useEffect(() => {
     const id = setInterval(refresh, 15_000);
     return () => clearInterval(id);
+  }, [refresh]);
+
+  const isAdmin = getCurrentUser()?.role === 'admin';
+  const removeDevice = useCallback(async (d: DeviceHealthItem) => {
+    if (!window.confirm(
+      `Remove "${d.label}" from Device Health?\n\nFirst make sure this device is no longer listed in that PC's watchdog_agent.json (and the watchdog restarted) — otherwise it will re-appear on the next heartbeat.`
+    )) return;
+    try {
+      await api.delete(`/api/v1/monitor/devices/${encodeURIComponent(d.device_key)}`);
+      await refresh();
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || e?.message || 'Failed to remove device');
+    }
   }, [refresh]);
 
   const devices = data?.devices ?? [];
@@ -116,7 +130,9 @@ export default function DeviceHealthPage() {
         </div>
       ) : (
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-          {devices.map((d) => <DeviceCard key={d.device_key} d={d} />)}
+          {devices.map((d) => (
+            <DeviceCard key={d.device_key} d={d} onRemove={isAdmin ? removeDevice : undefined} />
+          ))}
         </section>
       )}
     </div>
@@ -133,7 +149,7 @@ function Kpi({ label, value, tone }: { label: string; value: number; tone: 'ok' 
   );
 }
 
-function DeviceCard({ d }: { d: DeviceHealthItem }) {
+function DeviceCard({ d, onRemove }: { d: DeviceHealthItem; onRemove?: (d: DeviceHealthItem) => void }) {
   const DIcon = deviceIcon(d.device_type);
   const meta = STATUS_META[d.status] ?? STATUS_META.stale;
   const SIcon = meta.icon;
@@ -155,6 +171,15 @@ function DeviceCard({ d }: { d: DeviceHealthItem }) {
       </div>
       <div className="text-xs text-muted-foreground flex items-center justify-between">
         <span>seen {ago(d.last_seen_age_secs)}</span>
+        {onRemove && (
+          <button
+            onClick={() => onRemove(d)}
+            title="Remove this device from the dashboard (admin)"
+            className="inline-flex items-center gap-1 text-muted-foreground hover:text-rose-600 transition-colors"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Remove
+          </button>
+        )}
       </div>
       {d.status !== 'online' && d.last_error && (
         <div className="text-xs text-rose-600 truncate" title={d.last_error}>{d.last_error}</div>

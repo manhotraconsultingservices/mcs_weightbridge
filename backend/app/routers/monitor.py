@@ -189,3 +189,25 @@ async def put_config(
     """), {"k": CONFIG_KEY, "v": json.dumps(cfg)})
     await db.commit()
     return cfg
+
+
+# ── Remove a stale / decommissioned device from the dashboard (admin) ─────────
+@router.delete("/devices/{device_key}")
+async def delete_device(
+    device_key: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Delete one device's health row for this company.
+
+    Use to clear a device that no longer exists (e.g. a scale wrongly listed in a
+    PC's watchdog config). IMPORTANT: first remove it from that PC's
+    watchdog_agent.json + restart the watchdog — otherwise its next heartbeat
+    (~30 s) re-creates the row here.
+    """
+    res = await db.execute(text("""
+        DELETE FROM device_health
+        WHERE company_id = :cid AND device_key = :k
+    """), {"cid": str(current_user.company_id), "k": device_key})
+    await db.commit()
+    return {"ok": True, "deleted": res.rowcount or 0, "device_key": device_key}
