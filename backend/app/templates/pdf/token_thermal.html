@@ -324,7 +324,10 @@
 <div class="row"><span class="row-label">{{ bl('rate') | upper }}</span><span class="row-value">₹{{ '%.2f'|format(rate) }}/{{ unit_lbl }}</span></div>
 {% endif %}
 {% if amount is defined and amount %}
-<div class="row"><span class="row-label">{% if vehicle_rent and vehicle_rent > 0 %}MATERIAL COST{% else %}{{ bl('amount') | upper }}{% endif %}</span><span class="row-value">₹{{ '%.2f'|format(amount) }}</span></div>
+<div class="row"><span class="row-label">{% if (vehicle_rent and vehicle_rent > 0) or (royalty and royalty > 0) %}MATERIAL COST{% else %}{{ bl('amount') | upper }}{% endif %}</span><span class="row-value">₹{{ '%.2f'|format(amount) }}</span></div>
+{% endif %}
+{% if royalty is defined and royalty and royalty > 0 %}
+<div class="row"><span class="row-label">ROYALTY</span><span class="row-value">₹{{ '%.2f'|format(royalty) }}</span></div>
 {% endif %}
 {% if vehicle_rent is defined and vehicle_rent and vehicle_rent > 0 %}
 <div class="row"><span class="row-label">VEHICLE RENT</span><span class="row-value">₹{{ '%.2f'|format(vehicle_rent) }}</span></div>

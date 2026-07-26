@@ -203,7 +203,10 @@
     <tr><td class="lbl">{{ bl('rate') }}</td><td class="val">₹{{ '%.2f' % rate }}/{{ unit_label(token.product) | trim }}</td></tr>
     {% endif %}
     {% if amount is defined and amount %}
-    <tr><td class="lbl">{% if vehicle_rent and vehicle_rent > 0 %}Material Cost{% else %}{{ bl('amount') }}{% endif %}</td><td class="val">₹{{ '%.2f' % amount }}</td></tr>
+    <tr><td class="lbl">{% if (vehicle_rent and vehicle_rent > 0) or (royalty and royalty > 0) %}Material Cost{% else %}{{ bl('amount') }}{% endif %}</td><td class="val">₹{{ '%.2f' % amount }}</td></tr>
+    {% endif %}
+    {% if royalty is defined and royalty and royalty > 0 %}
+    <tr><td class="lbl">Royalty</td><td class="val">₹{{ '%.2f' % royalty }}</td></tr>
     {% endif %}
     {% if vehicle_rent is defined and vehicle_rent and vehicle_rent > 0 %}
     <tr><td class="lbl">Vehicle Rent</td><td class="val">₹{{ '%.2f' % vehicle_rent }}</td></tr>
