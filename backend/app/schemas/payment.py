@@ -20,6 +20,7 @@ class PaymentReceiptCreate(BaseModel):
     reference_no: Optional[str] = None
     bank_name: Optional[str] = None
     notes: Optional[str] = None
+    collected_by: Optional[UUID] = None   # operator who took the cash (defaults to recorder)
     allocations: list[InvoiceAllocation] = []
 
 

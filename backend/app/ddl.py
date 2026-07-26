@@ -429,6 +429,9 @@ def get_column_migrations() -> list[str]:
         # supplier payments (category NULL, party set).
         "ALTER TABLE payment_vouchers ADD COLUMN IF NOT EXISTS expense_category VARCHAR(50)",
         "ALTER TABLE payment_vouchers ALTER COLUMN party_id DROP NOT NULL",
+        # Operator who physically collected the cash on a receipt (Operator Cash EOD).
+        # Nullable → existing rows fall back to created_by. Additive.
+        "ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS collected_by UUID REFERENCES users(id)",
         # Agents (brokers/dalals) — nullable FK on tokens/invoices/gate_passes
         # + commission snapshot on invoices. Additive → existing rows stay NULL.
         # (The `agents` table is created in get_runtime_ddl, which runs first.)

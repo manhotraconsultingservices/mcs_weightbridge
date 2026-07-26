@@ -66,17 +66,25 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
   const [isExpense, setIsExpense] = useState(false);
   const [expenseCategory, setExpenseCategory] = useState('');
   const [expenseCats, setExpenseCats] = useState<string[]>([]);
+  // Operator who physically COLLECTED the cash (receipts) — drives the Operator Cash EOD.
+  const [collectedBy, setCollectedBy] = useState('');
+  const [opUsers, setOpUsers] = useState<{ id: string; name: string; role: string }[]>([]);
 
   useEffect(() => {
     if (open) {
       setPartyId(''); setDate(new Date().toISOString().slice(0, 10));
       setAmount(''); setMode('cash'); setRefNo(''); setBankName('');
-      setNotes(''); setAllocations([]); setError('');
+      setNotes(''); setAllocations([]); setError(''); setCollectedBy('');
       setIsExpense(false); setExpenseCategory('');
       api.get<Party[] | { items: Party[] }>('/api/v1/parties').then(r => {
         const d = r.data;
         setParties(Array.isArray(d) ? d : (d.items ?? []));
       }).catch(() => {});
+      if (type === 'receipt') {
+        api.get<{ id: string; name: string; role: string }[]>('/api/v1/auth/users-lite')
+          .then(r => setOpUsers(Array.isArray(r.data) ? r.data : []))
+          .catch(() => setOpUsers([]));
+      }
       if (type === 'voucher') {
         api.get<string[]>('/api/v1/app-settings/expense-categories')
           .then(r => setExpenseCats(Array.isArray(r.data) ? r.data : []))
@@ -158,6 +166,7 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
         reference_no: refNo || null,
         bank_name: bankName || null,
         notes: notes || null,
+        ...(type === 'receipt' && collectedBy ? { collected_by: collectedBy } : {}),
         allocations: allocs,
       });
       // Remember a newly-typed category so it appears in the picker next time.
@@ -281,6 +290,24 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
                 <Label>{t('invoice.bankName')}</Label>
                 <Input value={bankName} onChange={e => setBankName(e.target.value)} placeholder={t('payment.bankCol')} />
               </div>
+            </div>
+          )}
+
+          {/* Receipt only: which operator physically collected the cash (drives Operator Cash EOD) */}
+          {type === 'receipt' && opUsers.length > 0 && (
+            <div className="space-y-1">
+              <Label>Collected by (operator)</Label>
+              <Select value={collectedBy || undefined} onValueChange={v => setCollectedBy(v ?? '')}>
+                <SelectTrigger>
+                  <span className="truncate text-left flex-1">
+                    {collectedBy ? (opUsers.find(u => u.id === collectedBy)?.name ?? '…')
+                      : <span className="text-muted-foreground">Me (defaults to whoever records it)</span>}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  {opUsers.map(u => <SelectItem key={u.id} value={u.id}>{u.name}{u.role ? ` · ${u.role}` : ''}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
           )}
 

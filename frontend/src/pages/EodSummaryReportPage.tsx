@@ -11,6 +11,7 @@
  *   POST /api/v1/reports/eod-summary/send   (admin — fire email + Telegram now)
  */
 import { useEffect, useState, useCallback } from 'react';
+import { todayISO, shiftISO, monthStartISO } from '@/lib/dateLocal';
 import { Loader2, AlertCircle, Calendar, Wallet, Landmark, TrendingDown, Scale, Send, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
@@ -73,16 +74,6 @@ const INR_L = (v: number) => {
   return INR(n);
 };
 
-function todayISO(): string { return new Date().toISOString().split('T')[0]; }
-function shiftISO(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
-}
-function monthStartISO(): string {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
-}
 
 export default function EodSummaryReportPage() {
   const [fromDate, setFromDate] = useState(todayISO());
@@ -101,14 +92,14 @@ export default function EodSummaryReportPage() {
   const openDetail = useCallback(async (d: string) => {
     setDetailDate(d); setDetail(null); setDetailLoading(true);
     try {
-      const { data } = await api.get<EodDetailResponse>(`/api/v1/reports/eod-summary/detail?date=${d}`);
+      const { data } = await api.get<EodDetailResponse>(`/api/v1/reports/eod-summary/detail?date=${d}&basis=${basis}`);
       setDetail(data);
     } catch {
       toast.error('Failed to load the day breakup');
     } finally {
       setDetailLoading(false);
     }
-  }, []);
+  }, [basis]);
 
   function downloadDetailCsv() {
     if (!detail) return;
@@ -124,7 +115,7 @@ export default function EodSummaryReportPage() {
   function downloadDaysCsv() {
     if (!data) return;
     const outLabel = basis === 'cash' ? 'Supplier Paid' : 'Purchases';
-    const header = ['Date', 'Cash Sales', 'Credit (Bank/UPI)', 'Total Sales', outLabel, 'Store', 'Diesel', 'Salary', 'Advance', ...(basis === 'accrual' ? ['Commission'] : []), 'Expenses', 'Total Expenses', 'Net'];
+    const header = ['Date', 'Cash Sales', 'Bank/UPI Collections', 'Total Sales', outLabel, 'Store', 'Diesel', 'Salary', 'Advance', ...(basis === 'accrual' ? ['Commission'] : []), 'Expenses', 'Total Expenses', 'Net'];
     const rows = data.days.map(d => [
       d.date, String(d.cash_sales), String(d.electronic_sales), String(d.total_sales),
       String(basis === 'cash' ? d.supplier_payments : d.purchases), String(d.store_inventory), String(d.diesel), String(d.salary),
@@ -152,7 +143,9 @@ export default function EodSummaryReportPage() {
   async function sendNow() {
     setSending(true);
     try {
-      const target = toDate === fromDate ? toDate : todayISO();
+      // /send is single-day — use the range END so a selected range sends its last day,
+      // not silently today.
+      const target = toDate;
       const { data } = await api.post<{ ok: boolean; date: string }>(
         `/api/v1/reports/eod-summary/send?target_date=${target}`);
       toast.success(`Day-book for ${data.date} sent to subscribed recipients (email + Telegram).`);
@@ -182,7 +175,7 @@ export default function EodSummaryReportPage() {
       ) },
     { key: 'cash_sales', label: 'Cash Sales', type: 'number', align: 'right', accessor: r => r.cash_sales,
       format: v => <span className="text-emerald-700">{INR(v as number)}</span>, exportValue: r => r.cash_sales },
-    { key: 'electronic_sales', label: 'Credit (Bank/UPI)', type: 'number', align: 'right', accessor: r => r.electronic_sales,
+    { key: 'electronic_sales', label: 'Bank/UPI Collections', type: 'number', align: 'right', accessor: r => r.electronic_sales,
       format: v => <span className="text-sky-700">{INR(v as number)}</span>, exportValue: r => r.electronic_sales },
     { key: 'total_sales', label: 'Total Sales', type: 'number', align: 'right', accessor: r => r.total_sales,
       format: v => <span className="font-semibold">{INR(v as number)}</span>, exportValue: r => r.total_sales },
@@ -283,7 +276,7 @@ export default function EodSummaryReportPage() {
           <Card>
             <CardContent className="p-4">
               <div className="text-xs uppercase tracking-widest text-slate-500 font-semibold flex items-center gap-1">
-                <Landmark className="h-3.5 w-3.5 text-sky-500" /> Credit Sales
+                <Landmark className="h-3.5 w-3.5 text-sky-500" /> Bank/UPI Collections
               </div>
               <div className="text-2xl font-bold text-sky-700 mt-1">{INR_L(money('electronic_sales') as number)}</div>
               <div className="text-xs text-slate-500 mt-0.5">Bank / card / UPI</div>
@@ -350,7 +343,7 @@ export default function EodSummaryReportPage() {
           <CardContent className="p-0">
             <div className="text-sm font-semibold text-slate-700 px-3 pt-3 pb-1">Daily breakdown</div>
             <DataTable<EodDay>
-              id={`eod.daily.${basis}`}
+              id="eod.daily"
               data={data.days}
               columns={columns}
               rowKey={r => r.date}

@@ -288,6 +288,22 @@ async def list_users(
     return [UserResponse.model_validate(u) for u in result.scalars().all()]
 
 
+@router.get("/users-lite")
+async def list_users_lite(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Minimal active-user list (id · name · role) for pickers — e.g. the
+    'Collected by' operator picker on a cash receipt. Any authenticated user
+    (staff know each other); no credentials or sensitive fields exposed."""
+    result = await db.execute(
+        select(User).where(User.company_id == current_user.company_id,
+                           User.is_active == True).order_by(User.full_name)
+    )
+    return [{"id": str(u.id), "name": u.full_name or u.username, "role": u.role}
+            for u in result.scalars().all()]
+
+
 @router.post("/users", response_model=UserResponse, status_code=201)
 async def create_user(
     data: UserCreate,

@@ -253,7 +253,11 @@ export default function GatePassRegisterPage() {
       .finally(() => setLoading(false));
   }, [fromDate, toDate, status, purpose, vehicleNo]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  // Auto-refetch only on the structured filters — NOT on vehicleNo keystrokes.
+  // The free-text vehicle filter applies via Enter / the Refresh button (fetch reads
+  // the latest value), so we avoid a backend query per keypress + response races.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { fetch(); }, [fromDate, toDate, status, purpose]);
 
   const COLUMNS: ColumnDef<GatePassRow>[] = [
     { key: 'gate_pass_no', label: 'Gate Pass No', accessor: r => r.gate_pass_no,
@@ -267,7 +271,8 @@ export default function GatePassRegisterPage() {
       ),
       exportValue: r => r.gate_pass_no },
     { key: 'pass_date', label: 'Date', type: 'date', accessor: r => r.pass_date,
-      format: v => new Date(String(v)).toLocaleDateString('en-IN') },
+      format: v => new Date(String(v)).toLocaleDateString('en-IN'),
+      exportValue: r => r.pass_date ? new Date(r.pass_date).toLocaleDateString('en-IN') : '' },
     { key: 'vehicle_no', label: 'Vehicle', accessor: r => r.vehicle_no ?? '—' },
     { key: 'driver_name', label: 'Driver', accessor: r => r.driver_name ?? '—' },
     { key: 'material', label: 'Material', accessor: r => r.material ?? '—' },
@@ -285,9 +290,9 @@ export default function GatePassRegisterPage() {
       ),
       exportValue: r => r.status },
     { key: 'entry_time', label: 'Entry (IST)', accessor: r => r.entry_time ?? '',
-      format: v => fmtIST(v as string | null) },
+      format: v => fmtIST(v as string | null), exportValue: r => fmtIST(r.entry_time) },
     { key: 'exit_time', label: 'Exit (IST)', accessor: r => r.exit_time ?? '',
-      format: v => fmtIST(v as string | null) },
+      format: v => fmtIST(v as string | null), exportValue: r => fmtIST(r.exit_time) },
     { key: 'dwell_minutes', label: 'Dwell (min)', type: 'number', align: 'right',
       accessor: r => r.dwell_minutes ?? '',
       format: v => v !== '' ? `${v} min` : '—' },

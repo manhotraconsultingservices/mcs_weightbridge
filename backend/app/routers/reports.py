@@ -1493,11 +1493,18 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
         "WHERE company_id=:cid AND invoice_type='purchase' AND status='final' "
         "AND invoice_date>=:fd AND invoice_date<=:td GROUP BY 1")
     store = await _daily(
-        "SELECT CAST(t.created_at AS date) AS d, SUM(t.quantity * COALESCE(pi.unit_price,0)) AS total "
-        "FROM inventory_transactions t JOIN inventory_po_items pi "
+        # created_at is a UTC timestamptz — bucket it in IST so a late-evening receipt
+        # lands on the correct business day. Pre-aggregate PO items per (po_id,item_id)
+        # so a PO carrying the same item on two lines can't fan-out/double-count the receipt.
+        "SELECT CAST(t.created_at AT TIME ZONE 'Asia/Kolkata' AS date) AS d, "
+        "SUM(t.quantity * COALESCE(pi.unit_price,0)) AS total "
+        "FROM inventory_transactions t "
+        "LEFT JOIN (SELECT po_id, item_id, AVG(unit_price) AS unit_price "
+        "           FROM inventory_po_items GROUP BY po_id, item_id) pi "
         "ON pi.po_id=t.reference_id AND pi.item_id=t.item_id "
         "WHERE t.company_id=:cid AND t.transaction_type='receipt' "
-        "AND CAST(t.created_at AS date)>=:fd AND CAST(t.created_at AS date)<=:td GROUP BY 1")
+        "AND CAST(t.created_at AT TIME ZONE 'Asia/Kolkata' AS date)>=:fd "
+        "AND CAST(t.created_at AT TIME ZONE 'Asia/Kolkata' AS date)<=:td GROUP BY 1")
     diesel = await _daily(
         "SELECT CAST(entry_date AS date) AS d, SUM(amount) AS total FROM vehicle_fuel_entries "
         "WHERE company_id=:cid AND COALESCE(fuel_source,'')<>'plant_tank' "
@@ -1592,10 +1599,16 @@ async def build_eod_summary_context(db: AsyncSession, company_id, company_name: 
     }
 
 
-async def compute_eod_detail(db: AsyncSession, company_id, target_date: date) -> dict:
+async def compute_eod_detail(db: AsyncSession, company_id, target_date: date,
+                             basis: str = "accrual") -> dict:
     """Line-item breakup behind a single Day-Book day — every individual receipt,
     purchase, store issue, diesel fill, wage/advance and commission — so the owner
-    can drill from a day's totals into the underlying transactions (and export)."""
+    can drill from a day's totals into the underlying transactions (and export).
+
+    ``basis`` mirrors the summary: accrual lists purchase INVOICES + accrued
+    commission as money-out; cash lists supplier PAYMENTS instead. Emitting only
+    the basis-relevant categories keeps the drill-down Net equal to the day row's."""
+    basis = "cash" if str(basis).lower() == "cash" else "accrual"
     params = {"cid": str(company_id), "d": target_date}
     items: list[dict] = []
 
@@ -1618,14 +1631,15 @@ async def compute_eod_detail(db: AsyncSession, company_id, target_date: date) ->
                       "ref": r.ref or "", "party": r.party or "",
                       "detail": (r.mode or "").upper(), "amount": _r2(r.amount), "direction": "in"})
 
-    # MONEY OUT — purchases
-    for r in await _rows(
-        "SELECT i.invoice_no AS ref, COALESCE(p.name,'') AS party, i.grand_total AS amount "
-        "FROM invoices i LEFT JOIN parties p ON p.id=i.party_id "
-        "WHERE i.company_id=:cid AND i.invoice_type='purchase' AND i.status='final' "
-        "AND i.invoice_date=:d ORDER BY i.grand_total DESC"):
-        items.append({"category": "Purchase", "ref": r.ref or "", "party": r.party or "",
-                      "detail": "", "amount": _r2(r.amount), "direction": "out"})
+    # MONEY OUT — purchases (accrual basis only; cash basis uses supplier payments below)
+    if basis == "accrual":
+        for r in await _rows(
+            "SELECT i.invoice_no AS ref, COALESCE(p.name,'') AS party, i.grand_total AS amount "
+            "FROM invoices i LEFT JOIN parties p ON p.id=i.party_id "
+            "WHERE i.company_id=:cid AND i.invoice_type='purchase' AND i.status='final' "
+            "AND i.invoice_date=:d ORDER BY i.grand_total DESC"):
+            items.append({"category": "Purchase", "ref": r.ref or "", "party": r.party or "",
+                          "detail": "", "amount": _r2(r.amount), "direction": "out"})
 
     # Store inventory receipts (at PO price)
     for r in await _rows(
@@ -1633,9 +1647,12 @@ async def compute_eod_detail(db: AsyncSession, company_id, target_date: date) ->
         "t.quantity AS qty, COALESCE(pi.unit_price,0) AS price, "
         "(t.quantity*COALESCE(pi.unit_price,0)) AS amount "
         "FROM inventory_transactions t "
-        "JOIN inventory_po_items pi ON pi.po_id=t.reference_id AND pi.item_id=t.item_id "
+        "LEFT JOIN (SELECT po_id, item_id, AVG(unit_price) AS unit_price, MAX(item_name) AS item_name "
+        "           FROM inventory_po_items GROUP BY po_id, item_id) pi "
+        "ON pi.po_id=t.reference_id AND pi.item_id=t.item_id "
         "LEFT JOIN inventory_purchase_orders po ON po.id=t.reference_id "
-        "WHERE t.company_id=:cid AND t.transaction_type='receipt' AND CAST(t.created_at AS date)=:d"):
+        "WHERE t.company_id=:cid AND t.transaction_type='receipt' "
+        "AND CAST(t.created_at AT TIME ZONE 'Asia/Kolkata' AS date)=:d"):
         items.append({"category": "Store", "ref": r.ref or "", "party": r.item or "",
                       "detail": f"{float(r.qty or 0):g} @ {float(r.price or 0):g}",
                       "amount": _r2(r.amount), "direction": "out"})
@@ -1668,14 +1685,15 @@ async def compute_eod_detail(db: AsyncSession, company_id, target_date: date) ->
         items.append({"category": "Advance", "ref": "", "party": r.party or "",
                       "detail": "advance", "amount": _r2(r.amount), "direction": "out"})
 
-    # Agent commission
-    for r in await _rows(
-        "SELECT i.invoice_no AS ref, COALESCE(a.name,'') AS party, COALESCE(i.commission_amount,0) AS amount "
-        "FROM invoices i LEFT JOIN agents a ON a.id=i.agent_id "
-        "WHERE i.company_id=:cid AND i.invoice_type='sale' AND i.status='final' "
-        "AND COALESCE(i.commission_amount,0)>0 AND i.invoice_date=:d"):
-        items.append({"category": "Commission", "ref": r.ref or "", "party": r.party or "",
-                      "detail": "", "amount": _r2(r.amount), "direction": "out"})
+    # Agent commission (accrued on sale invoices — accrual basis only)
+    if basis == "accrual":
+        for r in await _rows(
+            "SELECT i.invoice_no AS ref, COALESCE(a.name,'') AS party, COALESCE(i.commission_amount,0) AS amount "
+            "FROM invoices i LEFT JOIN agents a ON a.id=i.agent_id "
+            "WHERE i.company_id=:cid AND i.invoice_type='sale' AND i.status='final' "
+            "AND COALESCE(i.commission_amount,0)>0 AND i.invoice_date=:d"):
+            items.append({"category": "Commission", "ref": r.ref or "", "party": r.party or "",
+                          "detail": "", "amount": _r2(r.amount), "direction": "out"})
 
     # Overhead expenses (direct-expense vouchers)
     for r in await _rows(
@@ -1685,15 +1703,16 @@ async def compute_eod_detail(db: AsyncSession, company_id, target_date: date) ->
         items.append({"category": "Expense", "ref": r.ref or "", "party": r.party or "",
                       "detail": r.cat or "", "amount": _r2(r.amount), "direction": "out"})
 
-    # Supplier payments (non-expense vouchers) — cash paid to suppliers
-    for r in await _rows(
-        "SELECT v.voucher_no AS ref, COALESCE(p.name,'') AS party, v.payment_mode AS mode, v.amount AS amount "
-        "FROM payment_vouchers v LEFT JOIN parties p ON p.id=v.party_id "
-        "WHERE v.company_id=:cid AND v.expense_category IS NULL AND v.voucher_date=:d ORDER BY v.amount DESC"):
-        items.append({"category": "Supplier Payment", "ref": r.ref or "", "party": r.party or "",
-                      "detail": (r.mode or "").upper(), "amount": _r2(r.amount), "direction": "out"})
+    # Supplier payments (non-expense vouchers) — actual cash paid to suppliers (cash basis only)
+    if basis == "cash":
+        for r in await _rows(
+            "SELECT v.voucher_no AS ref, COALESCE(p.name,'') AS party, v.payment_mode AS mode, v.amount AS amount "
+            "FROM payment_vouchers v LEFT JOIN parties p ON p.id=v.party_id "
+            "WHERE v.company_id=:cid AND v.expense_category IS NULL AND v.voucher_date=:d ORDER BY v.amount DESC"):
+            items.append({"category": "Supplier Payment", "ref": r.ref or "", "party": r.party or "",
+                          "detail": (r.mode or "").upper(), "amount": _r2(r.amount), "direction": "out"})
 
-    summ = await compute_eod_summary(db, company_id, target_date, target_date)
+    summ = await compute_eod_summary(db, company_id, target_date, target_date, basis=basis)
     return {"date": target_date.isoformat(), "items": items, "summary": summ["summary"]}
 
 
@@ -1743,12 +1762,13 @@ async def send_eod_summary(
 @router.get("/eod-summary/detail")
 async def eod_summary_detail(
     on_date: date = Query(..., alias="date"),
+    basis: str = Query("accrual"),   # match the summary view so the drill-down Net ties out
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Drill-down: every individual transaction behind one Day-Book day, for the
     click-through breakup + Excel export."""
-    return await compute_eod_detail(db, current_user.company_id, on_date)
+    return await compute_eod_detail(db, current_user.company_id, on_date, basis=basis)
 
 
 @router.get("/operator-cash-eod")
@@ -1763,12 +1783,17 @@ async def operator_cash_eod(
     d = on_date or date.today()
     cid = str(current_user.company_id)
 
+    # Attribute cash to the OPERATOR WHO COLLECTED it (collected_by), falling back to
+    # the recorder (created_by) for legacy/blank rows — so the tally isn't distorted
+    # when an accountant enters the receipt on the operator's behalf.
     rows = (await db.execute(text(
-        "SELECT r.created_by AS oid, COALESCE(u.full_name, u.username, 'Unknown') AS name, "
+        "SELECT COALESCE(r.collected_by, r.created_by) AS oid, "
+        "COALESCE(u.full_name, u.username, 'Unknown') AS name, "
         "COUNT(*) AS receipts, SUM(r.amount) AS cash "
-        "FROM payment_receipts r LEFT JOIN users u ON u.id = r.created_by "
+        "FROM payment_receipts r "
+        "LEFT JOIN users u ON u.id = COALESCE(r.collected_by, r.created_by) "
         "WHERE r.company_id=:cid AND LOWER(COALESCE(r.payment_mode,''))='cash' "
-        "AND r.receipt_date=:d GROUP BY r.created_by, u.full_name, u.username"
+        "AND r.receipt_date=:d GROUP BY COALESCE(r.collected_by, r.created_by), u.full_name, u.username"
     ), {"cid": cid, "d": d})).all()
     collected = {(str(r.oid) if r.oid else "none"): {
         "name": r.name, "receipts": int(r.receipts or 0), "cash": _r2(r.cash)} for r in rows}
@@ -2442,13 +2467,16 @@ async def token_register(
         select(Token, Party, Product, Invoice)
         .outerjoin(Party, Token.party_id == Party.id)
         .outerjoin(Product, Token.product_id == Product.id)
-        # left join most-recent non-cancelled invoice for this token
+        # left join the token's non-cancelled invoice, matching the token's OWN type
+        # (a purchase token creates a purchase invoice — not a sale) so purchase rows
+        # show their invoice too. Ordered newest-invoice-first below so the dedup keeps
+        # the most recent when a token has >1 (split children / revisions).
         .outerjoin(
             Invoice,
             and_(
                 Invoice.token_id == Token.id,
                 Invoice.status != "cancelled",
-                Invoice.invoice_type == "sale",
+                Invoice.invoice_type == Token.token_type,
             ),
         )
         .where(
@@ -2457,7 +2485,7 @@ async def token_register(
             Token.token_date <= to_date,
             Token.is_supplement.is_(False),
         )
-        .order_by(Token.token_date.desc(), Token.created_at.desc())
+        .order_by(Token.token_date.desc(), Token.created_at.desc(), Invoice.created_at.desc())
     )
     if token_type:
         q = q.where(Token.token_type == token_type)
@@ -2478,7 +2506,9 @@ async def token_register(
             continue
         seen_token_ids.add(tid)
 
-        if token.net_weight:
+        # Headline net weight = goods actually weighed out: COMPLETED tokens only
+        # (a CANCELLED token can still carry a net_weight and must not inflate the total).
+        if token.net_weight and token.status == "COMPLETED":
             total_net += token.net_weight
 
         items.append({
@@ -2494,6 +2524,10 @@ async def token_register(
             "party_name": party.name if party else None,
             "product_name": product.name if product else None,
             "weight_method": token.weight_method,
+            # raw kg so the client can render in the tenant's weight unit (MT, or Qtl for maize)
+            "gross_weight_kg": _f(token.gross_weight),
+            "tare_weight_kg": _f(token.tare_weight),
+            "net_weight_kg": _f(token.net_weight),
             "gross_weight_mt": _r2(token.gross_weight / 1000) if token.gross_weight else None,
             "tare_weight_mt": _r2(token.tare_weight / 1000) if token.tare_weight else None,
             "net_weight_mt": _r2(token.net_weight / 1000) if token.net_weight else None,
@@ -2510,6 +2544,7 @@ async def token_register(
         "count": len(items),
         "from_date": from_date.isoformat(),
         "to_date": to_date.isoformat(),
+        "total_net_weight_kg": _f(total_net),
         "total_net_weight_mt": _r2(total_net / 1000),
         "completed_count": sum(1 for i in items if i["status"] == "COMPLETED"),
         "cancelled_count": sum(1 for i in items if i["status"] == "CANCELLED"),

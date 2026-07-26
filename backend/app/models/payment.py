@@ -23,6 +23,9 @@ class PaymentReceipt(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     tally_synced: Mapped[bool] = mapped_column(Boolean, default=False)
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    # Operator who physically COLLECTED the cash (may differ from created_by, the
+    # recorder). Drives the per-operator cash EOD; NULL falls back to created_by.
+    collected_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
