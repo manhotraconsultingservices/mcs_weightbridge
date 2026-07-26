@@ -273,19 +273,38 @@ async def _fetch_rate(db: AsyncSession, party_id: uuid.UUID | None,
 
 
 async def _compute_vehicle_rent(db: AsyncSession, token: Token, net_kg) -> Decimal | None:
-    """Auto vehicle rent = vehicle.rent_rate_per_km_per_mt × token.rent_km × net_MT.
-    Returns None (→ leave rent as-is / manual) unless the vehicle has a rate AND a
-    distance was entered. Net weight is known at completion (weighbridge) or at
-    create (volume)."""
-    if not token.vehicle_id or token.rent_km is None:
+    """Auto vehicle rent = rate × distance_km × quantity, where the basis follows the
+    load's measurement:
+      • volume (CUB) load  → ₹/km/CUM rate × km × CUM (CUM = volume_cft / 35.3147)
+      • weighed (MT) load  → ₹/km/MT  rate × km × net_MT
+    The rate is the operator's per-token override (prefilled from the vehicle master
+    on the token form) and falls back to the vehicle master when the token carries
+    none. Returns None (→ leave rent as-is / manual) unless a distance AND an
+    applicable rate are present. Net weight is known at completion (weighbridge) or
+    at create (volume)."""
+    if token.rent_km is None:
         return None
     from app.models.vehicle import Vehicle
-    veh = (await db.execute(select(Vehicle).where(Vehicle.id == token.vehicle_id))).scalar_one_or_none()
-    if not veh or veh.rent_rate_per_km_per_mt is None:
+    veh = None
+    if token.vehicle_id:
+        veh = (await db.execute(select(Vehicle).where(Vehicle.id == token.vehicle_id))).scalar_one_or_none()
+    km = Decimal(str(token.rent_km))
+    if token.weight_method == "volume":
+        rate = token.rent_rate_per_km_per_cum
+        if rate is None and veh is not None:
+            rate = veh.rent_rate_per_km_per_cum
+        if rate is None or not token.volume_cft:
+            return None
+        cum = Decimal(str(token.volume_cft)) / _CFT_PER_CUM
+        return (Decimal(str(rate)) * km * cum).quantize(Decimal("0.01"))
+    # Weighbridge / MT basis
+    rate = token.rent_rate_per_km_per_mt
+    if rate is None and veh is not None:
+        rate = veh.rent_rate_per_km_per_mt
+    if rate is None:
         return None
     net_mt = Decimal(str(net_kg or 0)) / Decimal("1000")
-    rent = Decimal(str(veh.rent_rate_per_km_per_mt)) * Decimal(str(token.rent_km)) * net_mt
-    return rent.quantize(Decimal("0.01"))
+    return (Decimal(str(rate)) * km * net_mt).quantize(Decimal("0.01"))
 
 
 # 1 cubic metre = 35.3147 cubic feet (canonical volume unit is CFT).
@@ -564,7 +583,9 @@ async def create_token(
         gate_pass_no=resolved_gate_pass_no,
         transit_pass_id=payload.transit_pass_id,
         vehicle_rent=payload.vehicle_rent,
-        rent_km=payload.rent_km,              # distance → vehicle_rent auto-computed (Rate × Km × MT)
+        rent_km=payload.rent_km,              # distance → vehicle_rent auto-computed (Rate × Km × qty)
+        rent_rate_per_km_per_mt=payload.rent_rate_per_km_per_mt,    # operator override (else vehicle master)
+        rent_rate_per_km_per_cum=payload.rent_rate_per_km_per_cum,  # operator override (else vehicle master)
         royalty_cum=payload.royalty_cum,      # CUM for royalty → royalty_amount computed at completion
         remarks=payload.remarks,
         custom_fields=payload.custom_fields,
@@ -724,7 +745,9 @@ async def create_volume_token(
         gate_pass_no=resolved_vol_gate_pass_no,
         transit_pass_id=payload.transit_pass_id,
         vehicle_rent=payload.vehicle_rent,
-        rent_km=payload.rent_km,              # distance → vehicle_rent auto-computed (Rate × Km × MT)
+        rent_km=payload.rent_km,              # distance → vehicle_rent auto-computed (Rate × Km × qty)
+        rent_rate_per_km_per_mt=payload.rent_rate_per_km_per_mt,    # operator override (else vehicle master)
+        rent_rate_per_km_per_cum=payload.rent_rate_per_km_per_cum,  # operator override (else vehicle master)
         royalty_cum=payload.royalty_cum,      # CUM for royalty (auto-derived from volume if omitted)
         remarks=payload.remarks,
         custom_fields=payload.custom_fields,
@@ -1611,7 +1634,9 @@ class TokenPricingIn(BaseModel):
     volume_cft: Decimal | None = None      # volume qty override (volume tokens)
     billing_unit: str | None = None        # change the billing unit
     payment_mode: str | None = None        # cash | credit | upi | bank_transfer → invoice tax_type
-    rent_km: Decimal | None = None         # trip distance → recompute vehicle_rent (Rate × Km × MT)
+    rent_km: Decimal | None = None         # trip distance → recompute vehicle_rent (Rate × Km × qty)
+    rent_rate_per_km_per_mt: Decimal | None = None    # operator override of the ₹/km/MT rate
+    rent_rate_per_km_per_cum: Decimal | None = None   # operator override of the ₹/km/CUM rate
     vehicle_rent: Decimal | None = None    # explicit manual override of the auto rent
     royalty_cum: Decimal | None = None     # CUM volume for royalty → recompute royalty_amount (₹/CUM × CUM)
     royalty_amount: Decimal | None = None  # explicit manual override of the auto royalty
@@ -1686,10 +1711,14 @@ async def update_token_pricing(
                 raise HTTPException(400, "Weight must be greater than zero.")
             token.net_weight = payload.net_weight
 
-    # Vehicle rent: explicit override wins; else recompute Rate × Km × MT from the
-    # (possibly updated) distance + weight.
+    # Vehicle rent: explicit override wins; else recompute rate × km × qty from the
+    # (possibly updated) distance, rate overrides + weight.
     if payload.rent_km is not None:
         token.rent_km = payload.rent_km
+    if payload.rent_rate_per_km_per_mt is not None:
+        token.rent_rate_per_km_per_mt = payload.rent_rate_per_km_per_mt
+    if payload.rent_rate_per_km_per_cum is not None:
+        token.rent_rate_per_km_per_cum = payload.rent_rate_per_km_per_cum
     if payload.vehicle_rent is not None:
         token.vehicle_rent = payload.vehicle_rent
     else:

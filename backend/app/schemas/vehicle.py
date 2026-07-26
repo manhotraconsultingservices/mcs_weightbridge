@@ -13,6 +13,7 @@ class VehicleCreate(BaseModel):
     benchmark_mileage_kmpl: Decimal | None = None
     tank_capacity_litres: Decimal | None = None
     rent_rate_per_km_per_mt: Decimal | None = None
+    rent_rate_per_km_per_cum: Decimal | None = None
 
 
 class VehicleUpdate(BaseModel):
@@ -24,6 +25,7 @@ class VehicleUpdate(BaseModel):
     benchmark_mileage_kmpl: Decimal | None = None
     tank_capacity_litres: Decimal | None = None
     rent_rate_per_km_per_mt: Decimal | None = None
+    rent_rate_per_km_per_cum: Decimal | None = None
     is_active: bool | None = None
 
 
@@ -37,6 +39,7 @@ class VehicleResponse(BaseModel):
     benchmark_mileage_kmpl: Decimal | None = None
     tank_capacity_litres: Decimal | None = None
     rent_rate_per_km_per_mt: Decimal | None = None
+    rent_rate_per_km_per_cum: Decimal | None = None
     is_active: bool
 
     model_config = {"from_attributes": True}

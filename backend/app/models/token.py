@@ -71,6 +71,11 @@ class Token(Base):
     # vehicle.rent_rate_per_km_per_mt × rent_km × net_weight_MT (weight known at
     # completion). vehicle_rent stays an editable override after that.
     rent_km: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # Operator-overridable rent rates (prefilled from the vehicle master on the token
+    # form; NULL → fall back to the vehicle master). Weighed loads use the ₹/km/MT
+    # rate × net MT; volume loads use the ₹/km/CUM rate × CUM. Amount → vehicle_rent.
+    rent_rate_per_km_per_mt: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    rent_rate_per_km_per_cum: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     # Royalty (govt mineral levy billed to the customer). Operator opts in per token.
     # royalty_cum = the CUM (cubic metre) volume the royalty is charged on — entered
     # manually on a weighed (MT) load, or auto-derived from volume_cft (÷35.3147) on a

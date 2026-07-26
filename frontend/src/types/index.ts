@@ -133,6 +133,7 @@ export interface Vehicle {
   benchmark_mileage_kmpl: number | null;
   tank_capacity_litres: number | null;
   rent_rate_per_km_per_mt: number | null;
+  rent_rate_per_km_per_cum: number | null;
   is_active: boolean;
 }
 
@@ -235,6 +236,8 @@ export interface Token {
   transit_pass_id: string | null;
   vehicle_rent: number | null;
   rent_km: number | null;
+  rent_rate_per_km_per_mt: number | null;   // rent rate used (₹/km/MT)
+  rent_rate_per_km_per_cum: number | null;  // rent rate used (₹/km/CUM)
   royalty_cum: number | null;      // CUM the royalty was charged on
   royalty_amount: number | null;   // computed royalty charge (₹/CUM × CUM)
   remarks: string | null;

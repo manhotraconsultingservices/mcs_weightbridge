@@ -176,8 +176,10 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     gate_pass_id: '',
     remarks: '',
     transit_pass_id: '',   // P1: link purchase token to its royalty/transit pass
-    vehicle_rent: '',      // optional manual override (blank → auto Rate×Km×MT)
-    rent_km: '',           // trip distance → vehicle_rent = vehicle rate × km × net MT
+    vehicle_rent: '',      // optional manual override (blank → auto Rate×Km×qty)
+    rent_km: '',           // trip distance → vehicle_rent = rate × km × qty
+    rent_rate_mt: '',      // ₹/km/MT (prefilled from vehicle master, operator-editable) — weighed loads
+    rent_rate_cum: '',     // ₹/km/CUM (prefilled from vehicle master, operator-editable) — volume loads
     royalty_on: false,     // operator opts in to royalty for this load
     royalty_cum: '',       // CUM the royalty is charged on → royalty = product.royalty_per_cum × CUM
     agent_id: '',          // broker/dalal — carried to the invoice for commission
@@ -343,7 +345,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   }, [loadGatePasses]);
 
   function resetForm() {
-    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', royalty_on: false, royalty_cum: '', agent_id: '', billing_unit: weightMethod === 'weighbridge' ? weightUnit().code : volDefault, rate: '', payment_mode: '' });
+    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', rent_rate_mt: '', rent_rate_cum: '', royalty_on: false, royalty_cum: '', agent_id: '', billing_unit: weightMethod === 'weighbridge' ? weightUnit().code : volDefault, rate: '', payment_mode: '' });
     setRateSource('none');
     rateEditedRef.current = false;
     setCustomValues({});
@@ -419,7 +421,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const rateNum = parseFloat(form.rate || '0');
 
   const handleTypeChange = (type: string) => {
-    setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', royalty_on: false, royalty_cum: '' }));
+    setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', rent_rate_mt: '', rent_rate_cum: '', royalty_on: false, royalty_cum: '' }));
     if (type === 'purchase' && moduleEnabled('royalty')) {
       api.get('/api/v1/royalty/passes', { params: { status: 'active', page_size: 100 } })
         .then(r => {
@@ -481,6 +483,9 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       vehicle_id: vehicle.id,
       // Auto-fill vehicle_type from master if available and not already set
       vehicle_type: f.vehicle_type || vehicle.vehicle_type || '',
+      // Prefill the rent rates from the vehicle master (operator can override).
+      rent_rate_mt: vehicle.rent_rate_per_km_per_mt != null ? String(vehicle.rent_rate_per_km_per_mt) : f.rent_rate_mt,
+      rent_rate_cum: vehicle.rent_rate_per_km_per_cum != null ? String(vehicle.rent_rate_per_km_per_cum) : f.rent_rate_cum,
     }));
     setVehicleSearch('');
   };
@@ -523,6 +528,8 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           gate_pass_id: form.gate_pass_id || undefined,
           vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
           rent_km: form.rent_km ? Number(form.rent_km) : undefined,
+          rent_rate_per_km_per_mt: form.rent_rate_mt ? Number(form.rent_rate_mt) : undefined,
+          rent_rate_per_km_per_cum: form.rent_rate_cum ? Number(form.rent_rate_cum) : undefined,
           royalty_cum: form.royalty_on && form.royalty_cum ? Number(form.royalty_cum) : undefined,
           remarks: form.remarks
             ? `${form.remarks}${tyreCount ? ` | ${tyreCount}-tyre truck` : ''}`
@@ -575,6 +582,8 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       gate_pass_id: form.gate_pass_id || undefined,
       vehicle_rent: form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
       rent_km: form.rent_km ? Number(form.rent_km) : undefined,
+      rent_rate_per_km_per_mt: form.rent_rate_mt ? Number(form.rent_rate_mt) : undefined,
+      rent_rate_per_km_per_cum: form.rent_rate_cum ? Number(form.rent_rate_cum) : undefined,
       royalty_cum: form.royalty_on && form.royalty_cum ? Number(form.royalty_cum) : undefined,
       remarks: form.remarks || undefined,
       custom_fields: Object.keys(customValues).length ? customValues : undefined,
@@ -1150,9 +1159,11 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           </div>
         )}
 
-        {/* Vehicle rent — auto = vehicle rate (₹/km/MT) × distance × net weight (MT) */}
-        <div className="space-y-1">
-          <Label className="text-xs">Distance (km) <span className="text-muted-foreground">(vehicle rent)</span></Label>
+        {/* Vehicle rent — rate × distance × quantity. Basis follows the load:
+            weighed → ₹/km/MT × net MT · volume → ₹/km/CUM × CUM. Rates prefill from
+            the vehicle master and are operator-editable; amount shows as Vehicle Rent. */}
+        <div className="space-y-1 rounded-md border border-slate-200 bg-slate-50/60 px-2 py-2">
+          <Label className="text-xs font-medium">Vehicle Rent — Distance (km)</Label>
           <Input
             className="h-8 text-xs"
             type="number"
@@ -1162,16 +1173,40 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             onChange={e => setForm(f => ({ ...f, rent_km: e.target.value }))}
             placeholder="e.g. 50"
           />
-          {selectedVehicle?.rent_rate_per_km_per_mt ? (
-            <p className="text-[10px] text-muted-foreground">
-              Rent = ₹{selectedVehicle.rent_rate_per_km_per_mt}/km/MT × {form.rent_km || '0'} km × net wt (MT)
-              {' '}— auto {weightMethod === 'weighbridge' ? 'after weighing' : 'now'}.
-            </p>
-          ) : form.rent_km ? (
-            <p className="text-[10px] text-amber-600">
-              No rent rate on this vehicle — set “Rent rate (₹/km/MT)” in Vehicle Master, or enter rent manually below.
-            </p>
-          ) : null}
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">Rate ₹/MT/km {weightMethod === 'weighbridge' && <span className="text-emerald-600 font-semibold">• used</span>}</Label>
+              <Input
+                className="h-8 text-xs"
+                type="number" min="0" step="0.01"
+                value={form.rent_rate_mt}
+                onChange={e => setForm(f => ({ ...f, rent_rate_mt: e.target.value }))}
+                placeholder="e.g. 2.00"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">Rate ₹/km/CUB {weightMethod === 'volume' && <span className="text-emerald-600 font-semibold">• used</span>}</Label>
+              <Input
+                className="h-8 text-xs"
+                type="number" min="0" step="0.01"
+                value={form.rent_rate_cum}
+                onChange={e => setForm(f => ({ ...f, rent_rate_cum: e.target.value }))}
+                placeholder="e.g. 1.50"
+              />
+            </div>
+          </div>
+          {form.rent_km && (
+            weightMethod === 'volume'
+              ? (Number(form.rent_rate_cum) > 0 && volumeCft > 0
+                  ? <p className="text-[10px] text-muted-foreground">
+                      Rent = ₹{form.rent_rate_cum}/km/CUB × {form.rent_km} km × {(volumeCft / 35.3147).toFixed(2)} CUM ={' '}
+                      <span className="font-semibold">₹{(Number(form.rent_rate_cum) * Number(form.rent_km) * (volumeCft / 35.3147)).toFixed(2)}</span>
+                    </p>
+                  : <p className="text-[10px] text-amber-600">Enter a ₹/km/CUB rate + volume to bill vehicle rent (or type an amount below).</p>)
+              : (Number(form.rent_rate_mt) > 0
+                  ? <p className="text-[10px] text-muted-foreground">Rent = ₹{form.rent_rate_mt}/km/MT × {form.rent_km} km × net wt (MT) — auto after weighing.</p>
+                  : <p className="text-[10px] text-amber-600">Enter a ₹/MT/km rate to bill vehicle rent (or type an amount below).</p>)
+          )}
         </div>
 
         {/* Optional manual override of the auto-calculated rent */}

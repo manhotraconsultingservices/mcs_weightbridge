@@ -21,6 +21,9 @@ class Vehicle(Base):
     tank_capacity_litres: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
     # Vehicle rent rate: ₹ per km per MT. vehicle_rent = rate × distance_km × net_weight_MT
     rent_rate_per_km_per_mt: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
+    # Alternate rent basis: ₹ per km per CUM. vehicle_rent = rate × distance_km × CUM.
+    # Used for volume (CUB) loads; the operator picks/overrides the rate on the token.
+    rent_rate_per_km_per_cum: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
