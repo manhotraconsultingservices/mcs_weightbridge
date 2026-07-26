@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, text
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_role
 from app.models.company import Company
 from app.models.invoice import Invoice, InvoiceItem
 from app.models.token import Token
@@ -796,18 +796,33 @@ async def gstr3b(
 async def profit_loss(
     from_date: date = Query(...),
     to_date: date = Query(...),
+    opening_stock: float | None = Query(None),
+    closing_stock: float | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Full P&L by month:
         Revenue (sales, net of credit/debit notes)
-      − COGS (purchase invoices)
+      − COGS (purchase invoices, optionally stock-adjusted)
       = Gross profit
-      − Operating expenses: Labour · Store inventory (at purchase) · Fuel · Commission
+      − Operating expenses: Labour · Store inventory (at purchase) · Fuel · Commission · Overhead
       − Bad-debt write-offs
       = Net profit
     Operating-expense lines come from optional feature modules and degrade to zero
     (never error) on a tenant that doesn't have them.
+
+    F3 (manual stock-adjusted COGS): when `opening_stock` / `closing_stock` VALUES
+    (₹, entered by the accountant from the CA's figures) are supplied, COGS is
+    adjusted at the period level to the goods ACTUALLY sold:
+        COGS = opening stock + purchases − closing stock
+    i.e. a stock-adjustment of (opening − closing) is added to raw purchases. When
+    both are omitted, COGS = purchases-in-period (unchanged, non-breaking).
+    The stock tables carry quantity only (no cost basis), so valuation is a manual
+    input by design — see the `notes` in the response. (Costing decision: 2026-07-26.)
+
+    F6 (pass-through charges): freight, vehicle rent and royalty are billed at cost
+    and deliberately excluded from BOTH revenue and expense (net-zero) — surfaced
+    as a caveat in `notes`, not a calc change. (Policy decision: 2026-07-26.)
     """
     yr = func.extract("year", Invoice.invoice_date)
     mo = func.extract("month", Invoice.invoice_date)
@@ -1059,15 +1074,39 @@ async def profit_loss(
             "write_off_count": wo.get("write_off_count", 0),
         })
 
-    total_gross = _r2(total_revenue - total_cogs)
+    purchases_in_period = _r2(total_cogs)
+    # F3 — manual stock-adjusted COGS at the period level.
+    # COGS = opening stock + purchases − closing stock. Applied only when the
+    # accountant supplies opening/closing VALUES (₹); otherwise COGS = purchases.
+    stock_adjusted = opening_stock is not None or closing_stock is not None
+    op_stock = _r2(opening_stock or 0)
+    cl_stock = _r2(closing_stock or 0)
+    stock_adjustment = _r2(op_stock - cl_stock)   # +adds to COGS when opening > closing
+    effective_cogs = _r2(purchases_in_period + stock_adjustment) if stock_adjusted else purchases_in_period
+
+    total_gross = _r2(total_revenue - effective_cogs)
     total_opex = _r2(total_labour + total_store + total_fuel + total_commission + total_overhead)
     total_expenses_all = _r2(total_opex + total_write_off)
     total_net = _r2(total_gross - total_expenses_all)
+
+    notes = [
+        ("Stock-adjusted COGS = opening stock + purchases − closing stock (manual figures you entered)."
+         if stock_adjusted else
+         "COGS = purchase invoices booked in this period (no opening/closing-stock adjustment). "
+         "Enter opening & closing stock values above for a goods-sold basis — your CA's figures."),
+        "Pass-through charges (freight, vehicle rent, royalty) are billed at cost and excluded from "
+        "both revenue and expense (net-zero) — they do not affect this P&L.",
+    ]
     return {
         "period": f"{from_date.isoformat()} to {to_date.isoformat()}",
         "summary": {
             "total_revenue": _r2(total_revenue),
-            "total_cogs": _r2(total_cogs),
+            "total_cogs": effective_cogs,
+            "purchases": purchases_in_period,
+            "opening_stock": op_stock if stock_adjusted else None,
+            "closing_stock": cl_stock if stock_adjusted else None,
+            "stock_adjustment": stock_adjustment if stock_adjusted else 0.0,
+            "stock_adjusted": stock_adjusted,
             "gross_profit": total_gross,
             "labour": _r2(total_labour),
             "store_inventory": _r2(total_store),
@@ -1081,7 +1120,74 @@ async def profit_loss(
             "margin_pct": _r2((total_net / total_revenue * 100) if total_revenue > 0 else 0),
         },
         "monthly": monthly,
+        "notes": notes,
     }
+
+
+# ── Stock valuation (manual opening/closing stock values for stock-adjusted COGS, F3) ──
+_STOCK_VAL_KEY = "stock_valuation"
+
+
+@router.get("/stock-valuation")
+async def get_stock_valuation(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the last-saved manual opening/closing stock values (₹) for P&L.
+
+    {"opening": <float|None>, "closing": <float|None>, "note": <str>}. Empty
+    defaults when never set. Read by the P&L tab to pre-fill the F3 inputs.
+    """
+    default = {"opening": None, "closing": None, "note": ""}
+    try:
+        row = (await db.execute(
+            text("SELECT value FROM app_settings WHERE key = :k"),
+            {"k": _STOCK_VAL_KEY},
+        )).fetchone()
+        if row:
+            cfg = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            return {**default, **(cfg or {})}
+    except Exception:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+    return default
+
+
+@router.put("/stock-valuation")
+async def put_stock_valuation(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "accountant")),
+):
+    """Persist manual opening/closing stock values (₹) — accountant/admin only.
+
+    Body: {"opening": <number|null>, "closing": <number|null>, "note": <str>}.
+    """
+    def _num(v):
+        if v is None or v == "":
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    clean = {
+        "opening": _num(payload.get("opening")),
+        "closing": _num(payload.get("closing")),
+        "note": str(payload.get("note") or "")[:500],
+    }
+    await db.execute(
+        text("""
+            INSERT INTO app_settings (key, value, updated_at)
+            VALUES (:k, :v, NOW())
+            ON CONFLICT (key) DO UPDATE
+              SET value = EXCLUDED.value, updated_at = NOW()
+        """),
+        {"k": _STOCK_VAL_KEY, "v": json.dumps(clean)},
+    )
+    await db.commit()
+    return {"ok": True, **clean}
 
 
 # ── EOD Daily Business Summary (cash-book view) ──────────────────────────────
