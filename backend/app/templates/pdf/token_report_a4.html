@@ -44,7 +44,9 @@
 {# Billing-unit label + unit-aware weight (parity with the plain slip): MT · Qtl · KG #}
 {% macro unit_label(product) %}{% set u = (product.unit if product and product.unit else 'MT')|upper %}{% if u == 'QUINTAL' %}Qtl{% elif u == 'KG' %}KG{% else %}MT{% endif %}{% endmacro %}
 {% macro format_wt(w, product) %}{% if w %}{% set u = (product.unit if product and product.unit else 'MT')|upper %}{% if u == 'QUINTAL' %}{{ '%.3f' % (w|float / 100) }} Qtl{% elif u == 'KG' %}{{ '%.0f' % (w|float) }} KG{% else %}{{ '%.3f' % (w|float / 1000) }} MT{% endif %}{% else %}—{% endif %}{% endmacro %}
-{% macro vol_unit_fmt(cft, token) %}{% if cft %}{% set bu = (token.billing_unit or 'CFT')|upper %}{% if bu == 'CBM' or bu == 'CUM' %}{{ '%.2f' % (cft|float / 35.3147) }} CBM{% elif bu == 'BRASS' %}{{ '%.2f' % (cft|float / 100) }} Brass{% else %}{{ '%.2f' % (cft|float) }} CFT{% endif %}{% else %}—{% endif %}{% endmacro %}
+{% macro vol_unit_fmt(cft, token) %}{% if cft %}{% set bu = (token.billing_unit or 'CFT')|upper %}{% if bu == 'CBM' or bu == 'CUM' %}{{ '%.2f' % (cft|float / 35.3147) }} CUM{% elif bu == 'BRASS' %}{{ '%.2f' % (cft|float / 100) }} Brass{% else %}{{ '%.2f' % (cft|float) }} CFT{% endif %}{% else %}—{% endif %}{% endmacro %}
+{% macro vol_unit_label(token) %}{% set bu = (token.billing_unit or 'CFT')|upper %}{% if bu == 'CBM' or bu == 'CUM' %}CUM{% elif bu == 'BRASS' %}Brass{% else %}CFT{% endif %}{% endmacro %}
+{% macro rate_unit_label(token) %}{% if token.weight_method == 'volume' %}{{ vol_unit_label(token) }}{% else %}{{ unit_label(token.product) }}{% endif %}{% endmacro %}
 
 {% set is_volume = (token.weight_method == 'volume') %}
 
@@ -94,14 +96,14 @@
     {% endif %}
   </table>
 
-  {# ── Quantity: volume block for volume tokens, else gross/tare/net (unit-aware) ── #}
+  {# ── Quantity: volume tokens are billed by volume (no net weight) ── #}
   {% if is_volume %}
   <table class="wt">
-    <tr><th>Volume</th><th>Density</th><th>Net Weight</th></tr>
+    <tr><th>Volume</th><th>Density</th><th>Date / Time</th></tr>
     <tr>
       <td class="net">{{ vol_unit_fmt(token.volume_cft, token) }}</td>
       <td>{% if token.product and token.product.bulk_density %}{{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT{% else %}—{% endif %}</td>
-      <td class="net">{{ format_wt(token.net_weight, token.product) }}</td>
+      <td>{{ fmt_dt(token.completed_at) }}</td>
     </tr>
   </table>
   {% else %}
@@ -130,7 +132,7 @@
   {% if (rate is defined and rate and rate > 0) or (amount is defined and amount) or (total_amount is defined and total_amount and total_amount > 0) %}
   <table class="fin">
     {% if rate is defined and rate and rate > 0 %}
-    <tr><td class="l">Rate</td><td class="a">₹{{ '%.2f' % rate }}/{{ unit_label(token.product) | trim }}</td></tr>
+    <tr><td class="l">Rate</td><td class="a">₹{{ '%.2f' % rate }}/{{ rate_unit_label(token) | trim }}</td></tr>
     {% endif %}
     {% if amount is defined and amount %}
     <tr><td class="l">{% if (vehicle_rent and vehicle_rent > 0) or (royalty and royalty > 0) %}Material Cost{% else %}Amount{% endif %}</td><td class="a">₹{{ '%.2f' % amount }}</td></tr>

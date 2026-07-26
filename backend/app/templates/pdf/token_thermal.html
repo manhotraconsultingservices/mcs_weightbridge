@@ -171,6 +171,10 @@
 {% set _u = (token.product.unit if token.product and token.product.unit else 'MT')|upper %}
 {% set bill_div = 100.0 if _u == 'QUINTAL' else (1.0 if _u == 'KG' else 1000.0) %}
 {% set unit_lbl = 'Qtl' if _u == 'QUINTAL' else ('KG' if _u == 'KG' else 'MT') %}
+{# Volume-token billing unit (CUM cubic metre · Brass · CFT) — drives the volume display + rate label #}
+{% set _bu = (token.billing_unit or 'CFT')|upper %}
+{% set vol_lbl = 'CUM' if (_bu == 'CBM' or _bu == 'CUM') else ('Brass' if _bu == 'BRASS' else 'CFT') %}
+{% set rate_unit = vol_lbl if is_volume else unit_lbl %}
 
 <div class="co-name">{{ company.name }}</div>
 {% if company.gstin %}
@@ -262,18 +266,16 @@
 {% endif %}
 <hr class="sep">
 
-{# ===== Same layout for both modes: detail block above + big Net Weight below ===== #}
 {% if is_volume %}
-  {# Volume token: show the volume in the block (parallel to gross/tare) #}
-  {% set _bu = (token.billing_unit or 'CFT')|upper %}
-  <div class="weight-block">
-    <div class="weight-row">
-      <span class="wlabel">{{ bl('volume') | upper }}:</span>
-      <span class="wval">{% if token.volume_cft %}{% if _bu == 'CBM' or _bu == 'CUM' %}{{ '%.2f'|format(token.volume_cft|float / 35.3147) }} CBM{% elif _bu == 'BRASS' %}{{ '%.2f'|format(token.volume_cft|float / 100) }} Brass{% else %}{{ '%.2f'|format(token.volume_cft|float) }} CFT{% endif %}{% else %}—{% endif %}</span>
+  {# Volume token: billed by volume — show the VOLUME big, no net weight ===== #}
+  <div class="net-big">
+    <div class="lbl">{{ bl('volume') | upper }}</div>
+    <div class="val">
+      {% if token.volume_cft %}{% if _bu == 'CBM' or _bu == 'CUM' %}{{ '%.2f'|format(token.volume_cft|float / 35.3147) }} CUM{% elif _bu == 'BRASS' %}{{ '%.2f'|format(token.volume_cft|float / 100) }} Brass{% else %}{{ '%.2f'|format(token.volume_cft|float) }} CFT{% endif %}{% else %}—{% endif %}
     </div>
   </div>
 {% else %}
-  {# ===== WEIGHBRIDGE MODE ===== #}
+  {# ===== WEIGHBRIDGE MODE: gross/tare block + big Net Weight ===== #}
   <div class="weight-block">
     <div class="weight-row">
       <span class="wlabel">{{ bl('gross_weight') | upper }}:</span>
@@ -284,15 +286,13 @@
       <span class="wval">{% if token.tare_weight %}{{ '%.3f'|format(token.tare_weight|float / bill_div) }} {{ unit_lbl }}{% else %}—{% endif %}</span>
     </div>
   </div>
-{% endif %}
-
-{# Net weight — big, for BOTH modes (volume token net = volume_cft × bulk_density) #}
-<div class="net-big">
-  <div class="lbl">{{ bl('net_weight') | upper }}</div>
-  <div class="val">
-    {% if token.net_weight %}{{ '%.3f'|format(token.net_weight|float / bill_div) }} {{ unit_lbl }}{% else %}—{% endif %}
+  <div class="net-big">
+    <div class="lbl">{{ bl('net_weight') | upper }}</div>
+    <div class="val">
+      {% if token.net_weight %}{{ '%.3f'|format(token.net_weight|float / bill_div) }} {{ unit_lbl }}{% else %}—{% endif %}
+    </div>
   </div>
-</div>
+{% endif %}
 
 <hr class="sep">
 
@@ -321,7 +321,7 @@
 {# ── Cash bill: Rate × Qty = Amount (the operator collects cash against this slip) ── #}
 {% if (rate is defined and rate and rate > 0) or (amount is defined and amount) or (total_amount is defined and total_amount and total_amount > 0) %}
 {% if rate is defined and rate and rate > 0 %}
-<div class="row"><span class="row-label">{{ bl('rate') | upper }}</span><span class="row-value">₹{{ '%.2f'|format(rate) }}/{{ unit_lbl }}</span></div>
+<div class="row"><span class="row-label">{{ bl('rate') | upper }}</span><span class="row-value">₹{{ '%.2f'|format(rate) }}/{{ rate_unit }}</span></div>
 {% endif %}
 {% if amount is defined and amount %}
 <div class="row"><span class="row-label">{% if (vehicle_rent and vehicle_rent > 0) or (royalty and royalty > 0) %}MATERIAL COST{% else %}{{ bl('amount') | upper }}{% endif %}</span><span class="row-value">₹{{ '%.2f'|format(amount) }}</span></div>

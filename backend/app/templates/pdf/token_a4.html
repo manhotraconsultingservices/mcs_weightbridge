@@ -72,8 +72,12 @@
 {% macro unit_label(product) %}{% set u = (product.unit if product and product.unit else 'MT')|upper %}{% if u == 'QUINTAL' %}Qtl{% elif u == 'KG' %}KG{% else %}MT{% endif %}{% endmacro %}
 {# Weight in the product's billing unit — the unit actually used, no cross-unit conversion #}
 {% macro format_wt(w, product) %}{% if w %}{% set u = (product.unit if product and product.unit else 'MT')|upper %}{% if u == 'QUINTAL' %}{{ '%.3f' % (w|float / 100) }} Qtl{% elif u == 'KG' %}{{ '%.0f' % (w|float) }} KG{% else %}{{ '%.3f' % (w|float / 1000) }} MT{% endif %}{% else %}—{% endif %}{% endmacro %}
-{# Volume in the token's chosen billing unit (CFT canonical · CBM · Brass) — no MT conversion #}
-{% macro vol_unit_fmt(cft, token) %}{% if cft %}{% set bu = (token.billing_unit or 'CFT')|upper %}{% if bu == 'CBM' or bu == 'CUM' %}{{ '%.2f' % (cft|float / 35.3147) }} CBM{% elif bu == 'BRASS' %}{{ '%.2f' % (cft|float / 100) }} Brass{% else %}{{ '%.2f' % (cft|float) }} CFT{% endif %}{% else %}—{% endif %}{% endmacro %}
+{# Short label for a volume token's billing unit: CUM (cubic metre) · Brass · CFT #}
+{% macro vol_unit_label(token) %}{% set bu = (token.billing_unit or 'CFT')|upper %}{% if bu == 'CBM' or bu == 'CUM' %}CUM{% elif bu == 'BRASS' %}Brass{% else %}CFT{% endif %}{% endmacro %}
+{# Volume in the token's chosen billing unit (CFT canonical · CUM · Brass) — no MT conversion #}
+{% macro vol_unit_fmt(cft, token) %}{% if cft %}{% set bu = (token.billing_unit or 'CFT')|upper %}{% if bu == 'CBM' or bu == 'CUM' %}{{ '%.2f' % (cft|float / 35.3147) }} CUM{% elif bu == 'BRASS' %}{{ '%.2f' % (cft|float / 100) }} Brass{% else %}{{ '%.2f' % (cft|float) }} CFT{% endif %}{% else %}—{% endif %}{% endmacro %}
+{# Rate unit: volume tokens bill per volume unit (CUM/Brass/CFT); weighed tokens per weight unit #}
+{% macro rate_unit_label(token) %}{% if token.weight_method == 'volume' %}{{ vol_unit_label(token) }}{% else %}{{ unit_label(token.product) }}{% endif %}{% endmacro %}
 
 {% macro slip_title(token) %}
   {% if token.weight_method == 'volume' %}Volume Slip{% else %}Weight Slip{% endif %}
@@ -161,7 +165,8 @@
   {# ── Body: same table format for weighbridge AND volume tokens ── #}
   <div class="sep" style="margin-top:4px;"></div>
   {% if is_volume %}
-    {# Volume token: same table layout as a weighment — Volume + Net Weight rows #}
+    {# Volume token: same table layout as a weighment — Volume only (no net weight,
+       volume tokens are billed by volume) #}
     <table class="wt-tbl">
       <thead>
         <tr>
@@ -171,14 +176,9 @@
         </tr>
       </thead>
       <tbody>
-        <tr>
+        <tr class="net">
           <td>{{ bl('volume') }}</td>
           <td class="col-wt">{{ vol_unit_fmt(token.volume_cft, token) }}</td>
-          <td class="col-dt">{{ format_dt(token.completed_at) }}</td>
-        </tr>
-        <tr class="net">
-          <td>{{ bl('net_weight') }}</td>
-          <td class="col-wt">{{ format_wt(token.net_weight, token.product) }}</td>
           <td class="col-dt">{{ format_dt(token.completed_at) }}</td>
         </tr>
       </tbody>
@@ -218,7 +218,7 @@
   <div class="sep"></div>
   <table class="fin-tbl">
     {% if rate is defined and rate and rate > 0 %}
-    <tr><td class="lbl">{{ bl('rate') }}</td><td class="val">₹{{ '%.2f' % rate }}/{{ unit_label(token.product) | trim }}</td></tr>
+    <tr><td class="lbl">{{ bl('rate') }}</td><td class="val">₹{{ '%.2f' % rate }}/{{ rate_unit_label(token) | trim }}</td></tr>
     {% endif %}
     {% if amount is defined and amount %}
     <tr><td class="lbl">{% if (vehicle_rent and vehicle_rent > 0) or (royalty and royalty > 0) %}Material Cost{% else %}{{ bl('amount') }}{% endif %}</td><td class="val">₹{{ '%.2f' % amount }}</td></tr>
