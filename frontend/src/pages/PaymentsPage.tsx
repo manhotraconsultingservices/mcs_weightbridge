@@ -106,8 +106,9 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
 
   async function handleSave() {
     const expense = type === 'voucher' && isExpense;
+    const expenseCat = expenseCategory.trim();
     if (expense) {
-      if (!expenseCategory) { setError('Choose an expense category'); return; }
+      if (!expenseCat) { setError('Enter an expense category'); return; }
     } else if (!partyId) {
       setError('Select a party'); return;
     }
@@ -122,7 +123,7 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
       await api.post(url, {
         [dateKey]: date,
         party_id: partyId || null,
-        expense_category: expense ? expenseCategory : null,
+        expense_category: expense ? expenseCat : null,
         amount: parseFloat(amount),
         payment_mode: mode,
         reference_no: refNo || null,
@@ -130,6 +131,11 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
         notes: notes || null,
         allocations: allocs,
       });
+      // Remember a newly-typed category so it appears in the picker next time.
+      // Best-effort + admin-only server-side (403 for non-admins is ignored).
+      if (expense && expenseCat && !expenseCats.some(c => c.toLowerCase() === expenseCat.toLowerCase())) {
+        api.put('/api/v1/app-settings/expense-categories', [...expenseCats, expenseCat]).catch(() => {});
+      }
       onSaved();
       onClose();
     } catch (e: unknown) {
@@ -167,16 +173,13 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
               {isExpense ? (
                 <>
                   <Label>Expense category *</Label>
-                  <Select value={expenseCategory || undefined} onValueChange={v => setExpenseCategory(v ?? '')}>
-                    <SelectTrigger>
-                      <span className="truncate text-left flex-1">
-                        {expenseCategory || <span className="text-muted-foreground">Choose a category</span>}
-                      </span>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {expenseCats.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <Input list="expense-cats-dl" value={expenseCategory}
+                    placeholder="e.g. EMI, Rent, Electricity…"
+                    onChange={e => setExpenseCategory(e.target.value)} />
+                  <datalist id="expense-cats-dl">
+                    {expenseCats.map(c => <option key={c} value={c} />)}
+                  </datalist>
+                  <p className="text-[11px] text-muted-foreground">Pick a saved category or type a new one (e.g. EMI, Loan interest, Admin charges).</p>
                 </>
               ) : (<>
               <Label>{type === 'receipt' ? t('payment.customer') : t('payment.supplier')} *</Label>
