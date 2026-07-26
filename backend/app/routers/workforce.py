@@ -298,6 +298,11 @@ async def create_payment(payload: PaymentCreate, background: BackgroundTasks,
     p = WorkerPayment(company_id=user.company_id, branch_id=getattr(user, "branch_id", None),
                       created_by=user.id, **payload.model_dump())
     db.add(p)
+    await db.flush()
+    from app.routers.audit import log_action
+    await log_action(db, user.company_id, user.id, "create", "worker_payment", entity_id=str(p.id),
+                     details={"worker": w.name, "payment_type": p.payment_type,
+                              "amount": str(p.amount), "mode": p.mode})
     await db.commit()
     await db.refresh(p)
     # Fire "worker payment" (salary / wage / advance / bonus / deduction) notification

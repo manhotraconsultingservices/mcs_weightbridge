@@ -115,6 +115,12 @@ async def create_payout(
         reference_no=data.reference_no, notes=data.notes, created_by=current_user.id,
     )
     db.add(pay)
+    await db.flush()
+    from app.routers.audit import log_action
+    await log_action(db, current_user.company_id, current_user.id, "create", "agent_payout",
+                     entity_id=str(pay.id),
+                     details={"agent": agent.name, "amount": str(pay.amount),
+                              "mode": pay.payment_mode, "reference_no": pay.reference_no})
     await db.commit()
     await db.refresh(pay)
     return AgentPayoutResponse.model_validate(pay)
