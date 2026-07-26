@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PrintButton } from '@/components/PrintButton';
 import api from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
 import { TokenDetailModal } from '@/components/TokenDetailModal';
@@ -632,6 +633,11 @@ function InsideCard({ gp, onRefresh, isGuard, captureEnabled }: { gp: GatePass; 
             >
               <Eye className="h-4 w-4" />
             </Button>
+            <PrintButton
+              url={`/api/v1/gate/passes/${gp.id}/print`}
+              a4Url={`/api/v1/gate/passes/${gp.id}/print`}
+              iconOnly variant="outline" title="Print gate pass (A4)"
+            />
             {isGuard && (
               <Button
                 size="icon"
@@ -732,6 +738,11 @@ function HistoryRow({ gp, onRefresh, isGuard, captureEnabled }: { gp: GatePass; 
           >
             <Eye className="h-3.5 w-3.5" />
           </Button>
+          <PrintButton
+            url={`/api/v1/gate/passes/${gp.id}/print`}
+            a4Url={`/api/v1/gate/passes/${gp.id}/print`}
+            iconOnly variant="outline" title="Print gate pass (A4)"
+          />
           {isGuard && (
             <Button
               size="icon"

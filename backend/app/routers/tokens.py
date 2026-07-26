@@ -1371,7 +1371,37 @@ async def print_token(
     except Exception:
         slip_custom_fields = []
 
-    template = "token_thermal.html" if format == "thermal" else "token_a4.html"
+    # Camera snapshots (Front + Top × 1st + 2nd weight) — embedded in the A4
+    # report (format=report) so the owner can print the weighment with photo
+    # evidence. The quick A5 slip + thermal slip stay photo-free.
+    snapshots = {"first_weight": {}, "second_weight": {}}
+    if format == "report":
+        try:
+            from app.utils.pdf_generator import image_data_uri
+            snap_rows = (await db.execute(text("""
+                SELECT camera_id, camera_label, weight_stage, file_path
+                FROM token_snapshots
+                WHERE token_id = :tid AND capture_status = 'captured'
+                      AND file_path IS NOT NULL
+            """), {"tid": str(token_id)})).fetchall()
+            for r in snap_rows:
+                stage = (r.weight_stage or "second_weight")
+                cam = (r.camera_id or "").strip().lower()
+                if stage not in snapshots or not cam:
+                    continue
+                uri = image_data_uri(r.file_path)
+                if uri:
+                    snapshots[stage][cam] = {"uri": uri, "label": r.camera_label or cam.title()}
+        except Exception:
+            snapshots = {"first_weight": {}, "second_weight": {}}
+    has_snapshots = bool(snapshots["first_weight"]) or bool(snapshots["second_weight"])
+
+    if format == "thermal":
+        template = "token_thermal.html"
+    elif format == "report":
+        template = "token_report_a4.html"
+    else:
+        template = "token_a4.html"
     html = render_html(template, {
         "token": token,
         "company": company,
@@ -1382,6 +1412,8 @@ async def print_token(
         "vehicle_rent": float(token.vehicle_rent) if token.vehicle_rent else 0.0,
         "total_amount": total_amount,
         "operator_name": operator_name,
+        "snapshots": snapshots,
+        "has_snapshots": has_snapshots,
     })
     return HTMLResponse(content=html)
 

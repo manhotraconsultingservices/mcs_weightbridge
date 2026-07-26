@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Printer, Loader2 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import api from '@/services/api';
 import { toast } from 'sonner';
 
@@ -12,6 +13,10 @@ interface PrintButtonProps {
   size?: 'sm' | 'default';
   variant?: 'ghost' | 'outline' | 'default';
   iconOnly?: boolean;
+  /** Tooltip text (defaults to "Print"). */
+  title?: string;
+  /** Override the icon (defaults to the printer). */
+  icon?: LucideIcon;
 }
 
 export function PrintButton({
@@ -21,6 +26,8 @@ export function PrintButton({
   size = 'sm',
   variant = 'ghost',
   iconOnly = false,
+  title = 'Print',
+  icon: Icon = Printer,
 }: PrintButtonProps) {
   const [loading, setLoading] = useState(false);
 
@@ -74,7 +81,7 @@ export function PrintButton({
     <button
       onClick={doPrint}
       disabled={loading}
-      title="Print"
+      title={title}
       className={[
         'inline-flex items-center justify-center rounded-md transition-colors',
         'disabled:pointer-events-none disabled:opacity-50 cursor-pointer',
@@ -89,7 +96,7 @@ export function PrintButton({
       {loading ? (
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
       ) : (
-        <Printer className="h-3.5 w-3.5" />
+        <Icon className="h-3.5 w-3.5" />
       )}
       {!iconOnly && label && <span>{label}</span>}
     </button>

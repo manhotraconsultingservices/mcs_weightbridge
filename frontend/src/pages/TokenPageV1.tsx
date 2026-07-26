@@ -2420,7 +2420,12 @@ export default function TokenPageV1() {
                       {token.status === 'COMPLETED' && (
                         <>
                           <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-                          <PrintButton url={`/api/v1/tokens/${token.id}/print`} iconOnly />
+                          <PrintButton url={`/api/v1/tokens/${token.id}/print`} iconOnly title="Print slip (A5)" />
+                          <PrintButton
+                            url={`/api/v1/tokens/${token.id}/print`}
+                            a4Url={`/api/v1/tokens/${token.id}/print?format=report`}
+                            iconOnly icon={Camera} title="Print A4 report (with photos)"
+                          />
                         </>
                       )}
                       {isAdmin && active && (

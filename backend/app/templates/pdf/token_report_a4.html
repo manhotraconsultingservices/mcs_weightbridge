@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Weighment {{ token.token_no or token.id }}</title>
+<style>
+  @page { size: A4 portrait; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 0; font-size: 12.5px; }
+  .hdr { text-align: center; border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 8px; }
+  .co { font-size: 20px; font-weight: bold; text-transform: uppercase; }
+  .co-sub { font-size: 11px; color: #444; margin-top: 2px; }
+  .title { font-size: 14px; font-weight: bold; letter-spacing: 2px; margin-top: 6px; }
+  table.kv { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 8px; }
+  table.kv td { border: 1px solid #bbb; padding: 4px 8px; }
+  table.kv td.k { background: #f2f2f2; font-weight: bold; width: 16%; white-space: nowrap; }
+  table.kv td.v { width: 34%; }
+  .wt { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+  .wt td, .wt th { border: 1px solid #bbb; padding: 5px 8px; text-align: center; font-size: 13px; }
+  .wt th { background: #f0f0f0; }
+  .wt .net { font-weight: bold; background: #fafafa; }
+  .sec { font-weight: bold; font-size: 12px; background: #f0f0f0; padding: 3px 6px; margin: 6px 0 4px; border: 1px solid #ddd; }
+  .photos { width: 100%; border-collapse: collapse; }
+  .photos td { border: 1px solid #bbb; padding: 5px; text-align: center; vertical-align: top; width: 50%; }
+  .photos .cap { font-size: 10.5px; color: #555; margin-bottom: 3px; font-weight: bold; }
+  .photos img { width: 100%; max-height: 230px; object-fit: contain; }
+  .no-photo { color: #999; font-size: 11px; padding: 30px 0; }
+  .foot { margin-top: 20px; display: flex; justify-content: space-between; font-size: 11px; }
+  .sig { border-top: 1px solid #000; padding-top: 3px; width: 200px; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="hdr">
+    <div class="co">{{ company.name or 'Company' }}</div>
+    {% if company.address %}<div class="co-sub">{{ company.address }}</div>{% endif %}
+    <div class="co-sub">
+      {% if company.gstin %}GSTIN: {{ company.gstin }}{% endif %}
+      {% if company.phone %} · Ph: {{ company.phone }}{% endif %}
+    </div>
+    <div class="title">WEIGHMENT REPORT</div>
+  </div>
+
+  <table class="kv">
+    <tr>
+      <td class="k">Token No</td><td class="v"><b>{{ token.token_no or '—' }}</b></td>
+      <td class="k">Date</td><td class="v">{{ token.token_date.strftime('%d-%m-%Y') if token.token_date else (token.created_at.strftime('%d-%m-%Y %H:%M') if token.created_at else '—') }}</td>
+    </tr>
+    <tr>
+      <td class="k">Vehicle</td><td class="v"><b>{{ token.vehicle_no or '—' }}</b>{% if token.vehicle_type %} ({{ token.vehicle_type }}){% endif %}</td>
+      <td class="k">Gate Pass</td><td class="v">{{ token.gate_pass_no or '—' }}</td>
+    </tr>
+    <tr>
+      <td class="k">Party</td><td class="v">{{ token.party.name if token.party else '—' }}</td>
+      <td class="k">Material</td><td class="v">{{ token.product.name if token.product else '—' }}</td>
+    </tr>
+    <tr>
+      <td class="k">Type</td><td class="v">{{ (token.token_type or 'sale')|capitalize }}{% if token.weight_method == 'volume' %} · Volume{% endif %}</td>
+      <td class="k">Operator</td><td class="v">{{ operator_name or '—' }}</td>
+    </tr>
+  </table>
+
+  <table class="wt">
+    <tr><th>Gross</th><th>Tare</th><th>Net</th>
+      {% if rate and rate > 0 %}<th>Rate</th><th>Amount</th>{% endif %}
+    </tr>
+    <tr>
+      <td>{% if token.gross_weight %}{{ '%.3f'|format(token.gross_weight|float / 1000) }} MT{% else %}—{% endif %}</td>
+      <td>{% if token.tare_weight %}{{ '%.3f'|format(token.tare_weight|float / 1000) }} MT{% else %}—{% endif %}</td>
+      <td class="net">{% if token.net_weight %}{{ '%.3f'|format(token.net_weight|float / 1000) }} MT{% else %}—{% endif %}</td>
+      {% if rate and rate > 0 %}
+      <td>₹{{ '%.2f'|format(rate) }}</td>
+      <td><b>₹{{ '%.2f'|format(amount or 0) }}</b></td>
+      {% endif %}
+    </tr>
+  </table>
+
+  {% if has_snapshots %}
+  {% for stage, slabel in [('first_weight', '1st Weight (Gross)'), ('second_weight', '2nd Weight (Tare)')] %}
+    {% set imgs = snapshots[stage] %}
+    {% if imgs %}
+    <div class="sec">{{ slabel }}</div>
+    <table class="photos">
+      <tr>
+        {% for cam, info in imgs.items() %}
+        <td>
+          <div class="cap">{{ info.label }}</div>
+          <img src="{{ info.uri }}" alt="{{ info.label }}">
+        </td>
+        {% endfor %}
+      </tr>
+    </table>
+    {% endif %}
+  {% endfor %}
+  {% else %}
+  <div class="no-photo" style="text-align:center; border:1px dashed #ccc; padding:16px;">No camera snapshots were captured for this weighment.</div>
+  {% endif %}
+
+  <div class="foot">
+    <div class="sig">Weighbridge Operator</div>
+    <div class="sig">Authorised Signatory</div>
+  </div>
+<script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; };</script>
+</body>
+</html>
