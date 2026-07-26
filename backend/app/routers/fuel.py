@@ -247,6 +247,12 @@ async def create_entry(payload: FuelEntryCreate, background: BackgroundTasks,
         created_by=user.id,
     )
     db.add(entry)
+    await db.flush()
+    from app.routers.audit import log_action
+    await log_action(db, user.company_id, user.id, "create", "fuel_entry", entity_id=str(entry.id),
+                     details={"vehicle": veh.registration_no, "litres": str(litres),
+                              "rate": str(rate), "amount": str(amount),
+                              "source": entry.fuel_source, "odometer_km": str(odo)})
     await db.commit()
     await db.refresh(entry)
 

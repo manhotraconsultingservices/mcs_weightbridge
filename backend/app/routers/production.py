@@ -200,6 +200,10 @@ async def create_cycle(
     #    finalise step) — raw material consumed (−) + each finished output (+).
     await _post_cycle_stock(db, cycle, current_user)
 
+    from app.routers.audit import log_action
+    await log_action(db, co.id, current_user.id, "create", "production_cycle", entity_id=str(cycle.id),
+                     details={"cycle_no": cycle.cycle_no, "input_kg": str(cycle.input_kg),
+                              "outputs": len(payload.outputs)})
     await db.commit()
     return await _load_cycle_response(db, cycle.id)
 
@@ -372,6 +376,11 @@ async def finalise_cycle(
         raise HTTPException(500, f"Failed to post stock movements: {e}")
 
     cycle.is_finalised = True
+    from app.routers.audit import log_action
+    await log_action(db, cycle.company_id, current_user.id, "finalize", "production_cycle",
+                     entity_id=str(cycle.id),
+                     details={"cycle_no": cycle.cycle_no, "input_kg": str(cycle.input_kg or 0),
+                              "outputs": len(cycle.outputs)})
     await db.commit()
     return await _load_cycle_response(db, cycle_id)
 
@@ -399,6 +408,9 @@ async def delete_cycle(
             user_id=current_user.id,
             user_name=current_user.full_name or current_user.username,
         )
+    from app.routers.audit import log_action
+    await log_action(db, cycle.company_id, current_user.id, "delete", "production_cycle",
+                     entity_id=str(cycle.id), details={"cycle_no": cycle.cycle_no})
     await db.delete(cycle)
     await db.commit()
 

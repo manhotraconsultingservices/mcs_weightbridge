@@ -695,6 +695,10 @@ async def issue_stock(
     db.add(txn)
     # Auto-PO: if stock just hit/crossed the minimum level, create a draft PO for admin approval
     await _maybe_trigger_auto_po(db, item, co)
+    from app.routers.audit import log_action
+    await log_action(db, co.id, current_user.id, "issue", "inventory", entity_id=str(txn.id),
+                     details={"item": item.name, "quantity": str(payload.quantity), "unit": item.unit,
+                              "stock_after": str(item.current_stock)})
     await db.commit()
     await db.refresh(txn)
     background_tasks.add_task(
@@ -752,6 +756,10 @@ async def adjust_stock(
     # Auto-PO check only when adjustment reduced stock (negative quantity)
     if payload.quantity < 0:
         await _maybe_trigger_auto_po(db, item, co)
+    from app.routers.audit import log_action
+    await log_action(db, co.id, current_user.id, "adjust", "inventory", entity_id=str(txn.id),
+                     details={"item": item.name, "quantity": str(payload.quantity), "unit": item.unit,
+                              "stock_after": str(item.current_stock), "reason": payload.reason})
     await db.commit()
     await db.refresh(txn)
     _sign = "+" if payload.quantity >= 0 else "−"
@@ -898,6 +906,11 @@ async def create_purchase_order(
         db.add(pi)
         po_items.append(pi)
 
+    from app.routers.audit import log_action
+    await log_action(db, co.id, current_user.id, "create", "inventory_po", entity_id=str(po.id),
+                     details={"po_no": po.po_no, "supplier": po.supplier_name,
+                              "items": len(po_items),
+                              "value": str(sum((pi.quantity_ordered or 0) * (pi.unit_price or 0) for pi in po_items))})
     await db.commit()
     await db.refresh(po)
     for pi in po_items:
@@ -1026,6 +1039,9 @@ async def approve_purchase_order(
     po.approved_by_name = getattr(current_user, "full_name", None) or current_user.username
     po.approved_at = datetime.utcnow()
 
+    from app.routers.audit import log_action
+    await log_action(db, po.company_id, current_user.id, "approve", "inventory_po",
+                     entity_id=str(po.id), details={"po_no": po.po_no, "supplier": po.supplier_name})
     await db.commit()
     await db.refresh(po)
     items_rows = (await db.execute(
@@ -1052,6 +1068,9 @@ async def reject_purchase_order(
     po.status = "rejected"
     po.rejection_reason = payload.reason.strip()
 
+    from app.routers.audit import log_action
+    await log_action(db, po.company_id, current_user.id, "reject", "inventory_po",
+                     entity_id=str(po.id), details={"po_no": po.po_no, "reason": po.rejection_reason})
     await db.commit()
     await db.refresh(po)
     items_rows = (await db.execute(
@@ -1135,6 +1154,13 @@ async def receive_goods(
     all_received = all(pi.quantity_received >= pi.quantity_ordered for pi in all_items)
     po.status = "received" if all_received else "partially_received"
 
+    # Audit trail — store-item purchase (goods received against a PO)
+    from app.routers.audit import log_action
+    _recv_qty = sum((l.quantity_received or 0) for l in payload.items)
+    await log_action(db, co.id, current_user.id, "receive", "inventory_po", entity_id=str(po.id),
+                     details={"po_no": po.po_no, "supplier": po.supplier_name,
+                              "lines": len(payload.items), "qty_received": str(_recv_qty),
+                              "new_status": po.status})
     await db.commit()
     await db.refresh(po)
     _tenant = _ctx_tenant_slug()
