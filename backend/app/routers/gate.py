@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
+from app.utils.timefmt import fmt_ist as _fmt_ist
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +259,7 @@ async def create_gate_pass(
             "driver_name": body.get("driver_name") or "",
             "material": body.get("material") or "",
             "purpose": body.get("purpose", "weighbridge"),
-            "entry_time": created.entry_time.strftime("%d-%m-%Y %H:%M") if created.entry_time else "—",
+            "entry_time": _fmt_ist(created.entry_time),
             "company_name": _co_name_row.name if _co_name_row else "",
         }
         background_tasks.add_task(
@@ -678,7 +679,7 @@ async def record_exit(
 
     # Fire-and-forget "gate pass exit" notification
     try:
-        from datetime import datetime as _dt
+        from datetime import datetime as _dt, timezone as _tz
         _co = (await db.execute(text("SELECT name FROM companies LIMIT 1"))).fetchone()
         background_tasks.add_task(
             _send_notification_bg,
@@ -686,7 +687,7 @@ async def record_exit(
             {
                 "gate_pass_no": gp.gate_pass_no,
                 "vehicle_no": gp.vehicle_no or "—",
-                "exit_time": _dt.now().strftime("%d-%m-%Y %H:%M"),
+                "exit_time": _fmt_ist(_dt.now(_tz.utc)),
                 "company_name": _co.name if _co else "",
             },
             "gate_pass", gp_id, _ctx_tenant_slug(),

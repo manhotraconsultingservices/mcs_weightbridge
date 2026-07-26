@@ -8,7 +8,7 @@ from typing import Any
 
 from jinja2 import Environment, BaseLoader, Undefined, select_autoescape
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 
 from app.models.notification import (
     NotificationConfig,
@@ -72,7 +72,7 @@ DEFAULT_TEMPLATES = [
         "channel": "telegram",
         "name": "Invoice Finalized (Telegram)",
         "subject": None,
-        "body": "📄 <b>Invoice Finalized</b>\n\nParty: {{ party_name }}\nInvoice: <b>{{ invoice_no }}</b>\nDate: {{ invoice_date }}\nAmount: <b>₹{{ grand_total }}</b>\n\n— {{ company_name }}",
+        "body": "📄 <b>Invoice Finalized</b>\n\nParty: {{ party_name }}\nInvoice: <b>{{ invoice_no }}</b>\nDate: {{ invoice_date }}\nMaterial: {{ material }}\nQty: <b>{{ qty }}</b>\n{% if royalty %}Royalty: ₹{{ royalty }}\n{% endif %}{% if vehicle_rent %}Vehicle Rent: ₹{{ vehicle_rent }}\n{% endif %}Amount: <b>₹{{ grand_total }}</b>\n\n— {{ company_name }}",
     },
     {
         "event_type": "invoice_revised",
@@ -146,7 +146,7 @@ DEFAULT_TEMPLATES = [
         "channel": "telegram",
         "name": "Weighment Complete (Telegram)",
         "subject": None,
-        "body": "⚖️ <b>Weighment Completed</b>\n\nToken: <b>#{{ token_no }}</b>\nVehicle: {{ vehicle_no }}\nParty: {{ party_name }}\nNet Weight: <b>{{ net_weight }} MT</b>\nCompleted: {{ completed_at }}\n\n— {{ company_name }}",
+        "body": "⚖️ <b>Weighment Completed</b>\n\nToken: <b>#{{ token_no }}</b>\nVehicle: {{ vehicle_no }}\nParty: {{ party_name }}\nMaterial: {{ material }}\nQty: <b>{{ qty }}</b>\n{% if royalty %}Royalty: ₹{{ royalty }}\n{% endif %}{% if vehicle_rent %}Vehicle Rent: ₹{{ vehicle_rent }}\n{% endif %}Amount: <b>₹{{ amount }}</b>\nCompleted: {{ completed_at }}\n\n— {{ company_name }}",
     },
     {
         "event_type": "low_product_stock",
@@ -747,6 +747,49 @@ async def seed_default_templates(db: AsyncSession, company_id: uuid.UUID) -> Non
             body=t["body"],
             is_enabled=True,
         ))
+    await db.commit()
+
+
+# Bump this when a DEFAULT_TEMPLATES body must reach ALREADY-seeded tenants (seed
+# only inserts MISSING rows, so a changed body never propagates otherwise). Only the
+# listed (event_type, channel) pairs are force-updated, ONCE per tenant per version
+# — so a later admin customisation on the Notifications page survives future restarts.
+_TEMPLATE_REFRESH_VERSION = 1
+_TEMPLATE_REFRESH_KEYS = {
+    ("token_completed", "telegram"),
+    ("invoice_finalized", "telegram"),
+}
+
+
+async def refresh_default_templates(db: AsyncSession, company_id: uuid.UUID) -> None:
+    """One-time (per version) overwrite of specific default template bodies for a
+    tenant, so a shipped template change reaches tenants seeded before it. Guarded by
+    an app_settings marker → runs once; admin edits made afterwards are not touched."""
+    marker = f"notif_tpl_refresh_v{_TEMPLATE_REFRESH_VERSION}"
+    seen = (await db.execute(
+        text("SELECT 1 FROM app_settings WHERE key = :k"), {"k": marker}
+    )).first()
+    if seen:
+        return
+    by_key = {(t["event_type"], t["channel"]): t for t in DEFAULT_TEMPLATES}
+    for key in _TEMPLATE_REFRESH_KEYS:
+        t = by_key.get(key)
+        if not t:
+            continue
+        await db.execute(
+            update(NotificationTemplate)
+            .where(
+                NotificationTemplate.company_id == company_id,
+                NotificationTemplate.event_type == key[0],
+                NotificationTemplate.channel == key[1],
+            )
+            .values(subject=t.get("subject"), body=t["body"])
+        )
+    await db.execute(
+        text("INSERT INTO app_settings (key, value, updated_at) VALUES (:k, 'true', NOW()) "
+             "ON CONFLICT (key) DO NOTHING"),
+        {"k": marker},
+    )
     await db.commit()
 
 

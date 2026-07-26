@@ -236,9 +236,10 @@ async def list_templates(
 ):
     company_id = await _get_company_id(db)
 
-    # Seed defaults on first load
-    from app.integrations.notifications.service import seed_default_templates
+    # Seed defaults on first load + one-time refresh of shipped body changes
+    from app.integrations.notifications.service import seed_default_templates, refresh_default_templates
     await seed_default_templates(db, company_id)
+    await refresh_default_templates(db, company_id)
 
     rows = (await db.execute(
         select(NotificationTemplate)

@@ -33,6 +33,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
+from app.utils.timefmt import fmt_ist as _fmt_ist
 from app.models.anpr import AnprEvent
 from app.models.company import Company, FinancialYear
 from app.models.party import Party
@@ -383,7 +384,7 @@ async def _handle_detection(
         elif needs_review and cfg.notify_unknown_plate:
             background_tasks.add_task(
                 _send_notification_bg, company.id, "anpr_unknown_plate",
-                {"plate": plate_norm, "captured_at": event.detected_at.strftime("%d-%m-%Y %H:%M"),
+                {"plate": plate_norm, "captured_at": _fmt_ist(event.detected_at),
                  "company_name": company.name},
                 "anpr_event", str(event.id), ts,
             )
@@ -549,7 +550,7 @@ def _entry_context(
         "vehicle_no": plate,
         "vehicle_known": "yes" if vehicle else "no",
         "gate_pass_no": gate_pass_no or "—",
-        "entry_time": detected_at.strftime("%d-%m-%Y %H:%M"),
+        "entry_time": _fmt_ist(detected_at),
         "token_id": str(token_id),
     }
 
@@ -566,7 +567,7 @@ async def _exit_context(
     return {
         "vehicle_no": plate,
         "gate_pass_no": gate_pass_no or "—",
-        "exit_time": detected_at.strftime("%d-%m-%Y %H:%M"),
+        "exit_time": _fmt_ist(detected_at),
         "dwell_minutes": str(dwell),
         "token_no": str(tok.token_no) if tok and tok.token_no else "—",
         "net_weight": f"{(float(tok.net_weight or 0) / 1000):.3f}" if tok else "—",
