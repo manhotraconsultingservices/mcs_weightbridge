@@ -1114,6 +1114,16 @@ async def finalise_invoice(
 
     # ── Fire invoice_finalized / invoice_revised notification ─────────────────
     event_type = "invoice_revised" if is_revision else "invoice_finalized"
+    # Enrich with material + qty from the first line (weighbridge invoices are single-line).
+    # grand_total already folds in GST + royalty + vehicle_rent.
+    _first_item = (await db.execute(
+        select(InvoiceItem).where(InvoiceItem.invoice_id == inv.id).order_by(InvoiceItem.sort_order).limit(1)
+    )).scalars().first()
+    _material = (_first_item.description if (_first_item and _first_item.description) else "—")
+    _qty = (f"{float(_first_item.quantity):g} {_first_item.unit or ''}".strip()
+            if _first_item else "—")
+    _roy = float(inv.royalty_amount or 0)
+    _rent = float(inv.vehicle_rent or 0)
     _notify_ctx = {
         "invoice_no": inv.invoice_no or "—",
         "invoice_date": inv.invoice_date.strftime("%d-%m-%Y") if inv.invoice_date else "—",
@@ -1121,6 +1131,10 @@ async def finalise_invoice(
         "party_name": inv.party.name if inv.party else "—",
         "party_email": inv.party.email or "" if inv.party else "",
         "party_phone": inv.party.phone or "" if inv.party else "",
+        "material": _material,
+        "qty": _qty,
+        "royalty": f"{_roy:,.2f}" if _roy > 0 else "",
+        "vehicle_rent": f"{_rent:,.2f}" if _rent > 0 else "",
         "company_name": co.name,
         "revision_no": str(inv.revision_no),
     }

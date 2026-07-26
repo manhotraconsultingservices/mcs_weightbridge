@@ -150,6 +150,52 @@ async def _send_notification_bg(
         _logging.getLogger(__name__).warning("Background notification failed [%s]: %s", event_type, exc)
 
 
+async def _build_token_notify_ctx(db: AsyncSession, token: Token, company: Company) -> dict:
+    """Build the token_completed notification context — material, qty, party, and
+    the billed amount (incl royalty + vehicle rent), with the completion time in
+    IST. Amount comes from the linked draft invoice's grand_total (which already
+    folds in GST + royalty + vehicle_rent); '—' when the token has no invoice."""
+    from app.utils.timefmt import fmt_ist
+    from app.models.invoice import Invoice
+    party = (await db.execute(select(Party).where(Party.id == token.party_id))).scalar_one_or_none() if token.party_id else None
+    product = (await db.execute(select(Product).where(Product.id == token.product_id))).scalar_one_or_none() if token.product_id else None
+    bill_unit = token.billing_unit or (product.unit if product else "MT")
+    qty_str = None
+    if product:
+        try:
+            from app.services.pricing import token_quantity
+            q = token_quantity(token, bill_unit, product)
+            if q is not None:
+                qty_str = f"{float(q):g} {bill_unit}"
+        except Exception:
+            qty_str = None
+    if qty_str is None:
+        qty_str = f"{float(token.net_weight or 0) / 1000:.3f} MT"
+    inv = (await db.execute(
+        select(Invoice).where(
+            Invoice.token_id == token.id,
+            Invoice.invoice_type.in_(("sale", "purchase")),
+        ).order_by(Invoice.created_at.desc()).limit(1)
+    )).scalar_one_or_none()
+    amount = inv.grand_total if inv else None
+    royalty = float(token.royalty_amount or 0)
+    rent = float(token.vehicle_rent or 0)
+    return {
+        "token_no": token.token_no or "PENDING",
+        "vehicle_no": token.vehicle_no or "—",
+        "net_weight": f"{float(token.net_weight or 0) / 1000:.3f}",  # legacy templates
+        "completed_at": fmt_ist(token.completed_at),
+        "party_name": party.name if party else "—",
+        "party_phone": (party.phone or "") if party else "",
+        "material": product.name if product else "—",
+        "qty": qty_str,
+        "amount": f"{float(amount):,.2f}" if amount is not None else "—",
+        "royalty": f"{royalty:,.2f}" if royalty > 0 else "",
+        "vehicle_rent": f"{rent:,.2f}" if rent > 0 else "",
+        "company_name": company.name,
+    }
+
+
 async def _check_royalty_unaccounted_bg(
     company_id: uuid.UUID,
     token_date,
@@ -810,17 +856,9 @@ async def create_volume_token(
     except Exception:
         pass
 
-    # Fetch party name for the notification context
-    party = (await db.execute(select(Party).where(Party.id == token.party_id))).scalar_one_or_none()
-    _notify_ctx = {
-        "token_no": token.token_no or "PENDING",
-        "vehicle_no": token.vehicle_no or "—",
-        "net_weight": f"{float(net_kg) / 1000:.3f}",
-        "completed_at": token.completed_at.strftime("%d-%m-%Y %H:%M") if token.completed_at else "—",
-        "party_name": party.name if party else "—",
-        "party_phone": party.phone or "" if party else "",
-        "company_name": company.name,
-    }
+    # Token-completed context: material, qty, party, amount (incl royalty + vehicle
+    # rent), completion time in IST. See _build_token_notify_ctx.
+    _notify_ctx = await _build_token_notify_ctx(db, token, company)
     background_tasks.add_task(
         _send_notification_bg,
         company.id, "token_completed", _notify_ctx, "token", str(token.id), _bg_tenant,
@@ -1317,15 +1355,7 @@ async def record_second_weight(
     except Exception:
         pass
 
-    _notify_ctx = {
-        "token_no": token.token_no or "PENDING",
-        "vehicle_no": token.vehicle_no or "—",
-        "net_weight": f"{float(token.net_weight or 0) / 1000:.3f}",
-        "completed_at": token.completed_at.strftime("%d-%m-%Y %H:%M") if token.completed_at else "—",
-        "party_name": token.party.name if token.party else "—",
-        "party_phone": token.party.phone or "" if token.party else "",
-        "company_name": company.name,
-    }
+    _notify_ctx = await _build_token_notify_ctx(db, token, company)
     background_tasks.add_task(
         _send_notification_bg,
         company.id, "token_completed", _notify_ctx, "token", str(token.id), _bg_tenant,
