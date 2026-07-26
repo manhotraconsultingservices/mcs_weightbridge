@@ -31,6 +31,7 @@ class TokenCreate(BaseModel):
     rent_rate_per_km_per_mt: Optional[Decimal] = None    # operator override (else vehicle master); weighed loads
     rent_rate_per_km_per_cum: Optional[Decimal] = None   # operator override (else vehicle master); volume loads
     royalty_cum: Optional[Decimal] = None   # CUM volume for royalty (operator-entered); drives royalty_amount
+    royalty_unit: Optional[str] = None   # 'mt' | 'cum' — royalty basis (follows the token unit)
     custom_fields: Optional[dict[str, Any]] = None   # owner-defined attributes (moisture, quality…)
     # Offline replay (P1 #171): when an edge terminal replays a token it captured
     # offline, it sends the id it already assigned locally so the token has the
@@ -89,6 +90,7 @@ class TokenVolumeCreate(BaseModel):
     rent_rate_per_km_per_mt: Optional[Decimal] = None    # operator override (else vehicle master); weighed loads
     rent_rate_per_km_per_cum: Optional[Decimal] = None   # operator override (else vehicle master); volume loads
     royalty_cum: Optional[Decimal] = None   # CUM volume for royalty (auto-derived from volume_cft if omitted)
+    royalty_unit: Optional[str] = None   # 'mt' | 'cum' — royalty basis (follows the token unit)
     custom_fields: Optional[dict[str, Any]] = None
 
 
@@ -113,6 +115,7 @@ class TokenUpdate(BaseModel):
     rent_rate_per_km_per_mt: Optional[Decimal] = None    # operator override; recomputes vehicle_rent
     rent_rate_per_km_per_cum: Optional[Decimal] = None   # operator override; recomputes vehicle_rent
     royalty_cum: Optional[Decimal] = None     # CUM volume for royalty; re-prices the draft invoice
+    royalty_unit: Optional[str] = None   # 'mt' | 'cum' — royalty basis (follows the token unit)
     payment_mode: Optional[str] = None        # cash | credit | upi | bank_transfer → tax_type
     billing_unit: Optional[str] = None
 
@@ -202,6 +205,7 @@ class TokenResponse(BaseModel):
     rent_rate_per_km_per_mt: Optional[Decimal] = None    # rent rate used (₹/km/MT)
     rent_rate_per_km_per_cum: Optional[Decimal] = None   # rent rate used (₹/km/CUM)
     royalty_cum: Optional[Decimal] = None    # CUM volume the royalty was charged on
+    royalty_unit: Optional[str] = None   # 'mt' | 'cum' — royalty basis (follows the token unit)
     royalty_amount: Optional[Decimal] = None # computed royalty charge (₹/CUM × CUM)
     operator_name: Optional[str] = None      # who created the token (cash accountability)
     remarks: Optional[str] = None

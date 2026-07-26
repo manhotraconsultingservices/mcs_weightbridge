@@ -358,27 +358,47 @@ _CFT_PER_CUM = Decimal("35.3147")
 
 
 async def _compute_royalty(db: AsyncSession, token: Token) -> Decimal | None:
-    """Auto royalty = product.royalty_per_cum × token.royalty_cum (cubic metres).
+    """Auto royalty, charged either per MT or per CUM depending on the token's
+    ``royalty_unit`` (which follows the token's measurement — weighed → 'mt',
+    volume → 'cum'):
 
-    Returns None (→ leave royalty as-is / not applied) unless the operator opted
-    in (royalty_cum set, or a volume token whose CUM can be derived from
-    volume_cft) AND the product carries a ₹/CUM rate. royalty_cum is stamped so
-    the slip/invoice show the exact volume the levy was charged on.
+      • unit='mt'  → product.royalty_per_mt  × net_weight (MT)
+      • unit='cum' → product.royalty_per_cum × royalty_cum (cubic metres); the CUM
+        is auto-derived from volume_cft for a volume token when not supplied.
+
+    Returns None (→ leave royalty as-is / not applied) unless royalty was opted in
+    (royalty_unit set, or a legacy token carrying royalty_cum) AND the product has
+    the matching ₹-rate. royalty_cum is stamped for the CUM basis.
     """
     if not token.product_id:
         return None
+    # Determine the basis. NULL royalty_unit → infer: legacy royalty_cum ⇒ cum,
+    # else the token's measurement (volume ⇒ cum, weighed ⇒ mt). None ⇒ not opted in.
+    unit = (token.royalty_unit or "").lower() or None
+    if unit is None:
+        if token.royalty_cum is not None:
+            unit = "cum"
+        else:
+            return None
     prod = (await db.execute(select(Product).where(Product.id == token.product_id))).scalar_one_or_none()
-    if not prod or prod.royalty_per_cum is None:
+    if not prod:
+        return None
+    if unit == "mt":
+        rate = prod.royalty_per_mt
+        if rate is None:
+            return None
+        qty_mt = Decimal(str(token.net_weight or 0)) / Decimal("1000")
+        return (Decimal(str(rate)) * qty_mt).quantize(Decimal("0.01"))
+    # CUM basis
+    if prod.royalty_per_cum is None:
         return None
     cum = token.royalty_cum
-    # Volume token with royalty opted in but CUM not supplied → derive from CFT.
     if cum is None and token.weight_method == "volume" and token.volume_cft:
         cum = (Decimal(str(token.volume_cft)) / _CFT_PER_CUM).quantize(Decimal("0.001"))
         token.royalty_cum = cum
     if cum is None:
         return None
-    amt = Decimal(str(prod.royalty_per_cum)) * Decimal(str(cum))
-    return amt.quantize(Decimal("0.01"))
+    return (Decimal(str(prod.royalty_per_cum)) * Decimal(str(cum))).quantize(Decimal("0.01"))
 
 
 async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
@@ -637,6 +657,7 @@ async def create_token(
         rent_rate_per_km_per_mt=payload.rent_rate_per_km_per_mt,    # operator override (else vehicle master)
         rent_rate_per_km_per_cum=payload.rent_rate_per_km_per_cum,  # operator override (else vehicle master)
         royalty_cum=payload.royalty_cum,      # CUM for royalty → royalty_amount computed at completion
+        royalty_unit=payload.royalty_unit,    # 'mt' (× net weight) | 'cum' (× royalty_cum); NULL = no royalty
         remarks=payload.remarks,
         custom_fields=payload.custom_fields,
         created_by=current_user.id,
@@ -800,6 +821,7 @@ async def create_volume_token(
         rent_rate_per_km_per_mt=payload.rent_rate_per_km_per_mt,    # operator override (else vehicle master)
         rent_rate_per_km_per_cum=payload.rent_rate_per_km_per_cum,  # operator override (else vehicle master)
         royalty_cum=payload.royalty_cum,      # CUM for royalty (auto-derived from volume if omitted)
+        royalty_unit=payload.royalty_unit,    # 'mt' | 'cum' — royalty basis (volume tokens → cum)
         remarks=payload.remarks,
         custom_fields=payload.custom_fields,
         created_by=current_user.id,
@@ -1073,7 +1095,7 @@ async def update_token(
     party_changed = "party_id" in data and data["party_id"] != token.party_id
     product_changed = "product_id" in data and data["product_id"] != token.product_id
     _BILLING_KEYS = {"party_id", "product_id", "rate", "net_weight", "volume_cft",
-                     "vehicle_rent", "payment_mode", "billing_unit", "royalty_cum"}
+                     "vehicle_rent", "payment_mode", "billing_unit", "royalty_cum", "royalty_unit"}
     billing_changed = any(k in data for k in _BILLING_KEYS)
 
     # Any invoice linked to this token (drives what edits are safe).
@@ -1104,11 +1126,11 @@ async def update_token(
     # A material change invalidates a stale stored rate — unless the caller set one.
     if product_changed and "rate" not in data:
         token.rate = None
-    # Royalty volume or material changed → recompute the token's royalty charge.
-    if "royalty_cum" in data or product_changed:
+    # Royalty basis/volume/material/weight changed → recompute the token's royalty
+    # charge (0 when royalty isn't applied / the product has no matching rate).
+    if any(k in data for k in ("royalty_cum", "royalty_unit", "net_weight", "volume_cft")) or product_changed:
         _r = await _compute_royalty(db, token)
-        if _r is not None:
-            token.royalty_amount = _r
+        token.royalty_amount = _r if _r is not None else Decimal("0")
 
     # Keep the linked invoice consistent with the corrected token.
     if inv and inv.status == "draft":
@@ -1145,7 +1167,7 @@ async def update_token(
                     inv.tax_type = "non_gst" if m == "cash" else "gst"
                 if "vehicle_rent" in data:
                     inv.vehicle_rent = token.vehicle_rent or Decimal("0")
-                if "royalty_cum" in data or product_changed:
+                if any(k in data for k in ("royalty_cum", "royalty_unit", "net_weight", "volume_cft")) or product_changed:
                     inv.royalty_amount = token.royalty_amount or Decimal("0")
                 party = (await db.execute(select(PartyModel).where(PartyModel.id == inv.party_id))).scalar_one_or_none()
                 company, _ = await _get_company_and_fy(db)
@@ -1674,6 +1696,7 @@ class TokenPricingIn(BaseModel):
     rent_rate_per_km_per_cum: Decimal | None = None   # operator override of the ₹/km/CUM rate
     vehicle_rent: Decimal | None = None    # explicit manual override of the auto rent
     royalty_cum: Decimal | None = None     # CUM volume for royalty → recompute royalty_amount (₹/CUM × CUM)
+    royalty_unit: str | None = None        # 'mt' | 'cum' — royalty basis
     royalty_amount: Decimal | None = None  # explicit manual override of the auto royalty
     clear_royalty: bool = False            # remove royalty from the token + invoice
 
@@ -1764,13 +1787,16 @@ async def update_token_pricing(
     # Royalty: clear it, take an explicit override, or recompute ₹/CUM × CUM.
     if payload.clear_royalty:
         token.royalty_cum = None
+        token.royalty_unit = None
         token.royalty_amount = Decimal("0")
     else:
+        if payload.royalty_unit is not None:
+            token.royalty_unit = payload.royalty_unit
         if payload.royalty_cum is not None:
             token.royalty_cum = payload.royalty_cum
         if payload.royalty_amount is not None:
             token.royalty_amount = payload.royalty_amount
-        elif payload.royalty_cum is not None:
+        elif payload.royalty_cum is not None or payload.royalty_unit is not None:
             _auto_roy = await _compute_royalty(db, token)
             if _auto_roy is not None:
                 token.royalty_amount = _auto_roy

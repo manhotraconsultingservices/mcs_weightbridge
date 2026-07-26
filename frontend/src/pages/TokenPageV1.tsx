@@ -530,6 +530,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           rent_km: form.rent_km ? Number(form.rent_km) : undefined,
           rent_rate_per_km_per_mt: form.rent_rate_mt ? Number(form.rent_rate_mt) : undefined,
           rent_rate_per_km_per_cum: form.rent_rate_cum ? Number(form.rent_rate_cum) : undefined,
+          royalty_unit: form.royalty_on ? 'cum' : undefined,   // volume load → royalty per CUM
           royalty_cum: form.royalty_on && form.royalty_cum ? Number(form.royalty_cum) : undefined,
           remarks: form.remarks
             ? `${form.remarks}${tyreCount ? ` | ${tyreCount}-tyre truck` : ''}`
@@ -584,6 +585,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       rent_km: form.rent_km ? Number(form.rent_km) : undefined,
       rent_rate_per_km_per_mt: form.rent_rate_mt ? Number(form.rent_rate_mt) : undefined,
       rent_rate_per_km_per_cum: form.rent_rate_cum ? Number(form.rent_rate_cum) : undefined,
+      royalty_unit: form.royalty_on ? 'mt' : undefined,   // weighed load → royalty per MT (× net weight)
       royalty_cum: form.royalty_on && form.royalty_cum ? Number(form.royalty_cum) : undefined,
       remarks: form.remarks || undefined,
       custom_fields: Object.keys(customValues).length ? customValues : undefined,
@@ -1223,50 +1225,64 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           />
         </div>
 
-        {/* Royalty — govt mineral levy: ₹/CUM × CUM, billed on the token + invoice */}
-        {selectedProduct && (
-        <div className="space-y-1 rounded-md border border-amber-200 bg-amber-50/60 px-2 py-2">
-          <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
-            <input
-              type="checkbox"
-              className="h-4 w-4"
-              checked={form.royalty_on}
-              onChange={e => setForm(f => ({
-                ...f,
-                royalty_on: e.target.checked,
-                // Volume load → auto-fill CUM from the entered volume (operator can edit).
-                royalty_cum: e.target.checked && weightMethod === 'volume' && volumeCft > 0
-                  ? (volumeCft / 35.3147).toFixed(3)
-                  : (e.target.checked ? f.royalty_cum : ''),
-              }))}
-            />
-            Add Royalty
-            {selectedProduct.royalty_per_cum != null
-              ? <span className="font-normal text-muted-foreground">(₹{selectedProduct.royalty_per_cum}/CUM)</span>
-              : <span className="font-normal text-amber-600">— set “Royalty (₹/CUM)” on this product first</span>}
-          </label>
-          {form.royalty_on && (
-            <div className="space-y-1 pt-1">
-              <Label className="text-xs">Volume (CUM)</Label>
-              <Input
-                className="h-8 text-xs"
-                type="number"
-                min="0"
-                step="0.001"
-                value={form.royalty_cum}
-                onChange={e => setForm(f => ({ ...f, royalty_cum: e.target.value }))}
-                placeholder={weightMethod === 'volume' ? 'auto from volume — edit if needed' : 'e.g. 6.5'}
+        {/* Royalty — govt mineral levy. Basis follows the token: weighed → ₹/MT × net
+            weight (total after weighing); volume → ₹/CUM × CUM (total shown now). */}
+        {selectedProduct && (() => {
+          const royUnit = weightMethod === 'weighbridge' ? 'mt' : 'cum';
+          const royRate = royUnit === 'mt' ? selectedProduct.royalty_per_mt : selectedProduct.royalty_per_cum;
+          const royLabel = royUnit === 'mt' ? 'MT' : 'CUM';
+          const royTotal = (royRate != null && royUnit === 'cum' && Number(form.royalty_cum) > 0)
+            ? Number(royRate) * Number(form.royalty_cum) : null;
+          return (
+          <div className="space-y-1 rounded-md border border-amber-200 bg-amber-50/60 px-2 py-2">
+            <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={form.royalty_on}
+                onChange={e => setForm(f => ({
+                  ...f,
+                  royalty_on: e.target.checked,
+                  royalty_cum: e.target.checked && weightMethod === 'volume' && volumeCft > 0
+                    ? (volumeCft / 35.3147).toFixed(3)
+                    : (e.target.checked ? f.royalty_cum : ''),
+                }))}
               />
-              {selectedProduct.royalty_per_cum != null && Number(form.royalty_cum) > 0 && (
-                <p className="text-[10px] text-muted-foreground">
-                  Royalty = ₹{selectedProduct.royalty_per_cum}/CUM × {form.royalty_cum} CUM ={' '}
-                  <span className="font-semibold">₹{(Number(selectedProduct.royalty_per_cum) * Number(form.royalty_cum)).toFixed(2)}</span>
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-        )}
+              Add Royalty
+              {royRate != null
+                ? <span className="font-normal text-muted-foreground">(₹{royRate}/{royLabel})</span>
+                : <span className="font-normal text-amber-600">— set “Royalty (₹/{royLabel})” on this product first</span>}
+            </label>
+            {form.royalty_on && (
+              <div className="space-y-1 pt-1">
+                {royUnit === 'cum' ? (
+                  <>
+                    <Label className="text-xs">Volume (CUM)</Label>
+                    <Input
+                      className="h-8 text-xs" type="number" min="0" step="0.001"
+                      value={form.royalty_cum}
+                      onChange={e => setForm(f => ({ ...f, royalty_cum: e.target.value }))}
+                      placeholder={weightMethod === 'volume' ? 'auto from volume — edit if needed' : 'e.g. 6.5'}
+                    />
+                    {royTotal != null && (
+                      <p className="text-[10px] text-muted-foreground">
+                        Total Royalty = ₹{royRate}/CUM × {form.royalty_cum} CUM ={' '}
+                        <span className="font-semibold">₹{royTotal.toFixed(2)}</span>
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-[10px] text-muted-foreground">
+                    {royRate != null
+                      ? <>Total Royalty = ₹{royRate}/MT × net weight (MT) — <span className="font-medium">calculated after weighing</span>.</>
+                      : <>Set “Royalty (₹/MT)” on this product to charge royalty on weighed loads.</>}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          );
+        })()}
 
         {/* Remarks */}
         <div className="space-y-1">
