@@ -11,6 +11,7 @@
   .co { font-size: 20px; font-weight: bold; text-transform: uppercase; }
   .co-sub { font-size: 11px; color: #444; margin-top: 2px; }
   .title { font-size: 14px; font-weight: bold; letter-spacing: 2px; margin-top: 6px; }
+  .title.volume { color: #b45309; }
   table.kv { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 8px; }
   table.kv td { border: 1px solid #bbb; padding: 4px 8px; }
   table.kv td.k { background: #f2f2f2; font-weight: bold; width: 16%; white-space: nowrap; }
@@ -19,6 +20,14 @@
   .wt td, .wt th { border: 1px solid #bbb; padding: 5px 8px; text-align: center; font-size: 13px; }
   .wt th { background: #f0f0f0; }
   .wt .net { font-weight: bold; background: #fafafa; }
+  /* Financial summary */
+  table.fin { width: 55%; border-collapse: collapse; font-size: 13px; margin: 0 0 8px auto; }
+  table.fin td { border: 1px solid #bbb; padding: 4px 8px; }
+  table.fin td.l { background: #f2f2f2; font-weight: bold; }
+  table.fin td.a { text-align: right; }
+  table.fin tr.tot td { font-weight: bold; font-size: 14px; background: #fafafa; }
+  .note { font-size: 11px; margin: 4px 0; }
+  .note b { font-weight: bold; }
   .sec { font-weight: bold; font-size: 12px; background: #f0f0f0; padding: 3px 6px; margin: 6px 0 4px; border: 1px solid #ddd; }
   .photos { width: 100%; border-collapse: collapse; }
   .photos td { border: 1px solid #bbb; padding: 5px; text-align: center; vertical-align: top; width: 50%; }
@@ -30,50 +39,119 @@
 </style>
 </head>
 <body>
+
+{% macro fmt_dt(dt) %}{% if dt %}{{ (dt | ist).strftime('%d-%b-%Y %H:%M') }}{% else %}—{% endif %}{% endmacro %}
+{# Billing-unit label + unit-aware weight (parity with the plain slip): MT · Qtl · KG #}
+{% macro unit_label(product) %}{% set u = (product.unit if product and product.unit else 'MT')|upper %}{% if u == 'QUINTAL' %}Qtl{% elif u == 'KG' %}KG{% else %}MT{% endif %}{% endmacro %}
+{% macro format_wt(w, product) %}{% if w %}{% set u = (product.unit if product and product.unit else 'MT')|upper %}{% if u == 'QUINTAL' %}{{ '%.3f' % (w|float / 100) }} Qtl{% elif u == 'KG' %}{{ '%.0f' % (w|float) }} KG{% else %}{{ '%.3f' % (w|float / 1000) }} MT{% endif %}{% else %}—{% endif %}{% endmacro %}
+{% macro vol_unit_fmt(cft, token) %}{% if cft %}{% set bu = (token.billing_unit or 'CFT')|upper %}{% if bu == 'CBM' or bu == 'CUM' %}{{ '%.2f' % (cft|float / 35.3147) }} CBM{% elif bu == 'BRASS' %}{{ '%.2f' % (cft|float / 100) }} Brass{% else %}{{ '%.2f' % (cft|float) }} CFT{% endif %}{% else %}—{% endif %}{% endmacro %}
+
+{% set is_volume = (token.weight_method == 'volume') %}
+
   <div class="hdr">
     <div class="co">{{ company.name or 'Company' }}</div>
-    {% if company.address %}<div class="co-sub">{{ company.address }}</div>{% endif %}
+    {% if company.address_line1 or company.address %}<div class="co-sub">{{ company.address_line1 or company.address }}{% if company.city %}, {{ company.city }}{% endif %}{% if company.state %}, {{ company.state }}{% endif %}{% if company.pincode %} - {{ company.pincode }}{% endif %}</div>{% endif %}
     <div class="co-sub">
       {% if company.gstin %}GSTIN: {{ company.gstin }}{% endif %}
       {% if company.phone %} · Ph: {{ company.phone }}{% endif %}
     </div>
-    <div class="title">WEIGHMENT REPORT</div>
+    <div class="title{% if is_volume %} volume{% endif %}">WEIGHMENT REPORT{% if is_volume %} · VOLUME{% else %} · WEIGHED{% endif %}</div>
   </div>
 
   <table class="kv">
     <tr>
       <td class="k">Token No</td><td class="v"><b>{{ token.token_no or '—' }}</b></td>
-      <td class="k">Date</td><td class="v">{{ token.token_date.strftime('%d-%m-%Y') if token.token_date else ((token.created_at | ist).strftime('%d-%m-%Y %H:%M') if token.created_at else '—') }}</td>
+      <td class="k">Date/Time</td><td class="v">{{ fmt_dt(token.completed_at or token.first_weight_at) if (token.completed_at or token.first_weight_at) else (token.token_date.strftime('%d-%b-%Y') if token.token_date else '—') }}</td>
     </tr>
     <tr>
-      <td class="k">Vehicle</td><td class="v"><b>{{ token.vehicle_no or '—' }}</b>{% if token.vehicle_type %} ({{ token.vehicle_type }}){% endif %}</td>
-      <td class="k">Gate Pass</td><td class="v">{{ token.gate_pass_no or '—' }}</td>
+      <td class="k">Vehicle</td>
+      <td class="v"><b>{{ token.vehicle_no or '—' }}</b>{% if token.tyre_count %} · {{ token.tyre_count }}-tyre{% if token.vehicle_type %} {{ token.vehicle_type | replace('_',' ') | title }}{% endif %}{% elif token.vehicle_type %} ({{ token.vehicle_type | replace('_',' ') | title }}){% endif %}</td>
+      <td class="k">Gate Pass</td><td class="v">{{ token.gate_pass_no or token.gate_pass or '—' }}</td>
     </tr>
     <tr>
-      <td class="k">Party</td><td class="v">{{ token.party.name if token.party else '—' }}</td>
-      <td class="k">Material</td><td class="v">{{ token.product.name if token.product else '—' }}</td>
+      <td class="k">Party</td><td class="v">{{ token.party.name if token.party else 'Cash' }}</td>
+      <td class="k">Material</td><td class="v">{{ token.product.name if token.product else '—' }}{% if is_volume and token.product and token.product.bulk_density %} · {{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT{% endif %}</td>
     </tr>
     <tr>
-      <td class="k">Type</td><td class="v">{{ (token.token_type or 'sale')|capitalize }}{% if token.weight_method == 'volume' %} · Volume{% endif %}</td>
+      <td class="k">Type</td><td class="v">{{ (token.token_type or 'sale')|capitalize }}{% if is_volume %} · Volume{% endif %}</td>
       <td class="k">Operator</td><td class="v">{{ operator_name or '—' }}</td>
     </tr>
+    {% if token.driver and token.driver.name %}
+    <tr>
+      <td class="k">Driver</td><td class="v">{{ token.driver.name }}{% if token.driver.phone %} · {{ token.driver.phone }}{% endif %}</td>
+      <td class="k">Transporter</td><td class="v">{{ token.transporter.name if token.transporter else '—' }}</td>
+    </tr>
+    {% elif token.transporter and token.transporter.name %}
+    <tr>
+      <td class="k">Transporter</td><td class="v" colspan="3">{{ token.transporter.name }}</td>
+    </tr>
+    {% endif %}
+    {# Owner-defined custom attributes flagged to print on the slip (e.g. Moisture %) #}
+    {% if slip_custom_fields is defined and slip_custom_fields %}
+      {% for f in slip_custom_fields %}
+    <tr><td class="k">{{ f.label }}</td><td class="v" colspan="3">{{ f.value }}</td></tr>
+      {% endfor %}
+    {% endif %}
   </table>
 
+  {# ── Quantity: volume block for volume tokens, else gross/tare/net (unit-aware) ── #}
+  {% if is_volume %}
   <table class="wt">
-    <tr><th>Gross</th><th>Tare</th><th>Net</th>
-      {% if rate and rate > 0 %}<th>Rate</th><th>Amount</th>{% endif %}
+    <tr><th>Volume</th><th>Density</th><th>Net Weight</th></tr>
+    <tr>
+      <td class="net">{{ vol_unit_fmt(token.volume_cft, token) }}</td>
+      <td>{% if token.product and token.product.bulk_density %}{{ '%.2f' % (token.product.bulk_density|float) }} kg/CFT{% else %}—{% endif %}</td>
+      <td class="net">{{ format_wt(token.net_weight, token.product) }}</td>
+    </tr>
+  </table>
+  {% else %}
+  {% set gross_first = (token.first_weight_type or 'gross') == 'gross' %}
+  <table class="wt">
+    <tr><th>Description</th><th>Weight</th><th>Date / Time</th></tr>
+    <tr>
+      <td>Gross Weight</td>
+      <td>{{ format_wt(token.gross_weight, token.product) }}</td>
+      <td>{{ fmt_dt(token.first_weight_at if gross_first else token.second_weight_at) }}</td>
     </tr>
     <tr>
-      <td>{% if token.gross_weight %}{{ '%.3f'|format(token.gross_weight|float / 1000) }} MT{% else %}—{% endif %}</td>
-      <td>{% if token.tare_weight %}{{ '%.3f'|format(token.tare_weight|float / 1000) }} MT{% else %}—{% endif %}</td>
-      <td class="net">{% if token.net_weight %}{{ '%.3f'|format(token.net_weight|float / 1000) }} MT{% else %}—{% endif %}</td>
-      {% if rate and rate > 0 %}
-      <td>₹{{ '%.2f'|format(rate) }}</td>
-      <td><b>₹{{ '%.2f'|format(amount or 0) }}</b></td>
-      {% endif %}
+      <td>Tare Weight</td>
+      <td>{{ format_wt(token.tare_weight, token.product) }}</td>
+      <td>{{ fmt_dt(token.second_weight_at if gross_first else token.first_weight_at) }}</td>
+    </tr>
+    <tr class="net">
+      <td>Net Weight</td>
+      <td>{{ format_wt(token.net_weight, token.product) }}</td>
+      <td>{{ fmt_dt(token.completed_at) }}</td>
     </tr>
   </table>
+  {% endif %}
 
+  {# ── Financial summary: Rate · Material Cost · Royalty · Vehicle Rent · TOTAL ── #}
+  {% if (rate is defined and rate and rate > 0) or (amount is defined and amount) or (total_amount is defined and total_amount and total_amount > 0) %}
+  <table class="fin">
+    {% if rate is defined and rate and rate > 0 %}
+    <tr><td class="l">Rate</td><td class="a">₹{{ '%.2f' % rate }}/{{ unit_label(token.product) | trim }}</td></tr>
+    {% endif %}
+    {% if amount is defined and amount %}
+    <tr><td class="l">{% if (vehicle_rent and vehicle_rent > 0) or (royalty and royalty > 0) %}Material Cost{% else %}Amount{% endif %}</td><td class="a">₹{{ '%.2f' % amount }}</td></tr>
+    {% endif %}
+    {% if royalty is defined and royalty and royalty > 0 %}
+    <tr><td class="l">Royalty</td><td class="a">₹{{ '%.2f' % royalty }}</td></tr>
+    {% endif %}
+    {% if vehicle_rent is defined and vehicle_rent and vehicle_rent > 0 %}
+    <tr><td class="l">Vehicle Rent</td><td class="a">₹{{ '%.2f' % vehicle_rent }}</td></tr>
+    {% endif %}
+    {% if total_amount is defined and total_amount and total_amount > 0 and (not amount or (total_amount|float) != (amount|float)) %}
+    <tr class="tot"><td class="l">TOTAL</td><td class="a">₹{{ '%.2f' % total_amount }}</td></tr>
+    {% endif %}
+  </table>
+  {% endif %}
+
+  {% if token.remarks %}
+  <div class="note"><b>Remarks:</b> {{ token.remarks }}</div>
+  {% endif %}
+
+  {# ── Camera snapshots ── #}
   {% if has_snapshots %}
   {% for stage, slabel in [('first_weight', '1st Weight (Gross)'), ('second_weight', '2nd Weight (Tare)')] %}
     {% set imgs = snapshots[stage] %}
