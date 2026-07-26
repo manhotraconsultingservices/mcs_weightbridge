@@ -12,6 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import api from '@/services/api';
 import { fetchUnits, saveUnits } from '@/lib/units';
+import { fetchTyreVolumes, saveTyreVolumes, type TyreVolume } from '@/lib/tyreVolumes';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
 
 interface Company {
@@ -3422,6 +3423,90 @@ function MeasurementUnitsTab() {
   );
 }
 
+function TyreVolumesTab() {
+  const [rows, setRows] = useState<TyreVolume[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => { fetchTyreVolumes().then(setRows).finally(() => setLoading(false)); }, []);
+
+  const setRow = (i: number, patch: Partial<TyreVolume>) =>
+    setRows(rs => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const addRow = () => { setRows(rs => [...rs, { tyre: 0, cum: 0 }]); setMsg(null); };
+  const removeRow = (i: number) => { setRows(rs => rs.filter((_, idx) => idx !== i)); setMsg(null); };
+
+  async function save() {
+    const seen = new Set<number>();
+    const cleaned = rows
+      .map(r => ({ tyre: Math.trunc(Number(r.tyre)), cum: Number(r.cum) }))
+      .filter(r => r.tyre > 0 && r.cum > 0 && !seen.has(r.tyre) && (seen.add(r.tyre), true))
+      .sort((a, b) => a.tyre - b.tyre);
+    if (!cleaned.length) { setMsg({ kind: 'err', text: 'Add at least one valid tyre → volume row.' }); return; }
+    setSaving(true); setMsg(null);
+    try {
+      const saved = await saveTyreVolumes(cleaned);
+      setRows(saved);
+      setMsg({ kind: 'ok', text: 'Tyre volumes saved. Reload the Token page to use them.' });
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setMsg({ kind: 'err', text: typeof detail === 'string' ? detail : 'Failed to save (admin only).' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="pt-6 flex items-center justify-center text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Tyre → Default Volume (CUM)</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          When the operator picks a tyre count on a volume token, the volume auto-fills
+          with this default, in <b>CUM</b> (cubic metre). Operators can still override it per truck.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+          <span className="w-28">Tyre count</span><span className="w-32">Volume (CUM)</span>
+        </div>
+        {rows.map((r, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <Input type="number" min="1" step="1" className="w-28 h-9" value={r.tyre || ''}
+              onChange={e => setRow(i, { tyre: Number(e.target.value) })} placeholder="e.g. 10" />
+            <Input type="number" min="0" step="0.1" className="w-32 h-9" value={r.cum || ''}
+              onChange={e => setRow(i, { cum: Number(e.target.value) })} placeholder="e.g. 13" />
+            <span className="text-xs text-muted-foreground">CUM</span>
+            <button type="button" onClick={() => removeRow(i)} title="Remove"
+              className="text-muted-foreground hover:text-red-600"><X className="h-4 w-4" /></button>
+          </div>
+        ))}
+        {rows.length === 0 && (
+          <p className="text-sm text-muted-foreground">No tyre classes — add one below.</p>
+        )}
+        <Button type="button" variant="outline" size="sm" onClick={addRow}>
+          <Plus className="h-4 w-4 mr-1" /> Add tyre class
+        </Button>
+        {msg && <p className={`text-sm ${msg.kind === 'ok' ? 'text-green-600' : 'text-red-600'}`}>{msg.text}</p>}
+        <div>
+          <Button onClick={save} disabled={saving}>
+            {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Saving…</> : 'Save Tyre Volumes'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function VolumeUnitSettingsTab() {
   const [unit, setUnit] = useState<'m3' | 'cft'>('m3');
   const [loading, setLoading] = useState(true);
@@ -4142,6 +4227,7 @@ export default function SettingsPage() {
         <TabsContent value="units" className="mt-4 space-y-4">
           <MeasurementUnitsTab />
           <VolumeUnitSettingsTab />
+          <TyreVolumesTab />
         </TabsContent>
 
         {/* Gate Cameras config */}

@@ -30,15 +30,14 @@ import { useWeight } from '@/hooks/useWeight';
 import LocalScaleBadge from '@/components/LocalScaleBadge';
 import { fmtKg, displayToKg, weightUnitLabel, weightUnit } from '@/lib/weightUnit';
 import { cacheMasters, readCachedMasters } from '@/lib/mastersCache';
+import { fetchTyreVolumes, tyreCftMap, tyreOptions, DEFAULT_TYRE_VOLUMES } from '@/lib/tyreVolumes';
 import type { User, Party, Product, Token, TokenListResponse } from '@/types';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-// Default volume per tyre-class in CFT (canonical DB unit; weight_kg = volume_cft × bulk_density_kg_per_cft).
-const TYRE_VOLUME_CFT: Record<number, number> = {
-  4: 106, 6: 247, 8: 353, 10: 459, 12: 600,
-};
-const TYRE_OPTIONS = [4, 6, 8, 10, 12];
+// Tyre-class → default load volume is admin-configurable per tenant (Settings →
+// Tyre Volumes, stored in CUM). Fetched at runtime; DEFAULT_TYRE_VOLUMES is the
+// fallback. The runtime maps used below are CFT (canonical) for fromCft() math.
 
 // Volume billing units the operator can pick (canonical storage stays CFT).
 // Mirrors the New Trip form so kiosk volume tokens bill by the chosen unit's rate.
@@ -297,6 +296,12 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Admin-configured tyre→volume defaults (Settings → Tyre Volumes) — CFT map + options.
+  const [tyreVols, setTyreVols] = useState<Record<number, number>>(() => tyreCftMap(DEFAULT_TYRE_VOLUMES));
+  const [tyreOpts, setTyreOpts] = useState<number[]>(() => tyreOptions(DEFAULT_TYRE_VOLUMES));
+  useEffect(() => {
+    fetchTyreVolumes().then(rows => { setTyreVols(tyreCftMap(rows)); setTyreOpts(tyreOptions(rows)); });
+  }, []);
 
   // Load master data once. Parties API may return either an array OR a paged
   // {items, total} object depending on the route version — handle both shapes.
@@ -418,7 +423,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
   // Picking a tyre class switches to volume mode and auto-fills the quantity in
   // the current unit; the operator can still overwrite it below.
   function pickTyre(n: number) {
-    setDraft(d => ({ ...d, tyre_count: n, volume_qty: String(round3(fromCft(TYRE_VOLUME_CFT[n] ?? 0, d.volume_unit))) }));
+    setDraft(d => ({ ...d, tyre_count: n, volume_qty: String(round3(fromCft(tyreVols[n] ?? 0, d.volume_unit))) }));
   }
   function pickWeigh() {
     setDraft(d => ({ ...d, tyre_count: null, volume_qty: '' }));
@@ -777,7 +782,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
           >
             <div className="text-sm uppercase">{t('kiosk.weigh')}</div>
           </button>
-          {TYRE_OPTIONS.map(n => {
+          {tyreOpts.map(n => {
             const selected = draft.tyre_count === n;
             return (
               <button
@@ -790,7 +795,7 @@ function ArrivalScreen({ draft, setDraft, pendingTokens, onResume, onProceed }: 
                 }`}
               >
                 <div className="text-xl">{n} 🛞</div>
-                <div className="text-[10px] text-slate-500 mt-0.5">{round3(fromCft(TYRE_VOLUME_CFT[n] ?? 0, draft.volume_unit))} {UNIT_SHORT[draft.volume_unit]}</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">{round3(fromCft(tyreVols[n] ?? 0, draft.volume_unit))} {UNIT_SHORT[draft.volume_unit]}</div>
               </button>
             );
           })}

@@ -20,6 +20,7 @@ import { toast } from 'sonner';
 import { enqueueToken } from '@/lib/offlineQueue';
 import { cacheMasters, readCachedMasters } from '@/lib/mastersCache';
 import { fmtKg, displayToKg, weightUnitLabel, weightUnit } from '@/lib/weightUnit';
+import { fetchTyreVolumes, tyreCftMap, tyreOptions, DEFAULT_TYRE_VOLUMES } from '@/lib/tyreVolumes';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -133,15 +134,9 @@ interface CreateFormProps {
 
 // Volume → weight conversion: weight_kg = volume_cft × bulk_density(kg/CFT)
 
-// Tyre-count → default load volume in CFT. Industry-standard capacities for Indian aggregate trucks.
-const TYRE_VOLUME_CFT: Record<number, number> = {
-  4: 106,   // Mini-truck / pickup (Tata Ace, Bolero pickup)
-  6: 247,   // Small truck (Eicher Pro 1110)
-  8: 353,   // Medium truck
-  10: 459,  // Heavy truck (Eicher 6028, Ashok Leyland 1616)
-  12: 600,  // Multi-axle
-};
-const TYRE_OPTIONS = [4, 6, 8, 10, 12];
+// Tyre-count → default load volume is admin-configurable per tenant (Settings →
+// Tyre Volumes, stored in CUM). Fetched at runtime; DEFAULT_TYRE_VOLUMES is the
+// fallback. The maps below are CFT (canonical) for the form's fromCft() math.
 
 // Volume billing units the operator can choose (canonical storage stays CFT).
 const CFT_PER_M3 = 35.3147;
@@ -197,6 +192,13 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const [weightMethod, setWeightMethod] = useState<'weighbridge' | 'volume'>('weighbridge');
   const [volumeValue, setVolumeValue] = useState('');
   const [tyreCount, setTyreCount] = useState<number | null>(null);   // 4/6/8/10/12 or null
+  // Admin-configured tyre→volume defaults (Settings → Tyre Volumes). tyreVols is
+  // the tyre-count→CFT map (canonical); tyreOpts the ordered tyre-count options.
+  const [tyreVols, setTyreVols] = useState<Record<number, number>>(() => tyreCftMap(DEFAULT_TYRE_VOLUMES));
+  const [tyreOpts, setTyreOpts] = useState<number[]>(() => tyreOptions(DEFAULT_TYRE_VOLUMES));
+  useEffect(() => {
+    fetchTyreVolumes().then(rows => { setTyreVols(tyreCftMap(rows)); setTyreOpts(tyreOptions(rows)); });
+  }, []);
   // Tenant's default volume unit (Settings → Units): 'm3' → CBM, 'cft' → CFT.
   const [volDefault, setVolDefault] = useState('CBM');
   // Owner-defined custom attributes (Moisture %, Quality grade…) captured per weighment
@@ -228,7 +230,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     setTyreCount(n);
     // Auto-fill the quantity in the currently-selected volume unit (operator can still overwrite).
     const u = form.billing_unit || volDefault;
-    setVolumeValue(String(round3(fromCft(TYRE_VOLUME_CFT[n] ?? 0, u))));
+    setVolumeValue(String(round3(fromCft(tyreVols[n] ?? 0, u))));
   }
 
   // Weighbridge bills in the tenant's weight unit (MT for crushers, Qtl for
@@ -905,7 +907,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             <div className="space-y-1.5">
               <Label className="text-xs">{t('token.truckSizeTyre')}</Label>
               <div className="grid grid-cols-5 gap-1.5">
-                {TYRE_OPTIONS.map(n => (
+                {tyreOpts.map(n => (
                   <button
                     key={n}
                     type="button"
@@ -920,14 +922,14 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
                     <div className="text-xs font-bold leading-none">{n}</div>
                     <div className="text-[9px] text-muted-foreground leading-tight mt-0.5">
                       tyre<br/>
-                      {round3(fromCft(TYRE_VOLUME_CFT[n] ?? 0, volUnit))} {UNIT_SHORT[volUnit]}
+                      {round3(fromCft(tyreVols[n] ?? 0, volUnit))} {UNIT_SHORT[volUnit]}
                     </div>
                   </button>
                 ))}
               </div>
               {tyreCount !== null && (
                 <p className="text-[10px] text-amber-700">
-                  Defaulted to {round3(fromCft(TYRE_VOLUME_CFT[tyreCount] ?? 0, volUnit))} {UNIT_SHORT[volUnit]} for a {tyreCount}-tyre truck. Adjust below if needed.
+                  Defaulted to {round3(fromCft(tyreVols[tyreCount] ?? 0, volUnit))} {UNIT_SHORT[volUnit]} for a {tyreCount}-tyre truck. Adjust below if needed.
                 </p>
               )}
             </div>
