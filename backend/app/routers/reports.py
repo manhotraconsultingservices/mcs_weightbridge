@@ -1190,6 +1190,251 @@ async def put_stock_valuation(
     return {"ok": True, **clean}
 
 
+# ── Traditional Day Book (classic cash book: opening B/F → receipts / payments
+#    across Cash · Bank · CC columns → closing C/F) ─────────────────────────────
+# Reconstructs the hand-written daily cash book from existing transactions:
+#   RECEIPTS (money in)  = payment_receipts
+#   PAYMENTS (money out) = payment_vouchers (supplier + direct expense) · worker
+#                          payments (excl. deduction) · diesel fills (non plant_tank)
+#                          · agent commission payouts
+# Each line is placed in ONE money column by its payment mode:
+#   cash → Cash · cc/od → CC · everything else (upi/bank/cheque/card…) → Bank.
+# Opening B/F is rolled forward from a one-time admin-set opening
+# (app_settings.day_book_opening {as_of_date, cash, bank, cc}); closing C/F =
+# opening + Σreceipts − Σpayments per column. Every source is savepoint-guarded
+# so a tenant missing a feature-module table degrades that line to nothing.
+_DAY_BOOK_OPENING_KEY = "day_book_opening"
+
+
+def _daybook_col(mode) -> str:
+    m = (mode or "cash").strip().lower()
+    if m == "cash":
+        return "cash"
+    if m in ("cc", "od", "cc_account", "overdraft", "cash_credit"):
+        return "cc"
+    return "bank"   # upi, bank, bank_transfer, cheque, card, neft, rtgs, online, …
+
+
+async def _daybook_savepoint_rows(db: AsyncSession, sql: str, params: dict) -> list:
+    """Run one source query inside its own SAVEPOINT; [] if the table is absent."""
+    try:
+        async with db.begin_nested():
+            return list((await db.execute(text(sql), params)).mappings().all())
+    except Exception as e:  # noqa: BLE001 — missing feature-module table, etc.
+        logger.warning("Day Book source skipped: %s", str(e)[:140])
+        return []
+
+
+def _blank_cols() -> dict:
+    return {"cash": 0.0, "bank": 0.0, "cc": 0.0}
+
+
+async def _daybook_lines(db: AsyncSession, cid, day: date) -> tuple[list, list]:
+    """Return (receipts[], payments[]) line items for a single day."""
+    p = {"cid": str(cid), "d": day}
+    receipts, payments = [], []
+
+    # RECEIPTS — collections
+    for r in await _daybook_savepoint_rows(db,
+        "SELECT r.amount AS amount, r.payment_mode AS mode, r.receipt_no AS ref, "
+        "COALESCE(pt.name,'Cash sale') AS party "
+        "FROM payment_receipts r LEFT JOIN parties pt ON pt.id=r.party_id "
+        "WHERE r.company_id=:cid AND r.receipt_date=:d ORDER BY r.created_at", p):
+        line = {"particulars": r["party"], "ref": r["ref"], **_blank_cols()}
+        line[_daybook_col(r["mode"])] = _r2(r["amount"])
+        receipts.append(line)
+
+    # PAYMENTS — supplier payments + direct expenses (vouchers)
+    for v in await _daybook_savepoint_rows(db,
+        "SELECT v.amount AS amount, v.payment_mode AS mode, v.voucher_no AS ref, "
+        "v.expense_category AS cat, pt.name AS party "
+        "FROM payment_vouchers v LEFT JOIN parties pt ON pt.id=v.party_id "
+        "WHERE v.company_id=:cid AND v.voucher_date=:d ORDER BY v.created_at", p):
+        who = v["cat"] or v["party"] or "Payment"
+        line = {"particulars": who, "ref": v["ref"], **_blank_cols()}
+        line[_daybook_col(v["mode"])] = _r2(v["amount"])
+        payments.append(line)
+
+    # PAYMENTS — worker wages/salary/advance/bonus (deductions are not cash out)
+    for w in await _daybook_savepoint_rows(db,
+        "SELECT wp.amount AS amount, wp.mode AS mode, wp.reference AS ref, "
+        "wp.payment_type AS ptype, wk.name AS worker "
+        "FROM worker_payments wp LEFT JOIN workers wk ON wk.id=wp.worker_id "
+        "WHERE wp.company_id=:cid AND wp.pay_date=:d AND wp.payment_type<>'deduction' "
+        "ORDER BY wp.created_at", p):
+        label = f"{w['worker'] or 'Worker'} ({(w['ptype'] or '').replace('_',' ')})".strip()
+        line = {"particulars": label, "ref": w["ref"], **_blank_cols()}
+        line[_daybook_col(w["mode"])] = _r2(w["amount"])
+        payments.append(line)
+
+    # PAYMENTS — diesel fills (outside purchases; plant-tank issues are internal stock, not cash)
+    for f in await _daybook_savepoint_rows(db,
+        "SELECT f.amount AS amount, f.litres AS litres, ve.registration_no AS veh "
+        "FROM vehicle_fuel_entries f LEFT JOIN vehicles ve ON ve.id=f.vehicle_id "
+        "WHERE f.company_id=:cid AND f.entry_date=:d AND COALESCE(f.fuel_source,'')<>'plant_tank' "
+        "ORDER BY f.created_at", p):
+        label = f"Diesel {f['veh'] or ''} {_r2(f['litres'])}L".strip()
+        line = {"particulars": label, "ref": "", **_blank_cols()}
+        line["cash"] = _r2(f["amount"])   # fuel fills carry no mode → treated as cash
+        payments.append(line)
+
+    # PAYMENTS — agent commission payouts
+    for a in await _daybook_savepoint_rows(db,
+        "SELECT ap.amount AS amount, ap.payment_mode AS mode, ap.reference_no AS ref, ag.name AS agent "
+        "FROM agent_commission_payments ap LEFT JOIN agents ag ON ag.id=ap.agent_id "
+        "WHERE ap.company_id=:cid AND ap.paid_on=:d ORDER BY ap.created_at", p):
+        line = {"particulars": f"Commission — {a['agent'] or ''}".strip(), "ref": a["ref"], **_blank_cols()}
+        line[_daybook_col(a["mode"])] = _r2(a["amount"])
+        payments.append(line)
+
+    return receipts, payments
+
+
+async def _daybook_range_net(db: AsyncSession, cid, d_from: date, d_to: date) -> dict:
+    """Net movement per column (in − out) over [d_from, d_to] — for the opening roll-forward."""
+    net = _blank_cols()
+    if d_from > d_to:
+        return net
+    p = {"cid": str(cid), "fd": d_from, "td": d_to}
+
+    def _fold(rows, sign):
+        for row in rows:
+            net[_daybook_col(row["mode"])] += sign * float(row["total"] or 0)
+
+    _fold(await _daybook_savepoint_rows(db,
+        "SELECT LOWER(COALESCE(payment_mode,'cash')) AS mode, SUM(amount) AS total "
+        "FROM payment_receipts WHERE company_id=:cid AND receipt_date>=:fd AND receipt_date<=:td "
+        "GROUP BY 1", p), +1)
+    _fold(await _daybook_savepoint_rows(db,
+        "SELECT LOWER(COALESCE(payment_mode,'cash')) AS mode, SUM(amount) AS total "
+        "FROM payment_vouchers WHERE company_id=:cid AND voucher_date>=:fd AND voucher_date<=:td "
+        "GROUP BY 1", p), -1)
+    _fold(await _daybook_savepoint_rows(db,
+        "SELECT LOWER(COALESCE(mode,'cash')) AS mode, SUM(amount) AS total "
+        "FROM worker_payments WHERE company_id=:cid AND payment_type<>'deduction' "
+        "AND pay_date>=:fd AND pay_date<=:td GROUP BY 1", p), -1)
+    _fold(await _daybook_savepoint_rows(db,
+        "SELECT 'cash' AS mode, SUM(amount) AS total FROM vehicle_fuel_entries "
+        "WHERE company_id=:cid AND COALESCE(fuel_source,'')<>'plant_tank' "
+        "AND entry_date>=:fd AND entry_date<=:td GROUP BY 1", p), -1)
+    _fold(await _daybook_savepoint_rows(db,
+        "SELECT LOWER(COALESCE(payment_mode,'cash')) AS mode, SUM(amount) AS total "
+        "FROM agent_commission_payments WHERE company_id=:cid AND paid_on>=:fd AND paid_on<=:td "
+        "GROUP BY 1", p), -1)
+    return {k: _r2(v) for k, v in net.items()}
+
+
+async def _daybook_opening(db: AsyncSession, cid, day: date) -> tuple[dict, dict | None]:
+    """Opening balance B/F for `day` = configured opening (as-of a base date) rolled
+    forward by the net movement between the base date and the day before `day`.
+    Returns (opening_cols, config_or_None)."""
+    cfg = None
+    try:
+        row = (await db.execute(
+            text("SELECT value FROM app_settings WHERE key=:k"),
+            {"k": _DAY_BOOK_OPENING_KEY})).fetchone()
+        if row:
+            cfg = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+    except Exception:
+        try: await db.rollback()
+        except Exception: pass
+    if not cfg or not cfg.get("as_of_date"):
+        return _blank_cols(), cfg
+    try:
+        as_of = date.fromisoformat(str(cfg["as_of_date"])[:10])
+    except Exception:
+        return _blank_cols(), cfg
+    base = {"cash": _r2(cfg.get("cash") or 0), "bank": _r2(cfg.get("bank") or 0),
+            "cc": _r2(cfg.get("cc") or 0)}
+    if as_of > day:
+        return _blank_cols(), cfg   # base is after the requested day — nothing to roll
+    net = await _daybook_range_net(db, cid, as_of, day - timedelta(days=1))
+    return ({k: _r2(base[k] + net[k]) for k in base}, cfg)
+
+
+@router.get("/day-book")
+async def day_book(
+    date_: date = Query(None, alias="date"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Traditional daily cash book: opening B/F → receipts + payments (Cash/Bank/CC)
+    → closing C/F, for a single day (defaults today)."""
+    day = date_ or date.today()
+    cid = current_user.company_id
+    opening, _cfg = await _daybook_opening(db, cid, day)
+    receipts, payments = await _daybook_lines(db, cid, day)
+
+    tot_r = _blank_cols(); tot_p = _blank_cols()
+    for ln in receipts:
+        for k in tot_r: tot_r[k] = _r2(tot_r[k] + ln[k])
+    for ln in payments:
+        for k in tot_p: tot_p[k] = _r2(tot_p[k] + ln[k])
+    closing = {k: _r2(opening[k] + tot_r[k] - tot_p[k]) for k in opening}
+    return {
+        "date": day.isoformat(),
+        "opening": opening,
+        "receipts": receipts,
+        "payments": payments,
+        "totals": {"receipts": tot_r, "payments": tot_p},
+        "closing": closing,
+        "notes": [
+            "Cash / Bank columns are populated by each transaction's payment mode "
+            "(cash → Cash; UPI/bank/cheque/card → Bank). The CC/OD column carries its "
+            "opening balance forward — tag a payment mode to it to record CC movements.",
+            "Payments = supplier & expense vouchers, worker wages/advances, diesel fills, "
+            "commission payouts. Store-item purchases appear when paid via a voucher.",
+        ],
+    }
+
+
+@router.get("/day-book-opening")
+async def get_day_book_opening(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the configured opening balance base for the Day Book."""
+    default = {"as_of_date": None, "cash": 0.0, "bank": 0.0, "cc": 0.0, "note": ""}
+    try:
+        row = (await db.execute(
+            text("SELECT value FROM app_settings WHERE key=:k"),
+            {"k": _DAY_BOOK_OPENING_KEY})).fetchone()
+        if row:
+            cfg = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            return {**default, **(cfg or {})}
+    except Exception:
+        try: await db.rollback()
+        except Exception: pass
+    return default
+
+
+@router.put("/day-book-opening")
+async def put_day_book_opening(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "accountant")),
+):
+    """Set the opening-balance base (a date + Cash/Bank/CC amounts) that the Day
+    Book rolls forward. Admin/accountant only."""
+    def _num(v):
+        try: return float(v) if v not in (None, "") else 0.0
+        except (TypeError, ValueError): return 0.0
+    as_of = payload.get("as_of_date")
+    if as_of:
+        try: as_of = date.fromisoformat(str(as_of)[:10]).isoformat()
+        except Exception: raise HTTPException(400, "as_of_date must be YYYY-MM-DD")
+    clean = {"as_of_date": as_of or None, "cash": _num(payload.get("cash")),
+             "bank": _num(payload.get("bank")), "cc": _num(payload.get("cc")),
+             "note": str(payload.get("note") or "")[:500]}
+    await db.execute(
+        text("""INSERT INTO app_settings (key, value, updated_at)
+                VALUES (:k, :v, NOW())
+                ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()"""),
+        {"k": _DAY_BOOK_OPENING_KEY, "v": json.dumps(clean)})
+    await db.commit()
+    return {"ok": True, **clean}
+
+
 # ── EOD Daily Business Summary (cash-book view) ──────────────────────────────
 # A CASH/END-OF-DAY lens, DISTINCT from the accrual P&L above:
 #   • Sales split by how the money came in — CASH vs ELECTRONIC (bank/card/UPI),

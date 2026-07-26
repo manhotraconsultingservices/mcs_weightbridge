@@ -25,8 +25,9 @@ import GatePassRegisterPage from './GatePassRegisterPage';
 import TokenRegisterPage from './TokenRegisterPage';
 import EodSummaryReportPage from './EodSummaryReportPage';
 import OperatorCashEodPage from './OperatorCashEodPage';
+import DayBookPage from './DayBookPage';
 
-type Tab = 'payments' | 'eod' | 'operator-cash' | 'statement' | 'gst' | 'gstr2b' | 'gst-split' | 'sales-status' | 'reports' | 'write-offs' | 'compliance' | 'activity' | 'anomaly' | 'gate-passes' | 'token-register';
+type Tab = 'payments' | 'eod' | 'daybook' | 'operator-cash' | 'statement' | 'gst' | 'gstr2b' | 'gst-split' | 'sales-status' | 'reports' | 'write-offs' | 'compliance' | 'activity' | 'anomaly' | 'gate-passes' | 'token-register';
 
 export default function ReportsHubPage() {
   const { t } = useTranslation();
@@ -54,6 +55,7 @@ export default function ReportsHubPage() {
   const META: Record<Tab, { label: string; icon: React.ElementType }> = {
     payments: { label: t('payment.title'), icon: CreditCard },
     eod: { label: 'Day Book (EOD)', icon: Wallet },
+    daybook: { label: 'Day Book (Cash Book)', icon: BookOpen },
     'operator-cash': { label: 'Operator Cash (EOD)', icon: HandCoins },
     statement: { label: t('reports.accountStatement'), icon: BookOpen },
     gst: { label: t('reports.gstReturns'), icon: FileBarChart },
@@ -71,7 +73,7 @@ export default function ReportsHubPage() {
 
   // Sub-categories — the grouped left nav.
   const GROUPS: { label: string; items: Tab[] }[] = [
-    { label: 'Daily & Operations', items: ['eod', 'operator-cash', 'gate-passes', 'token-register'] },
+    { label: 'Daily & Operations', items: ['daybook', 'eod', 'operator-cash', 'gate-passes', 'token-register'] },
     { label: 'Sales & GST',        items: ['gst', 'gstr2b', 'gst-split', 'sales-status'] },
     { label: 'Financials',         items: ['reports', 'statement', 'payments', 'write-offs'] },
     { label: 'Compliance & Audit', items: ['compliance', 'activity', 'anomaly'] },
@@ -85,6 +87,7 @@ export default function ReportsHubPage() {
     switch (x) {
       case 'payments': return <PaymentsPage />;
       case 'eod': return <EodSummaryReportPage />;
+      case 'daybook': return <DayBookPage />;
       case 'operator-cash': return <OperatorCashEodPage />;
       case 'statement': return <LedgerPage />;
       case 'gst': return <GstReportsPage />;
