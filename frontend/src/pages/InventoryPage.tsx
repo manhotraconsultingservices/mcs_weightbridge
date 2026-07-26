@@ -1006,9 +1006,19 @@ function EditPODialog({ po, items: propItems, onClose, onDone }: EditPODialogPro
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    api.get<{ suppliers: Array<{id: string; name: string}> }>('/api/v1/inventory/items/supplier-names')
-      .then(r => setKnownSuppliers((r.data.suppliers ?? []).map(s => s.name)))
-      .catch(() => { /* silent */ });
+    // Master supplier list (managed in Settings → Suppliers + the per-item dialog).
+    // Merge in any names already used on POs so nothing a tenant typed disappears.
+    Promise.allSettled([
+      api.get<Array<{ name: string }>>('/api/v1/inventory/suppliers'),
+      api.get<{ suppliers: Array<{ name: string }> }>('/api/v1/inventory/items/supplier-names'),
+    ]).then(([masterRes, usedRes]) => {
+      const names = new Set<string>();
+      if (masterRes.status === 'fulfilled' && Array.isArray(masterRes.value.data))
+        masterRes.value.data.forEach(s => { if (s?.name) names.add(s.name); });
+      if (usedRes.status === 'fulfilled')
+        (usedRes.value.data.suppliers ?? []).forEach(s => { if (s?.name) names.add(s.name); });
+      setKnownSuppliers([...names].sort((a, b) => a.localeCompare(b)));
+    });
   }, []);
 
   const [lines, setLines] = useState<{ item_id: string; quantity_ordered: string; unit_price: string }[]>(
@@ -1091,7 +1101,11 @@ function EditPODialog({ po, items: propItems, onClose, onDone }: EditPODialogPro
                       <div className="flex-1">
                         <Select value={line.item_id ?? ''} onValueChange={(v) => handleItemSelect(i, v ?? '')}>
                           <SelectTrigger className="h-9">
-                            <SelectValue placeholder="Select item…" />
+                            {/* Show the item NAME (Radix falls back to the raw id when the
+                                value is pre-filled before options mount). */}
+                            {selectedItem
+                              ? <span className="truncate">{CATEGORY_ICONS[selectedItem.category] ?? '📦'} {selectedItem.name} ({selectedItem.unit})</span>
+                              : <SelectValue placeholder="Select item…" />}
                           </SelectTrigger>
                           <SelectContent>
                             {allItems.map(it => (
@@ -1231,9 +1245,19 @@ function NewPODialog({ items, onClose, onDone }: NewPODialogProps) {
   const [knownSuppliers, setKnownSuppliers] = useState<string[]>([]);
 
   useEffect(() => {
-    api.get<{ suppliers: Array<{id: string; name: string}> }>('/api/v1/inventory/items/supplier-names')
-      .then(r => setKnownSuppliers((r.data.suppliers ?? []).map(s => s.name)))
-      .catch(() => { /* silent */ });
+    // Master supplier list (managed in Settings → Suppliers + the per-item dialog).
+    // Merge in any names already used on POs so nothing a tenant typed disappears.
+    Promise.allSettled([
+      api.get<Array<{ name: string }>>('/api/v1/inventory/suppliers'),
+      api.get<{ suppliers: Array<{ name: string }> }>('/api/v1/inventory/items/supplier-names'),
+    ]).then(([masterRes, usedRes]) => {
+      const names = new Set<string>();
+      if (masterRes.status === 'fulfilled' && Array.isArray(masterRes.value.data))
+        masterRes.value.data.forEach(s => { if (s?.name) names.add(s.name); });
+      if (usedRes.status === 'fulfilled')
+        (usedRes.value.data.suppliers ?? []).forEach(s => { if (s?.name) names.add(s.name); });
+      setKnownSuppliers([...names].sort((a, b) => a.localeCompare(b)));
+    });
   }, []);
 
   const activeItems = items.filter(i => i.is_active);
@@ -1308,7 +1332,12 @@ function NewPODialog({ items, onClose, onDone }: NewPODialogProps) {
                     <div className="flex-1">
                       <Select value={line.item_id ?? ''} onValueChange={(v) => handleItemSelect(i, v ?? '')}>
                         <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Select item…" />
+                          {/* Render the selected item's NAME explicitly — Radix SelectValue
+                              falls back to the raw id (UUID) when the value is pre-filled
+                              before the options mount (the reorder pre-select path). */}
+                          {selectedItem
+                            ? <span className="truncate">{CATEGORY_ICONS[selectedItem.category] ?? '📦'} {selectedItem.name} ({selectedItem.unit})</span>
+                            : <SelectValue placeholder="Select item…" />}
                         </SelectTrigger>
                         <SelectContent>
                           {activeItems.map(it => (
