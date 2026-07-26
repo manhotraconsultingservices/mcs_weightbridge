@@ -2081,6 +2081,20 @@ async def cancel_invoice(
     inv.status = "cancelled"
     co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
 
+    # ── Reverse payment/advance allocations (F4) ──────────────────────────────
+    # Any receipt/voucher amount allocated to this invoice (incl. an advance
+    # auto-applied at finalise) must be RETURNED to the party's unallocated pool
+    # when the invoice is cancelled — otherwise the payment stays stranded on a
+    # dead invoice and the party is permanently under-credited. Delete the
+    # InvoicePayment links and reset the invoice's paid figures; the payments
+    # become advances again (recompute below picks that up).
+    from app.models.payment import InvoicePayment as _IP
+    from sqlalchemy import delete as _delete
+    await db.execute(_delete(_IP).where(_IP.invoice_id == inv.id))
+    inv.amount_paid = Decimal("0")
+    inv.amount_due = Decimal("0")   # cancelled → nothing collectable
+    inv.payment_status = "unpaid"
+
     # ── Reverse product stock movements if the invoice had been finalised ─────
     # Drafts never posted stock so no reversal needed for those.
     if was_finalised and not (inv.revision_no and inv.revision_no > 1):
