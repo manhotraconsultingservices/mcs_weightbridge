@@ -28,6 +28,8 @@ class TokenCreate(BaseModel):
     transit_pass_id: Optional[UUID] = None   # links purchase token to its transit/royalty pass
     vehicle_rent: Optional[Decimal] = None   # payment to truck owner per trip
     rent_km: Optional[Decimal] = None       # operator-entered trip distance; drives vehicle_rent
+    rent_rate_per_km_per_mt: Optional[Decimal] = None    # operator override (else vehicle master); weighed loads
+    rent_rate_per_km_per_cum: Optional[Decimal] = None   # operator override (else vehicle master); volume loads
     royalty_cum: Optional[Decimal] = None   # CUM volume for royalty (operator-entered); drives royalty_amount
     custom_fields: Optional[dict[str, Any]] = None   # owner-defined attributes (moisture, quality…)
     # Offline replay (P1 #171): when an edge terminal replays a token it captured
@@ -84,6 +86,8 @@ class TokenVolumeCreate(BaseModel):
     transit_pass_id: Optional[UUID] = None
     vehicle_rent: Optional[Decimal] = None
     rent_km: Optional[Decimal] = None       # operator-entered trip distance; drives vehicle_rent
+    rent_rate_per_km_per_mt: Optional[Decimal] = None    # operator override (else vehicle master); weighed loads
+    rent_rate_per_km_per_cum: Optional[Decimal] = None   # operator override (else vehicle master); volume loads
     royalty_cum: Optional[Decimal] = None   # CUM volume for royalty (auto-derived from volume_cft if omitted)
     custom_fields: Optional[dict[str, Any]] = None
 
@@ -106,6 +110,8 @@ class TokenUpdate(BaseModel):
     volume_cft: Optional[Decimal] = None      # volume quantity (volume tokens)
     vehicle_rent: Optional[Decimal] = None    # transport rent billed on the invoice
     rent_km: Optional[Decimal] = None       # operator-entered trip distance; drives vehicle_rent
+    rent_rate_per_km_per_mt: Optional[Decimal] = None    # operator override; recomputes vehicle_rent
+    rent_rate_per_km_per_cum: Optional[Decimal] = None   # operator override; recomputes vehicle_rent
     royalty_cum: Optional[Decimal] = None     # CUM volume for royalty; re-prices the draft invoice
     payment_mode: Optional[str] = None        # cash | credit | upi | bank_transfer → tax_type
     billing_unit: Optional[str] = None
@@ -193,6 +199,8 @@ class TokenResponse(BaseModel):
     payment_mode: Optional[str] = None       # cash | credit | upi | bank_transfer
     vehicle_rent: Optional[Decimal] = None
     rent_km: Optional[Decimal] = None       # operator-entered trip distance; drives vehicle_rent
+    rent_rate_per_km_per_mt: Optional[Decimal] = None    # rent rate used (₹/km/MT)
+    rent_rate_per_km_per_cum: Optional[Decimal] = None   # rent rate used (₹/km/CUM)
     royalty_cum: Optional[Decimal] = None    # CUM volume the royalty was charged on
     royalty_amount: Optional[Decimal] = None # computed royalty charge (₹/CUM × CUM)
     operator_name: Optional[str] = None      # who created the token (cash accountability)
