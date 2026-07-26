@@ -1,4 +1,5 @@
 #!/bin/bash
+# CI trigger: re-run pipeline after transient SSH-connect failure (2026-07-27).
 # ════════════════════════════════════════════════════════════════════════════
 #  CI/CD deploy script — called by .github/workflows/deploy.yml over SSH
 #
