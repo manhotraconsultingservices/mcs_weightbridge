@@ -156,7 +156,7 @@ async def _build_token_notify_ctx(db: AsyncSession, token: Token, company: Compa
     IST. Amount comes from the linked draft invoice's grand_total (which already
     folds in GST + royalty + vehicle_rent); '—' when the token has no invoice."""
     from app.utils.timefmt import fmt_ist
-    from app.models.invoice import Invoice
+    from app.models.invoice import Invoice, InvoiceItem
     party = (await db.execute(select(Party).where(Party.id == token.party_id))).scalar_one_or_none() if token.party_id else None
     product = (await db.execute(select(Product).where(Product.id == token.product_id))).scalar_one_or_none() if token.product_id else None
     bill_unit = token.billing_unit or (product.unit if product else "MT")
@@ -178,6 +178,17 @@ async def _build_token_notify_ctx(db: AsyncSession, token: Token, company: Compa
         ).order_by(Invoice.created_at.desc()).limit(1)
     )).scalar_one_or_none()
     amount = inv.grand_total if inv else None
+    # ₹/unit rate — prefer the linked invoice's line rate (authoritative), else the
+    # operator-set token.rate; labelled with the billing unit shown in qty.
+    rate_val = None
+    if inv:
+        _r = (await db.execute(
+            select(InvoiceItem.rate).where(InvoiceItem.invoice_id == inv.id).limit(1)
+        )).scalar_one_or_none()
+        if _r is not None:
+            rate_val = float(_r)
+    if rate_val is None and token.rate is not None:
+        rate_val = float(token.rate)
     royalty = float(token.royalty_amount or 0)
     rent = float(token.vehicle_rent or 0)
     return {
@@ -189,6 +200,7 @@ async def _build_token_notify_ctx(db: AsyncSession, token: Token, company: Compa
         "party_phone": (party.phone or "") if party else "",
         "material": product.name if product else "—",
         "qty": qty_str,
+        "rate": f"{rate_val:,.2f}/{bill_unit}" if rate_val is not None and rate_val > 0 else "",
         "amount": f"{float(amount):,.2f}" if amount is not None else "—",
         "royalty": f"{royalty:,.2f}" if royalty > 0 else "",
         "vehicle_rent": f"{rent:,.2f}" if rent > 0 else "",
