@@ -66,7 +66,7 @@
 </head>
 <body>
 
-{% macro format_dt(dt) %}{% if dt %}{{ dt.strftime('%d-%b-%Y %H:%M') }}{% endif %}{% endmacro %}
+{% macro format_dt(dt) %}{% if dt %}{{ (dt | ist).strftime('%d-%b-%Y %H:%M') }}{% endif %}{% endmacro %}
 {% macro format_date(dt) %}{% if dt %}{{ dt.strftime('%d-%b-%Y') }}{% endif %}{% endmacro %}
 {# Billing-unit label for a product: MT (default) · Qtl · KG #}
 {% macro unit_label(product) %}{% set u = (product.unit if product and product.unit else 'MT')|upper %}{% if u == 'QUINTAL' %}Qtl{% elif u == 'KG' %}KG{% else %}MT{% endif %}{% endmacro %}

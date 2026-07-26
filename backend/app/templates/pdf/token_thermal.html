@@ -196,8 +196,8 @@
 <div class="row">
   <span class="row-label">DATE/TIME</span>
   <span class="row-value">
-    {%- if token.completed_at %}{{ token.completed_at.strftime('%d-%m-%Y %H:%M') }}
-    {%- elif token.first_weight_at %}{{ token.first_weight_at.strftime('%d-%m-%Y %H:%M') }}
+    {%- if token.completed_at %}{{ (token.completed_at | ist).strftime('%d-%m-%Y %H:%M') }}
+    {%- elif token.first_weight_at %}{{ (token.first_weight_at | ist).strftime('%d-%m-%Y %H:%M') }}
     {%- elif token.token_date %}{{ token.token_date.strftime('%d-%m-%Y') }}
     {%- else %}—{% endif -%}
   </span>
@@ -299,16 +299,16 @@
 {% if is_volume %}
 <div class="row">
   <span class="row-label">RECORDED</span>
-  <span class="row-value">{% if token.completed_at %}{{ token.completed_at.strftime('%d-%m-%Y %H:%M') }}{% else %}—{% endif %}</span>
+  <span class="row-value">{% if token.completed_at %}{{ (token.completed_at | ist).strftime('%d-%m-%Y %H:%M') }}{% else %}—{% endif %}</span>
 </div>
 {% else %}
 <div class="row">
   <span class="row-label">IN</span>
-  <span class="row-value">{% if token.first_weight_at %}{{ token.first_weight_at.strftime('%d-%m-%Y %H:%M') }}{% else %}—{% endif %}</span>
+  <span class="row-value">{% if token.first_weight_at %}{{ (token.first_weight_at | ist).strftime('%d-%m-%Y %H:%M') }}{% else %}—{% endif %}</span>
 </div>
 <div class="row">
   <span class="row-label">OUT</span>
-  <span class="row-value">{% if token.second_weight_at %}{{ token.second_weight_at.strftime('%d-%m-%Y %H:%M') }}{% else %}—{% endif %}</span>
+  <span class="row-value">{% if token.second_weight_at %}{{ (token.second_weight_at | ist).strftime('%d-%m-%Y %H:%M') }}{% else %}—{% endif %}</span>
 </div>
 {% endif %}
 <hr class="sep">
