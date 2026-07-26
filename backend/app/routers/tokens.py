@@ -383,14 +383,16 @@ async def _compute_royalty(db: AsyncSession, token: Token) -> Decimal | None:
     prod = (await db.execute(select(Product).where(Product.id == token.product_id))).scalar_one_or_none()
     if not prod:
         return None
+    # Operator's per-unit rate override wins; else the product master rate for the unit.
     if unit == "mt":
-        rate = prod.royalty_per_mt
+        rate = token.royalty_rate if token.royalty_rate is not None else prod.royalty_per_mt
         if rate is None:
             return None
         qty_mt = Decimal(str(token.net_weight or 0)) / Decimal("1000")
         return (Decimal(str(rate)) * qty_mt).quantize(Decimal("0.01"))
     # CUM basis
-    if prod.royalty_per_cum is None:
+    rate = token.royalty_rate if token.royalty_rate is not None else prod.royalty_per_cum
+    if rate is None:
         return None
     cum = token.royalty_cum
     if cum is None and token.weight_method == "volume" and token.volume_cft:
@@ -398,7 +400,7 @@ async def _compute_royalty(db: AsyncSession, token: Token) -> Decimal | None:
         token.royalty_cum = cum
     if cum is None:
         return None
-    return (Decimal(str(prod.royalty_per_cum)) * Decimal(str(cum))).quantize(Decimal("0.01"))
+    return (Decimal(str(rate)) * Decimal(str(cum))).quantize(Decimal("0.01"))
 
 
 async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
@@ -658,6 +660,7 @@ async def create_token(
         rent_rate_per_km_per_cum=payload.rent_rate_per_km_per_cum,  # operator override (else vehicle master)
         royalty_cum=payload.royalty_cum,      # CUM for royalty → royalty_amount computed at completion
         royalty_unit=payload.royalty_unit,    # 'mt' (× net weight) | 'cum' (× royalty_cum); NULL = no royalty
+        royalty_rate=payload.royalty_rate,    # operator ₹/unit override (else product master rate for the unit)
         remarks=payload.remarks,
         custom_fields=payload.custom_fields,
         created_by=current_user.id,
@@ -822,6 +825,7 @@ async def create_volume_token(
         rent_rate_per_km_per_cum=payload.rent_rate_per_km_per_cum,  # operator override (else vehicle master)
         royalty_cum=payload.royalty_cum,      # CUM for royalty (auto-derived from volume if omitted)
         royalty_unit=payload.royalty_unit,    # 'mt' | 'cum' — royalty basis (volume tokens → cum)
+        royalty_rate=payload.royalty_rate,    # operator ₹/unit override (else product master rate for the unit)
         remarks=payload.remarks,
         custom_fields=payload.custom_fields,
         created_by=current_user.id,
@@ -1095,7 +1099,8 @@ async def update_token(
     party_changed = "party_id" in data and data["party_id"] != token.party_id
     product_changed = "product_id" in data and data["product_id"] != token.product_id
     _BILLING_KEYS = {"party_id", "product_id", "rate", "net_weight", "volume_cft",
-                     "vehicle_rent", "payment_mode", "billing_unit", "royalty_cum", "royalty_unit"}
+                     "vehicle_rent", "payment_mode", "billing_unit", "royalty_cum",
+                     "royalty_unit", "royalty_rate"}
     billing_changed = any(k in data for k in _BILLING_KEYS)
 
     # Any invoice linked to this token (drives what edits are safe).
@@ -1128,7 +1133,7 @@ async def update_token(
         token.rate = None
     # Royalty basis/volume/material/weight changed → recompute the token's royalty
     # charge (0 when royalty isn't applied / the product has no matching rate).
-    if any(k in data for k in ("royalty_cum", "royalty_unit", "net_weight", "volume_cft")) or product_changed:
+    if any(k in data for k in ("royalty_cum", "royalty_unit", "royalty_rate", "net_weight", "volume_cft")) or product_changed:
         _r = await _compute_royalty(db, token)
         token.royalty_amount = _r if _r is not None else Decimal("0")
 
@@ -1167,7 +1172,7 @@ async def update_token(
                     inv.tax_type = "non_gst" if m == "cash" else "gst"
                 if "vehicle_rent" in data:
                     inv.vehicle_rent = token.vehicle_rent or Decimal("0")
-                if any(k in data for k in ("royalty_cum", "royalty_unit", "net_weight", "volume_cft")) or product_changed:
+                if any(k in data for k in ("royalty_cum", "royalty_unit", "royalty_rate", "net_weight", "volume_cft")) or product_changed:
                     inv.royalty_amount = token.royalty_amount or Decimal("0")
                 party = (await db.execute(select(PartyModel).where(PartyModel.id == inv.party_id))).scalar_one_or_none()
                 company, _ = await _get_company_and_fy(db)
@@ -1697,6 +1702,7 @@ class TokenPricingIn(BaseModel):
     vehicle_rent: Decimal | None = None    # explicit manual override of the auto rent
     royalty_cum: Decimal | None = None     # CUM volume for royalty → recompute royalty_amount (₹/CUM × CUM)
     royalty_unit: str | None = None        # 'mt' | 'cum' — royalty basis
+    royalty_rate: Decimal | None = None    # operator ₹/unit override (else product master rate for the unit)
     royalty_amount: Decimal | None = None  # explicit manual override of the auto royalty
     clear_royalty: bool = False            # remove royalty from the token + invoice
 
@@ -1784,19 +1790,22 @@ async def update_token_pricing(
         if _auto_rent is not None:
             token.vehicle_rent = _auto_rent
 
-    # Royalty: clear it, take an explicit override, or recompute ₹/CUM × CUM.
+    # Royalty: clear it, take an explicit override, or recompute rate × qty.
     if payload.clear_royalty:
         token.royalty_cum = None
         token.royalty_unit = None
+        token.royalty_rate = None
         token.royalty_amount = Decimal("0")
     else:
         if payload.royalty_unit is not None:
             token.royalty_unit = payload.royalty_unit
         if payload.royalty_cum is not None:
             token.royalty_cum = payload.royalty_cum
+        if payload.royalty_rate is not None:
+            token.royalty_rate = payload.royalty_rate
         if payload.royalty_amount is not None:
             token.royalty_amount = payload.royalty_amount
-        elif payload.royalty_cum is not None or payload.royalty_unit is not None:
+        elif payload.royalty_cum is not None or payload.royalty_unit is not None or payload.royalty_rate is not None:
             _auto_roy = await _compute_royalty(db, token)
             if _auto_roy is not None:
                 token.royalty_amount = _auto_roy
