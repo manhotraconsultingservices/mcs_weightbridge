@@ -280,16 +280,16 @@ DEFAULT_TEMPLATES = [
         "name": "Daily Gate Camera Report (Telegram)",
         "subject": None,
         "body": (
-            "🚛 <b>Gate Camera Report — {{ date }}</b>\n\n"
-            "<b>Today's traffic:</b>\n"
+            "🚛 <b>Daily Weighment Summary — {{ date }}</b>\n\n"
+            "{% if has_movement %}<b>Gate traffic:</b>\n"
             "• Entries: <b>{{ entries }}</b>\n"
             "• Exits: <b>{{ exits }}</b>\n"
             "• Currently inside: <b>{{ currently_inside }}</b>\n"
+            "• Avg dwell: <b>{{ avg_dwell }} min</b>\n{% endif %}"
             "• Total tonnage: <b>{{ tonnage_mt }} MT</b>\n"
-            "• Total revenue: <b>₹{{ revenue }}</b>\n"
-            "• Avg dwell: <b>{{ avg_dwell }} min</b>\n\n"
+            "• Total revenue: <b>₹{{ revenue }}</b>\n\n"
             "{% if trip_count > 0 %}<b>Trips ({{ trip_count }}):</b>\n{{ trip_list }}\n{% else %}No trips recorded today.\n{% endif %}"
-            "\n— {{ company_name }}"
+            "— {{ company_name }}"
         ),
     },
     # ── Device health (camera / scale watchdog) ───────────────────────────────
@@ -489,17 +489,17 @@ DEFAULT_TEMPLATES = [
     {
         "event_type": "anpr_daily_summary",
         "channel": "email",
-        "name": "Daily Gate Movement Report (Email)",
-        "subject": "Gate movement — {{ date }} — {{ company_name }}",
-        "body": """<h2 style="margin:0 0 4px;">Gate movement report — {{ date }}</h2>
+        "name": "Daily Weighment Summary (Email)",
+        "subject": "Daily summary — {{ date }} — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;">Daily weighment summary — {{ date }}</h2>
 <p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
 <table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;min-width:300px;">
-  <tr><td>Entries</td><td align="right">{{ entries }}</td></tr>
+  {% if has_movement %}<tr><td>Entries</td><td align="right">{{ entries }}</td></tr>
   <tr><td>Exits</td><td align="right">{{ exits }}</td></tr>
   <tr><td>Currently inside</td><td align="right">{{ currently_inside }}</td></tr>
+  <tr><td>Avg dwell</td><td align="right">{{ avg_dwell }} min</td></tr>{% endif %}
   <tr><td>Total tonnage</td><td align="right">{{ tonnage_mt }} MT</td></tr>
   <tr><td>Total revenue</td><td align="right">&#8377;{{ revenue }}</td></tr>
-  <tr><td>Avg dwell</td><td align="right">{{ avg_dwell }} min</td></tr>
 </table>
 <p style="margin-top:10px;color:#888;font-size:12px;">{{ trip_count }} trip(s) recorded today.</p>""",
     },
@@ -754,10 +754,12 @@ async def seed_default_templates(db: AsyncSession, company_id: uuid.UUID) -> Non
 # only inserts MISSING rows, so a changed body never propagates otherwise). Only the
 # listed (event_type, channel) pairs are force-updated, ONCE per tenant per version
 # — so a later admin customisation on the Notifications page survives future restarts.
-_TEMPLATE_REFRESH_VERSION = 2   # v2: token_completed telegram gained a Rate line
+_TEMPLATE_REFRESH_VERSION = 3   # v3: anpr_daily_summary is now movement-aware (no ANPR → clean weighment digest)
 _TEMPLATE_REFRESH_KEYS = {
     ("token_completed", "telegram"),
     ("invoice_finalized", "telegram"),
+    ("anpr_daily_summary", "telegram"),
+    ("anpr_daily_summary", "email"),
 }
 
 
