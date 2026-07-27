@@ -14,6 +14,7 @@ from app.routers import (
     tally, tally_connector, app_settings, license, compliance, cameras, inventory,
     product_stock, production, anpr, delivery_challans, royalty, portal, branches, gstr2b,
     anomalies, gate, custom_fields, agents, fuel, workforce, offline, monitor,
+    gate_count,
 )
 from app.middleware.license_guard import LicenseGuardMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -1154,6 +1155,7 @@ app.include_router(custom_fields.router)
 app.include_router(agents.router)
 app.include_router(offline.router)  # Offline edge sync — agent-authed masters mirror + intent replay
 app.include_router(monitor.router)  # Device health — scale/camera heartbeat + Telegram down-alerts
+app.include_router(gate_count.router)  # Autonomous gate vehicle counting (truck/car/bike) — opt-in module
 
 
 @app.get("/api/v1/health")

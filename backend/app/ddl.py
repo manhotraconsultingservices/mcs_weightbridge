@@ -1277,6 +1277,29 @@ def get_column_migrations() -> list[str]:
         """,
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_device_health_key ON device_health(company_id, device_key)",
 
+        # ── Autonomous gate vehicle counting (truck/car/motorcycle/bus) ───────
+        # The on-site camera agent runs a lightweight vehicle-detection model on
+        # the frames it already captures and POSTs one row per counted vehicle
+        # (with an optional snapshot). Direction = which physical camera fired.
+        # Purely additive: reconciles against the guard's gate passes; gated by
+        # the `vehicle_count` feature module (default OFF). See routers/gate_count.py.
+        """
+        CREATE TABLE IF NOT EXISTS gate_vehicle_events (
+            id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id    UUID REFERENCES companies(id),
+            position      VARCHAR(10) NOT NULL,        -- 'entry' | 'exit'
+            vehicle_class VARCHAR(20) NOT NULL,        -- truck | car | motorcycle | bus | ...
+            confidence    NUMERIC(5,3),
+            snapshot_path VARCHAR(300),                -- relative to /uploads
+            source        VARCHAR(30) NOT NULL DEFAULT 'edge_yolo',
+            camera_id     VARCHAR(20),
+            detected_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_gate_veh_company_detected ON gate_vehicle_events(company_id, detected_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_gate_veh_company_pos_detected ON gate_vehicle_events(company_id, position, detected_at DESC)",
+
         # ── Document-number uniqueness (offline-ops prerequisite) ─────────────
         # Until now NOTHING enforced these at the DB level: invoice numbers relied
         # on the row-locked NumberSequence, and token_no on a read-then-write
