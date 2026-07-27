@@ -48,6 +48,7 @@ DEFAULT_MODULES = {
     "fuel":          True,      # Fleet Fuel & Mileage / diesel-leakage detection
     "workforce":     True,      # Workers, attendance muster, payroll & advances
     "device_health": True,      # Scale/camera heartbeat dashboard + down-alerts
+    "vehicle_count": False,     # Autonomous gate vehicle counting (truck/car/bike) — opt-in
 }
 
 from fastapi import Request
