@@ -2,6 +2,21 @@
 
 > **IMPORTANT:** Update this file every time a new feature, page, endpoint, model, or behaviour change is added. Keep it the single source of truth.
 
+> **⚠ CLIENT AGENTS ARE LOCAL-ONLY — NOT IN GIT (since 2026-07-27).** The whole
+> **`backend/agents/`** folder (the on-prem client agents — scale, camera, tally
+> connector, watchdog, **vehicle counter**, the edge agent — plus the client
+> `SETUP-GUIDE.md`, the `DPD-*` runbooks, example configs, install `.ps1`s and the
+> built `.exe`s) is **`git rm --cached`'d + gitignored**, so it is **NOT on GitHub**
+> and CI never touches it. The files still exist on the **build machine only** and
+> are still referenced throughout this doc — so if a path under `backend/agents/`
+> "isn't in the repo," that's expected, look on the local disk. **When editing an
+> agent: change the local file, rebuild the `.exe` yourself, and hand-install on the
+> plant PC — a `git`/CI deploy will NOT ship agent changes.** (Server product =
+> `backend/app/` + `frontend/`, which never imports from `backend/agents/`, so the
+> untrack doesn't affect the deploy.) Reversible: delete the `backend/agents/` line
+> in `.gitignore` + `git add backend/agents`. Past git history still contains the
+> pre-2026-07-27 copies (no history rewrite was done).
+
 > **DEBUGGING PRINCIPLE — don't assume, find the root cause, then fix.** When
 > something breaks, never guess or ship a speculative fix. Prove the cause first
 > by (a) reading the relevant **code path** end-to-end, and/or (b) analysing
