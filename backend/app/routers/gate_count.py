@@ -132,6 +132,18 @@ async def ingest_vehicle_event(
         raise HTTPException(400, f"unknown vehicle_class '{vehicle_class}'")
 
     if settings.MULTI_TENANT and tenant_slug:
+        # Tenant-agnostic agent: ONE exe is deployed anywhere. Whether a tenant
+        # actually gets vehicle counting is controlled centrally by the platform
+        # admin's `vehicle_count` module toggle. The agent ingest is agent-key
+        # (no JWT), so the middleware module-gate never runs for it — enforce the
+        # module HERE so an installed agent on a non-subscribed tenant is inert.
+        from app.multitenancy.middleware import _get_tenant_modules
+        try:
+            _mods = await _get_tenant_modules(tenant_slug)
+        except Exception:
+            _mods = {}
+        if not _mods.get("vehicle_count", False):
+            raise HTTPException(403, "vehicle_count is not enabled for this tenant (paid add-on — enable it in the Platform console)")
         from app.database import get_tenant_session
         _cm = await get_tenant_session(tenant_slug)
         async with _cm as wdb:
