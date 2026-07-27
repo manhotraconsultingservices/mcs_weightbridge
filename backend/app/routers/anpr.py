@@ -1254,17 +1254,34 @@ async def _build_daily_summary_context(
     trips, total, rollup = await _fetch_trips(db, company_id, target_date, target_date, page=1, page_size=50)
     INR = lambda v: f"{float(v or 0):,.0f}"
 
+    # Whether real gate-camera movement exists for the window. When ANPR is
+    # enabled but no camera is actually detecting plates (every token entered
+    # manually / via the kiosk), entry/exit timestamps are all NULL — so the
+    # gate-traffic block is all zeros and the per-trip ↓entry/↑exit/dwell bits
+    # are meaningless. In that case render a clean daily-weighment summary
+    # instead of a self-contradictory "0 traffic but 42 trips" report.
+    has_movement = bool(rollup["entries"] or rollup["exits"])
+
     # Build a compact per-trip line for Telegram. Markdown is rendered as
-    # HTML by the Telegram channel sender so we keep one line per trip.
+    # HTML by the Telegram channel sender so we keep one line per trip. The
+    # ↓entry/↑exit/dwell bits are shown ONLY for trips that actually have
+    # camera-detected movement; a manually-entered token shows its weighment
+    # details (product · qty · bill) instead of empty gate columns.
     def fmt_trip(t: AnprTrip, idx: int) -> str:
-        ent = t.entry_time.strftime("%H:%M") if t.entry_time else "—"
-        ext = t.exit_time.strftime("%H:%M") if t.exit_time else "in"
-        dwell = f"{t.dwell_minutes}m" if t.dwell_minutes is not None else "open"
-        bits = [f"{idx}. <b>{t.vehicle_no}</b>", f"↓{ent}", f"↑{ext}", f"({dwell})"]
+        bits = [f"{idx}. <b>{t.vehicle_no}</b>"]
+        if t.entry_time or t.exit_time:
+            ent = t.entry_time.strftime("%H:%M") if t.entry_time else "—"
+            ext = t.exit_time.strftime("%H:%M") if t.exit_time else "in"
+            dwell = f"{t.dwell_minutes}m" if t.dwell_minutes is not None else "open"
+            bits += [f"↓{ent}", f"↑{ext}", f"({dwell})"]
         if t.token_no is not None:
             bits.append(f"#{t.token_no}")
         if t.gate_pass_no:
             bits.append(f"<code>{t.gate_pass_no}</code>")
+        if t.product_name:
+            bits.append(t.product_name)
+        if t.net_weight_mt is not None:
+            bits.append(f"{float(t.net_weight_mt):,.3f} MT")
         if t.invoice_no:
             bits.append(f"INV {t.invoice_no}")
         if t.grand_total:
@@ -1280,6 +1297,7 @@ async def _build_daily_summary_context(
     return {
         "company_name": company_name,
         "date": target_date.strftime("%d %b %Y"),
+        "has_movement": has_movement,
         "entries": rollup["entries"],
         "exits": rollup["exits"],
         "currently_inside": rollup["currently_inside"],
