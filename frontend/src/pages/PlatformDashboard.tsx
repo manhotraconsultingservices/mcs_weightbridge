@@ -207,6 +207,7 @@ function EditTenantDialog({ tenant, open, onClose, onSaved }: {
     { key: 'fuel',          label: 'Fuel & Mileage',      description: 'Diesel log, mileage vs benchmark, leakage detection' },
     { key: 'workforce',     label: 'Workforce & Payroll', description: 'Workers, attendance muster, wages/salary & advances' },
     { key: 'device_health', label: 'Device Health',       description: 'Scale & camera uptime dashboard + Telegram down-alerts' },
+    { key: 'vehicle_count', label: 'Gate Vehicle Count',  description: 'Autonomous camera vehicle counting (truck/car/bike) — reconcile vs gate passes. Paid add-on (needs on-site detection agent).' },
   ];
 
   if (!tenant) return null;

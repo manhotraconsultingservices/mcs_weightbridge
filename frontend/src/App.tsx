@@ -43,6 +43,7 @@ import VehiclesPage from '@/pages/VehiclesPage';
 import FuelMileagePage from '@/pages/FuelMileagePage';
 import WorkforcePage from '@/pages/WorkforcePage';
 import DeviceHealthPage from '@/pages/DeviceHealthPage';
+import VehicleCountPage from '@/pages/VehicleCountPage';
 import InvoicesPage from '@/pages/InvoicesPage';
 import QuotationsPage from '@/pages/QuotationsPage';
 import DeliveryChallansPage from '@/pages/DeliveryChallansPage';
@@ -262,6 +263,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/fuel" element={<FuelMileagePage />} />
             <Route path="/workforce" element={<WorkforcePage />} />
             <Route path="/device-health" element={<DeviceHealthPage />} />
+            <Route path="/vehicle-count" element={<VehicleCountPage />} />
             <Route path="/payments" element={<PaymentsPage />} />
             <Route path="/ledger" element={<LedgerPage />} />
             <Route path="/party-balances" element={<PartyBalancesPage />} />

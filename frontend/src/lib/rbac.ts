@@ -32,6 +32,7 @@ export const CATALOGUE_GROUPS: CatalogueGroup[] = [
       { path: '/weighbridge',  label: 'Weighbridge',    hint: 'Gate Register · Weigh Tickets · Movement Report' },
       { path: '/cameras-anpr', label: 'Cameras & ANPR', hint: 'Camera & Scale · Snapshots · ANPR · Plate Review' },
       { path: '/device-health', label: 'Device Health',  hint: 'Scale & camera uptime monitor + down-alerts' },
+      { path: '/vehicle-count', label: 'Gate Vehicle Count', hint: 'Autonomous truck/car/bike tally vs gate passes (paid add-on)' },
     ],
   },
   {
