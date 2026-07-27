@@ -38,7 +38,10 @@ router = APIRouter(prefix="/api/v1/vehicle-count", tags=["Gate Vehicle Count"])
 
 # Classes the edge model can emit reliably (COCO). A tipper/dumper reads as
 # 'truck'. Unknown classes are rejected so junk never lands in the tally.
-ALLOWED_CLASSES = {"truck", "car", "motorcycle", "bus", "bicycle", "auto"}
+# `person` is opt-in per site (agent `classes` config) and is kept SEPARATE from
+# the vehicle totals + the gate-pass reconciliation (see vehicle_counts).
+ALLOWED_CLASSES = {"truck", "car", "motorcycle", "bus", "bicycle", "auto", "person"}
+PERSON_CLASSES = {"person"}
 
 
 def _parse_dt(s: str | None) -> datetime | None:
@@ -203,15 +206,23 @@ async def vehicle_counts(
     """), {"cid": cid, "df": df, "dt": dt})).fetchall()
 
     by: dict[str, dict] = {}
-    tot_entries = tot_exits = 0
+    tot_entries = tot_exits = 0            # VEHICLES only (person excluded)
+    ppl_entries = ppl_exits = 0           # people, tracked separately
     for r in rows:
         b = by.setdefault(r.vehicle_class, {"vehicle_class": r.vehicle_class, "entries": 0, "exits": 0})
+        is_person = r.vehicle_class in PERSON_CLASSES
         if r.position == "entry":
             b["entries"] += r.n
-            tot_entries += r.n
+            if is_person:
+                ppl_entries += r.n
+            else:
+                tot_entries += r.n
         elif r.position == "exit":
             b["exits"] += r.n
-            tot_exits += r.n
+            if is_person:
+                ppl_exits += r.n
+            else:
+                tot_exits += r.n
 
     gp = int((await db.execute(text("""
         SELECT COUNT(*) FROM gate_passes
@@ -223,10 +234,11 @@ async def vehicle_counts(
         "from_date": df.isoformat(),
         "to_date": dt.isoformat(),
         "by_class": by_class,
-        "totals": {"entries": tot_entries, "exits": tot_exits},
+        "totals": {"entries": tot_entries, "exits": tot_exits},   # vehicles only
+        "people": {"entries": ppl_entries, "exits": ppl_exits},   # separate; 0 unless `person` is counted
         "gate_passes_created": gp,
         "reconciliation": {
-            "camera_entries": tot_entries,
+            "camera_entries": tot_entries,                        # vehicles vs gate passes
             "gate_passes": gp,
             "variance": tot_entries - gp,
         },

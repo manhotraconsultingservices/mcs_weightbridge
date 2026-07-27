@@ -84,9 +84,11 @@ log = logging.getLogger("vehcount")
 
 PRODUCT_DOMAIN = "weighbridgesetu.com"
 
-# COCO class id → our vehicle class name. A tipper/dumper reads as 'truck';
-# auto-rickshaw/tractor are not COCO classes (out of scope for v1).
-COCO_VEHICLES = {1: "bicycle", 2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
+# COCO class id → our class name. The model detects ALL of these; which ones are
+# actually counted is chosen per-site via the `classes` config — so toggling e.g.
+# `person` on/off needs NO rebuild, just an edit to vehicle_counter.json. A
+# tipper/dumper reads as 'truck'; auto-rickshaw/tractor aren't COCO classes.
+COCO_CLASSES = {0: "person", 1: "bicycle", 2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
 
 DEFAULT_CONFIG: dict = {
     "cloud_url": f"https://{PRODUCT_DOMAIN}",
@@ -104,7 +106,11 @@ DEFAULT_CONFIG: dict = {
     "cooldown_sec": 8,             # min gap before the SAME class can count again on a camera
     "min_absent_sec": 3,          # a vehicle must leave frame this long before a new one counts
     "model_path": "yolov8n.onnx",  # external override; falls back to the bundled model
-    "classes": ["truck", "car", "motorcycle", "bus"],  # which to count (subset of COCO_VEHICLES)
+    # Which classes to count. Options: person · bicycle · car · motorcycle · bus · truck.
+    # Add "person" to also count people (no rebuild needed). NOTE: counts are
+    # presence-based (one count per appearance after the frame clears), so "person"
+    # is a people-*activity* signal, not an exact headcount of a crowd.
+    "classes": ["truck", "car", "motorcycle", "bus"],
     "send_snapshot": True,         # attach the frame to each event
     "status_port": 9011,           # local diagnostics UI (≠ scale 9002 / camera 9003 / tally 9010 / watchdog 9020)
     "probe_timeout_sec": 6,
@@ -256,7 +262,7 @@ class Detector:
             kept = nms(xyxy, confs, self.iou)
             for idx in kept:
                 cid = int(class_ids[idx])
-                name = COCO_VEHICLES.get(cid)
+                name = COCO_CLASSES.get(cid)
                 if name and name in self.wanted:
                     results[name] = max(results.get(name, 0.0), float(confs[idx]))
         return results

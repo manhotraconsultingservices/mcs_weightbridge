@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Car, Truck, Bike, Bus, DoorOpen, LogOut, ClipboardCheck, AlertTriangle,
-  RefreshCw, Camera as CameraIcon, Lock,
+  RefreshCw, Camera as CameraIcon, Lock, User,
 } from 'lucide-react';
 import api from '@/services/api';
 import { moduleEnabled } from '@/hooks/useAuth';
@@ -23,6 +23,7 @@ interface Counts {
   from_date: string; to_date: string;
   by_class: ClassRow[];
   totals: { entries: number; exits: number };
+  people?: { entries: number; exits: number };
   gate_passes_created: number;
   reconciliation: { camera_entries: number; gate_passes: number; variance: number };
 }
@@ -33,10 +34,10 @@ interface EventRow {
 }
 
 const CLASS_LABEL: Record<string, string> = {
-  truck: 'Truck', car: 'Car', motorcycle: 'Motorcycle', bus: 'Bus', bicycle: 'Bicycle', auto: 'Auto',
+  truck: 'Truck', car: 'Car', motorcycle: 'Motorcycle', bus: 'Bus', bicycle: 'Bicycle', auto: 'Auto', person: 'Person',
 };
 const classIcon = (c: string) =>
-  c === 'truck' ? Truck : (c === 'motorcycle' || c === 'bicycle') ? Bike : c === 'bus' ? Bus : Car;
+  c === 'person' ? User : c === 'truck' ? Truck : (c === 'motorcycle' || c === 'bicycle') ? Bike : c === 'bus' ? Bus : Car;
 const clsLabel = (c: string) => CLASS_LABEL[c] || (c ? c[0].toUpperCase() + c.slice(1) : c);
 
 function istDateTime(iso: string | null): string {
@@ -142,7 +143,7 @@ export default function VehicleCountPage() {
     },
     {
       key: 'vehicle_class', label: 'Vehicle', type: 'enum',
-      enumOptions: ['truck', 'car', 'motorcycle', 'bus', 'bicycle', 'auto'],
+      enumOptions: ['truck', 'car', 'motorcycle', 'bus', 'bicycle', 'auto', 'person'],
       accessor: r => r.vehicle_class,
       format: v => {
         const I = classIcon(String(v));
@@ -220,6 +221,16 @@ export default function VehicleCountPage() {
             : variance < 0
             ? <span className="text-sky-700"><b>{Math.abs(variance)}</b> more pass(es) than camera detections</span>
             : <span className="text-emerald-700">fully reconciled</span>}
+        </div>
+      )}
+
+      {/* People (only when the site counts `person`; kept out of the vehicle totals + reconciliation) */}
+      {counts?.people && (counts.people.entries + counts.people.exits) > 0 && (
+        <div className="rounded-lg border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-sm flex items-center gap-2">
+          <User className="h-4 w-4 text-violet-600" />
+          People detected: <b className="text-emerald-600">IN {counts.people.entries}</b>
+          <b className="text-sky-600">OUT {counts.people.exits}</b>
+          <span className="text-muted-foreground">· a people-activity signal (not a crowd headcount); excluded from vehicle totals + gate-pass reconciliation.</span>
         </div>
       )}
 

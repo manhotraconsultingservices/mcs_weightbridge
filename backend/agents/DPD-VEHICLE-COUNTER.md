@@ -116,8 +116,13 @@ agent is inert).
 | `min_confidence` | 0.45 | Raise to cut false positives; lower to catch more. |
 | `cooldown_sec` | 8 | Min gap before the same class re-counts on a camera. |
 | `min_absent_sec` | 3 | How long a vehicle must leave frame before the next is "new". |
-| `classes` | truck,car,motorcycle,bus | Subset to count. |
+| `classes` | truck,car,motorcycle,bus | Which classes to count. Options: `person` · `bicycle` · `car` · `motorcycle` · `bus` · `truck`. **Add `"person"` to also count people — no rebuild needed, just edit this list + restart the agent.** |
 | `send_snapshot` | true | Attach the frame to each event (for the report thumbnails). |
+
+> **Counting people:** add `"person"` to `classes`. People are kept **separate** from the
+> vehicle totals and the gate-pass reconciliation (they show as a "People detected IN/OUT"
+> line in the report). Note: counts are **presence-based** — one count per appearance after
+> the frame clears — so `person` is a people-*activity* signal, not an exact crowd headcount.
 
 ## Notes / limits
 
