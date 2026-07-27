@@ -1,8 +1,0 @@
-# Gate Vehicle Counter agent — runtime deps.
-# For the frozen EXE these get bundled at build time (see vehicle_counter_agent.spec);
-# for source/dev mode: pip install -r vehicle_counter_requirements.txt
-requests>=2.31
-certifi
-numpy>=1.24
-Pillow>=10.0
-onnxruntime>=1.16

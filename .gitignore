@@ -204,3 +204,7 @@ backend/agents/build/
 # ML model artifacts (regenerable via `yolo export`; bundled into the agent exe at build time)
 *.onnx
 *.pt
+
+# Client-side on-prem agents — kept LOCAL ONLY (not pushed to GitHub) per request 2026-07-27.
+# Files remain on this machine; reversible (delete this line + `git add backend/agents`).
+backend/agents/

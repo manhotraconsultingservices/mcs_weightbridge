@@ -1022,6 +1022,14 @@ SUPER_ADMIN_SECRET=change-this-to-a-strong-secret
 
 ## Changelog
 
+> **NOTE (2026-07-27):** the client-side on-prem **agents live under `backend/agents/` and are
+> now LOCAL-ONLY — `git rm --cached`'d + gitignored, so they are NOT on GitHub** (scale, camera,
+> tally connector, watchdog, vehicle counter, the edge agent, the client SETUP-GUIDE + DPD docs +
+> the built `.exe`s). They still exist on the build machine and are referenced throughout this doc,
+> but `git`/CI no longer track them. Reversible: remove the `backend/agents/` line from `.gitignore`
+> and `git add backend/agents`. The server product (`backend/app/` + `frontend/`) is unaffected —
+> it never imports from `backend/agents/`.
+
 | Date | Feature |
 |---|---|
 | 2026-07-27 | **Gate vehicle counting — optional human/person detection, JSON-toggled per site (`origin/main`, live).** The bundled YOLOv8n already detects `person` (COCO id 0), but the agent filtered to vehicles only via a hardcoded map — so counting people needed a rebuild. Made it **config-controlled**: the agent's class map is now `COCO_CLASSES = {0:person,1:bicycle,2:car,3:motorcycle,5:bus,7:truck}` and `classes` in `vehicle_counter.json` selects which to count — **add `"person"` to count people, no rebuild** (one-time exe rebuild ships the person-aware map; toggling is JSON thereafter). Backend: `ALLOWED_CLASSES` gained `person`; `/vehicle-count/counts` keeps people **separate** — `totals` + `reconciliation.camera_entries` stay **vehicles-only** (so counting people never skews "Vehicles IN" or the gate-pass reconciliation) and a new `people:{entries,exits}` field carries the person tally. Frontend: `person` label + User icon + a conditional **"People detected IN/OUT"** banner (shown only when >0) + `person` in the events filter. Default `classes` stays vehicles-only → existing sites unchanged. Caveat (documented): counts are **presence-based** (one per appearance after the frame clears), so `person` is a people-*activity* signal, not a crowd headcount. Verified: agent py_compile + `COCO_CLASSES` has person; backend import + real-Postgres counts test (2 truck+1 car+2 person in, 1 person out → vehicles_in=3, people_in=2, people_out=1, reconciliation=3 vehicles-only); `tsc` 0; exe rebuilt (74 MB, boots) + copied to the client bundle. |
