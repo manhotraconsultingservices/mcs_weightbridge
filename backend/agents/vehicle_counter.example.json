@@ -1,10 +1,11 @@
 {
+  "_comment": "ONE universal, tenant-agnostic agent. Fill in THIS site's tenant_slug + agent_key (same key as camera_config.json) + the gate camera URLs. Whether counting is actually accepted is controlled centrally by the platform admin's `vehicle_count` module toggle — if it's OFF, the cloud returns 403 and nothing is stored. Run `vehicle_counter_agent --setup` to generate this interactively.",
   "cloud_url": "https://weighbridgesetu.com",
-  "tenant_slug": "sss-stone-crusher",
-  "agent_key": "PASTE-THE-SAME-AGENT-KEY-AS-camera_config.json",
+  "tenant_slug": "",
+  "agent_key": "",
   "cameras": {
-    "entry": { "url": "http://192.168.31.34/onvifsnapshot/media_service/snapshot?channel=1&subtype=0", "username": "admin", "password": "" },
-    "exit":  { "url": "http://192.168.31.151/onvifsnapshot/media_service/snapshot?channel=1&subtype=0", "username": "admin", "password": "" }
+    "entry": { "url": "http://ENTRY-CAMERA-IP/cgi-bin/snapshot.cgi", "username": "admin", "password": "" },
+    "exit":  { "url": "http://EXIT-CAMERA-IP/cgi-bin/snapshot.cgi",  "username": "admin", "password": "" }
   },
   "capture_interval_sec": 1.5,
   "min_confidence": 0.45,
