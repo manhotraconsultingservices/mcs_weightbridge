@@ -280,10 +280,12 @@ async def vehicle_events(
 #  Retention — called once/day from the digest loop (wired in a later phase)
 # ════════════════════════════════════════════════════════════════════════════
 
-async def purge_old_vehicle_events(factory, label: str = "default", retain_days: int = 30) -> None:
-    """Delete event rows (and best-effort their snapshot day-dirs) older than
-    `retain_days`. The permanent tally lives in the aggregated report; short local
-    retention keeps snapshots off the VPS disk. Guarded — never raises."""
+async def purge_old_vehicle_events(factory, label: str = "default", retain_days: int = 30,
+                                   tenant_slug: str | None = None) -> None:
+    """Delete event rows AND their snapshot day-dirs older than `retain_days`. The
+    permanent tally lives in the aggregated report; short local retention keeps
+    snapshots off the VPS disk. Fully guarded — never raises."""
+    # 1) DB rows
     try:
         async with factory() as db:
             await db.execute(
@@ -292,4 +294,23 @@ async def purge_old_vehicle_events(factory, label: str = "default", retain_days:
             )
             await db.commit()
     except Exception as e:  # pragma: no cover - best effort
-        log.warning("purge_old_vehicle_events [%s] failed: %s", label, e)
+        log.warning("purge_old_vehicle_events rows [%s] failed: %s", label, e)
+    # 2) snapshot day-dirs (uploads/gate/vehicle/[<slug>/]<YYYYMMDD>)
+    try:
+        import datetime as _dt, shutil
+        from datetime import timezone as _tz
+        slug = tenant_slug or (label if label and label != "default" else None)
+        veh_base = os.path.join(_uploads_base(), "gate", "vehicle")
+        root = os.path.join(veh_base, slug) if slug else veh_base
+        if os.path.isdir(root):
+            cutoff = _dt.datetime.now(_tz.utc).date() - _dt.timedelta(days=retain_days)
+            for name in os.listdir(root):
+                if len(name) == 8 and name.isdigit():
+                    try:
+                        d = _dt.datetime.strptime(name, "%Y%m%d").date()
+                    except ValueError:
+                        continue
+                    if d < cutoff:
+                        shutil.rmtree(os.path.join(root, name), ignore_errors=True)
+    except Exception as e:  # pragma: no cover - best effort
+        log.warning("purge_old_vehicle_events files [%s] failed: %s", label, e)
