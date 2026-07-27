@@ -825,16 +825,20 @@ async def _owner_digest_loop():
             _today = _dt.datetime.now().date()
             if _last_tally_purge_date != _today:
                 _last_tally_purge_date = _today
+                from app.routers.gate_count import purge_old_vehicle_events as _purge_veh
                 if _gs().MULTI_TENANT:
                     from app.multitenancy.registry import tenant_registry as _tr
                     for _t in await _tr.list_active_tenants():
                         try:
-                            await _purge_old_tally_jobs(await _tr.get_session_factory(_t.slug), _t.slug)
+                            _f = await _tr.get_session_factory(_t.slug)
+                            await _purge_old_tally_jobs(_f, _t.slug)
+                            await _purge_veh(_f, _t.slug, tenant_slug=_t.slug)
                         except Exception:
                             pass
                 else:
                     from app.database import async_session
                     await _purge_old_tally_jobs(async_session, "default")
+                    await _purge_veh(async_session, "default")
         except asyncio.CancelledError:
             raise
         except Exception as exc:
