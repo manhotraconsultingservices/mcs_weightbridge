@@ -200,3 +200,7 @@ id_rsa.*
 
 # Agent build scratch (PyInstaller work dir; dist/ already covered above)
 backend/agents/build/
+
+# ML model artifacts (regenerable via `yolo export`; bundled into the agent exe at build time)
+*.onnx
+*.pt
