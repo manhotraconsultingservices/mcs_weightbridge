@@ -46,11 +46,17 @@ yolo export model=yolov8n.pt format=onnx imgsz=640
 pyinstaller --noconfirm vehicle_counter_agent.spec
 ```
 
-Output: **`dist/vehicle_counter_agent.exe`** — self-contained (~150–250 MB; onnxruntime
-+ the model are bundled inside). This is the file you ship to any client.
+Output: **`dist/vehicle_counter_agent.exe`** — self-contained (~74 MB; onnxruntime +
+the `yolov8n.onnx` model are bundled inside). This is the ONLY file you ship to a client.
 
 > The model is bundled INTO the exe, but an external `yolov8n.onnx` placed next to
 > the exe at runtime still wins — so you can swap/upgrade the model without a rebuild.
+
+The exe is **tenant-agnostic** — nothing is baked in. The same binary works for every
+client; `tenant_slug` + `agent_key` come from `vehicle_counter.json` at runtime, and
+whether counting is actually accepted is controlled centrally by the platform admin's
+**`vehicle_count` feature-module toggle** (module OFF → the cloud returns 403 and the
+agent is inert).
 
 ---
 
