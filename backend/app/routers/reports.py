@@ -12,7 +12,7 @@ from typing import Optional
 
 logger = logging.getLogger("reports")
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1411,11 +1411,17 @@ async def get_day_book_opening(
 @router.put("/day-book-opening")
 async def put_day_book_opening(
     payload: dict,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin", "accountant")),
 ):
     """Set the opening-balance base (a date + Cash/Bank/CC amounts) that the Day
-    Book rolls forward. Admin/accountant only."""
+    Book rolls forward. Admin/accountant only.
+
+    FRAUD CONTROL: every change is written to the central Audit Trail — WHO changed
+    it, WHEN (timestamp), from which IP, and the OLD → NEW values (so tampering with
+    the opening cash/bank is traceable). View it in Accounts → Audit Trail
+    (entity type = day_book_opening)."""
     def _num(v):
         try: return float(v) if v not in (None, "") else 0.0
         except (TypeError, ValueError): return 0.0
@@ -1426,11 +1432,33 @@ async def put_day_book_opening(
     clean = {"as_of_date": as_of or None, "cash": _num(payload.get("cash")),
              "bank": _num(payload.get("bank")), "cc": _num(payload.get("cc")),
              "note": str(payload.get("note") or "")[:500]}
+
+    # Capture the PREVIOUS value for the audit trail (before → after).
+    old_row = (await db.execute(
+        text("SELECT value FROM app_settings WHERE key=:k"),
+        {"k": _DAY_BOOK_OPENING_KEY})).fetchone()
+    old_val = None
+    if old_row and old_row[0]:
+        try:
+            old_val = json.loads(old_row[0]) if isinstance(old_row[0], str) else old_row[0]
+        except Exception:
+            old_val = None
+
     await db.execute(
         text("""INSERT INTO app_settings (key, value, updated_at)
                 VALUES (:k, :v, NOW())
                 ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()"""),
         {"k": _DAY_BOOK_OPENING_KEY, "v": json.dumps(clean)})
+
+    # Audit log: who set/changed the opening balance, when, from where, old → new.
+    from app.routers.audit import log_action
+    await log_action(
+        db, current_user.company_id, current_user.id, "update", "day_book_opening",
+        entity_id=None,
+        details={"old": old_val, "new": clean,
+                 "by": getattr(current_user, "username", None) or getattr(current_user, "full_name", None)},
+        ip_address=(request.client.host if request and request.client else None),
+    )
     await db.commit()
     return {"ok": True, **clean}
 
