@@ -620,6 +620,40 @@ async def update_expense_categories(
     return cleaned
 
 
+@router.get("/sanity-limits")
+async def get_sanity_limits_ep(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Financial sanity band (blocks fat-finger / impossible invoices at finalise)."""
+    from app.services.sanity import get_sanity_limits
+    return await get_sanity_limits(db)
+
+
+@router.put("/sanity-limits")
+async def put_sanity_limits_ep(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Adjust the sanity band (admin). Unknown keys ignored; values must be positive."""
+    from app.services.sanity import DEFAULT_SANITY_LIMITS, SANITY_KEY
+    clean = dict(DEFAULT_SANITY_LIMITS)
+    if "enabled" in payload:
+        clean["enabled"] = bool(payload["enabled"])
+    for k in ("max_qty_mt", "max_rate_per_unit", "max_line_amount"):
+        if k in payload and payload[k] is not None:
+            try:
+                v = float(payload[k])
+                if v <= 0:
+                    raise ValueError
+                clean[k] = v
+            except (TypeError, ValueError):
+                raise HTTPException(400, f"{k} must be a positive number")
+    await _upsert(db, SANITY_KEY, json.dumps(clean))
+    return clean
+
+
 @router.delete("/wallpaper")
 async def delete_wallpaper(
     db: AsyncSession = Depends(get_db),
