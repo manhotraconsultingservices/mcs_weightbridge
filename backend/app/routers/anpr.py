@@ -17,10 +17,12 @@ X-ANPR-Secret header (for vendor webhooks, since cameras can't carry JWTs).
 from __future__ import annotations
 
 import base64
+import html
 import json
 import logging
 import os
 import uuid
+from markupsafe import Markup
 from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -1268,7 +1270,10 @@ async def _build_daily_summary_context(
     # camera-detected movement; a manually-entered token shows its weighment
     # details (product · qty · bill) instead of empty gate columns.
     def fmt_trip(t: AnprTrip, idx: int) -> str:
-        bits = [f"{idx}. <b>{t.vehicle_no}</b>"]
+        # Escape the free-text data (plate, product) but keep the structural
+        # <b>/<code> tags — the whole string is returned as Markup (safe) so the
+        # notification renderer's autoescape doesn't turn the tags into &lt;b&gt;.
+        bits = [f"{idx}. <b>{html.escape(t.vehicle_no or '')}</b>"]
         if t.entry_time or t.exit_time:
             ent = t.entry_time.strftime("%H:%M") if t.entry_time else "—"
             ext = t.exit_time.strftime("%H:%M") if t.exit_time else "in"
@@ -1277,9 +1282,9 @@ async def _build_daily_summary_context(
         if t.token_no is not None:
             bits.append(f"#{t.token_no}")
         if t.gate_pass_no:
-            bits.append(f"<code>{t.gate_pass_no}</code>")
+            bits.append(f"<code>{html.escape(str(t.gate_pass_no))}</code>")
         if t.product_name:
-            bits.append(t.product_name)
+            bits.append(html.escape(t.product_name))
         if t.net_weight_mt is not None:
             bits.append(f"{float(t.net_weight_mt):,.3f} MT")
         if t.invoice_no:
@@ -1305,7 +1310,10 @@ async def _build_daily_summary_context(
         "tonnage_mt": f"{float(rollup['total_tonnage_mt']):,.2f}",
         "revenue": INR(rollup["total_revenue"]),
         "avg_dwell": int(rollup["avg_dwell_minutes"]),
-        "trip_list": trip_list,
+        # Markup → the renderer's HTML autoescape leaves our intentional
+        # <b>/<code> tags intact (data inside was already html.escape'd above),
+        # so Telegram renders bold/monospace instead of showing raw tags.
+        "trip_list": Markup(trip_list),
     }
 
 
