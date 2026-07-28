@@ -1006,6 +1006,42 @@ async def _sweep_party_deposit(
     return out
 
 
+async def _supersede_prior_revisions(db: AsyncSession, inv: Invoice, current_user) -> None:
+    """A revision REPLACES its predecessor — void the prior finalised version(s)
+    of the same invoice so revenue / receivables / GSTR-1 aren't double-counted.
+
+    Sets each prior version's status to **'superseded'**. Every financial query
+    filters ``status='final'``, so a superseded row drops out of the party
+    balance, sales register, P&L and GST reports automatically — no query
+    changes needed. Its payments are released back to the party's advance pool
+    (deleted ``InvoicePayment`` links + zeroed paid/due), so the caller's
+    ``_apply_party_advances`` re-applies them to this revision. The append-only
+    stock ledger is left untouched: the original posted the single physical
+    movement once (revisions never re-post at finalise), so it stays correct.
+    """
+    from sqlalchemy import or_ as _or, delete as _del
+    from app.models.payment import InvoicePayment as _IP
+
+    root_id = inv.original_invoice_id or inv.id
+    priors = (await db.execute(
+        select(Invoice).where(
+            _or(Invoice.original_invoice_id == root_id, Invoice.id == root_id),
+            Invoice.id != inv.id,
+            Invoice.status == "final",
+        )
+    )).scalars().all()
+    for prior in priors:
+        await db.execute(_del(_IP).where(_IP.invoice_id == prior.id))
+        prior.amount_paid = Decimal("0")
+        prior.amount_due = Decimal("0")
+        prior.payment_status = "unpaid"
+        prior.status = "superseded"
+    if priors:
+        import logging
+        logging.getLogger(__name__).info(
+            "Revision %s superseded %d prior version(s)", inv.invoice_no, len(priors))
+
+
 @router.post("/{invoice_id}/apply-advance", response_model=InvoiceResponse)
 async def apply_advance(
     invoice_id: uuid.UUID,
@@ -1176,10 +1212,16 @@ async def finalise_invoice(
     if inv.invoice_type in ("sale", "purchase"):
         await _try_generate_irn(db, inv, co)
 
-    # ── If this is a revision, compute diff + update revision record ──────────
+    # ── If this is a revision, compute diff + SUPERSEDE the prior version(s) ──
     is_revision = inv.revision_no and inv.revision_no > 1 and inv.original_invoice_id
     if is_revision:
         await _finalize_revision_diff(db, inv)
+        # A revision REPLACES its predecessor. Void the prior finalised version(s)
+        # in the chain so revenue / receivables / GSTR aren't double-counted (they
+        # all filter status='final'; 'superseded' drops out automatically). Runs
+        # BEFORE advance-apply so any payment freed from the old version can
+        # re-apply to this revision.
+        await _supersede_prior_revisions(db, inv, current_user)
 
     # Finalising creates a receivable/payable (or a note adjustment) → recompute
     # the party's stored balance from source. Covers sale/purchase + credit/debit
@@ -2247,17 +2289,23 @@ async def write_off_invoice(
         raise HTTPException(400, "Write-off applies only to sales invoices (uncollectable receivables). A purchase invoice is a payable and cannot be written off.")
     if inv.status != "final":
         raise HTTPException(400, f"Cannot write off invoice in status '{inv.status}'. Only finalised invoices can be written off.")
-    if inv.payment_status == "paid" and Decimal(str(inv.amount_due or 0)) == 0:
-        raise HTTPException(400, "Invoice is already fully paid; nothing to write off.")
     if not payload.reason or not payload.reason.strip():
         raise HTTPException(400, "Reason is required for write-off.")
 
-    balance = Decimal(str(inv.amount_due or 0))
+    # TRUE remaining = grand_total − amount_paid − already-written-off. Recomputed
+    # from source (never trust a possibly-stale amount_due), so a write-off can
+    # NEVER push amount_paid + write_off_amount past grand_total (the invariant
+    # that a fully-paid invoice can't also be written off — H4).
+    balance = (Decimal(str(inv.grand_total or 0))
+               - Decimal(str(inv.amount_paid or 0))
+               - Decimal(str(inv.write_off_amount or 0)))
+    if balance <= Decimal("0.01"):
+        raise HTTPException(400, "Nothing left to write off — the invoice is already fully paid or written off.")
     requested = Decimal(str(payload.amount)) if payload.amount is not None else balance
     if requested <= 0:
         raise HTTPException(400, "Write-off amount must be positive.")
     if requested > balance:
-        raise HTTPException(400, f"Write-off amount ({requested}) exceeds current balance ({balance}).")
+        raise HTTPException(400, f"Write-off amount ({requested}) exceeds the ₹{balance} still outstanding on this invoice.")
 
     # ── Maker-checker: park for a second admin's approval when the toggle is ON ──
     if not _bypass_approval:
@@ -2399,8 +2447,11 @@ async def write_off_bulk(
         if inv.invoice_type != "sale":
             skipped.append(f"{inv.invoice_no or inv_id}: not a sales invoice")
             continue
-        balance = Decimal(str(inv.amount_due or 0))
-        if balance <= 0:
+        # TRUE remaining (never trust amount_due) — a paid invoice can't be written off (H4).
+        balance = (Decimal(str(inv.grand_total or 0))
+                   - Decimal(str(inv.amount_paid or 0))
+                   - Decimal(str(inv.write_off_amount or 0)))
+        if balance <= Decimal("0.01"):
             skipped.append(f"{inv.invoice_no or inv_id}: already settled")
             continue
 

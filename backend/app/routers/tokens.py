@@ -1493,7 +1493,7 @@ async def print_token(
     vrent = float(token.vehicle_rent) if token.vehicle_rent else 0.0
     inv_row = (await db.execute(
         select(Invoice.id, Invoice.grand_total, Invoice.royalty_amount, Invoice.vehicle_rent)
-        .where(Invoice.token_id == token_id, Invoice.status != "cancelled")
+        .where(Invoice.token_id == token_id, Invoice.status.not_in(["cancelled", "superseded"]))
         .order_by(Invoice.created_at.desc()).limit(1)
     )).first()
     if inv_row:

@@ -1360,14 +1360,17 @@ def get_column_migrations() -> list[str]:
         # COALESCE because Postgres treats NULLs as distinct in a unique index,
         # so the very common default branch (branch_id IS NULL) would otherwise
         # not be constrained at all.
+        # Retire the older index (it did not exclude voided rows, so a superseded
+        # revision original sharing a number with its /Rv child would block it).
+        "DROP INDEX IF EXISTS ux_invoices_no_per_branch",
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_invoices_no_per_branch
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_invoices_no_active
             ON invoices (
                 company_id,
                 COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
                 invoice_no
             )
-            WHERE invoice_no IS NOT NULL
+            WHERE invoice_no IS NOT NULL AND status NOT IN ('cancelled', 'superseded')
         """,
         """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_tokens_no_per_day
