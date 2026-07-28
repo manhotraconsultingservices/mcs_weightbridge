@@ -917,6 +917,95 @@ async def _apply_party_advances(db: AsyncSession, inv: Invoice, respect_setting:
     return applied_total
 
 
+async def _sweep_party_deposit(
+    db: AsyncSession,
+    party_id,
+    invoice_type: str,
+    background_tasks,
+    current_user,
+) -> dict:
+    """A prepaid DEPOSIT immediately clears the party's OPEN bills oldest-first —
+    FINALISING any draft bills as it goes.
+
+    Invoked right after a deposit is recorded: create_receipt (customer →
+    'sale') and create_voucher (supplier → 'purchase', non-expense). Gated by the
+    `advance.auto_apply` app-setting (default ON). For each open bill oldest-first,
+    while the party still holds an unallocated advance from the deposit:
+      • draft → **finalise it** (assigns a number + all normal finalise side
+        effects — stock, IRN, Tally, notification); finalise then auto-consumes
+        the advance against the new invoice (FIFO).
+      • final with a balance → apply the advance directly (per-invoice FIFO).
+    Stops as soon as the deposit is exhausted, so a bill the deposit can't reach
+    is left untouched (drafts are only finalised when the deposit pays for them).
+    NEVER raises — a sweep failure must not undo the already-recorded deposit.
+    Returns a summary {finalised: [...], cleared: [...], applied: ₹}.
+    """
+    from app.services.balances import party_advance_remaining, recompute_party_balance
+    out: dict = {"finalised": [], "cleared": [], "applied": Decimal("0")}
+    if not party_id or invoice_type not in ("sale", "purchase"):
+        return out
+    if not await _advance_auto_apply_enabled(db):
+        return out
+    adv_key = "receipt_adv" if invoice_type == "sale" else "voucher_adv"
+
+    # Candidate open bills (drafts + finals), oldest first.
+    inv_ids = (await db.execute(
+        select(Invoice.id)
+        .where(
+            Invoice.party_id == party_id,
+            Invoice.invoice_type == invoice_type,
+            Invoice.status.in_(("draft", "final")),
+        )
+        .order_by(Invoice.invoice_date.asc(), Invoice.created_at.asc())
+    )).scalars().all()
+
+    for inv_id in inv_ids:
+        adv = (await party_advance_remaining(db, party_id)).get(adv_key, Decimal("0"))
+        if adv <= Decimal("0.01"):
+            break  # deposit fully used up
+        try:
+            inv = await _load_invoice(db, inv_id)
+            if inv.status == "draft":
+                if not inv.items:
+                    continue  # can't finalise an empty draft
+                draft_out = (inv.grand_total or Decimal("0")) - (inv.amount_paid or Decimal("0"))
+                if draft_out <= Decimal("0.01"):
+                    continue  # zero-value draft — never finalise it on a deposit
+                if adv < draft_out:
+                    continue  # deposit can't FULLY clear this draft → leave it a draft
+                before_paid = Decimal(str(inv.amount_paid or 0))
+                await finalise_invoice(inv_id, background_tasks, db, current_user)
+                fresh = await _load_invoice(db, inv_id)  # post-finalise state
+                out["finalised"].append(fresh.invoice_no or str(inv_id))
+                out["applied"] += max(Decimal("0"), Decimal(str(fresh.amount_paid or 0)) - before_paid)
+                if Decimal(str(fresh.amount_due or 0)) <= Decimal("0.01"):
+                    out["cleared"].append(fresh.invoice_no or str(inv_id))
+            else:  # already final — apply the advance to any remaining balance
+                outstanding = (
+                    (inv.grand_total or Decimal("0"))
+                    - (inv.amount_paid or Decimal("0"))
+                    - (inv.write_off_amount or Decimal("0"))
+                )
+                if outstanding <= Decimal("0.01"):
+                    continue
+                applied = await _apply_party_advances(db, inv, respect_setting=False)
+                if applied > Decimal("0"):
+                    out["applied"] += applied
+                    await recompute_party_balance(db, party_id)
+                    await db.commit()
+                    if Decimal(str(inv.amount_due or 0)) <= Decimal("0.01"):
+                        out["cleared"].append(inv.invoice_no or str(inv_id))
+        except Exception as e:  # never let the sweep undo the deposit
+            import logging
+            logging.getLogger(__name__).warning("deposit sweep skipped invoice %s: %s", inv_id, e)
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+            continue
+    return out
+
+
 @router.post("/{invoice_id}/apply-advance", response_model=InvoiceResponse)
 async def apply_advance(
     invoice_id: uuid.UUID,

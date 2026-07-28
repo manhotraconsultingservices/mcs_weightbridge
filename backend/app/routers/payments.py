@@ -179,6 +179,17 @@ async def create_receipt(
     await db.commit()
     await db.refresh(rec)
 
+    # ── Auto-clear: a prepaid deposit immediately clears the customer's OPEN
+    #    bills oldest-first (finalising drafts as it goes), leaving only the
+    #    surplus as a prepaid advance. Gated by `advance.auto_apply` (default ON);
+    #    never breaks the already-recorded receipt.
+    try:
+        from app.routers.invoices import _sweep_party_deposit
+        await _sweep_party_deposit(db, payload.party_id, "sale", background_tasks, current_user)
+    except Exception as _e:
+        import logging as _lg
+        _lg.getLogger(__name__).warning("receipt deposit auto-offset failed: %s", _e)
+
     # ── Fire payment_received notification (background, non-blocking) ─────────
     _notify_ctx = {
         "receipt_no": receipt_no,
@@ -359,6 +370,18 @@ async def create_voucher(
                               "allocations": len([a for a in payload.allocations if a.amount and Decimal(str(a.amount)) > 0])})
     await db.commit()
     await db.refresh(vch)
+
+    # ── Auto-clear: a supplier prepayment immediately clears the supplier's OPEN
+    #    purchase bills oldest-first (finalising drafts as it goes). Skipped for
+    #    direct-expense vouchers (no party/allocation). Gated by advance.auto_apply.
+    if payload.party_id and not is_expense:
+        try:
+            from app.routers.invoices import _sweep_party_deposit
+            await _sweep_party_deposit(db, payload.party_id, "purchase", background_tasks, current_user)
+        except Exception as _e:
+            import logging as _lg
+            _lg.getLogger(__name__).warning("voucher deposit auto-offset failed: %s", _e)
+
     # Fire "payment made" (money out — supplier payment / advance) notification
     _bg_tenant = None
     try:
