@@ -1147,6 +1147,23 @@ async def finalise_invoice(
     if not inv.items:
         raise HTTPException(400, "Cannot finalise an invoice with no items")
 
+    # ── Sanity guard: block physically-impossible / fat-finger lines from the
+    #    books & GST (audit #1/#2 — e.g. ₹40-lakh/MT rates, 53,788-MT weights,
+    #    the KG-vs-MT 1000× trap). Generous tenant-configurable band; never trips
+    #    a realistic invoice. Runs BEFORE a number is assigned, so garbage never
+    #    consumes a legal invoice number. The physical weighment + draft survive.
+    from app.services.sanity import get_sanity_limits, check_line_sanity
+    _slim = await get_sanity_limits(db)
+    if _slim.get("enabled", True):
+        _problems = check_line_sanity(inv.items, getattr(inv, "net_weight", None), _slim)
+        if _problems:
+            raise HTTPException(
+                400,
+                "Invoice failed sanity checks — " + "; ".join(_problems)
+                + ". Correct the rate/weight/unit, or an admin can widen the limits "
+                "(app_settings → sanity_limits).",
+            )
+
     co, fy = await _get_company_fy(db)
 
     # Assign invoice_no NOW (gap-free: only finalised invoices consume sequence numbers)

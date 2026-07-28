@@ -183,6 +183,22 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
           <div className="space-y-1">
             <Label>{t('product.defaultRateLabel')}</Label>
             <Input type="number" value={form.default_rate} onChange={e => set('default_rate', e.target.value)} min="0" step="0.01" />
+            {(() => {
+              // Catch the KG-vs-MT trap at its origin: a weight-unit product whose
+              // rate implies an absurd ₹/MT (e.g. ₹550/KG = ₹5,50,000/MT).
+              const perMt: Record<string, number> = { KG: 1000, KGS: 1000, QUINTAL: 10, QTL: 10, MT: 1, TON: 1, TONNE: 1 };
+              const f = perMt[(form.unit || '').toUpperCase()];
+              const rate = parseFloat(form.default_rate) || 0;
+              if (f && rate > 0 && rate * f > 50000) {
+                return (
+                  <p className="text-xs text-amber-600">
+                    ₹{rate.toLocaleString('en-IN')}/{form.unit} = ₹{(rate * f).toLocaleString('en-IN')}/MT —
+                    unusually high for bulk material. Did you mean per MT?
+                  </p>
+                );
+              }
+              return null;
+            })()}
           </div>
 
           <div className="space-y-1">
