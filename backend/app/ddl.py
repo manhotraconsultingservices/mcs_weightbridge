@@ -838,6 +838,35 @@ def get_column_migrations() -> list[str]:
         )
         """,
         "CREATE INDEX IF NOT EXISTS ix_op_cash_count_date ON operator_cash_counts (company_id, count_date)",
+        # ── Maker-checker (4-eyes) approval queue ─────────────────────────────
+        # When the per-tenant maker_checker toggle is ON, sensitive money actions
+        # (write-off, bulk write-off, invoice cancel, day-book opening change) are
+        # PARKED here as a pending request instead of executing. A second admin
+        # (checker != maker) approves → the real action runs; rejects → it's
+        # discarded. payload holds the exact request to replay on approval.
+        """
+        CREATE TABLE IF NOT EXISTS approval_requests (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id UUID NOT NULL REFERENCES companies(id),
+            action_type VARCHAR(40) NOT NULL,
+            -- write_off | write_off_bulk | invoice_cancel | day_book_opening
+            title VARCHAR(300) NOT NULL,
+            amount NUMERIC(14,2),
+            payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            status VARCHAR(15) NOT NULL DEFAULT 'pending',
+            -- pending | approved | rejected
+            requested_by UUID REFERENCES users(id),
+            requested_by_name VARCHAR(200),
+            requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            decided_by UUID REFERENCES users(id),
+            decided_by_name VARCHAR(200),
+            decided_at TIMESTAMPTZ,
+            decision_note VARCHAR(500),
+            result JSONB,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_approval_requests_status ON approval_requests (company_id, status, requested_at DESC)",
         # Append-only audit of every movement
         """
         CREATE TABLE IF NOT EXISTS product_stock_movements (

@@ -18,6 +18,7 @@ import {
   Calendar, Edit, CheckCircle2, XCircle, Wallet,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { wasSubmittedForApproval } from '@/lib/approvalGate';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -214,13 +215,15 @@ export default function CustomerProfilePage() {
 
     setBulkBusy(true);
     try {
-      const { data: result } = await api.post<{
+      const res = await api.post<{
         written: number; skipped: number; total_amount: number;
         skipped_details: string[]; parties_affected: number;
       }>('/api/v1/invoices/write-off-bulk', {
         invoice_ids: Array.from(selectedIds),
         reason: reason.trim(),
       });
+      if (wasSubmittedForApproval(res)) { setSelectedIds(new Set()); return; }
+      const result = res.data;
       if (result.written > 0) {
         toast.success(
           `Wrote off ${result.written} invoice${result.written === 1 ? '' : 's'} (₹${result.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })})`

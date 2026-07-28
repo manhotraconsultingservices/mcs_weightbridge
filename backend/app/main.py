@@ -14,7 +14,7 @@ from app.routers import (
     tally, tally_connector, app_settings, license, compliance, cameras, inventory,
     product_stock, production, anpr, delivery_challans, royalty, portal, branches, gstr2b,
     anomalies, gate, custom_fields, agents, fuel, workforce, offline, monitor,
-    gate_count,
+    gate_count, approvals,
 )
 from app.middleware.license_guard import LicenseGuardMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -785,6 +785,29 @@ async def _send_owner_digest_for_session(session_factory, label: str) -> None:
         except Exception as e:
             logger.warning("eod_summary send failed [%s]: %s", label, e)
 
+        # ── Operator cash-count reminder (non-blocking owner alert) ──────────
+        # Nudge the owner when an operator collected cash today but did NOT record
+        # a physical drawer count — a theft/skimming control. Gated by
+        # 'operator_cash_count.enabled' (default ON); sent ONLY when someone is
+        # missing a count, and only to recipients subscribed to the event.
+        try:
+            cc_row = (await db.execute(
+                _sql("SELECT value FROM app_settings WHERE key = 'operator_cash_count.enabled'"),
+            )).fetchone()
+            cc_enabled = True
+            if cc_row and cc_row[0] is not None:
+                cc_enabled = str(cc_row[0]).strip().lower() not in ("false", "0", "no", "off")
+            if cc_enabled:
+                from app.routers.reports import build_cash_count_reminder_context
+                cc_ctx = await build_cash_count_reminder_context(db, co.id, co.name, today)
+                if cc_ctx.get("missing_count", 0) > 0:
+                    await send_notification(db, co.id, "operator_cash_count_missing", cc_ctx,
+                                            entity_type="company", entity_id=str(co.id))
+                    logger.info("operator_cash_count_missing sent [%s] missing=%s",
+                                label, cc_ctx.get("missing_count"))
+        except Exception as e:
+            logger.warning("operator_cash_count reminder failed [%s]: %s", label, e)
+
 
 async def _purge_old_tally_jobs(factory, label: str = "default") -> None:
     """Daily retention: delete completed Tally relay jobs older than 30 days
@@ -1160,6 +1183,7 @@ app.include_router(agents.router)
 app.include_router(offline.router)  # Offline edge sync — agent-authed masters mirror + intent replay
 app.include_router(monitor.router)  # Device health — scale/camera heartbeat + Telegram down-alerts
 app.include_router(gate_count.router)  # Autonomous gate vehicle counting (truck/car/bike) — opt-in module
+app.include_router(approvals.router)   # Maker-checker (4-eyes) approval queue — per-tenant toggle, default OFF
 
 
 @app.get("/api/v1/health")

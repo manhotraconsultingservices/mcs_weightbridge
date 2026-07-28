@@ -75,6 +75,27 @@ DEFAULT_TEMPLATES = [
         "body": "📄 <b>Invoice Finalized</b>\n\nParty: {{ party_name }}\nInvoice: <b>{{ invoice_no }}</b>\nDate: {{ invoice_date }}\nMaterial: {{ material }}\nQty: <b>{{ qty }}</b>\n{% if royalty %}Royalty: ₹{{ royalty }}\n{% endif %}{% if vehicle_rent %}Vehicle Rent: ₹{{ vehicle_rent }}\n{% endif %}Amount: <b>₹{{ grand_total }}</b>\n\n— {{ company_name }}",
     },
     {
+        "event_type": "approval_requested",
+        "channel": "telegram",
+        "name": "Approval Requested (Telegram)",
+        "subject": None,
+        "body": "🔐 <b>Approval needed</b>\n\n{{ action }}\n{{ title }}\n{% if amount %}Amount: <b>₹{{ amount }}</b>\n{% endif %}Requested by: {{ requested_by }}\n\nA second admin must approve it in the app → Approvals.",
+    },
+    {
+        "event_type": "approval_decided",
+        "channel": "telegram",
+        "name": "Approval Decided (Telegram)",
+        "subject": None,
+        "body": "🔐 <b>Approval {{ decision }}</b>\n\n{{ action }}\n{{ title }}\nBy: {{ decided_by }}",
+    },
+    {
+        "event_type": "operator_cash_count_missing",
+        "channel": "telegram",
+        "name": "Operator Cash Count Missing (Telegram)",
+        "subject": None,
+        "body": "💰 <b>Cash count not recorded</b> ({{ date }})\n\n{{ missing_count }} operator(s) collected cash today but haven't counted their drawer:\n{{ operator_list }}\n\nUncounted cash: <b>₹{{ total_uncounted }}</b>\nAsk them to record the count in Reports → Operator Cash.",
+    },
+    {
         "event_type": "invoice_revised",
         "channel": "email",
         "name": "Invoice Revised (Email)",

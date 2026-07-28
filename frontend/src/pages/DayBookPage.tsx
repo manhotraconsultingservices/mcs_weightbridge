@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Printer, Download, Settings2, RefreshCw } from 'lucide-react';
 import { getCurrentUser } from '@/hooks/useAuth';
+import { wasSubmittedForApproval } from '@/lib/approvalGate';
 
 // ── Traditional Day Book (classic cash book) ───────────────────────────────
 // Opening B/F → receipts / payments across Cash · Bank · CC → closing C/F.
@@ -196,13 +197,14 @@ function OpeningDialog({ open, onClose, onSaved }: { open: boolean; onClose: () 
   async function save() {
     setSaving(true); setMsg('');
     try {
-      await api.put('/api/v1/reports/day-book-opening', {
+      const res = await api.put('/api/v1/reports/day-book-opening', {
         as_of_date: form.as_of_date,
         cash: form.cash === '' ? 0 : Number(form.cash),
         bank: form.bank === '' ? 0 : Number(form.bank),
         cc: form.cc === '' ? 0 : Number(form.cc),
         note: form.note,
       });
+      if (wasSubmittedForApproval(res)) { onClose(); return; }
       onSaved(); onClose();
     } catch {
       setMsg('Save failed (admin/accountant only)');

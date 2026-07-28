@@ -15,6 +15,7 @@ from app.models.compliance import ComplianceItem
 from app.models.custom_field import CustomFieldDefinition
 from app.models.agent import Agent, AgentCommissionPayment
 from app.models.product_unit_rate import ProductUnitRate
+from app.models.approval import ApprovalRequest
 
 __all__ = [
     "Company", "FinancialYear",
@@ -34,4 +35,5 @@ __all__ = [
     "CustomFieldDefinition",
     "Agent", "AgentCommissionPayment",
     "ProductUnitRate",
+    "ApprovalRequest",
 ]
