@@ -335,7 +335,7 @@ async def party_360(
         .where(
             Invoice.company_id == current_user.company_id,
             Invoice.party_id == party_id,
-            Invoice.status != "cancelled",
+            Invoice.status.not_in(["cancelled", "superseded"]),
         )
         .order_by(Invoice.invoice_date.desc(), Invoice.created_at.desc())
     )).scalars().all()

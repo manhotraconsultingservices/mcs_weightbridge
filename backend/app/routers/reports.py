@@ -2686,7 +2686,7 @@ async def token_register(
         inv_rows = (await db.execute(
             select(Invoice)
             .where(Invoice.token_id.in_([tk.id for tk, _p, _pr in prows]),
-                   Invoice.status != "cancelled")
+                   Invoice.status.not_in(["cancelled", "superseded"]))
             .order_by(Invoice.created_at.desc())
         )).scalars().all()
         for inv in inv_rows:
