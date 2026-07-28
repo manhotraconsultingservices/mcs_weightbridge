@@ -1414,6 +1414,7 @@ async def put_day_book_opening(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin", "accountant")),
+    _bypass_approval: bool = False,
 ):
     """Set the opening-balance base (a date + Cash/Bank/CC amounts) that the Day
     Book rolls forward. Admin/accountant only.
@@ -1432,6 +1433,17 @@ async def put_day_book_opening(
     clean = {"as_of_date": as_of or None, "cash": _num(payload.get("cash")),
              "bank": _num(payload.get("bank")), "cc": _num(payload.get("cc")),
              "note": str(payload.get("note") or "")[:500]}
+
+    # ── Maker-checker: park for a second admin's approval when the toggle is ON ──
+    if not _bypass_approval:
+        from app.services.approvals import maker_checker_enabled, submit_approval
+        if await maker_checker_enabled(db):
+            return await submit_approval(
+                db, current_user.company_id, current_user, "day_book_opening",
+                f"Set Day Book opening balance — Cash ₹{clean['cash']:.0f} · Bank ₹{clean['bank']:.0f} · CC ₹{clean['cc']:.0f}",
+                {"body": clean},
+                amount=(clean["cash"] + clean["bank"] + clean["cc"]),
+            )
 
     # Capture the PREVIOUS value for the audit trail (before → after).
     old_row = (await db.execute(
@@ -1887,6 +1899,57 @@ async def operator_cash_eod(
         "total_opening_float": _r2(sum(o["opening_float"] for o in operators)),
         "total_variance": _r2(sum((o["variance"] or 0) for o in operators)),
         "operator_count": len(operators),
+    }
+
+
+async def build_cash_count_reminder_context(db: AsyncSession, company_id, company_name: str,
+                                            on_date: date) -> dict:
+    """Context for the daily operator cash-count reminder (non-blocking alert).
+
+    Lists operators who COLLECTED cash today (cash receipts attributed to them)
+    but have NOT recorded a physical drawer count (`counted_cash IS NULL`). The
+    caller sends the alert only when `missing_count > 0` — so an owner is nudged
+    to make operators reconcile their cash drawer, closing a theft/skimming gap.
+    """
+    cid = str(company_id)
+    d = on_date
+    rows = (await db.execute(text(
+        "SELECT COALESCE(r.collected_by, r.created_by) AS oid, "
+        "COALESCE(u.full_name, u.username, 'Unknown') AS name, SUM(r.amount) AS cash "
+        "FROM payment_receipts r "
+        "LEFT JOIN users u ON u.id = COALESCE(r.collected_by, r.created_by) "
+        "WHERE r.company_id=:cid AND LOWER(COALESCE(r.payment_mode,''))='cash' "
+        "AND r.receipt_date=:d "
+        "GROUP BY COALESCE(r.collected_by, r.created_by), u.full_name, u.username"
+    ), {"cid": cid, "d": d})).all()
+
+    counted_ids: set[str] = set()
+    try:
+        async with db.begin_nested():
+            crows = (await db.execute(text(
+                "SELECT operator_id AS oid FROM operator_cash_counts "
+                "WHERE company_id=:cid AND count_date=:d AND counted_cash IS NOT NULL"
+            ), {"cid": cid, "d": d})).all()
+        counted_ids = {(str(cr.oid) if cr.oid else "none") for cr in crows}
+    except Exception as e:  # table may not exist yet on a fresh tenant
+        logger.warning("cash-count reminder: counts lookup skipped: %s", str(e)[:120])
+
+    missing = []
+    for r in rows:
+        key = str(r.oid) if r.oid else "none"
+        cash = float(r.cash or 0)
+        if cash > 0 and key not in counted_ids:
+            missing.append({"name": r.name, "cash": round(cash, 2)})
+    missing.sort(key=lambda m: -m["cash"])
+    total = round(sum(m["cash"] for m in missing), 2)
+    lines = "\n".join(f"• {m['name']}: ₹{m['cash']:,.2f}" for m in missing)
+    return {
+        "date": d.isoformat(),
+        "company_name": company_name,
+        "missing_count": len(missing),
+        "total_uncounted": f"{total:,.2f}",
+        "operator_list": lines,
+        "operators": missing,
     }
 
 

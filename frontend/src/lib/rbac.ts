@@ -179,7 +179,7 @@ export const BUILTIN_ROLE_VALUES = new Set(
 export const ADMIN_ROUTES = new Set([
   '/settings', '/notifications', '/backup', '/import',
   '/admin/branches', '/admin/users', '/admin/permissions',
-  '/admin/custom-fields', '/admin/wallpaper',
+  '/admin/custom-fields', '/admin/wallpaper', '/approvals',
 ]);
 
 // Routes that must never be blocked by the guard: the home redirect, detail

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { wasSubmittedForApproval } from '@/lib/approvalGate';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { Plus, Search, FileText, Loader2, Download, CheckCircle, XCircle, Banknote, Send, CheckCircle2, Ticket, Lock, Pencil, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, RotateCcw, GitFork, History, ArrowUpCircle, Scissors, Wallet } from 'lucide-react';
 import { TokenDetailModal } from '@/components/TokenDetailModal';
@@ -1675,8 +1676,9 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
 
   async function cancel(id: string) {
     try {
-      const { data } = await api.post<Invoice>(`/api/v1/invoices/${id}/cancel`);
-      setInvoices(prev => prev.map(i => i.id === id ? data : i));
+      const res = await api.post<Invoice>(`/api/v1/invoices/${id}/cancel`);
+      if (wasSubmittedForApproval(res)) return;
+      setInvoices(prev => prev.map(i => i.id === id ? res.data : i));
       toast.success('Invoice cancelled');
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -1712,10 +1714,11 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
     );
     if (!reason || !reason.trim()) return;
     try {
-      const { data } = await api.post<Invoice>(`/api/v1/invoices/${inv.id}/write-off`, {
+      const res = await api.post<Invoice>(`/api/v1/invoices/${inv.id}/write-off`, {
         amount, reason: reason.trim(),
       });
-      setInvoices(prev => prev.map(i => i.id === inv.id ? data : i));
+      if (wasSubmittedForApproval(res)) return;
+      setInvoices(prev => prev.map(i => i.id === inv.id ? res.data : i));
       toast.success(`Wrote off ₹${amount.toFixed(2)} on ${inv.invoice_no}`);
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;

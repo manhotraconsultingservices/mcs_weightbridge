@@ -44,6 +44,7 @@ import FuelMileagePage from '@/pages/FuelMileagePage';
 import WorkforcePage from '@/pages/WorkforcePage';
 import DeviceHealthPage from '@/pages/DeviceHealthPage';
 import VehicleCountPage from '@/pages/VehicleCountPage';
+import ApprovalsPage from '@/pages/ApprovalsPage';
 import InvoicesPage from '@/pages/InvoicesPage';
 import QuotationsPage from '@/pages/QuotationsPage';
 import DeliveryChallansPage from '@/pages/DeliveryChallansPage';
@@ -268,6 +269,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/ledger" element={<LedgerPage />} />
             <Route path="/party-balances" element={<PartyBalancesPage />} />
             <Route path="/advances" element={<AdvancesPage />} />
+            <Route path="/approvals" element={<ApprovalsPage />} />
             <Route path="/agents" element={<AgentsPage />} />
             <Route path="/agents/:id" element={<AgentReportPage />} />
             {/* /reports now serves the hub (with old ReportsPage as a tab). */}

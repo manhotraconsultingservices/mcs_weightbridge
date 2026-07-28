@@ -2067,6 +2067,8 @@ async def cancel_invoice(
     invoice_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin", "accountant")),
+    request: Request = None,
+    _bypass_approval: bool = False,
 ):
     inv = await _load_invoice(db, invoice_id)
     if inv.status == "cancelled":
@@ -2077,6 +2079,16 @@ async def cancel_invoice(
             "Credit/debit notes cannot be cancelled directly — "
             "issue a counter-note against the original invoice instead."
         )
+    # ── Maker-checker: park for a second admin's approval when the toggle is ON ──
+    if not _bypass_approval:
+        from app.services.approvals import maker_checker_enabled, submit_approval
+        if await maker_checker_enabled(db):
+            return await submit_approval(
+                db, current_user.company_id, current_user, "invoice_cancel",
+                f"Cancel invoice {inv.invoice_no or invoice_id}",
+                {"invoice_id": str(invoice_id)},
+                amount=float(inv.grand_total or inv.total_amount or 0),
+            )
     was_finalised = inv.status == "final"
     inv.status = "cancelled"
     co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
@@ -2129,6 +2141,8 @@ async def write_off_invoice(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin", "accountant")),
+    request: Request = None,
+    _bypass_approval: bool = False,
 ):
     """Write off uncollectable balance on a finalised invoice.
 
@@ -2155,6 +2169,17 @@ async def write_off_invoice(
         raise HTTPException(400, "Write-off amount must be positive.")
     if requested > balance:
         raise HTTPException(400, f"Write-off amount ({requested}) exceeds current balance ({balance}).")
+
+    # ── Maker-checker: park for a second admin's approval when the toggle is ON ──
+    if not _bypass_approval:
+        from app.services.approvals import maker_checker_enabled, submit_approval
+        if await maker_checker_enabled(db):
+            return await submit_approval(
+                db, current_user.company_id, current_user, "write_off",
+                f"Write off ₹{requested:.2f} on invoice {inv.invoice_no or invoice_id}",
+                {"invoice_id": str(invoice_id), "body": payload.model_dump(mode="json")},
+                amount=float(requested),
+            )
 
     # Apply write-off
     inv.write_off_amount = (Decimal(str(inv.write_off_amount or 0)) + requested).quantize(Decimal("0.01"))
@@ -2229,6 +2254,8 @@ async def write_off_bulk(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin", "accountant")),
+    request: Request = None,
+    _bypass_approval: bool = False,
 ):
     """Write off the full remaining balance on every invoice in the list.
 
@@ -2245,6 +2272,17 @@ async def write_off_bulk(
         raise HTTPException(400, "No invoices selected")
     if not payload.reason or not payload.reason.strip():
         raise HTTPException(400, "Reason is required for write-off.")
+
+    # ── Maker-checker: park for a second admin's approval when the toggle is ON ──
+    if not _bypass_approval:
+        from app.services.approvals import maker_checker_enabled, submit_approval
+        if await maker_checker_enabled(db):
+            return await submit_approval(
+                db, current_user.company_id, current_user, "write_off_bulk",
+                f"Bulk write-off of {len(payload.invoice_ids)} invoice(s)",
+                {"body": payload.model_dump(mode="json")},
+                amount=None,
+            )
 
     co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
     if not co:
