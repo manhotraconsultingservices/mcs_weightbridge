@@ -19,6 +19,21 @@ from app.models.notification import (
 
 logger = logging.getLogger(__name__)
 
+# Scrub bot tokens / bearer secrets from any error string before it is logged or
+# persisted to notification_log.error_message (secret hygiene — a raw httpx error
+# from Telegram would otherwise embed the full bot token in the request URL).
+import re as _re
+_BOT_TOKEN_RE = _re.compile(r"bot\d{5,}:[A-Za-z0-9_-]{20,}")
+_BEARER_RE = _re.compile(r"(?i)(bearer|token|api[_-]?key)[=:\s]+[A-Za-z0-9._-]{12,}")
+
+
+def _redact_secrets(msg: str | None) -> str:
+    s = msg or ""
+    s = _BOT_TOKEN_RE.sub("bot<redacted>", s)
+    s = _BEARER_RE.sub(r"\1 <redacted>", s)
+    return s
+
+
 # ── Jinja2 sandbox ────────────────────────────────────────────────────────────
 # Use Undefined (base class) — missing vars render as empty string in str context,
 # which is fine for notification templates.
@@ -969,10 +984,10 @@ async def send_notification(
                 status = "sent"
             except Exception as e:
                 status = "failed"
-                error_msg = str(e)[:500]
+                error_msg = _redact_secrets(str(e))[:500]
                 logger.warning(
                     "Notification send failed [%s/%s → %s]: %s",
-                    tmpl.channel, event_type, recipient, e,
+                    tmpl.channel, event_type, recipient, error_msg,
                 )
 
             log_entry = NotificationLog(

@@ -26,8 +26,11 @@ async def send_telegram_notification(
         parse_mode: 'HTML' (default) or 'Markdown'.
 
     Raises:
-        httpx.HTTPStatusError: if Telegram returns a non-2xx status.
-        RuntimeError: if Telegram reports ok=false in the response JSON.
+        RuntimeError: on any Telegram error, carrying Telegram's own
+            ``description`` (e.g. "Bad Request: chat not found") + the chat_id —
+            and NEVER the request URL (which embeds the bot token). We
+            deliberately do NOT call ``raise_for_status()``: its message leaks the
+            token-laden URL and drops the useful reason.
     """
     url = TELEGRAM_API.format(token=bot_token)
     payload = {
@@ -38,7 +41,10 @@ async def send_telegram_notification(
     }
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.post(url, json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-        if not data.get("ok"):
-            raise RuntimeError(f"Telegram error: {data.get('description', 'unknown')}")
+        try:
+            data = resp.json()
+        except Exception:
+            data = {}
+        if resp.status_code >= 400 or not data.get("ok"):
+            desc = data.get("description") or f"HTTP {resp.status_code}"
+            raise RuntimeError(f"Telegram {resp.status_code}: {desc} (chat_id={chat_id})")
