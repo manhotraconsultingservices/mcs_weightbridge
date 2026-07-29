@@ -4,8 +4,11 @@ import {
   Building2, Plus, Search, Shield, UserPlus, UserMinus,
   AlertTriangle, CheckCircle, PauseCircle, Calendar, ExternalLink,
   LogOut, Pencil, Loader2, Users, BarChart3, Power, Ban,
-  TrendingUp, UserCheck, Eye, EyeOff, KeyRound, Copy, Check,
+  TrendingUp, UserCheck, Eye, EyeOff, KeyRound, Copy, Check, Send, Download,
 } from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip as RTooltip, ResponsiveContainer, CartesianGrid, Legend,
+} from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,6 +20,17 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import platformApi from '@/services/platformApi';
 import { usePlatformAuth } from '@/hooks/usePlatformAuth';
 import type { TenantOverview, PlatformUser } from '@/types';
+
+interface TelegramStats {
+  days: number; from_date: string; to_date: string;
+  series: { date: string; sent: number; failed: number; total: number }[];
+  by_tenant: { slug: string; name: string; sent: number; failed: number }[];
+  totals: { sent: number; failed: number; today: number; last7: number; tenants: number };
+}
+const fmtTgDay = (s: string) => {
+  const d = new Date(s + 'T00:00:00');
+  return isNaN(d.getTime()) ? s : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -412,6 +426,11 @@ export default function PlatformDashboard() {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState('tenants');
 
+  // Telegram usage dashboard (platform_admin)
+  const [tgDays, setTgDays] = useState(30);
+  const [tgData, setTgData] = useState<TelegramStats | null>(null);
+  const [tgLoading, setTgLoading] = useState(false);
+
   // Dialogs
   const [onboardOpen, setOnboardOpen] = useState(false);
   const [editTenant, setEditTenant] = useState<TenantOverview | null>(null);
@@ -434,6 +453,29 @@ export default function PlatformDashboard() {
   }, [isPlatformAdmin]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Fetch Telegram stats when the tab is open / range changes (platform_admin only).
+  useEffect(() => {
+    if (activeTab !== 'telegram' || !isPlatformAdmin) return;
+    let cancelled = false;
+    setTgLoading(true);
+    platformApi.get<TelegramStats>(`/api/v1/platform/telegram-stats?days=${tgDays}`)
+      .then(({ data }) => { if (!cancelled) setTgData(data); })
+      .catch(() => { if (!cancelled) toast.error('Failed to load Telegram stats'); })
+      .finally(() => { if (!cancelled) setTgLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeTab, tgDays, isPlatformAdmin]);
+
+  function exportTgCsv() {
+    if (!tgData) return;
+    const rows = [['date', 'sent', 'failed', 'total'],
+      ...tgData.series.map(s => [s.date, String(s.sent), String(s.failed), String(s.total)])];
+    const blob = new Blob([rows.map(r => r.join(',')).join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `telegram-messages-${tgData.from_date}_to_${tgData.to_date}.csv`;
+    a.click(); URL.revokeObjectURL(a.href);
+  }
 
   const filtered = tenants.filter(t =>
     !search || t.display_name.toLowerCase().includes(search.toLowerCase()) || t.slug.includes(search.toLowerCase())
@@ -551,6 +593,7 @@ export default function PlatformDashboard() {
             <TabsTrigger value="tenants" className="data-[state=active]:bg-slate-700 text-slate-300"><Building2 className="h-3.5 w-3.5 mr-1" />Tenants</TabsTrigger>
             {isPlatformAdmin && <TabsTrigger value="users" className="data-[state=active]:bg-slate-700 text-slate-300"><Users className="h-3.5 w-3.5 mr-1" />Internal Users</TabsTrigger>}
             <TabsTrigger value="analytics" className="data-[state=active]:bg-slate-700 text-slate-300"><BarChart3 className="h-3.5 w-3.5 mr-1" />Analytics</TabsTrigger>
+            {isPlatformAdmin && <TabsTrigger value="telegram" className="data-[state=active]:bg-slate-700 text-slate-300"><Send className="h-3.5 w-3.5 mr-1" />Telegram</TabsTrigger>}
           </TabsList>
 
           {/* ── TENANTS TAB ── */}
@@ -784,6 +827,87 @@ export default function PlatformDashboard() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* ── TELEGRAM TAB (platform_admin) ── */}
+          {isPlatformAdmin && (
+          <TabsContent value="telegram" className="mt-4 space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex gap-1">
+                {[7, 30, 90].map(d => (
+                  <Button key={d} size="sm" variant="outline"
+                    className={tgDays === d ? 'bg-blue-600 hover:bg-blue-700 border-blue-600 text-white' : 'bg-slate-800 border-slate-700 text-slate-300'}
+                    onClick={() => setTgDays(d)}>{d}d</Button>
+                ))}
+              </div>
+              <Button size="sm" variant="outline" className="bg-slate-800 border-slate-700 text-slate-300"
+                onClick={exportTgCsv} disabled={!tgData}><Download className="h-3.5 w-3.5 mr-1" />CSV</Button>
+            </div>
+
+            {tgLoading ? (
+              <div className="py-16 text-center"><Loader2 className="h-6 w-6 animate-spin text-slate-400 mx-auto" /></div>
+            ) : !tgData ? null : (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {[
+                    { l: 'Sent today', v: tgData.totals.today, c: 'text-emerald-400' },
+                    { l: 'Last 7 days', v: tgData.totals.last7, c: 'text-blue-400' },
+                    { l: `Sent (${tgData.days}d)`, v: tgData.totals.sent, c: 'text-white' },
+                    { l: `Failed (${tgData.days}d)`, v: tgData.totals.failed, c: 'text-red-400' },
+                  ].map(k => (
+                    <Card key={k.l} className="bg-slate-800/60 border-slate-700"><CardContent className="pt-4 pb-4">
+                      <p className={`text-2xl font-bold ${k.c}`}>{k.v.toLocaleString('en-IN')}</p>
+                      <p className="text-xs text-slate-400">{k.l}</p>
+                    </CardContent></Card>
+                  ))}
+                </div>
+
+                <Card className="bg-slate-800/60 border-slate-700"><CardContent className="pt-4 pb-2">
+                  <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-1.5">
+                    <Send className="h-4 w-4 text-blue-400" />Telegram messages per day (IST) · all tenants
+                  </h3>
+                  <div style={{ width: '100%', height: 260 }}>
+                    <ResponsiveContainer>
+                      <BarChart data={tgData.series} margin={{ top: 4, right: 8, left: -14, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                        <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={fmtTgDay} minTickGap={18} />
+                        <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} allowDecimals={false} />
+                        <RTooltip contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0' }}
+                          labelFormatter={fmtTgDay} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Bar dataKey="sent" name="Sent" stackId="a" fill="#3b82f6" radius={[2, 2, 0, 0]} />
+                        <Bar dataKey="failed" name="Failed" stackId="a" fill="#ef4444" radius={[2, 2, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent></Card>
+
+                <Card className="bg-slate-800/60 border-slate-700"><CardContent className="pt-4 pb-4">
+                  <h3 className="text-sm font-semibold text-slate-300 mb-3">By tenant ({tgData.by_tenant.length})</h3>
+                  {tgData.by_tenant.length === 0 ? (
+                    <p className="text-sm text-slate-500 py-4 text-center">No Telegram messages in this window.</p>
+                  ) : (
+                    <div className="overflow-x-auto"><table className="w-full text-sm">
+                      <thead><tr className="border-b border-slate-700 text-slate-400">
+                        <th className="text-left px-3 py-2 font-medium">Tenant</th>
+                        <th className="text-right px-3 py-2 font-medium">Sent</th>
+                        <th className="text-right px-3 py-2 font-medium">Failed</th>
+                        <th className="text-right px-3 py-2 font-medium">Total</th>
+                      </tr></thead>
+                      <tbody>{tgData.by_tenant.map(r => (
+                        <tr key={r.slug} className="border-b border-slate-700/50">
+                          <td className="px-3 py-2 text-white">{r.name} <span className="text-slate-500 text-xs">/{r.slug}</span></td>
+                          <td className="px-3 py-2 text-right text-emerald-400 font-semibold">{r.sent.toLocaleString('en-IN')}</td>
+                          <td className="px-3 py-2 text-right text-red-400">{r.failed.toLocaleString('en-IN')}</td>
+                          <td className="px-3 py-2 text-right text-white">{(r.sent + r.failed).toLocaleString('en-IN')}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table></div>
+                  )}
+                </CardContent></Card>
+              </>
+            )}
+          </TabsContent>
+          )}
         </Tabs>
       </div>
 
