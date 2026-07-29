@@ -576,6 +576,88 @@ async def update_branding(
     return await get_branding(db=db, user=user)
 
 
+# ── Telegram messaging usage (platform_admin) ─────────────────────────────────
+
+@router.get("/telegram-stats")
+async def telegram_stats(
+    days: int = 30,
+    db: AsyncSession = Depends(get_master_db),
+    _user: PlatformUser = Depends(require_platform_role("platform_admin")),
+):
+    """Telegram messages per IST day, aggregated across ALL active tenants.
+
+    Each tenant keeps its own ``notification_log``; this fans out to every active
+    tenant DB, counts ``channel='telegram'`` rows grouped by IST day + status,
+    and aggregates. Returns a gap-filled daily series (oldest→newest) + per-tenant
+    totals + KPI roll-ups. A tenant DB that errors (or lacks the table) is skipped.
+    """
+    from datetime import timedelta
+    from app.database import get_tenant_session
+
+    days = max(1, min(int(days or 30), 365))
+    IST = timezone(timedelta(hours=5, minutes=30))
+    ist_today = datetime.now(IST).date()
+    from_date = ist_today - timedelta(days=days - 1)
+    from_ts = datetime(from_date.year, from_date.month, from_date.day, tzinfo=IST).astimezone(timezone.utc)
+
+    day_map: dict[str, dict] = {}
+    by_tenant: list[dict] = []
+
+    tenants = (await db.execute(
+        select(Tenant).where(Tenant.is_active == True).order_by(Tenant.slug)
+    )).scalars().all()
+
+    for t in tenants:
+        t_sent = t_failed = 0
+        try:
+            async with await get_tenant_session(t.slug) as tdb:
+                rows = (await tdb.execute(text(
+                    "SELECT (sent_at AT TIME ZONE 'Asia/Kolkata')::date AS d, "
+                    "       COALESCE(status,'') AS st, count(*) AS c "
+                    "FROM notification_log "
+                    "WHERE lower(channel) = 'telegram' AND sent_at >= :from_ts "
+                    "GROUP BY 1, 2"
+                ), {"from_ts": from_ts})).all()
+            for d, st, c in rows:
+                c = int(c or 0)
+                m = day_map.setdefault(d.isoformat(), {"sent": 0, "failed": 0})
+                if st == "failed":
+                    m["failed"] += c; t_failed += c
+                else:                       # 'sent' (and any non-failed) → a delivered message
+                    m["sent"] += c; t_sent += c
+        except Exception as e:
+            logger.warning("telegram-stats: tenant %s skipped: %s", t.slug, str(e)[:150])
+        if t_sent or t_failed:
+            by_tenant.append({
+                "slug": t.slug, "name": getattr(t, "display_name", None) or t.slug,
+                "sent": t_sent, "failed": t_failed,
+            })
+
+    series = []
+    total_sent = total_failed = 0
+    for i in range(days):
+        d = (from_date + timedelta(days=i)).isoformat()
+        m = day_map.get(d, {"sent": 0, "failed": 0})
+        series.append({"date": d, "sent": m["sent"], "failed": m["failed"], "total": m["sent"] + m["failed"]})
+        total_sent += m["sent"]; total_failed += m["failed"]
+
+    by_tenant.sort(key=lambda x: -x["sent"])
+    return {
+        "days": days,
+        "from_date": from_date.isoformat(),
+        "to_date": ist_today.isoformat(),
+        "series": series,
+        "by_tenant": by_tenant,
+        "totals": {
+            "sent": total_sent,
+            "failed": total_failed,
+            "today": day_map.get(ist_today.isoformat(), {}).get("sent", 0),
+            "last7": sum(x["sent"] for x in series[-7:]),
+            "tenants": len(by_tenant),
+        },
+    }
+
+
 # ── Sales Rep — My Tenants ────────────────────────────────────────────────────
 
 @router.get("/my-tenants")
