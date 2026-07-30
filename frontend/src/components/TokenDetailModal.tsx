@@ -909,7 +909,14 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
               <div className="space-y-1">
                 <label className="text-xs font-medium">Party</label>
                 <Select value={dPartyId || undefined} onValueChange={v => setDPartyId(v ?? '')}>
-                  <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                  {/* Render the name explicitly: the parties list loads async after the
+                      dialog opens, so a bare <SelectValue> would show the raw party UUID
+                      until it arrives (and forever if the party isn't in the list). */}
+                  <SelectTrigger>
+                    {(dParties.find(p => p.id === dPartyId)?.name
+                      ?? (dPartyId && dPartyId === (token?.party?.id ?? '') ? token?.party?.name : undefined))
+                      || <SelectValue placeholder="Select…" />}
+                  </SelectTrigger>
                   <SelectContent>
                     {dParties.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                   </SelectContent>
@@ -918,7 +925,11 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
               <div className="space-y-1">
                 <label className="text-xs font-medium">Material</label>
                 <Select value={dProductId || undefined} onValueChange={v => setDProductId(v ?? '')}>
-                  <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                  <SelectTrigger>
+                    {(dProducts.find(p => p.id === dProductId)?.name
+                      ?? (dProductId && dProductId === (token?.product?.id ?? '') ? token?.product?.name : undefined))
+                      || <SelectValue placeholder="Select…" />}
+                  </SelectTrigger>
                   <SelectContent>
                     {dProducts.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                   </SelectContent>
