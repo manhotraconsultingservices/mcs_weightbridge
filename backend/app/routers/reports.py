@@ -1537,6 +1537,15 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
         "FROM invoices WHERE company_id=:cid AND invoice_type='sale' "
         "AND status IN ('final','draft') "
         "AND invoice_date>=:fd AND invoice_date<=:td GROUP BY 1")
+    # DRAFT purchases — purchase bills not yet finalised (the weighbridge auto-creates
+    # purchase invoices as drafts). The accrual 'purchases' line above only counts FINAL
+    # bills, so these are otherwise invisible. Informational (unconfirmed) → shown in its
+    # own column, NOT folded into Total Expenses / Net so an un-reviewed draft can't
+    # distort the cash position.
+    draft_purchase = await _daily(
+        "SELECT CAST(invoice_date AS date) AS d, SUM(COALESCE(grand_total,0)) AS total "
+        "FROM invoices WHERE company_id=:cid AND invoice_type='purchase' AND status='draft' "
+        "AND invoice_date>=:fd AND invoice_date<=:td GROUP BY 1")
 
     # MONEY OUT — expense categories (actual amounts incl. GST for a cash view).
     purchases = await _daily(
@@ -1588,15 +1597,16 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
         "AND voucher_date>=:fd AND voucher_date<=:td GROUP BY 1")
 
     all_days = sorted(set(
-        list(cash) + list(electronic) + list(credit) + list(purchases) + list(store)
-        + list(diesel) + list(salary) + list(advance) + list(commission)
+        list(cash) + list(electronic) + list(credit) + list(purchases) + list(draft_purchase)
+        + list(store) + list(diesel) + list(salary) + list(advance) + list(commission)
         + list(overhead) + list(supplier_pay)))
     days = []
     tot = {k: 0.0 for k in ("cash_sales", "electronic_sales", "credit_sales", "purchases",
-                            "supplier_payments", "store_inventory", "diesel", "salary",
-                            "advance", "commission", "overhead")}
+                            "draft_purchases", "supplier_payments", "store_inventory", "diesel",
+                            "salary", "advance", "commission", "overhead")}
     for d in all_days:
         cs, es, cr = cash.get(d, 0.0), electronic.get(d, 0.0), credit.get(d, 0.0)
+        dpu = draft_purchase.get(d, 0.0)
         pu, st, di = purchases.get(d, 0.0), store.get(d, 0.0), diesel.get(d, 0.0)
         sa, ad, co = salary.get(d, 0.0), advance.get(d, 0.0), commission.get(d, 0.0)
         oh, sp = overhead.get(d, 0.0), supplier_pay.get(d, 0.0)
@@ -1609,12 +1619,13 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
         days.append({
             "date": d, "cash_sales": cs, "electronic_sales": es, "credit_sales": cr,
             "total_sales": total_sales,
-            "purchases": pu, "supplier_payments": sp, "store_inventory": st, "diesel": di,
+            "purchases": pu, "draft_purchases": dpu, "supplier_payments": sp,
+            "store_inventory": st, "diesel": di,
             "salary": sa, "advance": ad, "commission": co, "overhead": oh,
             "total_expenses": total_exp, "net": _r2(total_sales - total_exp),
         })
         tot["cash_sales"] += cs; tot["electronic_sales"] += es; tot["credit_sales"] += cr
-        tot["purchases"] += pu; tot["supplier_payments"] += sp
+        tot["purchases"] += pu; tot["draft_purchases"] += dpu; tot["supplier_payments"] += sp
         tot["store_inventory"] += st; tot["diesel"] += di
         tot["salary"] += sa; tot["advance"] += ad; tot["commission"] += co; tot["overhead"] += oh
     summary = {k: _r2(v) for k, v in tot.items()}
@@ -1775,6 +1786,17 @@ async def compute_eod_detail(db: AsyncSession, company_id, target_date: date,
             "AND i.invoice_date=:d ORDER BY i.grand_total DESC"):
             items.append({"category": "Purchase", "ref": r.ref or "", "party": r.party or "",
                           "detail": "", "amount": _r2(r.amount), "direction": "out"})
+
+    # DRAFT purchase bills — not yet finalised (weighbridge auto-drafts). Shown in both
+    # bases so the purchase is visible; informational (does NOT enter the day's Net).
+    for r in await _rows(
+        "SELECT COALESCE(i.invoice_no,'(draft)') AS ref, COALESCE(p.name,'') AS party, "
+        "i.grand_total AS amount FROM invoices i LEFT JOIN parties p ON p.id=i.party_id "
+        "WHERE i.company_id=:cid AND i.invoice_type='purchase' AND i.status='draft' "
+        "AND i.invoice_date=:d AND COALESCE(i.grand_total,0) > 0 ORDER BY i.grand_total DESC"):
+        items.append({"category": "Purchase (draft)", "ref": r.ref or "(draft)",
+                      "party": r.party or "", "detail": "DRAFT",
+                      "amount": _r2(r.amount), "direction": "out"})
 
     # Store inventory receipts (at PO price)
     for r in await _rows(
