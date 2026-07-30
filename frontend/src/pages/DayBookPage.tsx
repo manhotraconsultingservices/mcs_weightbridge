@@ -49,17 +49,27 @@ export default function DayBookPage() {
 
   function exportCsv() {
     if (!data) return;
+    const q = (v: string | number | null | undefined) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const rows: string[] = [];
-    rows.push(`Day Book,${data.date}`);
+    rows.push('DAY BOOK');
+    rows.push(`Date,${data.date}`);
     rows.push('');
-    rows.push('Section,Particulars,Ref,Cash,Bank,CC');
-    rows.push(`Opening B/F,,,"${data.opening.cash}","${data.opening.bank}","${data.opening.cc}"`);
-    data.receipts.forEach(l => rows.push(`Receipt,"${l.particulars}","${l.ref || ''}","${l.cash}","${l.bank}","${l.cc}"`));
-    data.payments.forEach(l => rows.push(`Payment,"${l.particulars}","${l.ref || ''}","${l.cash}","${l.bank}","${l.cc}"`));
-    rows.push(`Total Receipts,,,"${data.totals.receipts.cash}","${data.totals.receipts.bank}","${data.totals.receipts.cc}"`);
-    rows.push(`Total Payments,,,"${data.totals.payments.cash}","${data.totals.payments.bank}","${data.totals.payments.cc}"`);
-    rows.push(`Closing C/F,,,"${data.closing.cash}","${data.closing.bank}","${data.closing.cc}"`);
-    const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+    // ── RECEIPTS (Money In) ──
+    rows.push('RECEIPTS (Money In)');
+    rows.push('Particulars,Voucher,Cash,Bank,CC/OD');
+    rows.push(`${q('Opening Balance B/F')},,${data.opening.cash},${data.opening.bank},${data.opening.cc}`);
+    data.receipts.forEach(l => rows.push(`${q(l.particulars)},${q(l.ref)},${l.cash},${l.bank},${l.cc}`));
+    rows.push(`${q('Total Receipts (incl. opening)')},,${data.totals.receipts.cash},${data.totals.receipts.bank},${data.totals.receipts.cc}`);
+    rows.push('');
+    // ── PAYMENTS (Money Out) ──
+    rows.push('PAYMENTS (Money Out)');
+    rows.push('Particulars,Voucher,Cash,Bank,CC/OD');
+    if (data.payments.length === 0) rows.push(`${q('No payments recorded')},,0,0,0`);
+    data.payments.forEach(l => rows.push(`${q(l.particulars)},${q(l.ref)},${l.cash},${l.bank},${l.cc}`));
+    rows.push(`${q('Sub Total (Payments)')},,${data.totals.payments.cash},${data.totals.payments.bank},${data.totals.payments.cc}`);
+    rows.push('');
+    rows.push(`${q('Closing Balance C/F')},,${data.closing.cash},${data.closing.bank},${data.closing.cc}`);
+    const blob = new Blob(['﻿' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = `day-book-${data.date}.csv`; a.click();
     URL.revokeObjectURL(a.href);
