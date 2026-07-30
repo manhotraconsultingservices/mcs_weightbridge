@@ -12,7 +12,7 @@
  */
 import { useEffect, useState, useCallback } from 'react';
 import { todayISO, shiftISO, monthStartISO } from '@/lib/dateLocal';
-import { Loader2, AlertCircle, Calendar, Wallet, Landmark, TrendingDown, Scale, Send, Download } from 'lucide-react';
+import { Loader2, AlertCircle, Calendar, Wallet, Landmark, HandCoins, TrendingDown, Scale, Send, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,7 @@ interface EodDay {
   date: string;
   cash_sales: number;
   electronic_sales: number;
+  credit_sales: number;
   total_sales: number;
   purchases: number;
   supplier_payments: number;
@@ -61,7 +62,7 @@ interface EodDetailResponse {
   items: EodDetailItem[];
   summary: EodSummary;
 }
-const CATEGORY_ORDER = ['Cash Sale', 'Credit Sale', 'Purchase', 'Supplier Payment', 'Store', 'Diesel', 'Salary', 'Advance', 'Commission', 'Expense'];
+const CATEGORY_ORDER = ['Cash Sale', 'Bank/UPI Sale', 'Credit Sale', 'Purchase', 'Supplier Payment', 'Store', 'Diesel', 'Salary', 'Advance', 'Commission', 'Expense'];
 
 const INR = (v: number | string | null | undefined) =>
   '₹' + Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -115,9 +116,9 @@ export default function EodSummaryReportPage() {
   function downloadDaysCsv() {
     if (!data) return;
     const outLabel = basis === 'cash' ? 'Supplier Paid' : 'Purchases';
-    const header = ['Date', 'Cash Sales', 'Bank/UPI Collections', 'Total Sales', outLabel, 'Store', 'Diesel', 'Salary', 'Advance', ...(basis === 'accrual' ? ['Commission'] : []), 'Expenses', 'Total Expenses', 'Net'];
+    const header = ['Date', 'Cash Sales', 'Bank/UPI Collections', 'Total Collected', 'Credit Sales', outLabel, 'Store', 'Diesel', 'Salary', 'Advance', ...(basis === 'accrual' ? ['Commission'] : []), 'Expenses', 'Total Expenses', 'Net'];
     const rows = data.days.map(d => [
-      d.date, String(d.cash_sales), String(d.electronic_sales), String(d.total_sales),
+      d.date, String(d.cash_sales), String(d.electronic_sales), String(d.total_sales), String(d.credit_sales),
       String(basis === 'cash' ? d.supplier_payments : d.purchases), String(d.store_inventory), String(d.diesel), String(d.salary),
       String(d.advance), ...(basis === 'accrual' ? [String(d.commission)] : []), String(d.overhead), String(d.total_expenses), String(d.net),
     ]);
@@ -177,8 +178,12 @@ export default function EodSummaryReportPage() {
       format: v => <span className="text-emerald-700">{INR(v as number)}</span>, exportValue: r => r.cash_sales },
     { key: 'electronic_sales', label: 'Bank/UPI Collections', type: 'number', align: 'right', accessor: r => r.electronic_sales,
       format: v => <span className="text-sky-700">{INR(v as number)}</span>, exportValue: r => r.electronic_sales },
-    { key: 'total_sales', label: 'Total Sales', type: 'number', align: 'right', accessor: r => r.total_sales,
+    { key: 'total_sales', label: 'Total Collected', type: 'number', align: 'right', accessor: r => r.total_sales,
       format: v => <span className="font-semibold">{INR(v as number)}</span>, exportValue: r => r.total_sales },
+    // Credit sales = material sold on credit (udhaar) — the UNPAID part of the day's sale
+    // invoices. Money still owed, so it is NOT in Total Collected or Net (those are cash).
+    { key: 'credit_sales', label: 'Credit Sales', type: 'number', align: 'right', accessor: r => r.credit_sales,
+      format: v => <span className="text-amber-700">{INR(v as number)}</span>, exportValue: r => r.credit_sales },
     // Money-out: accrual books the purchase INVOICE; cash books the supplier PAYMENT (voucher).
     ...(basis === 'cash'
       ? [{ key: 'supplier_payments', label: 'Supplier Paid', type: 'number', align: 'right', accessor: (r: EodDay) => r.supplier_payments,
@@ -248,7 +253,9 @@ export default function EodSummaryReportPage() {
       </div>
 
       <p className="text-xs text-muted-foreground -mt-1">
-        Day book: sales split by how money came in (<b>Cash</b> vs <b>Credit</b> = bank / card / UPI), and every rupee out.
+        Day book: money collected split by how it came in — <b>Cash</b> vs <b>Bank/UPI</b> (bank / card / UPI) — plus
+        <b> Credit Sales</b> (material sold on credit / udhaar — the unpaid part of the day's sale bills, money still owed,
+        so it is NOT in Total Collected or Net), and every rupee out.
         <b> Accrual</b> books purchases on the bill date + accrued commission; <b>Cash</b> books actual supplier payments
         (vouchers) and drops accrued commission — use it for a true cash position. Store · diesel · salary · advances · overhead
         expenses appear in both. Sent automatically to subscribed recipients every evening (email + Telegram).
@@ -263,7 +270,7 @@ export default function EodSummaryReportPage() {
 
       {/* KPI cards */}
       {s && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <Card>
             <CardContent className="p-4">
               <div className="text-xs uppercase tracking-widest text-slate-500 font-semibold flex items-center gap-1">
@@ -280,6 +287,15 @@ export default function EodSummaryReportPage() {
               </div>
               <div className="text-2xl font-bold text-sky-700 mt-1">{INR_L(money('electronic_sales') as number)}</div>
               <div className="text-xs text-slate-500 mt-0.5">Bank / card / UPI</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-xs uppercase tracking-widest text-slate-500 font-semibold flex items-center gap-1">
+                <HandCoins className="h-3.5 w-3.5 text-amber-500" /> Credit Sales
+              </div>
+              <div className="text-2xl font-bold text-amber-700 mt-1">{INR_L(money('credit_sales') as number)}</div>
+              <div className="text-xs text-slate-500 mt-0.5">On credit — not yet paid</div>
             </CardContent>
           </Card>
           <Card>
@@ -330,8 +346,9 @@ export default function EodSummaryReportPage() {
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                 <div className="flex justify-between"><span className="text-muted-foreground">Cash</span><span className="text-emerald-700 font-medium">{INR(d.cash_sales)}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Credit</span><span className="text-sky-700 font-medium">{INR(d.electronic_sales)}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Sales</span><span className="font-medium">{INR(d.total_sales)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Bank/UPI</span><span className="text-sky-700 font-medium">{INR(d.electronic_sales)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Credit</span><span className="text-amber-700 font-medium">{INR(d.credit_sales)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Collected</span><span className="font-medium">{INR(d.total_sales)}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Expenses</span><span className="text-rose-700 font-medium">{INR(d.total_expenses)}</span></div>
               </div>
               <div className="mt-2 text-[11px] text-blue-600 font-medium">Tap for full breakup →</div>

@@ -1526,6 +1526,17 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
         "SELECT CAST(receipt_date AS date) AS d, SUM(amount) AS total FROM payment_receipts "
         "WHERE company_id=:cid AND LOWER(COALESCE(payment_mode,''))<>'cash' "
         "AND receipt_date>=:fd AND receipt_date<=:td GROUP BY 1")
+    # CREDIT sales — material sold on credit (udhaar): the UNPAID portion of the day's
+    # sale invoices (grand_total − amount_paid). Uses invoice_date so it's the sale-side
+    # view; the unpaid-only sum means a same-day cash/bank collection is NOT double-counted
+    # (it lands in cash/electronic above and reduces amount_paid here). Drafts included —
+    # a weighbridge bills via auto-created drafts, so an un-collected draft IS credit.
+    credit = await _daily(
+        "SELECT CAST(invoice_date AS date) AS d, "
+        "SUM(GREATEST(COALESCE(grand_total,0) - COALESCE(amount_paid,0), 0)) AS total "
+        "FROM invoices WHERE company_id=:cid AND invoice_type='sale' "
+        "AND status IN ('final','draft') "
+        "AND invoice_date>=:fd AND invoice_date<=:td GROUP BY 1")
 
     # MONEY OUT — expense categories (actual amounts incl. GST for a cash view).
     purchases = await _daily(
@@ -1577,14 +1588,15 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
         "AND voucher_date>=:fd AND voucher_date<=:td GROUP BY 1")
 
     all_days = sorted(set(
-        list(cash) + list(electronic) + list(purchases) + list(store)
+        list(cash) + list(electronic) + list(credit) + list(purchases) + list(store)
         + list(diesel) + list(salary) + list(advance) + list(commission)
         + list(overhead) + list(supplier_pay)))
     days = []
-    tot = {k: 0.0 for k in ("cash_sales", "electronic_sales", "purchases", "supplier_payments",
-                            "store_inventory", "diesel", "salary", "advance", "commission", "overhead")}
+    tot = {k: 0.0 for k in ("cash_sales", "electronic_sales", "credit_sales", "purchases",
+                            "supplier_payments", "store_inventory", "diesel", "salary",
+                            "advance", "commission", "overhead")}
     for d in all_days:
-        cs, es = cash.get(d, 0.0), electronic.get(d, 0.0)
+        cs, es, cr = cash.get(d, 0.0), electronic.get(d, 0.0), credit.get(d, 0.0)
         pu, st, di = purchases.get(d, 0.0), store.get(d, 0.0), diesel.get(d, 0.0)
         sa, ad, co = salary.get(d, 0.0), advance.get(d, 0.0), commission.get(d, 0.0)
         oh, sp = overhead.get(d, 0.0), supplier_pay.get(d, 0.0)
@@ -1595,12 +1607,13 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
         common_out = st + di + sa + ad + oh
         total_exp = _r2(common_out + (sp if basis == "cash" else pu + co))
         days.append({
-            "date": d, "cash_sales": cs, "electronic_sales": es, "total_sales": total_sales,
+            "date": d, "cash_sales": cs, "electronic_sales": es, "credit_sales": cr,
+            "total_sales": total_sales,
             "purchases": pu, "supplier_payments": sp, "store_inventory": st, "diesel": di,
             "salary": sa, "advance": ad, "commission": co, "overhead": oh,
             "total_expenses": total_exp, "net": _r2(total_sales - total_exp),
         })
-        tot["cash_sales"] += cs; tot["electronic_sales"] += es
+        tot["cash_sales"] += cs; tot["electronic_sales"] += es; tot["credit_sales"] += cr
         tot["purchases"] += pu; tot["supplier_payments"] += sp
         tot["store_inventory"] += st; tot["diesel"] += di
         tot["salary"] += sa; tot["advance"] += ad; tot["commission"] += co; tot["overhead"] += oh
@@ -1735,9 +1748,23 @@ async def compute_eod_detail(db: AsyncSession, company_id, target_date: date,
         "FROM payment_receipts r LEFT JOIN parties p ON p.id=r.party_id "
         "WHERE r.company_id=:cid AND r.receipt_date=:d ORDER BY r.amount DESC"):
         is_cash = (r.mode == "cash")
-        items.append({"category": "Cash Sale" if is_cash else "Credit Sale",
+        items.append({"category": "Cash Sale" if is_cash else "Bank/UPI Sale",
                       "ref": r.ref or "", "party": r.party or "",
                       "detail": (r.mode or "").upper(), "amount": _r2(r.amount), "direction": "in"})
+
+    # CREDIT SALES — the day's sale invoices with an unpaid balance (udhaar). Money
+    # not yet received, so it is informational only and does NOT enter the day's Net
+    # (Net comes from the summary, which stays collection-based).
+    for r in await _rows(
+        "SELECT i.invoice_no AS ref, COALESCE(p.name,'') AS party, i.status AS status, "
+        "(COALESCE(i.grand_total,0) - COALESCE(i.amount_paid,0)) AS amount "
+        "FROM invoices i LEFT JOIN parties p ON p.id=i.party_id "
+        "WHERE i.company_id=:cid AND i.invoice_type='sale' AND i.status IN ('final','draft') "
+        "AND i.invoice_date=:d AND (COALESCE(i.grand_total,0) - COALESCE(i.amount_paid,0)) > 0 "
+        "ORDER BY amount DESC"):
+        items.append({"category": "Credit Sale", "ref": r.ref or "(draft)",
+                      "party": r.party or "", "detail": str(r.status or "").upper(),
+                      "amount": _r2(r.amount), "direction": "in"})
 
     # MONEY OUT — purchases (accrual basis only; cash basis uses supplier payments below)
     if basis == "accrual":
