@@ -48,3 +48,39 @@ async def send_telegram_notification(
         if resp.status_code >= 400 or not data.get("ok"):
             desc = data.get("description") or f"HTTP {resp.status_code}"
             raise RuntimeError(f"Telegram {resp.status_code}: {desc} (chat_id={chat_id})")
+
+
+async def send_telegram_document(
+    bot_token: str,
+    chat_id: str,
+    filename: str,
+    content: bytes,
+    caption: str | None = None,
+    parse_mode: str = "HTML",
+) -> None:
+    """Send a file (e.g. a CSV) to a Telegram chat via the Bot API's sendDocument.
+
+    Separate from ``send_telegram_notification`` (which uses sendMessage) — this is
+    a multipart upload and is only used by the daily EOD CSV pack, so the text path
+    is untouched.
+
+    Raises:
+        RuntimeError: on any Telegram error, carrying Telegram's own ``description``
+            + the chat_id, and NEVER the token-laden request URL (see the sendMessage
+            sender for the rationale).
+    """
+    url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
+    files = {"document": (filename, content, "text/csv")}
+    data: dict[str, str] = {"chat_id": chat_id, "disable_notification": "false"}
+    if caption:
+        data["caption"] = caption[:1024]
+        data["parse_mode"] = parse_mode
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(url, data=data, files=files)
+        try:
+            j = resp.json()
+        except Exception:
+            j = {}
+        if resp.status_code >= 400 or not j.get("ok"):
+            desc = j.get("description") or f"HTTP {resp.status_code}"
+            raise RuntimeError(f"Telegram sendDocument {resp.status_code}: {desc} (chat_id={chat_id})")

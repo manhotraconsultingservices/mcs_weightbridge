@@ -785,6 +785,25 @@ async def _send_owner_digest_for_session(session_factory, label: str) -> None:
         except Exception as e:
             logger.warning("eod_summary send failed [%s]: %s", label, e)
 
+        # ── EOD CSV pack (Telegram attachments; fires at the same time) ──────
+        # The day's gate passes / tokens / payments / sales+purchase invoices as
+        # CSV files. Gated by app_settings 'eod_csv_pack.enabled' (default OFF →
+        # opt-in, no tenant sends until switched on). Recipients subscribe to
+        # 'eod_csv_pack' on /notifications. Never blocks the loop.
+        try:
+            csv_row = (await db.execute(
+                _sql("SELECT value FROM app_settings WHERE key = 'eod_csv_pack.enabled'"),
+            )).fetchone()
+            csv_enabled = False
+            if csv_row and csv_row[0] is not None:
+                csv_enabled = str(csv_row[0]).strip().lower() in ("true", "1", "yes", "on")
+            if csv_enabled:
+                from app.services.eod_csv import send_eod_csv_pack
+                res = await send_eod_csv_pack(db, co.id, co.name, today)
+                logger.info("eod_csv_pack sent [%s]: %s", label, res)
+        except Exception as e:
+            logger.warning("eod_csv_pack send failed [%s]: %s", label, e)
+
         # ── Operator cash-count reminder (non-blocking owner alert) ──────────
         # Nudge the owner when an operator collected cash today but did NOT record
         # a physical drawer count — a theft/skimming control. Gated by

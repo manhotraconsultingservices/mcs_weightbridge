@@ -54,6 +54,7 @@ const EVENT_TYPES = [
   // ── Owner digests ──
   { value: 'owner_digest', label: 'Daily Owner Digest' },
   { value: 'eod_summary', label: 'Day Book — EOD Summary' },
+  { value: 'eod_csv_pack', label: 'Day Book — Daily CSV Pack (attachments)' },
 ];
 
 const CHANNELS = [
