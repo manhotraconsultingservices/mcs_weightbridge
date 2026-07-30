@@ -1867,6 +1867,30 @@ async def send_eod_summary(
     return {"ok": True, "date": d.isoformat()}
 
 
+@router.post("/eod-csv-pack/send")
+async def send_eod_csv_pack_now(
+    target_date: date = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Fire the daily EOD CSV pack now — a Telegram message + CSV attachments for
+    the day's gate passes, tokens, payments and sales/purchase invoices, to
+    recipients subscribed to `eod_csv_pack` (or `*`). Admin only. `target_date`
+    defaults to today."""
+    if current_user.role != "admin":
+        raise HTTPException(403, "Admin only")
+    from app.models.company import Company
+    from app.services.eod_csv import send_eod_csv_pack
+    co = (await db.execute(
+        select(Company).where(Company.id == current_user.company_id)
+    )).scalar_one_or_none()
+    if not co:
+        raise HTTPException(404, "Company not found")
+    d = target_date or date.today()
+    res = await send_eod_csv_pack(db, co.id, co.name, d)
+    return {"ok": True, **res}
+
+
 @router.get("/eod-summary/detail")
 async def eod_summary_detail(
     on_date: date = Query(..., alias="date"),
