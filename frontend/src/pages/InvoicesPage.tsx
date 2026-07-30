@@ -1468,7 +1468,7 @@ interface InvoicesPageProps {
   defaultType?: 'sale' | 'purchase';
 }
 
-type SortCol = 'invoice_no' | 'invoice_date' | 'party' | 'grand_total' | 'net_weight' | 'payment_status' | 'status';
+type SortCol = 'invoice_no' | 'invoice_date' | 'party' | 'grand_total' | 'net_weight' | 'payment_mode' | 'payment_status' | 'status';
 
 export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps) {
   const { t } = useTranslation();
@@ -1590,6 +1590,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
       else if (sortCol === 'party') { av = a.party?.name ?? a.customer_name ?? ''; bv = b.party?.name ?? b.customer_name ?? ''; }
       else if (sortCol === 'grand_total') { av = a.grand_total; bv = b.grand_total; }
       else if (sortCol === 'net_weight') { av = a.net_weight ?? 0; bv = b.net_weight ?? 0; }
+      else if (sortCol === 'payment_mode') { av = pmLabel(a.payment_mode); bv = pmLabel(b.payment_mode); }
       else if (sortCol === 'payment_status') { av = a.payment_status; bv = b.payment_status; }
       else if (sortCol === 'status') { av = a.status; bv = b.status; }
       if (av < bv) return sortDir === 'asc' ? -1 : 1;
@@ -2007,7 +2008,11 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                     <th className={thSortClass + ' text-right'} onClick={() => toggleSort('grand_total')}>
                       {t('common.amount')} <SortIcon col="grand_total" />
                     </th>
-                    {colShown('payment_mode') && <th className={thClass}>Payment Mode</th>}
+                    {colShown('payment_mode') && (
+                      <th className={thSortClass} onClick={() => toggleSort('payment_mode')}>
+                        Payment Mode <SortIcon col="payment_mode" />
+                      </th>
+                    )}
                     <th className={thClass + ' text-center'}>Progress</th>
                     <th className={thClass}></th>
                   </tr>
