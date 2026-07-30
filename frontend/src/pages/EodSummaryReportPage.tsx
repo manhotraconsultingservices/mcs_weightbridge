@@ -30,6 +30,7 @@ interface EodDay {
   credit_sales: number;
   total_sales: number;
   purchases: number;
+  draft_purchases: number;
   supplier_payments: number;
   store_inventory: number;
   diesel: number;
@@ -62,7 +63,7 @@ interface EodDetailResponse {
   items: EodDetailItem[];
   summary: EodSummary;
 }
-const CATEGORY_ORDER = ['Cash Sale', 'Bank/UPI Sale', 'Credit Sale', 'Purchase', 'Supplier Payment', 'Store', 'Diesel', 'Salary', 'Advance', 'Commission', 'Expense'];
+const CATEGORY_ORDER = ['Cash Sale', 'Bank/UPI Sale', 'Credit Sale', 'Purchase', 'Purchase (draft)', 'Supplier Payment', 'Store', 'Diesel', 'Salary', 'Advance', 'Commission', 'Expense'];
 
 const INR = (v: number | string | null | undefined) =>
   '₹' + Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -116,10 +117,10 @@ export default function EodSummaryReportPage() {
   function downloadDaysCsv() {
     if (!data) return;
     const outLabel = basis === 'cash' ? 'Supplier Paid' : 'Purchases';
-    const header = ['Date', 'Cash Sales', 'Bank/UPI Collections', 'Total Collected', 'Credit Sales', outLabel, 'Store', 'Diesel', 'Salary', 'Advance', ...(basis === 'accrual' ? ['Commission'] : []), 'Expenses', 'Total Expenses', 'Net'];
+    const header = ['Date', 'Cash Sales', 'Bank/UPI Collections', 'Total Collected', 'Credit Sales', outLabel, 'Draft Purchases', 'Store', 'Diesel', 'Salary', 'Advance', ...(basis === 'accrual' ? ['Commission'] : []), 'Expenses', 'Total Expenses', 'Net'];
     const rows = data.days.map(d => [
       d.date, String(d.cash_sales), String(d.electronic_sales), String(d.total_sales), String(d.credit_sales),
-      String(basis === 'cash' ? d.supplier_payments : d.purchases), String(d.store_inventory), String(d.diesel), String(d.salary),
+      String(basis === 'cash' ? d.supplier_payments : d.purchases), String(d.draft_purchases), String(d.store_inventory), String(d.diesel), String(d.salary),
       String(d.advance), ...(basis === 'accrual' ? [String(d.commission)] : []), String(d.overhead), String(d.total_expenses), String(d.net),
     ]);
     downloadCsv(`day-book-${fromDate}-to-${toDate}.csv`, [header, ...rows]);
@@ -190,6 +191,10 @@ export default function EodSummaryReportPage() {
           format: (v: unknown) => INR(v as number), exportValue: (r: EodDay) => r.supplier_payments } as ColumnDef<EodDay>]
       : [{ key: 'purchases', label: 'Purchases', type: 'number', align: 'right', accessor: (r: EodDay) => r.purchases,
           format: (v: unknown) => INR(v as number), exportValue: (r: EodDay) => r.purchases } as ColumnDef<EodDay>]),
+    // Draft purchases = purchase bills not yet finalised (weighbridge auto-drafts).
+    // Informational — surfaced so they are not invisible; not in Total Expenses / Net.
+    { key: 'draft_purchases', label: 'Draft Purchases', type: 'number', align: 'right', accessor: r => r.draft_purchases,
+      format: v => <span className="text-amber-700">{INR(v as number)}</span>, exportValue: r => r.draft_purchases },
     { key: 'store_inventory', label: 'Store', type: 'number', align: 'right', accessor: r => r.store_inventory,
       format: v => INR(v as number), exportValue: r => r.store_inventory },
     { key: 'diesel', label: 'Diesel', type: 'number', align: 'right', accessor: r => r.diesel,
