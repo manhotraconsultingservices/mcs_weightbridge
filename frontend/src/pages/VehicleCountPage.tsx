@@ -73,9 +73,11 @@ export default function VehicleCountPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [live, setLive] = useState(true);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [c, e] = await Promise.all([
         api.get<Counts>('/api/v1/vehicle-count/counts', { params: { from_date: from, to_date: to } }),
@@ -85,14 +87,23 @@ export default function VehicleCountPage() {
       setCounts(c.data);
       setEvents(e.data.items || []);
       setErr(null);
+      setLastSync(new Date());
     } catch (ex: any) {
       setErr(ex?.response?.data?.detail || ex?.message || 'Failed to load vehicle counts');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [from, to]);
 
   useEffect(() => { if (enabled) refresh(); }, [enabled, refresh]);
+
+  // Auto-refresh (Live): quiet poll every 10s so new detections + snapshots appear
+  // on their own. Silent (no spinner flicker); pauses when the browser tab is hidden.
+  useEffect(() => {
+    if (!enabled || !live) return;
+    const id = setInterval(() => { if (!document.hidden) refresh(true); }, 10000);
+    return () => clearInterval(id);
+  }, [enabled, live, refresh]);
 
   // ── Premium gate — hidden/blocked unless the platform admin enabled the module ──
   if (!enabled) {
@@ -186,10 +197,23 @@ export default function VehicleCountPage() {
             Autonomous camera tally of vehicles in/out — reconciled against guard gate passes.
           </p>
         </div>
-        <button onClick={refresh} disabled={loading}
-          className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50">
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          {lastSync && (
+            <span className="hidden text-xs text-muted-foreground sm:inline">
+              updated {lastSync.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+          )}
+          <button onClick={() => setLive(v => !v)} title={live ? 'Auto-refresh every 10s — click to pause' : 'Paused — click to auto-refresh'}
+            className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm ${
+              live ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600' : 'hover:bg-accent'}`}>
+            <span className={`h-2 w-2 rounded-full ${live ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground'}`} />
+            {live ? 'Live' : 'Paused'}
+          </button>
+          <button onClick={() => refresh()} disabled={loading}
+            className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50">
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Date range + presets */}
