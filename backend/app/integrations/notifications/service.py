@@ -381,19 +381,24 @@ DEFAULT_TEMPLATES = [
         "subject": None,
         "body": (
             "📒 <b>Day Book — {{ date }}</b>\n\n"
-            "<b>Sales In</b>\n"
-            "• Cash: ₹{{ cash_sales }}\n"
-            "• Bank / Card / UPI: ₹{{ electronic_sales }}\n"
-            "• <b>Total sales: ₹{{ total_sales }}</b>\n\n"
+            "<b>Sales (tokens today)</b>\n"
+            "• {{ token_sales_count }} trucks · <b>₹{{ token_sales }}</b>\n\n"
+            "<b>Purchases (tokens today)</b>\n"
+            "• {{ token_purchase_count }} trucks · <b>₹{{ token_purchase }}</b>\n\n"
             "<b>Expenses Out</b>\n"
-            "• Purchases: ₹{{ purchases }}\n"
             "• Store / Inventory: ₹{{ store_inventory }}\n"
             "• Diesel: ₹{{ diesel }}\n"
             "• Salary / Wages: ₹{{ salary }}\n"
             "• Advances: ₹{{ advance }}\n"
             "• Commission: ₹{{ commission }}\n"
-            "• <b>Total expenses: ₹{{ total_expenses }}</b>\n\n"
-            "{{ net_emoji }} <b>Net (Sales − Expenses): ₹{{ net }}</b>\n\n"
+            "• <b>Total expenses: ₹{{ other_expenses }}</b>\n\n"
+            "<b>Collected In (money received)</b>\n"
+            "• Cash: ₹{{ cash_sales }}\n"
+            "• Bank / Card / UPI: ₹{{ electronic_sales }}\n\n"
+            "<b>Not yet finalized</b>\n"
+            "• Sales: {{ draft_sales_count }} bills · ₹{{ draft_sales }}\n"
+            "• Purchase: {{ draft_purchase_count }} bills · ₹{{ draft_purchase }}\n\n"
+            "{{ net_business_emoji }} <b>Net (Sales − Purchases − Expenses): ₹{{ net_business }}</b>\n\n"
             "— {{ company_name }}"
         ),
     },
@@ -856,12 +861,13 @@ async def seed_default_templates(db: AsyncSession, company_id: uuid.UUID) -> Non
 # only inserts MISSING rows, so a changed body never propagates otherwise). Only the
 # listed (event_type, channel) pairs are force-updated, ONCE per tenant per version
 # — so a later admin customisation on the Notifications page survives future restarts.
-_TEMPLATE_REFRESH_VERSION = 4   # v4: token_completed telegram now shows Buy/Sell (Type) line
+_TEMPLATE_REFRESH_VERSION = 5   # v5: eod_summary telegram Day Book is now token-driven + un-finalized backlog
 _TEMPLATE_REFRESH_KEYS = {
     ("token_completed", "telegram"),
     ("invoice_finalized", "telegram"),
     ("anpr_daily_summary", "telegram"),
     ("anpr_daily_summary", "email"),
+    ("eod_summary", "telegram"),
 }
 
 

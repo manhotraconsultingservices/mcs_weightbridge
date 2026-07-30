@@ -1616,11 +1616,67 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
             "basis": basis, "days": days, "summary": summary}
 
 
+async def _eod_token_and_draft(db: AsyncSession, company_id, target_date: date) -> dict:
+    """Token-driven Sales/Purchase for the day + the un-finalized invoice backlog.
+
+    A weighbridge plant bills via auto-created DRAFT invoices, so the Day Book's
+    receipt-based sales and finalized-purchase figures read ₹0 even on a busy day
+    (misleading). These give the real picture, for the Telegram Day Book:
+      • token_*  — TODAY's COMPLETED sale/purchase tokens, valued by their linked
+        invoice grand_total (draft OR final; cancelled/superseded excluded).
+        count = trucks; completion bucketed in IST.
+      • draft_*  — ALL currently un-finalized (status='draft') sale/purchase invoices:
+        the finalize backlog (count + ₹), NOT date-scoped.
+    Each query is SAVEPOINT-guarded → a tenant missing a column degrades to 0."""
+    params = {"cid": str(company_id), "d": target_date}
+
+    async def _one(sql: str, extra: dict) -> tuple[int, float]:
+        try:
+            async with db.begin_nested():
+                row = (await db.execute(text(sql), {**params, **extra})).first()
+            if row:
+                return int(row.cnt or 0), _r2(float(row.total or 0))
+        except Exception as e:  # noqa: BLE001 — missing column / feature table
+            logger.warning("EOD token/draft line skipped: %s", str(e)[:140])
+        return 0, 0.0
+
+    tok_sql = (
+        "SELECT COUNT(DISTINCT t.id) AS cnt, COALESCE(SUM(i.grand_total),0) AS total "
+        "FROM tokens t JOIN invoices i ON i.token_id = t.id "
+        "AND i.invoice_type = :ity AND i.status NOT IN ('cancelled','superseded') "
+        "WHERE t.company_id = :cid AND t.token_type = :tty AND t.status = 'COMPLETED' "
+        "AND CAST(t.completed_at AT TIME ZONE 'Asia/Kolkata' AS date) = :d")
+    draft_sql = (
+        "SELECT COUNT(*) AS cnt, COALESCE(SUM(grand_total),0) AS total FROM invoices "
+        "WHERE company_id = :cid AND invoice_type = :ity AND status = 'draft'")
+
+    ts_c, ts_a = await _one(tok_sql, {"ity": "sale", "tty": "sale"})
+    tp_c, tp_a = await _one(tok_sql, {"ity": "purchase", "tty": "purchase"})
+    ds_c, ds_a = await _one(draft_sql, {"ity": "sale"})
+    dp_c, dp_a = await _one(draft_sql, {"ity": "purchase"})
+    return {
+        "token_sales_count": ts_c, "token_sales_amount": ts_a,
+        "token_purchase_count": tp_c, "token_purchase_amount": tp_a,
+        "draft_sales_count": ds_c, "draft_sales_amount": ds_a,
+        "draft_purchase_count": dp_c, "draft_purchase_amount": dp_a,
+    }
+
+
 async def build_eod_summary_context(db: AsyncSession, company_id, company_name: str, target_date: date) -> dict:
-    """Notification context for the daily EOD summary (email + Telegram)."""
+    """Notification context for the daily EOD summary (email + Telegram).
+
+    Carries BOTH views: the legacy cash/finalized figures (used by the email
+    template, unchanged) AND the token-driven Sales/Purchase + un-finalized backlog
+    (used by the Telegram Day Book, which a token-based plant needs to not read ₹0)."""
     data = await compute_eod_summary(db, company_id, target_date, target_date)
     s = data["summary"]
     money = lambda v: f"{float(v or 0):,.0f}"  # noqa: E731
+    td = await _eod_token_and_draft(db, company_id, target_date)
+    # Operating expenses EXCLUDING purchases (purchases are shown token-based in the
+    # Telegram Day Book). Net (business) = token sales − token purchases − these.
+    other_exp = _r2(s["store_inventory"] + s["diesel"] + s["salary"]
+                    + s["advance"] + s["commission"] + s["overhead"])
+    net_business = _r2(td["token_sales_amount"] - td["token_purchase_amount"] - other_exp)
     return {
         "company_name": company_name,
         "date": target_date.strftime("%d %b %Y"),
@@ -1636,6 +1692,18 @@ async def build_eod_summary_context(db: AsyncSession, company_id, company_name: 
         "total_expenses": money(s["total_expenses"]),
         "net": money(s["net"]),
         "net_emoji": "🟢" if s["net"] >= 0 else "🔴",
+        # ── Token-driven Day Book (Telegram) ──
+        "token_sales": money(td["token_sales_amount"]),
+        "token_sales_count": td["token_sales_count"],
+        "token_purchase": money(td["token_purchase_amount"]),
+        "token_purchase_count": td["token_purchase_count"],
+        "draft_sales": money(td["draft_sales_amount"]),
+        "draft_sales_count": td["draft_sales_count"],
+        "draft_purchase": money(td["draft_purchase_amount"]),
+        "draft_purchase_count": td["draft_purchase_count"],
+        "other_expenses": money(other_exp),
+        "net_business": money(net_business),
+        "net_business_emoji": "🟢" if net_business >= 0 else "🔴",
     }
 
 
