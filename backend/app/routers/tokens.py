@@ -213,6 +213,29 @@ async def _build_token_notify_ctx(db: AsyncSession, token: Token, company: Compa
     }
 
 
+async def _build_vehicle_move_ctx(db: AsyncSession, token: Token, company: Company, direction: str) -> dict:
+    """Context for the vehicle_in / vehicle_out movement alerts — vehicle, party,
+    material, Buy/Sell, gate pass, and the movement time in IST. Deliberately
+    lightweight (no invoice/amount lookup) so it works for a freshly-created OPEN
+    token at arrival, not only at completion. `direction`: 'in' → uses created_at,
+    'out' → uses completed_at."""
+    from app.utils.timefmt import fmt_ist
+    party = (await db.execute(select(Party).where(Party.id == token.party_id))).scalar_one_or_none() if token.party_id else None
+    product = (await db.execute(select(Product).where(Product.id == token.product_id))).scalar_one_or_none() if token.product_id else None
+    _type_label = {"sale": "Sell (Sale)", "purchase": "Buy (Purchase)"}
+    when = token.completed_at if direction == "out" else token.created_at
+    return {
+        "token_no": token.token_no or "PENDING",
+        "token_type": _type_label.get(token.token_type, (token.token_type or "").capitalize()),
+        "vehicle_no": token.vehicle_no or "—",
+        "gate_pass_no": token.gate_pass_no or "",
+        "party_name": party.name if party else "—",
+        "material": product.name if product else "—",
+        "time": fmt_ist(when),
+        "company_name": company.name,
+    }
+
+
 async def _check_royalty_unaccounted_bg(
     company_id: uuid.UUID,
     token_date,
@@ -557,6 +580,7 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
 async def create_token(
     payload: TokenCreate,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     branch_id=Depends(get_current_branch_id),
@@ -718,6 +742,24 @@ async def create_token(
         from app.routers.audit import log_action
         await log_action(db, company.id, current_user.id, "create", "token",
                          str(token.id), {"vehicle_no": token.vehicle_no, "type": token.token_type})
+    except Exception:
+        pass
+
+    # Vehicle-In movement alert (background, non-blocking) — the truck has arrived.
+    # Only for a real arrival: skip an edge replay (already applied earlier) so a
+    # sync doesn't re-announce, and skip the volume path (that fires its own in/out).
+    try:
+        _bg_tenant = None
+        try:
+            from app.multitenancy.context import current_tenant_slug
+            _bg_tenant = current_tenant_slug.get()
+        except Exception:
+            pass
+        _move_ctx = await _build_vehicle_move_ctx(db, token, company, "in")
+        background_tasks.add_task(
+            _send_notification_bg,
+            company.id, "vehicle_in", _move_ctx, "token", str(token.id), _bg_tenant,
+        )
     except Exception:
         pass
 
@@ -911,6 +953,22 @@ async def create_volume_token(
         _send_notification_bg,
         company.id, "token_completed", _notify_ctx, "token", str(token.id), _bg_tenant,
     )
+
+    # Vehicle In + Out movement alerts (background, non-blocking). A volume token is
+    # created AND completed in one call — the truck arrived and left — so both fire.
+    try:
+        _in_ctx = await _build_vehicle_move_ctx(db, token, company, "in")
+        _out_ctx = await _build_vehicle_move_ctx(db, token, company, "out")
+        background_tasks.add_task(
+            _send_notification_bg,
+            company.id, "vehicle_in", _in_ctx, "token", str(token.id), _bg_tenant,
+        )
+        background_tasks.add_task(
+            _send_notification_bg,
+            company.id, "vehicle_out", _out_ctx, "token", str(token.id), _bg_tenant,
+        )
+    except Exception:
+        pass
 
     # Royalty unaccounted-MT alert (purchase volume tokens; non-blocking)
     if payload.token_type == "purchase":
@@ -1409,6 +1467,18 @@ async def record_second_weight(
         _send_notification_bg,
         company.id, "token_completed", _notify_ctx, "token", str(token.id), _bg_tenant,
     )
+
+    # Vehicle-Out movement alert (background, non-blocking) — the truck is leaving.
+    # Distinct from token_completed (that carries the billing detail); this is the
+    # lightweight gate-movement ping. Recipients subscribe to whichever they want.
+    try:
+        _move_ctx = await _build_vehicle_move_ctx(db, token, company, "out")
+        background_tasks.add_task(
+            _send_notification_bg,
+            company.id, "vehicle_out", _move_ctx, "token", str(token.id), _bg_tenant,
+        )
+    except Exception:
+        pass
 
     # Royalty unaccounted-MT alert (purchase tokens only; non-blocking)
     if token.token_type == "purchase":
