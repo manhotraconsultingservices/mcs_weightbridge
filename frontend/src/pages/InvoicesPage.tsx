@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { wasSubmittedForApproval } from '@/lib/approvalGate';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
-import { Plus, Search, FileText, Loader2, Download, CheckCircle, XCircle, Banknote, Send, CheckCircle2, Ticket, Lock, Pencil, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, RotateCcw, GitFork, History, ArrowUpCircle, Scissors, Wallet } from 'lucide-react';
+import { Plus, Search, FileText, Loader2, Download, CheckCircle, XCircle, Banknote, Send, CheckCircle2, Ticket, Lock, Pencil, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, RotateCcw, GitFork, History, ArrowUpCircle, Scissors, Wallet, Settings } from 'lucide-react';
 import { TokenDetailModal } from '@/components/TokenDetailModal';
 import { PrintButton } from '@/components/PrintButton';
 import { InvoiceRevisionDialog } from '@/components/InvoiceRevisionDialog';
@@ -23,6 +23,21 @@ import { useAuth } from '@/hooks/useAuth';
 import type { Invoice, InvoiceListResponse, Party, Product, Token, Vehicle } from '@/types';
 
 const INR = (v: number) => '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
+// Toggleable columns for the gear "show/hide columns" chooser. Fixed columns
+// (select · invoice no · party · amount · progress · actions) always show.
+const OPTIONAL_COLS: { key: string; label: string }[] = [
+  { key: 'date', label: 'Date' },
+  { key: 'vehicle', label: 'Vehicle' },
+  { key: 'token', label: 'Token' },
+  { key: 'net_weight', label: 'Net Weight' },
+  { key: 'payment_mode', label: 'Payment Mode' },
+];
+const PM_LABEL: Record<string, string> = {
+  cash: 'Cash', credit: 'Credit', upi: 'UPI', bank_transfer: 'Bank',
+  bank: 'Bank', cheque: 'Cheque', card: 'Card', online: 'Online',
+};
+const pmLabel = (m?: string | null) => (m ? (PM_LABEL[m] || (m.charAt(0).toUpperCase() + m.slice(1))) : '—');
 
 // ── Invoice Pipeline visual (Draft → Approved → Paid) ────────────────────────
 function InvoicePipeline({ status, paymentStatus }: { status: string; paymentStatus: string }) {
@@ -1840,6 +1855,21 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
   const thClass = 'px-3 py-2 text-left text-xs font-medium text-muted-foreground select-none whitespace-nowrap';
   const thSortClass = thClass + ' cursor-pointer hover:text-foreground';
 
+  // ── Column show/hide (gear) — persisted per browser ──
+  const [cols, setCols] = useState<Set<string>>(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('invoices.cols') || 'null');
+      if (Array.isArray(s)) return new Set(s as string[]);
+    } catch { /* ignore */ }
+    return new Set(OPTIONAL_COLS.map(c => c.key));  // all visible by default
+  });
+  const [colMenu, setColMenu] = useState(false);
+  useEffect(() => { localStorage.setItem('invoices.cols', JSON.stringify([...cols])); }, [cols]);
+  const colShown = (k: string) => cols.has(k);
+  const toggleCol = (k: string) => setCols(prev => {
+    const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n;
+  });
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -1873,7 +1903,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
         <Button
           variant="outline" size="sm"
           onClick={() => {
-            const headers = ['Invoice No', 'Date', 'Party / Customer', 'Vehicle', 'Token No', 'Net Wt (MT)', 'Amount', 'Payment Status', 'Status'];
+            const headers = ['Invoice No', 'Date', 'Party / Customer', 'Vehicle', 'Token No', 'Net Wt (MT)', 'Amount', 'Payment Mode', 'Payment Status', 'Status'];
             const rows = displayed.map(inv => [
               inv.invoice_no ?? '(draft)',
               inv.invoice_date ?? '',
@@ -1882,6 +1912,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
               inv.token_no != null ? String(inv.token_no) : '',
               inv.net_weight != null ? (Number(inv.net_weight) / 1000).toFixed(3) : '',
               Number(inv.grand_total ?? 0).toFixed(2),
+              pmLabel(inv.payment_mode),
               inv.payment_status ?? '',
               inv.status ?? '',
             ]);
@@ -1892,6 +1923,27 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
         >
           <Download className="mr-1 h-3.5 w-3.5" /> CSV
         </Button>
+        {/* Gear — show/hide columns */}
+        <div className="relative">
+          <Button variant="outline" size="sm" onClick={() => setColMenu(o => !o)} title="Show / hide columns">
+            <Settings className="mr-1 h-3.5 w-3.5" /> Columns
+          </Button>
+          {colMenu && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setColMenu(false)} />
+              <div className="absolute left-0 mt-1 z-20 w-52 rounded-md border bg-popover p-2 text-popover-foreground shadow-md">
+                <p className="px-1 pb-1 text-[11px] font-medium text-muted-foreground">Show columns</p>
+                {OPTIONAL_COLS.map(c => (
+                  <label key={c.key} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-accent">
+                    <input type="checkbox" className="h-3.5 w-3.5 accent-blue-600"
+                      checked={colShown(c.key)} onChange={() => toggleCol(c.key)} />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
         {someSelected && (
           <Button
             size="sm"
@@ -1937,20 +1989,25 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                     <th className={thSortClass} onClick={() => toggleSort('invoice_no')}>
                       {t('invoice.invoiceNo')} <SortIcon col="invoice_no" />
                     </th>
-                    <th className={thSortClass} onClick={() => toggleSort('invoice_date')}>
-                      {t('common.date')} <SortIcon col="invoice_date" />
-                    </th>
+                    {colShown('date') && (
+                      <th className={thSortClass} onClick={() => toggleSort('invoice_date')}>
+                        {t('common.date')} <SortIcon col="invoice_date" />
+                      </th>
+                    )}
                     <th className={thSortClass} onClick={() => toggleSort('party')}>
                       {t('invoice.party')} <SortIcon col="party" />
                     </th>
-                    <th className={thClass}>Vehicle</th>
-                    <th className={thClass}>Token</th>
-                    <th className={thSortClass + ' text-right'} onClick={() => toggleSort('net_weight')}>
-                      {t('invoice.netWeight')} (MT) <SortIcon col="net_weight" />
-                    </th>
+                    {colShown('vehicle') && <th className={thClass}>Vehicle</th>}
+                    {colShown('token') && <th className={thClass}>Token</th>}
+                    {colShown('net_weight') && (
+                      <th className={thSortClass + ' text-right'} onClick={() => toggleSort('net_weight')}>
+                        {t('invoice.netWeight')} (MT) <SortIcon col="net_weight" />
+                      </th>
+                    )}
                     <th className={thSortClass + ' text-right'} onClick={() => toggleSort('grand_total')}>
                       {t('common.amount')} <SortIcon col="grand_total" />
                     </th>
+                    {colShown('payment_mode') && <th className={thClass}>Payment Mode</th>}
                     <th className={thClass + ' text-center'}>Progress</th>
                     <th className={thClass}></th>
                   </tr>
@@ -1961,6 +2018,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                       <Input className="h-7 text-xs" placeholder="Filter…" value={cf.invoice_no}
                         onChange={e => setCf(f => ({ ...f, invoice_no: e.target.value }))} />
                     </td>
+                    {colShown('date') && (
                     <td className="px-2 py-1">
                       <div className="flex flex-col gap-0.5">
                         <input type="date" className="h-6 w-full rounded border border-input bg-background px-1.5 text-[11px]" title="From date"
@@ -1969,17 +2027,21 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                           value={cf.date_to} onChange={e => setCf(f => ({ ...f, date_to: e.target.value }))} />
                       </div>
                     </td>
+                    )}
                     <td className="px-2 py-1">
                       <Input className="h-7 text-xs" placeholder="Filter…" value={cf.party}
                         onChange={e => setCf(f => ({ ...f, party: e.target.value }))} />
                     </td>
+                    {colShown('vehicle') && (
                     <td className="px-2 py-1">
                       <Input className="h-7 text-xs" placeholder="Filter…" value={cf.vehicle_no}
                         onChange={e => setCf(f => ({ ...f, vehicle_no: e.target.value }))} />
                     </td>
+                    )}
+                    {colShown('token') && <td className="px-2 py-1" />}
+                    {colShown('net_weight') && <td className="px-2 py-1" />}
                     <td className="px-2 py-1" />
-                    <td className="px-2 py-1" />
-                    <td className="px-2 py-1" />
+                    {colShown('payment_mode') && <td className="px-2 py-1" />}
                     <td className="px-2 py-1">
                       <Select value={cf.payment_status || 'all'} onValueChange={v => setCf(f => ({ ...f, payment_status: (v ?? '') === 'all' ? '' : (v ?? '') }))}>
                         <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
@@ -2008,7 +2070,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                 <tbody>
                   {displayed.length === 0 ? (
                     <tr>
-                      <td colSpan={10}>
+                      <td colSpan={6 + cols.size}>
                         <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
                           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
                             <FileText className="h-8 w-8 text-muted-foreground/40" />
@@ -2047,7 +2109,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                           )}
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{inv.invoice_date}</td>
+                      {colShown('date') && <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{inv.invoice_date}</td>}
                       <td className="px-3 py-2 max-w-[200px]">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <p className="truncate text-sm">{inv.party?.name ?? inv.customer_name ?? <span className="italic text-muted-foreground">{t('invoice.walkIn')}</span>}</p>
@@ -2058,7 +2120,8 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                         </div>
                         {inv.party?.gstin && <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{inv.party.gstin}</p>}
                       </td>
-                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{inv.vehicle_no ?? '—'}</td>
+                      {colShown('vehicle') && <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{inv.vehicle_no ?? '—'}</td>}
+                      {colShown('token') && (
                       <td className="px-3 py-2">
                         {inv.token_id && inv.token_no != null ? (
                           <button
@@ -2081,10 +2144,14 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </td>
+                      )}
+                      {colShown('net_weight') && (
                       <td className="px-3 py-2 text-right text-muted-foreground">
                         {inv.net_weight != null ? Number(inv.net_weight).toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '—'}
                       </td>
+                      )}
                       <td className="px-3 py-2 text-right font-semibold whitespace-nowrap">{INR(inv.grand_total)}</td>
+                      {colShown('payment_mode') && <td className="px-3 py-2 text-xs whitespace-nowrap">{pmLabel(inv.payment_mode)}</td>}
                       <td className="px-3 py-2 text-center">
                         <div className="flex flex-col items-center gap-0.5">
                           <InvoicePipeline status={inv.status} paymentStatus={inv.payment_status} />
