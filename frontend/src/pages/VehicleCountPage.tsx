@@ -160,8 +160,16 @@ export default function VehicleCountPage() {
     {
       key: 'snapshot_url', label: 'Snapshot', type: 'string', accessor: r => r.snapshot_url || '',
       format: v => v
-        ? <img src={String(v)} alt="vehicle" className="h-10 w-16 rounded object-cover cursor-pointer border"
-               onClick={() => setLightbox(String(v))} />
+        ? (
+          <div className="flex items-center gap-2">
+            <img src={String(v)} alt="vehicle" className="h-10 w-16 rounded object-cover cursor-pointer border"
+                 onClick={() => setLightbox(String(v))} />
+            <a href={String(v)} target="_blank" rel="noopener noreferrer"
+               className="inline-flex items-center gap-1 text-xs text-primary underline hover:no-underline">
+              <CameraIcon className="h-3.5 w-3.5" /> View photo
+            </a>
+          </div>
+        )
         : <span className="text-muted-foreground text-xs">—</span>,
       exportValue: r => r.snapshot_url || '',
     },
