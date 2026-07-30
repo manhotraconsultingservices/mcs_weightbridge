@@ -191,8 +191,13 @@ async def _build_token_notify_ctx(db: AsyncSession, token: Token, company: Compa
         rate_val = float(token.rate)
     royalty = float(token.royalty_amount or 0)
     rent = float(token.vehicle_rent or 0)
+    # Buy/Sell so the owner can tell inbound (purchase) from outbound (sale) at a
+    # glance — same wording as the printed slip (sale→Sell, purchase→Buy).
+    _type_label = {"sale": "Sell (Sale)", "purchase": "Buy (Purchase)"}
+    token_type_label = _type_label.get(token.token_type, (token.token_type or "—").capitalize())
     return {
         "token_no": token.token_no or "PENDING",
+        "token_type": token_type_label,
         "vehicle_no": token.vehicle_no or "—",
         "net_weight": f"{float(token.net_weight or 0) / 1000:.3f}",  # legacy templates
         "completed_at": fmt_ist(token.completed_at),
