@@ -634,6 +634,72 @@ DEFAULT_TEMPLATES = [
 </table>""",
     },
 
+    # ── Vehicle In / Out (weighbridge token movement — truck arrival + departure) ─
+    {
+        "event_type": "vehicle_in",
+        "channel": "telegram",
+        "name": "Vehicle In (Telegram)",
+        "subject": None,
+        "body": (
+            "🚛 <b>Vehicle In</b>\n\n"
+            "Vehicle: <b>{{ vehicle_no }}</b>\n"
+            "{% if gate_pass_no %}Gate Pass: {{ gate_pass_no }}\n{% endif %}"
+            "{% if token_type %}Type: {{ token_type }}\n{% endif %}"
+            "Party: {{ party_name }}\n"
+            "Material: {{ material }}\n"
+            "In: {{ time }}\n\n— {{ company_name }}"
+        ),
+    },
+    {
+        "event_type": "vehicle_in",
+        "channel": "email",
+        "name": "Vehicle In (Email)",
+        "subject": "Vehicle In: {{ vehicle_no }} — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;">Vehicle In</h2>
+<p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;">
+  <tr><td><b>Vehicle</b></td><td>{{ vehicle_no }}</td></tr>
+  <tr><td><b>Gate Pass</b></td><td>{{ gate_pass_no }}</td></tr>
+  <tr><td><b>Type</b></td><td>{{ token_type }}</td></tr>
+  <tr><td><b>Party</b></td><td>{{ party_name }}</td></tr>
+  <tr><td><b>Material</b></td><td>{{ material }}</td></tr>
+  <tr><td><b>In</b></td><td>{{ time }}</td></tr>
+</table>""",
+    },
+    {
+        "event_type": "vehicle_out",
+        "channel": "telegram",
+        "name": "Vehicle Out (Telegram)",
+        "subject": None,
+        "body": (
+            "🚦 <b>Vehicle Out</b>\n\n"
+            "Vehicle: <b>{{ vehicle_no }}</b>\n"
+            "{% if token_no and token_no != 'PENDING' %}Token: {{ token_no }}\n{% endif %}"
+            "{% if gate_pass_no %}Gate Pass: {{ gate_pass_no }}\n{% endif %}"
+            "{% if token_type %}Type: {{ token_type }}\n{% endif %}"
+            "Party: {{ party_name }}\n"
+            "Material: {{ material }}\n"
+            "Out: {{ time }}\n\n— {{ company_name }}"
+        ),
+    },
+    {
+        "event_type": "vehicle_out",
+        "channel": "email",
+        "name": "Vehicle Out (Email)",
+        "subject": "Vehicle Out: {{ vehicle_no }} — {{ company_name }}",
+        "body": """<h2 style="margin:0 0 4px;">Vehicle Out</h2>
+<p style="margin:0 0 12px;color:#555;">{{ company_name }}</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;">
+  <tr><td><b>Vehicle</b></td><td>{{ vehicle_no }}</td></tr>
+  <tr><td><b>Token</b></td><td>{{ token_no }}</td></tr>
+  <tr><td><b>Gate Pass</b></td><td>{{ gate_pass_no }}</td></tr>
+  <tr><td><b>Type</b></td><td>{{ token_type }}</td></tr>
+  <tr><td><b>Party</b></td><td>{{ party_name }}</td></tr>
+  <tr><td><b>Material</b></td><td>{{ material }}</td></tr>
+  <tr><td><b>Out</b></td><td>{{ time }}</td></tr>
+</table>""",
+    },
+
     # ── Invoice write-off (bad debt) ──────────────────────────────────────────
     {
         "event_type": "invoice_write_off",

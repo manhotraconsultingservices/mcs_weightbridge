@@ -204,7 +204,7 @@ async def _apply_intent(db: AsyncSession, op_type: str, entity_id: Optional[str]
     user = await _system_user(db)
 
     if op_type == "token.create":
-        tok = await create_token(TokenCreate(**body), req, db, user, None)
+        tok = await create_token(TokenCreate(**body), req, BackgroundTasks(), db, user, None)
     elif op_type == "token.first_weight":
         tok = await record_first_weight(uuid.UUID(entity_id), TokenFirstWeight(**body),
                                         req, BackgroundTasks(), db, user)

@@ -33,6 +33,8 @@ const EVENT_TYPES = [
   { value: 'worker_payment', label: 'Worker Payment (salary / wage / advance)' },
   // ── Weighbridge & gate ──
   { value: 'token_completed', label: 'Token / Weighment Completed' },
+  { value: 'vehicle_in', label: 'Vehicle In (truck arrives / token created)' },
+  { value: 'vehicle_out', label: 'Vehicle Out (truck leaves / weighment done)' },
   { value: 'gate_pass_created', label: 'Gate Pass Created (vehicle entry)' },
   { value: 'gate_pass_exit', label: 'Gate Pass Exit (vehicle out)' },
   { value: 'anpr_entry', label: 'Gate — Vehicle Entry (ANPR)' },
@@ -116,6 +118,8 @@ const VARS_HINT: Record<string, string[]> = {
   diesel_transaction: ['vehicle_no', 'litres', 'rate', 'amount', 'odometer_km', 'fuel_source', 'company_name'],
   quotation_sent: ['party_name', 'party_email', 'quotation_no', 'valid_to', 'grand_total', 'company_name'],
   token_completed: ['token_no', 'vehicle_no', 'net_weight', 'completed_at', 'party_name', 'party_phone', 'company_name'],
+  vehicle_in: ['vehicle_no', 'gate_pass_no', 'token_type', 'party_name', 'material', 'time', 'company_name'],
+  vehicle_out: ['token_no', 'vehicle_no', 'gate_pass_no', 'token_type', 'party_name', 'material', 'time', 'company_name'],
   invoice_overdue: ['party_name', 'party_phone', 'invoice_no', 'amount_due', 'due_date', 'company_name'],
   payment_overdue_reminder: ['party_name', 'balance', 'oldest_overdue_days', 'company_name'],
   low_balance: ['party_name', 'party_phone', 'current_balance', 'company_name'],
