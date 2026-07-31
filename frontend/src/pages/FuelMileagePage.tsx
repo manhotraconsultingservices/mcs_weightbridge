@@ -1,7 +1,7 @@
 /**
  * Fleet Fuel & Mileage — diesel-leakage detection.
  *
- * Tabs: Fuel Log · Mileage Report · Trends · Leakage · Settings.
+ * Tabs: Fuel Log · Mileage Report · Rent vs Fuel (utilisation) · Trends · Leakage · Settings.
  * Records diesel fills (a plant-tank fill deducts from store diesel stock) and
  * shows per-vehicle mileage vs benchmark → excess litres / ₹ = the leakage signal.
  */
@@ -11,7 +11,7 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine,
 } from 'recharts';
-import { Fuel, Plus, Loader2, AlertTriangle, Droplet, TrendingDown, Gauge, Settings2 } from 'lucide-react';
+import { Fuel, Plus, Loader2, AlertTriangle, Droplet, TrendingDown, Gauge, Settings2, IndianRupee } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -195,7 +195,119 @@ function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: 
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
-type Tab = 'log' | 'report' | 'trends' | 'leakage' | 'settings';
+// ── Utilisation tab — rent (km/₹ from Sales tokens) vs fuel (L/₹) per vehicle ──
+interface UtilRow {
+  vehicle_id: string; registration_no: string; trips: number;
+  rent_km: number; rent_earned: number; fuel_litres: number; fuel_cost: number;
+  net: number; fuel_left_est: number | null;
+  tank_capacity_litres: number | null; benchmark_mileage_kmpl: number | null;
+}
+interface UtilResp {
+  date_from: string; date_to: string; rows: UtilRow[];
+  totals: { trips: number; rent_km: number; rent_earned: number; fuel_litres: number; fuel_cost: number; net: number };
+}
+
+function UtilizationTab() {
+  const [from, setFrom] = useState(daysAgo(30));
+  const [to, setTo] = useState(today());
+  const [data, setData] = useState<UtilResp | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api.get<UtilResp>(`/api/v1/fuel/vehicle-utilization?date_from=${from}&date_to=${to}`)
+      .then(r => setData(r.data)).catch(() => setData(null)).finally(() => setLoading(false));
+  }, [from, to]);
+  useEffect(() => { load(); }, [load]);
+
+  const tot = data?.totals;
+  const monthStart = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]; };
+  const preset = (f: string, t: string) => { setFrom(f); setTo(t); };
+
+  const COLS: ColumnDef<UtilRow>[] = [
+    { key: 'registration_no', label: 'Vehicle', accessor: r => r.registration_no },
+    { key: 'trips', label: 'Trips', type: 'number', align: 'right', accessor: r => r.trips },
+    { key: 'rent_km', label: 'Rent km', type: 'number', align: 'right', accessor: r => r.rent_km, format: v => num(v as number, 0) },
+    { key: 'rent_earned', label: 'Rent ₹', type: 'number', align: 'right', accessor: r => r.rent_earned,
+      format: v => <span className="text-emerald-700">{INR(v as number)}</span>, exportValue: r => r.rent_earned },
+    { key: 'fuel_litres', label: 'Fuel (L)', type: 'number', align: 'right', accessor: r => r.fuel_litres, format: v => num(v as number, 1) },
+    { key: 'fuel_cost', label: 'Fuel ₹', type: 'number', align: 'right', accessor: r => r.fuel_cost,
+      format: v => <span className="text-rose-700">{INR(v as number)}</span>, exportValue: r => r.fuel_cost },
+    { key: 'net', label: 'Net (Rent − Fuel)', type: 'number', align: 'right', accessor: r => r.net,
+      format: v => <span className={`font-semibold ${Number(v) >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{INR(v as number)}</span>,
+      exportValue: r => r.net },
+    { key: 'fuel_left_est', label: 'Fuel left ≈ (L)', type: 'number', align: 'right', accessor: r => r.fuel_left_est ?? -1,
+      format: (_v, r) => r.fuel_left_est == null ? '—'
+        : `${num(r.fuel_left_est, 1)}${r.tank_capacity_litres ? ` / ${num(r.tank_capacity_litres, 0)}` : ''}`,
+      exportValue: r => r.fuel_left_est ?? '' },
+  ];
+  const chartData = (data?.rows ?? []).slice(0, 12).map(r => ({ name: r.registration_no, Rent: r.rent_earned, Fuel: r.fuel_cost }));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end gap-3 p-3 rounded-lg border bg-card">
+        <div className="space-y-1"><Label className="text-xs">From</Label>
+          <Input type="date" value={from} onChange={e => setFrom(e.target.value)} className="h-8 w-36 text-sm" /></div>
+        <div className="space-y-1"><Label className="text-xs">To</Label>
+          <Input type="date" value={to} onChange={e => setTo(e.target.value)} className="h-8 w-36 text-sm" /></div>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => preset(today(), today())}>Today</Button>
+          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => preset(daysAgo(6), today())}>Last 7</Button>
+          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => preset(daysAgo(29), today())}>Last 30</Button>
+          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => preset(monthStart(), today())}>This Month</Button>
+        </div>
+        <Button onClick={load} disabled={loading} variant="outline" size="sm">
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Refresh'}</Button>
+      </div>
+      <p className="text-xs text-muted-foreground -mt-1">
+        Own-vehicle rent-out performance: <b>km run</b> and <b>rent earned</b> (from Sales tokens) vs <b>fuel burnt</b>
+        (from the fuel log), and the <b>net</b> per vehicle. <b>Fuel left</b> is an estimate from the last brim-full fill,
+        km driven and the benchmark mileage (needs tank capacity + benchmark set on the vehicle).
+      </p>
+
+      {tot && (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <Card><CardContent className="p-4"><div className="text-xs uppercase tracking-widest text-slate-500 font-semibold">Rent km</div>
+            <div className="text-2xl font-bold text-slate-800 mt-1">{num(tot.rent_km, 0)}</div><div className="text-xs text-slate-500">{tot.trips} trips</div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="text-xs uppercase tracking-widest text-slate-500 font-semibold flex items-center gap-1"><IndianRupee className="h-3.5 w-3.5 text-emerald-500" /> Rent earned</div>
+            <div className="text-2xl font-bold text-emerald-700 mt-1">{INR(tot.rent_earned)}</div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="text-xs uppercase tracking-widest text-slate-500 font-semibold flex items-center gap-1"><Droplet className="h-3.5 w-3.5 text-sky-500" /> Fuel</div>
+            <div className="text-2xl font-bold text-sky-700 mt-1">{num(tot.fuel_litres, 0)} L</div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="text-xs uppercase tracking-widest text-slate-500 font-semibold">Fuel cost</div>
+            <div className="text-2xl font-bold text-rose-700 mt-1">{INR(tot.fuel_cost)}</div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="text-xs uppercase tracking-widest text-slate-500 font-semibold">Net</div>
+            <div className={`text-2xl font-bold mt-1 ${tot.net >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{INR(tot.net)}</div><div className="text-xs text-slate-500">Rent − Fuel</div></CardContent></Card>
+        </div>
+      )}
+
+      {chartData.length > 0 && (
+        <Card><CardContent className="p-4">
+          <div className="text-sm font-semibold text-slate-700 mb-2">Rent earned vs Fuel cost by vehicle</div>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} width={48} />
+              <Tooltip formatter={(v: number) => INR(v)} />
+              <Legend />
+              <Bar dataKey="Rent" fill="#10b981" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="Fuel" fill="#f43f5e" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent></Card>
+      )}
+
+      <Card><CardContent className="p-0">
+        {loading ? <div className="py-10 text-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin inline" /> Loading…</div>
+          : <DataTable<UtilRow> id="fuel.utilization" data={data?.rows ?? []} columns={COLS} rowKey={r => r.vehicle_id}
+              exportFilename={`vehicle-utilization-${from}-to-${to}`} defaultSort={{ key: 'net', direction: 'desc' }}
+              emptyMessage="No rent trips or fuel entries in this range." />}
+      </CardContent></Card>
+    </div>
+  );
+}
+
+type Tab = 'log' | 'report' | 'utilization' | 'trends' | 'leakage' | 'settings';
 
 export default function FuelMileagePage() {
   const loc = useLocation(); const nav = useNavigate();
@@ -218,6 +330,7 @@ export default function FuelMileagePage() {
   const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
     { value: 'log', label: 'Fuel Log', icon: Droplet },
     { value: 'report', label: 'Mileage Report', icon: Gauge },
+    { value: 'utilization', label: 'Rent vs Fuel', icon: IndianRupee },
     { value: 'trends', label: 'Trends', icon: TrendingDown },
     { value: 'leakage', label: 'Leakage Alerts', icon: AlertTriangle },
     ...(isAdmin ? [{ value: 'settings' as Tab, label: 'Settings', icon: Settings2 }] : []),
@@ -241,6 +354,7 @@ export default function FuelMileagePage() {
         </TabsList>
         <TabsContent value="log" className="mt-4"><FuelLogTab vehicles={vehicles} /></TabsContent>
         <TabsContent value="report" className="mt-4"><MileageReportTab /></TabsContent>
+        <TabsContent value="utilization" className="mt-4"><UtilizationTab /></TabsContent>
         <TabsContent value="trends" className="mt-4"><TrendsTab vehicles={vehicles} /></TabsContent>
         <TabsContent value="leakage" className="mt-4"><LeakageTab /></TabsContent>
         {isAdmin && <TabsContent value="settings" className="mt-4"><FuelSettingsTab /></TabsContent>}
