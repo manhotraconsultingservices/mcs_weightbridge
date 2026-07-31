@@ -592,6 +592,110 @@ async def mileage_report(
     }
 
 
+async def _fuel_left_by_vehicle(db: AsyncSession, cid: str, veh: dict) -> dict:
+    """Approx litres left in each tank (point-in-time, all-time).
+
+    From the most recent brim-full fill: tank_capacity − (km driven since / benchmark)
+    + any partial top-ups after it, clamped to [0, tank]. Needs the vehicle's tank
+    capacity + benchmark + at least one tank_full fill; otherwise the estimate is
+    omitted (None). Deliberately approximate — there is no live fuel gauge."""
+    from collections import defaultdict
+    rows = (await db.execute(text(
+        "SELECT vehicle_id::text AS vid, odometer_km, litres, tank_full "
+        "FROM vehicle_fuel_entries WHERE company_id=:cid ORDER BY vehicle_id, odometer_km"
+    ), {"cid": cid})).mappings().all()
+    by_v: dict[str, list] = defaultdict(list)
+    for r in rows:
+        by_v[r["vid"]].append(r)
+    out: dict[str, float] = {}
+    for vid, entries in by_v.items():
+        v = veh.get(vid)
+        if not v or not v.tank_capacity_litres or not v.benchmark_mileage_kmpl:
+            continue
+        tank = float(v.tank_capacity_litres); bench = float(v.benchmark_mileage_kmpl)
+        if bench <= 0:
+            continue
+        full_idx = None
+        for i, e in enumerate(entries):
+            if e["tank_full"]:
+                full_idx = i
+        if full_idx is None:
+            continue
+        full_odo = float(entries[full_idx]["odometer_km"] or 0)
+        litres_after = sum(float(e["litres"] or 0) for e in entries[full_idx + 1:])
+        cur_odo = (float(v.current_odometer_km) if v.current_odometer_km
+                   else float(entries[-1]["odometer_km"] or full_odo))
+        burnt = max(0.0, cur_odo - full_odo) / bench
+        out[vid] = round(max(0.0, min(tank, tank + litres_after - burnt)), 1)
+    return out
+
+
+@router.get("/vehicle-utilization")
+async def vehicle_utilization(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    """Per-vehicle rent-vs-fuel utilisation over a period (additive report).
+
+    Rent side  — COMPLETED *sale* tokens for own vehicles: km run (tokens.rent_km) +
+                 rent earned (tokens.vehicle_rent), IST-bucketed on completion.
+    Fuel side  — the fuel log (litres + ₹) in the period.
+    Fuel left  — a point-in-time tank estimate (see _fuel_left_by_vehicle).
+    net = rent earned − fuel cost (the rent-out profitability of each vehicle)."""
+    cid = str(user.company_id)
+    p = {"cid": cid, "fd": date_from, "td": date_to}
+    r2 = lambda x: round(float(x or 0), 2)  # noqa: E731
+
+    vrows = (await db.execute(select(
+        Vehicle.id, Vehicle.registration_no, Vehicle.benchmark_mileage_kmpl,
+        Vehicle.tank_capacity_litres, Vehicle.current_odometer_km,
+    ).where(Vehicle.company_id == user.company_id))).all()
+    veh = {str(r.id): r for r in vrows}
+
+    rent: dict[str, dict] = {}
+    for r in (await db.execute(text(
+        "SELECT vehicle_id::text AS vid, COUNT(*) AS trips, "
+        "COALESCE(SUM(rent_km),0) AS rent_km, COALESCE(SUM(vehicle_rent),0) AS rent_earned "
+        "FROM tokens WHERE company_id=:cid AND token_type='sale' AND status='COMPLETED' "
+        "AND vehicle_id IS NOT NULL AND (COALESCE(vehicle_rent,0) > 0 OR COALESCE(rent_km,0) > 0) "
+        "AND CAST(COALESCE(completed_at, created_at) AT TIME ZONE 'Asia/Kolkata' AS date) "
+        "BETWEEN :fd AND :td GROUP BY vehicle_id"), p)).mappings():
+        rent[r["vid"]] = dict(r)
+
+    fuel: dict[str, dict] = {}
+    for r in (await db.execute(text(
+        "SELECT vehicle_id::text AS vid, COALESCE(SUM(litres),0) AS litres, "
+        "COALESCE(SUM(amount),0) AS cost FROM vehicle_fuel_entries "
+        "WHERE company_id=:cid AND entry_date BETWEEN :fd AND :td GROUP BY vehicle_id"), p)).mappings():
+        fuel[r["vid"]] = dict(r)
+
+    left = await _fuel_left_by_vehicle(db, cid, veh)
+
+    rows = []
+    tot = {"trips": 0, "rent_km": 0.0, "rent_earned": 0.0, "fuel_litres": 0.0, "fuel_cost": 0.0, "net": 0.0}
+    for vid in set(rent) | set(fuel):
+        v = veh.get(vid)
+        rk = r2(rent.get(vid, {}).get("rent_km")); re_ = r2(rent.get(vid, {}).get("rent_earned"))
+        fl = r2(fuel.get(vid, {}).get("litres")); fc = r2(fuel.get(vid, {}).get("cost"))
+        trips = int(rent.get(vid, {}).get("trips") or 0)
+        net = r2(re_ - fc)
+        rows.append({
+            "vehicle_id": vid, "registration_no": v.registration_no if v else "—",
+            "trips": trips, "rent_km": rk, "rent_earned": re_,
+            "fuel_litres": fl, "fuel_cost": fc, "net": net,
+            "fuel_left_est": left.get(vid),
+            "tank_capacity_litres": (float(v.tank_capacity_litres) if v and v.tank_capacity_litres else None),
+            "benchmark_mileage_kmpl": (float(v.benchmark_mileage_kmpl) if v and v.benchmark_mileage_kmpl else None),
+        })
+        tot["trips"] += trips; tot["rent_km"] += rk; tot["rent_earned"] += re_
+        tot["fuel_litres"] += fl; tot["fuel_cost"] += fc; tot["net"] += net
+    rows.sort(key=lambda x: x["net"], reverse=True)
+    for k in ("rent_km", "rent_earned", "fuel_litres", "fuel_cost", "net"):
+        tot[k] = r2(tot[k])
+    return {"date_from": str(date_from), "date_to": str(date_to), "rows": rows, "totals": tot}
+
+
 @router.get("/leakage-alerts")
 async def leakage_alerts(
     days: int = Query(30, ge=1, le=365),
