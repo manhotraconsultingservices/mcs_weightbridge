@@ -5,6 +5,7 @@ Auth: requires X-Super-Admin header matching settings.SUPER_ADMIN_SECRET,
 OR a valid JWT from any tenant with role=admin (for listing only).
 """
 
+import json
 import logging
 import os
 import subprocess
@@ -492,6 +493,36 @@ async def _seed_tenant_data(slug: str, payload: TenantCreate):
             "pw": pw_hash,
             "fullname": "Administrator",
         })
+
+        # Seed a "Diesel" store item + point fuel_config at it, so plant-tank diesel
+        # fills deduct from Store Inventory out-of-the-box — no manual Fuel → Settings
+        # step (the gap that hit sss-stone-crusher). Idempotent; opening stock 0, the
+        # admin records diesel receipts as normal. The Record-Fill code auto-resolves a
+        # diesel item too, but pre-seeding means it is configured from the first login.
+        diesel_id = str(uuid.uuid4())
+        await db.execute(text("""
+            INSERT INTO inventory_items (id, company_id, name, category, unit,
+                                         current_stock, min_stock_level, reorder_quantity,
+                                         auto_po_enabled, is_active)
+            SELECT :id, :cid, 'Diesel', 'fuel', 'litre', 0, 0, 0, FALSE, TRUE
+            WHERE NOT EXISTS (
+                SELECT 1 FROM inventory_items WHERE company_id = :cid AND lower(name) = 'diesel'
+            )
+        """), {"id": diesel_id, "cid": company_id})
+        # resolve the real id (just-inserted OR a pre-existing 'Diesel') and configure fuel
+        row = (await db.execute(text(
+            "SELECT id FROM inventory_items WHERE company_id = :cid AND lower(name) = 'diesel' "
+            "AND is_active = TRUE ORDER BY created_at LIMIT 1"
+        ), {"cid": company_id})).first()
+        if row:
+            await db.execute(text("""
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES ('fuel_config', :v, NOW())
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+            """), {"v": json.dumps({
+                "diesel_item_id": str(row[0]), "deviation_threshold_pct": 15,
+                "min_distance_km": 50, "auto_learn_days": 90, "alert_enabled": True,
+            })})
 
         await db.commit()
     logger.info("Seeded tenant %s: company=%s, user=%s", slug, payload.company_name, payload.admin_username)
