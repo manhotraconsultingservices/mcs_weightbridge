@@ -11,6 +11,7 @@ import { MonitorPlay, ScanSearch, Camera, AlertTriangle, Video } from 'lucide-re
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { usePermissions } from '@/contexts/PermissionsContext';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import CameraScalePage from './CameraScalePage';
 import SnapshotSearchPage from './SnapshotSearchPage';
 import AnprEventsPage from './AnprEventsPage';
@@ -24,6 +25,7 @@ export default function CamerasAnprHubPage() {
   const nav = useNavigate();
   const loc = useLocation();
   const { isTabAllowed } = usePermissions();
+  const isMobile = useIsMobile();
 
   const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
     { value: 'cameras',    label: t('hubs.camerasAnpr.cameraScale'),    icon: MonitorPlay },
@@ -32,7 +34,11 @@ export default function CamerasAnprHubPage() {
     { value: 'anpr',       label: t('hubs.camerasAnpr.anprEvents'),     icon: Camera },
     { value: 'review',     label: t('hubs.camerasAnpr.plateReview'),    icon: AlertTriangle },
   ];
-  const visibleTabs = TABS.filter(t => isTabAllowed('/cameras-anpr', t.value));
+  // Hidden on mobile/PWA: Camera & Scale monitor (streams over ws://localhost, plant-PC
+  // only) + ANPR Events. The internet-relayed Gate live feed stays.
+  const HIDE_ON_MOBILE = new Set<Tab>(['cameras', 'anpr']);
+  const visibleTabs = TABS.filter(t => isTabAllowed('/cameras-anpr', t.value)
+    && !(isMobile && HIDE_ON_MOBILE.has(t.value)));
   const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'cameras';
   const initial = (visibleTabs.find(t => t.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'cameras') as Tab;
   const [tab, setTab] = useState<Tab>(initial);
