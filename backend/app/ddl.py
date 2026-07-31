@@ -445,6 +445,7 @@ def get_column_migrations() -> list[str]:
         # Fleet fuel & mileage — benchmark km/l + tank capacity on the vehicle master.
         "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS benchmark_mileage_kmpl NUMERIC(6,2)",
         "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS tank_capacity_litres NUMERIC(8,2)",
+        "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS current_odometer_km NUMERIC(12,1)",
         "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS rent_rate_per_km_per_mt NUMERIC(12,4)",
         "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS rent_rate_per_km_per_cum NUMERIC(12,4)",
         # Custom-attribute values (owner-defined fields) per weighment.

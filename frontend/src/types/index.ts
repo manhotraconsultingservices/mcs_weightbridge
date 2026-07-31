@@ -133,6 +133,7 @@ export interface Vehicle {
   default_tare_weight: number;
   benchmark_mileage_kmpl: number | null;
   tank_capacity_litres: number | null;
+  current_odometer_km: number | null;
   rent_rate_per_km_per_mt: number | null;
   rent_rate_per_km_per_cum: number | null;
   is_active: boolean;

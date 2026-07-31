@@ -84,14 +84,15 @@ function RecordFillDialog({ open, vehicles, onClose, onSaved }: {
 
   async function submit() {
     if (!form.vehicle_id) { setError('Select a vehicle'); return; }
-    if (!form.odometer_km || !form.litres) { setError('Odometer and litres are required'); return; }
+    // Litres is optional: a 0-litre entry is an odometer-only update (no fill).
+    if (!form.odometer_km) { setError('Odometer reading is required'); return; }
     setSaving(true); setError(''); setResult(null);
     try {
       const { data } = await api.post<FuelEntry>('/api/v1/fuel/entries', {
         vehicle_id: form.vehicle_id,
         entry_date: form.entry_date,
         odometer_km: parseFloat(form.odometer_km),
-        litres: parseFloat(form.litres),
+        litres: form.litres ? parseFloat(form.litres) : 0,
         rate_per_litre: form.rate_per_litre ? parseFloat(form.rate_per_litre) : null,
         fuel_source: form.fuel_source,
         tank_full: form.tank_full,
@@ -141,7 +142,8 @@ function RecordFillDialog({ open, vehicles, onClose, onSaved }: {
             </div>
             <div className="space-y-1">
               <Label>Diesel (litres)</Label>
-              <Input type="number" min="0" step="0.01" value={form.litres} onChange={e => set('litres', e.target.value)} placeholder="Litres filled" />
+              <Input type="number" min="0" step="0.01" value={form.litres} onChange={e => set('litres', e.target.value)} placeholder="Litres filled (leave blank / 0 to only update odometer)" />
+              <p className="text-[10px] text-muted-foreground">Leave blank or 0 to just record a new odometer reading without a fill.</p>
             </div>
             <div className="space-y-1">
               <Label>Rate (₹/litre)</Label>

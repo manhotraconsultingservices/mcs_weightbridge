@@ -12,6 +12,7 @@ class VehicleCreate(BaseModel):
     default_tare_weight: Decimal = Decimal("0")
     benchmark_mileage_kmpl: Decimal | None = None
     tank_capacity_litres: Decimal | None = None
+    current_odometer_km: Decimal | None = None
     rent_rate_per_km_per_mt: Decimal | None = None
     rent_rate_per_km_per_cum: Decimal | None = None
 
@@ -24,6 +25,7 @@ class VehicleUpdate(BaseModel):
     default_tare_weight: Decimal | None = None
     benchmark_mileage_kmpl: Decimal | None = None
     tank_capacity_litres: Decimal | None = None
+    current_odometer_km: Decimal | None = None
     rent_rate_per_km_per_mt: Decimal | None = None
     rent_rate_per_km_per_cum: Decimal | None = None
     is_active: bool | None = None
@@ -38,6 +40,7 @@ class VehicleResponse(BaseModel):
     default_tare_weight: Decimal
     benchmark_mileage_kmpl: Decimal | None = None
     tank_capacity_litres: Decimal | None = None
+    current_odometer_km: Decimal | None = None
     rent_rate_per_km_per_mt: Decimal | None = None
     rent_rate_per_km_per_cum: Decimal | None = None
     is_active: bool
