@@ -15,7 +15,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -93,6 +93,44 @@ async def put_config(payload: dict, db: AsyncSession = Depends(get_db),
     )
     await db.commit()
     return {"ok": True}
+
+
+async def _resolve_diesel_item_id(db: AsyncSession, cfg: dict[str, Any], company_id) -> Any:
+    """The store item to deduct plant-tank diesel from — self-configuring for new tenants.
+
+    Prefer the explicitly-configured `diesel_item_id`. If none is set (a fresh tenant
+    that never opened Fuel → Settings), auto-resolve an UNAMBIGUOUS diesel item —
+    exactly one active inventory item whose name mentions 'diesel' — and persist it
+    into `fuel_config`, so plant-tank fills deduct from day one and the Settings tab
+    then shows the choice. Ambiguous (0 or >1 name matches) → return None: never
+    auto-guess which item to draw down; the fill still records, just without a
+    deduction (and the Settings warning nudges the admin to pick one).
+    """
+    if cfg.get("diesel_item_id"):
+        return cfg["diesel_item_id"]
+    from app.models.inventory import InventoryItem
+    ids = (await db.execute(
+        select(InventoryItem.id).where(
+            InventoryItem.company_id == company_id,
+            InventoryItem.is_active == True,  # noqa: E712
+            func.lower(InventoryItem.name).like("%diesel%"),
+        )
+    )).scalars().all()
+    if len(ids) != 1:
+        return None
+    item_id = str(ids[0])
+    try:  # best-effort persist — a config-write failure must never block the fill
+        await db.execute(
+            text("""
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES ('fuel_config', :v, NOW())
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+            """),
+            {"v": json.dumps({**cfg, "diesel_item_id": item_id})},
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not persist auto-resolved diesel_item_id: %s", exc)
+    return item_id
 
 
 # ── Inventory deduction (plant-tank fills) ────────────────────────────────────
@@ -225,9 +263,10 @@ async def create_entry(payload: FuelEntryCreate, background: BackgroundTasks,
 
     inv_item_id = None
     inv_txn_id = None
-    if (payload.fuel_source or "plant_tank") == "plant_tank" and cfg.get("diesel_item_id"):
+    diesel_item_id = await _resolve_diesel_item_id(db, cfg, user.company_id)
+    if (payload.fuel_source or "plant_tank") == "plant_tank" and diesel_item_id:
         inv_item_id, inv_txn_id = await _issue_diesel(
-            db, user, cfg["diesel_item_id"], litres, veh.registration_no, payload.entry_date)
+            db, user, diesel_item_id, litres, veh.registration_no, payload.entry_date)
 
     entry = VehicleFuelEntry(
         company_id=user.company_id,
