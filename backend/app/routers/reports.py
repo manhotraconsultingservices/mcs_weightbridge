@@ -1287,6 +1287,29 @@ async def _daybook_lines(db: AsyncSession, cid, day: date) -> tuple[list, list]:
         line[_daybook_col(a["mode"])] = _r2(a["amount"])
         payments.append(line)
 
+    # PAYMENTS — Store Inventory purchases (goods received against a PO, at PO price).
+    # Bucketed in IST; PO items pre-aggregated per (po_id,item_id) so a repeated item
+    # can't fan-out/double-count. Receipts carry no payment mode → treated as cash
+    # (like diesel fills). A store purchase paid via a voucher already shows above.
+    for s in await _daybook_savepoint_rows(db,
+        "SELECT COALESCE(po.po_no,'') AS ref, "
+        "COALESCE(pi.item_name, it.name, 'Store item') AS item, "
+        "(t.quantity * COALESCE(pi.unit_price,0)) AS amount "
+        "FROM inventory_transactions t "
+        "LEFT JOIN (SELECT po_id, item_id, AVG(unit_price) AS unit_price, MAX(item_name) AS item_name "
+        "           FROM inventory_po_items GROUP BY po_id, item_id) pi "
+        "ON pi.po_id=t.reference_id AND pi.item_id=t.item_id "
+        "LEFT JOIN inventory_purchase_orders po ON po.id=t.reference_id "
+        "LEFT JOIN inventory_items it ON it.id=t.item_id "
+        "WHERE t.company_id=:cid AND t.transaction_type='receipt' "
+        "AND CAST(t.created_at AT TIME ZONE 'Asia/Kolkata' AS date)=:d ORDER BY t.created_at", p):
+        amt = _r2(s["amount"])
+        if amt <= 0:
+            continue   # non-priced receipt / adjustment — no cash value to show
+        line = {"particulars": f"Store — {s['item']}".strip(), "ref": s["ref"], **_blank_cols()}
+        line["cash"] = amt
+        payments.append(line)
+
     return receipts, payments
 
 
@@ -1321,6 +1344,18 @@ async def _daybook_range_net(db: AsyncSession, cid, d_from: date, d_to: date) ->
         "SELECT LOWER(COALESCE(payment_mode,'cash')) AS mode, SUM(amount) AS total "
         "FROM agent_commission_payments WHERE company_id=:cid AND paid_on>=:fd AND paid_on<=:td "
         "GROUP BY 1", p), -1)
+    # Store Inventory purchases (PO receipts at PO price) — money out, treated as cash;
+    # PO items pre-aggregated per (po_id,item_id) to avoid fan-out. Keeps the opening
+    # roll-forward consistent with the per-day Store lines.
+    _fold(await _daybook_savepoint_rows(db,
+        "SELECT 'cash' AS mode, SUM(t.quantity * COALESCE(pi.unit_price,0)) AS total "
+        "FROM inventory_transactions t "
+        "LEFT JOIN (SELECT po_id, item_id, AVG(unit_price) AS unit_price "
+        "           FROM inventory_po_items GROUP BY po_id, item_id) pi "
+        "ON pi.po_id=t.reference_id AND pi.item_id=t.item_id "
+        "WHERE t.company_id=:cid AND t.transaction_type='receipt' "
+        "AND CAST(t.created_at AT TIME ZONE 'Asia/Kolkata' AS date)>=:fd "
+        "AND CAST(t.created_at AT TIME ZONE 'Asia/Kolkata' AS date)<=:td GROUP BY 1", p), -1)
     return {k: _r2(v) for k, v in net.items()}
 
 
@@ -1383,7 +1418,9 @@ async def day_book(
             "(cash → Cash; UPI/bank/cheque/card → Bank). The CC/OD column carries its "
             "opening balance forward — tag a payment mode to it to record CC movements.",
             "Payments = supplier & expense vouchers, worker wages/advances, diesel fills, "
-            "commission payouts. Store-item purchases appear when paid via a voucher.",
+            "commission payouts, and Store Inventory purchases (goods received against a "
+            "PO, at PO price — shown in Cash). A store purchase paid via a voucher shows "
+            "under vouchers instead.",
         ],
     }
 
