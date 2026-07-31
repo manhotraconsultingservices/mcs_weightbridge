@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, Fragment } from 'react';
 import { Plus, Search, ArrowUpCircle } from 'lucide-react';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { useTranslation } from 'react-i18next';
@@ -59,6 +59,11 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
   const [bankName, setBankName] = useState('');
   const [notes, setNotes] = useState('');
   const [outstandingInvoices, setOutstandingInvoices] = useState<Invoice[]>([]);
+  // Gross open-invoice balance on the OPPOSITE side (purchases for a receipt,
+  // sales for a voucher). A party that's both customer AND supplier can have an
+  // open receivable and an open payable that net to zero in current_balance —
+  // this lets the "Outstanding" label show both instead of masking to "Settled".
+  const [oppositeDue, setOppositeDue] = useState(0);
   const [allocations, setAllocations] = useState<AllocationRow[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -100,8 +105,16 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
   const invTime = (i: Invoice) => new Date((i.invoice_date || (i as { created_at?: string }).created_at || '') as string).getTime() || 0;
 
   useEffect(() => {
-    if (!partyId) { setOutstandingInvoices([]); setAllocations([]); return; }
+    if (!partyId) { setOutstandingInvoices([]); setAllocations([]); setOppositeDue(0); return; }
     const invType = type === 'receipt' ? 'sale' : 'purchase';
+    const oppType = type === 'receipt' ? 'purchase' : 'sale';
+    // Opposite-side open-invoice gross — only used to enrich the "Outstanding" label.
+    setOppositeDue(0);
+    api.get<{ items: Invoice[] }>(`/api/v1/invoices?invoice_type=${oppType}&party_id=${partyId}&page=1&page_size=50`)
+      .then(r => setOppositeDue(r.data.items
+        .filter(i => i.payment_status !== 'paid' && i.status === 'final')
+        .reduce((s, i) => s + Math.max(0, Number(i.grand_total ?? 0) - Number(i.amount_paid ?? 0)), 0)))
+      .catch(() => setOppositeDue(0));
     api.get<{ items: Invoice[] }>(`/api/v1/invoices?invoice_type=${invType}&party_id=${partyId}&page=1&page_size=50`)
       .then(r => {
         // FIFO: sort unpaid finalised invoices oldest-first so allocation clears the oldest bills first.
@@ -239,20 +252,41 @@ function PaymentDialog({ open, type, onClose, onSaved }: PaymentDialogProps) {
               </Select>
               {partyId && (() => {
                 const bal = Number(parties.find(p => p.id === partyId)?.current_balance ?? 0);
-                const money = '₹' + Math.abs(bal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                const owesUs = bal > 0.005;   // party owes us (receivable)
-                const weOwe = bal < -0.005;   // we owe the party / advance held
+                const fmt = (v: number) => '₹' + Math.abs(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                const Money = ({ v }: { v: number }) => <span className="font-semibold">{fmt(v)}</span>;
+                // Gross open-invoice balances per side (NOT netted). When a party is both a
+                // customer and a supplier, an open receivable and an open payable can cancel in
+                // current_balance — so show both explicitly instead of a misleading "Settled".
+                const settlingDue = outstandingInvoices
+                  .reduce((s, i) => s + Math.max(0, Number(i.grand_total ?? 0) - Number(i.amount_paid ?? 0)), 0);
+                const receivable = type === 'receipt' ? settlingDue : oppositeDue;  // party owes us (open sales)
+                const payable    = type === 'receipt' ? oppositeDue : settlingDue;  // we owe party (open purchases)
+                const owesUs = bal > 0.005;   // net: party owes us
+                const weOwe = bal < -0.005;   // net: we owe them / advance held
+                const clauses: React.ReactNode[] = [];
+                if (receivable > 0.005) clauses.push(<><Money v={receivable} /> to collect (customer owes)</>);
+                if (payable > 0.005)    clauses.push(<><Money v={payable} /> payable to them</>);
                 let txt: React.ReactNode; let cls: string;
-                if (type === 'receipt') {
-                  txt = owesUs ? <><span className="font-semibold">{money}</span> to collect (customer owes)</>
-                      : weOwe ? <><span className="font-semibold">{money}</span> advance already with us</>
-                      : 'Settled — no outstanding';
-                  cls = owesUs ? 'text-amber-700' : weOwe ? 'text-emerald-700' : 'text-muted-foreground';
+                if (clauses.length > 0) {
+                  // Both sides open → amber (there's still something to settle either way).
+                  txt = clauses.map((c, i) => <Fragment key={i}>{i > 0 && ' · '}{c}</Fragment>);
+                  cls = (receivable > 0.005 && payable > 0.005) ? 'text-amber-700'
+                      : type === 'receipt' ? (receivable > 0.005 ? 'text-amber-700' : 'text-emerald-700')
+                      : (payable > 0.005 ? 'text-amber-700' : 'text-emerald-700');
+                } else if (weOwe || owesUs) {
+                  // No open invoices on either side, but a net advance is on account.
+                  if (type === 'receipt') {
+                    txt = weOwe ? <><Money v={bal} /> advance already with us</>
+                        : <><Money v={bal} /> to collect (customer owes)</>;
+                    cls = weOwe ? 'text-emerald-700' : 'text-amber-700';
+                  } else {
+                    txt = owesUs ? <><Money v={bal} /> advance already paid</>
+                        : <><Money v={bal} /> payable (we owe supplier)</>;
+                    cls = owesUs ? 'text-emerald-700' : 'text-amber-700';
+                  }
                 } else {
-                  txt = weOwe ? <><span className="font-semibold">{money}</span> payable (we owe supplier)</>
-                      : owesUs ? <><span className="font-semibold">{money}</span> advance already paid</>
-                      : 'Settled — no outstanding';
-                  cls = weOwe ? 'text-amber-700' : owesUs ? 'text-emerald-700' : 'text-muted-foreground';
+                  txt = 'Settled — no outstanding';
+                  cls = 'text-muted-foreground';
                 }
                 return <p className={`text-xs mt-1 ${cls}`}>Outstanding: {txt}</p>;
               })()}
