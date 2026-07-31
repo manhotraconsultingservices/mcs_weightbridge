@@ -11,6 +11,7 @@ import { Truck, Warehouse, MonitorPlay, ScanSearch, Camera, AlertTriangle, FileT
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { moduleEnabled } from '@/hooks/useAuth';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import VehiclesPage from './VehiclesPage';
 import InventoryPage from './InventoryPage';
 import CameraScalePage from './CameraScalePage';
@@ -25,6 +26,10 @@ export default function OperationsHubPage() {
   const { t } = useTranslation();
   const nav = useNavigate();
   const loc = useLocation();
+  const isMobile = useIsMobile();
+  // Hidden on mobile/PWA: the live Camera & Scale monitor streams over ws://localhost
+  // (plant-PC only), and ANPR Events isn't useful on a phone.
+  const HIDE_ON_MOBILE = new Set<Tab>(['camera-scale', 'anpr-events']);
 
   // Camera/ANPR tabs gate on the 'cameras' / 'anpr' modules (hidden for e.g.
   // maize_trader). Defaults to visible when modules are unset.
@@ -37,7 +42,8 @@ export default function OperationsHubPage() {
     { value: 'anpr-events',  label: t('hubs.operations.gateCameras'),    icon: Camera,       module: 'anpr' },
     { value: 'anpr-review',  label: t('hubs.operations.plateReview'),    icon: AlertTriangle, module: 'anpr' },
   ];
-  const TABS = ALL_TABS.filter(tt => !tt.module || moduleEnabled(tt.module));
+  const TABS = ALL_TABS.filter(tt => (!tt.module || moduleEnabled(tt.module))
+    && !(isMobile && HIDE_ON_MOBILE.has(tt.value)));
   const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'vehicles';
   const initial = TABS.some(tt => tt.value === initialRaw) ? initialRaw : (TABS[0]?.value ?? 'vehicles');
   const [tab, setTab] = useState<Tab>(initial);

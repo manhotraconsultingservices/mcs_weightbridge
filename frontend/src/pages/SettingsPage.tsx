@@ -4031,8 +4031,9 @@ export default function SettingsPage() {
           ]}
         />
 
-        {/* Desktop: wrapped pill tabs */}
-        <TabsList className="hidden md:flex flex-wrap h-auto gap-1 p-1">
+        {/* Desktop: wrapped pill tabs. Use sm: (not md:) to match MobileTabSelect's
+            sm:hidden — otherwise 640–767px width shows NEITHER (no tab bar at all). */}
+        <TabsList className="hidden sm:flex flex-wrap h-auto gap-1 p-1">
           <TabsTrigger value="company">Company</TabsTrigger>
           <TabsTrigger value="bank">Bank Details</TabsTrigger>
           <TabsTrigger value="prefixes">Invoice Prefixes</TabsTrigger>
