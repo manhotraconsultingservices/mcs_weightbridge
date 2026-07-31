@@ -71,8 +71,12 @@ function fmtDate(iso: string) {
 }
 
 function fmtNum(n: number) {
-  // Show as integer if whole number, else up to 3 decimal places
-  return n % 1 === 0 ? n.toString() : parseFloat(n.toFixed(3)).toString();
+  // Show as integer if whole number, else up to 3 decimal places.
+  // Coerce first: API Decimal fields arrive as strings ("90.5"), and calling
+  // .toFixed() on a string throws (crashes on fractional stock; whole numbers
+  // hit the .toString() branch and hid the bug).
+  const x = Number(n ?? 0);
+  return x % 1 === 0 ? x.toString() : parseFloat(x.toFixed(3)).toString();
 }
 
 // ── UseStockDialog ─────────────────────────────────────────────────────────────
@@ -1921,7 +1925,8 @@ function AnalyticsTab({ items }: AnalyticsTabProps) {
   }
 
   function n2(v: number) {
-    return v % 1 === 0 ? v.toString() : parseFloat(v.toFixed(2)).toString();
+    const x = Number(v ?? 0);   // API Decimals arrive as strings — coerce before .toFixed
+    return x % 1 === 0 ? x.toString() : parseFloat(x.toFixed(2)).toString();
   }
 
   const netChange = data ? data.summary.total_receipts - data.summary.total_issues : 0;
