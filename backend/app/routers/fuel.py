@@ -236,8 +236,9 @@ async def create_entry(payload: FuelEntryCreate, background: BackgroundTasks,
         raise HTTPException(404, "Vehicle not found")
 
     litres = Decimal(str(payload.litres))
-    if litres <= 0:
-        raise HTTPException(400, "Litres must be greater than 0")
+    if litres < 0:
+        raise HTTPException(400, "Litres cannot be negative")
+    # litres == 0 is allowed: an odometer-only reading (update the meter without a fill).
     if veh.tank_capacity_litres and litres > veh.tank_capacity_litres * Decimal("1.05"):
         raise HTTPException(
             400,
@@ -264,7 +265,9 @@ async def create_entry(payload: FuelEntryCreate, background: BackgroundTasks,
     inv_item_id = None
     inv_txn_id = None
     diesel_item_id = await _resolve_diesel_item_id(db, cfg, user.company_id)
-    if (payload.fuel_source or "plant_tank") == "plant_tank" and diesel_item_id:
+    # litres > 0 guard: a 0-litre entry is an odometer-only reading (no fill), so it
+    # must NOT issue diesel from the store (no phantom 0-qty stock movement).
+    if litres > 0 and (payload.fuel_source or "plant_tank") == "plant_tank" and diesel_item_id:
         inv_item_id, inv_txn_id = await _issue_diesel(
             db, user, diesel_item_id, litres, veh.registration_no, payload.entry_date)
 
@@ -286,6 +289,10 @@ async def create_entry(payload: FuelEntryCreate, background: BackgroundTasks,
         created_by=user.id,
     )
     db.add(entry)
+    # Keep the vehicle master's current odometer in sync — bump to the highest reading
+    # seen (a 0-litre entry is exactly the "update odometer without a fill" path).
+    if veh.current_odometer_km is None or odo > veh.current_odometer_km:
+        veh.current_odometer_km = odo
     await db.flush()
     from app.routers.audit import log_action
     await log_action(db, user.company_id, user.id, "create", "fuel_entry", entity_id=str(entry.id),

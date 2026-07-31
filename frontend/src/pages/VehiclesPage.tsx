@@ -122,6 +122,7 @@ function VehicleDialog({ open, editing, vehicleTypes, onClose, onSaved }: {
   const [form, setForm] = useState({
     registration_no: '', vehicle_type: 'truck', owner_name: '', owner_phone: '',
     default_tare_weight: 0, benchmark_mileage_kmpl: 0, tank_capacity_litres: 0,
+    current_odometer_km: 0,
     rent_rate_per_km_per_mt: 0,
     rent_rate_per_km_per_cum: 0,
   });
@@ -138,9 +139,10 @@ function VehicleDialog({ open, editing, vehicleTypes, onClose, onSaved }: {
         default_tare_weight: editing.default_tare_weight,
         benchmark_mileage_kmpl: editing.benchmark_mileage_kmpl ?? 0,
         tank_capacity_litres: editing.tank_capacity_litres ?? 0,
+        current_odometer_km: editing.current_odometer_km ?? 0,
         rent_rate_per_km_per_mt: editing.rent_rate_per_km_per_mt ?? 0,
         rent_rate_per_km_per_cum: editing.rent_rate_per_km_per_cum ?? 0,
-      } : { registration_no: '', vehicle_type: 'truck', owner_name: '', owner_phone: '', default_tare_weight: 0, benchmark_mileage_kmpl: 0, tank_capacity_litres: 0, rent_rate_per_km_per_mt: 0, rent_rate_per_km_per_cum: 0 });
+      } : { registration_no: '', vehicle_type: 'truck', owner_name: '', owner_phone: '', default_tare_weight: 0, benchmark_mileage_kmpl: 0, tank_capacity_litres: 0, current_odometer_km: 0, rent_rate_per_km_per_mt: 0, rent_rate_per_km_per_cum: 0 });
       setError('');
     }
   }, [open, editing]);
@@ -158,6 +160,7 @@ function VehicleDialog({ open, editing, vehicleTypes, onClose, onSaved }: {
         registration_no: form.registration_no.toUpperCase().trim(),
         benchmark_mileage_kmpl: form.benchmark_mileage_kmpl || null,
         tank_capacity_litres: form.tank_capacity_litres || null,
+        current_odometer_km: form.current_odometer_km || null,
         rent_rate_per_km_per_mt: form.rent_rate_per_km_per_mt || null,
         rent_rate_per_km_per_cum: form.rent_rate_per_km_per_cum || null,
       });
@@ -233,6 +236,14 @@ function VehicleDialog({ open, editing, vehicleTypes, onClose, onSaved }: {
                 onChange={e => set('tank_capacity_litres', parseFloat(e.target.value) || 0)}
                 placeholder="e.g. 300" />
               <p className="text-[10px] text-muted-foreground">Flags a fill larger than the tank.</p>
+            </div>
+            <div className="space-y-1">
+              <Label>Current Odometer (km)</Label>
+              <Input type="number" min="0" step="1"
+                value={form.current_odometer_km || ''}
+                onChange={e => set('current_odometer_km', parseFloat(e.target.value) || 0)}
+                placeholder="e.g. 125000" />
+              <p className="text-[10px] text-muted-foreground">Latest meter reading. Auto-updates from each diesel entry (incl. odometer-only 0-litre updates).</p>
             </div>
             <div className="space-y-1">
               <Label>Rent rate (₹ / km / MT)</Label>
@@ -394,6 +405,10 @@ const VEHICLE_COLS: ColumnDef<Vehicle>[] = [
     accessor: r => r.tank_capacity_litres ?? 0,
     format: (_v, r) => r.tank_capacity_litres == null ? '—' : Number(r.tank_capacity_litres).toFixed(0),
     exportValue: r => r.tank_capacity_litres ?? '' },
+  { key: 'current_odometer_km', label: 'Odometer (km)', type: 'number', align: 'right', defaultVisible: false,
+    accessor: r => r.current_odometer_km ?? 0,
+    format: (_v, r) => r.current_odometer_km == null ? '—' : Number(r.current_odometer_km).toLocaleString('en-IN'),
+    exportValue: r => r.current_odometer_km ?? '' },
   { key: 'is_active', label: 'Status', type: 'enum', enumOptions: ['Active', 'Inactive'],
     accessor: r => r.is_active ? 'Active' : 'Inactive' },
 ];

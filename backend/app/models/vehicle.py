@@ -19,6 +19,9 @@ class Vehicle(Base):
     # Fleet fuel & mileage — nullable so existing vehicles are unaffected.
     benchmark_mileage_kmpl: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))  # expected km per litre
     tank_capacity_litres: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
+    # Current odometer (km) — latest known reading. Settable on the master and
+    # auto-bumped to the highest odometer recorded by any fuel entry.
+    current_odometer_km: Mapped[Decimal | None] = mapped_column(Numeric(12, 1))
     # Vehicle rent rate: ₹ per km per MT. vehicle_rent = rate × distance_km × net_weight_MT
     rent_rate_per_km_per_mt: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
     # Alternate rent basis: ₹ per km per CUM. vehicle_rent = rate × distance_km × CUM.
