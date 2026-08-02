@@ -6,7 +6,7 @@
  * shows per-vehicle mileage vs benchmark → excess litres / ₹ = the leakage signal.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine,
@@ -199,7 +199,7 @@ function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: 
 interface UtilRow {
   vehicle_id: string; registration_no: string; trips: number;
   rent_km: number; rent_earned: number; fuel_litres: number; fuel_cost: number;
-  net: number; fuel_left_est: number | null;
+  net: number; fuel_left_est: number | null; odometer_km: number | null;
   tank_capacity_litres: number | null; benchmark_mileage_kmpl: number | null;
 }
 interface UtilResp {
@@ -225,7 +225,10 @@ function UtilizationTab() {
   const preset = (f: string, t: string) => { setFrom(f); setTo(t); };
 
   const COLS: ColumnDef<UtilRow>[] = [
-    { key: 'registration_no', label: 'Vehicle', accessor: r => r.registration_no },
+    { key: 'registration_no', label: 'Vehicle', accessor: r => r.registration_no,
+      format: (_v, r) => <Link to={`/vehicles/${r.vehicle_id}/history`}
+        className="font-medium text-blue-700 hover:underline">{r.registration_no}</Link>,
+      exportValue: r => r.registration_no },
     { key: 'trips', label: 'Trips', type: 'number', align: 'right', accessor: r => r.trips },
     { key: 'rent_km', label: 'Rent km', type: 'number', align: 'right', accessor: r => r.rent_km, format: v => num(v as number, 0) },
     { key: 'rent_earned', label: 'Rent ₹', type: 'number', align: 'right', accessor: r => r.rent_earned,
@@ -236,6 +239,9 @@ function UtilizationTab() {
     { key: 'net', label: 'Net (Rent − Fuel)', type: 'number', align: 'right', accessor: r => r.net,
       format: v => <span className={`font-semibold ${Number(v) >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{INR(v as number)}</span>,
       exportValue: r => r.net },
+    { key: 'odometer_km', label: 'Odometer (km)', type: 'number', align: 'right', accessor: r => r.odometer_km ?? -1,
+      format: (_v, r) => r.odometer_km == null ? '—' : num(r.odometer_km, 0),
+      exportValue: r => r.odometer_km ?? '' },
     { key: 'fuel_left_est', label: 'Fuel left ≈ (L)', type: 'number', align: 'right', accessor: r => r.fuel_left_est ?? -1,
       format: (_v, r) => r.fuel_left_est == null ? '—'
         : `${num(r.fuel_left_est, 1)}${r.tank_capacity_litres ? ` / ${num(r.tank_capacity_litres, 0)}` : ''}`,

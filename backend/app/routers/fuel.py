@@ -624,14 +624,21 @@ async def _fuel_left_by_vehicle(db: AsyncSession, cid: str, veh: dict) -> dict:
         "AND vehicle_id IS NOT NULL AND COALESCE(rent_km, 0) > 0"), {"cid": cid})).mappings():
         trips_by_v[r["vid"]].append((r["d"], float(r["km"] or 0)))
 
-    out: dict[str, float] = {}
+    out: dict[str, dict] = {}
     for vid, entries in by_v.items():
         v = veh.get(vid)
+        last_fill_odo = float(entries[-1]["odometer_km"] or 0)      # highest fill odo
+        last_fill_date = entries[-1]["entry_date"]
+        cur_manual = float(v.current_odometer_km) if (v and v.current_odometer_km) else None
+        # Odometer to SHOW: the highest HARD reading — manual current or the last fill.
+        rec = {"left": None, "odo": round(max(last_fill_odo, cur_manual or 0.0), 1)}
+        out[vid] = rec
         if not v or not v.tank_capacity_litres or not v.benchmark_mileage_kmpl:
             continue
         tank = float(v.tank_capacity_litres); bench = float(v.benchmark_mileage_kmpl)
         if bench <= 0:
             continue
+        # Reference = the most recent brim-FULL fill (tank is known = capacity there).
         full_idx = None
         for i, e in enumerate(entries):
             if e["tank_full"]:
@@ -639,17 +646,17 @@ async def _fuel_left_by_vehicle(db: AsyncSession, cid: str, veh: dict) -> dict:
         if full_idx is None:
             continue
         full_odo = float(entries[full_idx]["odometer_km"] or 0)
-        full_date = entries[full_idx]["entry_date"]
         litres_after = sum(float(e["litres"] or 0) for e in entries[full_idx + 1:])
-        # Distance since the last full fill: rent-trip km dated strictly after the fill
-        # day (so a just-filled tank reads full), OR the manual current odometer if it
-        # implies more — whichever is larger.
-        trip_dist = sum(km for (d, km) in trips_by_v.get(vid, [])
-                        if full_date is None or d > full_date)
-        odo_dist = (max(0.0, float(v.current_odometer_km) - full_odo)
-                    if v.current_odometer_km else 0.0)
-        burnt = max(trip_dist, odo_dist) / bench
-        out[vid] = round(max(0.0, min(tank, tank + litres_after - burnt)), 1)
+        # Current odometer: distance is KNOWN from the fill odometers up to the last fill
+        # (operators record the odo at every fill — this captures driving even between a
+        # full fill and later partial top-ups); after the last fill, add the rent-km
+        # driven (trips dated after it). A manual current reading wins if it is higher.
+        trip_after = sum(km for (d, km) in trips_by_v.get(vid, [])
+                         if last_fill_date is None or d > last_fill_date)
+        current_odo = max(last_fill_odo + trip_after, cur_manual or 0.0)
+        burnt = max(0.0, current_odo - full_odo) / bench
+        # tank was full at full_odo → − fuel burnt since + partial top-ups since.
+        rec["left"] = round(max(0.0, min(tank, tank + litres_after - burnt)), 1)
     return out
 
 
@@ -703,11 +710,15 @@ async def vehicle_utilization(
         fl = r2(fuel.get(vid, {}).get("litres")); fc = r2(fuel.get(vid, {}).get("cost"))
         trips = int(rent.get(vid, {}).get("trips") or 0)
         net = r2(re_ - fc)
+        finfo = left.get(vid) or {}
+        odo = finfo.get("odo")
+        if odo is None and v and v.current_odometer_km:      # vehicles with rent but no fuel fills
+            odo = float(v.current_odometer_km)
         rows.append({
             "vehicle_id": vid, "registration_no": v.registration_no if v else "—",
             "trips": trips, "rent_km": rk, "rent_earned": re_,
             "fuel_litres": fl, "fuel_cost": fc, "net": net,
-            "fuel_left_est": left.get(vid),
+            "fuel_left_est": finfo.get("left"), "odometer_km": odo,
             "tank_capacity_litres": (float(v.tank_capacity_litres) if v and v.tank_capacity_litres else None),
             "benchmark_mileage_kmpl": (float(v.benchmark_mileage_kmpl) if v and v.benchmark_mileage_kmpl else None),
         })
@@ -717,6 +728,72 @@ async def vehicle_utilization(
     for k in ("rent_km", "rent_earned", "fuel_litres", "fuel_cost", "net"):
         tot[k] = r2(tot[k])
     return {"date_from": str(date_from), "date_to": str(date_to), "rows": rows, "totals": tot}
+
+
+@router.get("/vehicle/{vehicle_id}/history")
+async def vehicle_history(
+    vehicle_id: str,
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    """Full per-vehicle history for the business owner: every diesel fill (when + how
+    much + odometer + ₹) and every rent trip (when + km + rent + party/product), plus
+    the current fuel-left / odometer estimate. Powers the drill-down from the Fuel-vs-Rent
+    report's vehicle link."""
+    cid = str(user.company_id)
+    fl = lambda x: (float(x) if x is not None else None)  # noqa: E731
+    v = (await db.execute(select(Vehicle).where(
+        Vehicle.id == vehicle_id, Vehicle.company_id == user.company_id))).scalar_one_or_none()
+    if not v:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    left = await _fuel_left_by_vehicle(db, cid, {str(v.id): v})
+    finfo = left.get(str(v.id)) or {}
+
+    fills = []
+    for r in (await db.execute(text(
+        "SELECT entry_date, odometer_km, litres, rate_per_litre, amount, fuel_source, "
+        "tank_full, notes FROM vehicle_fuel_entries WHERE company_id=:cid AND vehicle_id=:vid "
+        "ORDER BY odometer_km DESC, entry_date DESC"), {"cid": cid, "vid": vehicle_id})).mappings():
+        fills.append({
+            "entry_date": str(r["entry_date"]) if r["entry_date"] else None,
+            "odometer_km": fl(r["odometer_km"]), "litres": fl(r["litres"]),
+            "rate_per_litre": fl(r["rate_per_litre"]), "amount": fl(r["amount"]),
+            "fuel_source": r["fuel_source"], "tank_full": bool(r["tank_full"]), "notes": r["notes"],
+        })
+
+    trips = []
+    for r in (await db.execute(text(
+        "SELECT t.token_no, t.id::text AS token_id, "
+        "CAST(COALESCE(t.completed_at, t.created_at) AT TIME ZONE 'Asia/Kolkata' AS date) AS trip_date, "
+        "t.rent_km, t.vehicle_rent, t.net_weight, p.name AS party, pr.name AS product "
+        "FROM tokens t LEFT JOIN parties p ON p.id=t.party_id LEFT JOIN products pr ON pr.id=t.product_id "
+        "WHERE t.company_id=:cid AND t.vehicle_id=:vid AND t.token_type='sale' AND t.status='COMPLETED' "
+        "AND (COALESCE(t.rent_km,0) > 0 OR COALESCE(t.vehicle_rent,0) > 0) "
+        "ORDER BY COALESCE(t.completed_at, t.created_at) DESC"), {"cid": cid, "vid": vehicle_id})).mappings():
+        trips.append({
+            "token_no": r["token_no"], "token_id": r["token_id"],
+            "trip_date": str(r["trip_date"]) if r["trip_date"] else None,
+            "rent_km": fl(r["rent_km"]), "vehicle_rent": fl(r["vehicle_rent"]),
+            "net_weight": fl(r["net_weight"]), "party": r["party"], "product": r["product"],
+        })
+
+    summary = {
+        "total_litres": round(sum(f["litres"] or 0 for f in fills), 2),
+        "total_fuel_cost": round(sum(f["amount"] or 0 for f in fills), 2),
+        "fills_count": len(fills),
+        "total_rent_km": round(sum(t["rent_km"] or 0 for t in trips), 2),
+        "total_rent_earned": round(sum(t["vehicle_rent"] or 0 for t in trips), 2),
+        "trips_count": len(trips),
+    }
+    return {
+        "vehicle": {
+            "id": str(v.id), "registration_no": v.registration_no,
+            "tank_capacity_litres": fl(v.tank_capacity_litres),
+            "benchmark_mileage_kmpl": fl(v.benchmark_mileage_kmpl),
+            "current_odometer_km": fl(v.current_odometer_km),
+            "fuel_left_est": finfo.get("left"), "odometer_est": finfo.get("odo"),
+        },
+        "fuel_fills": fills, "trips": trips, "summary": summary,
+    }
 
 
 @router.get("/leakage-alerts")

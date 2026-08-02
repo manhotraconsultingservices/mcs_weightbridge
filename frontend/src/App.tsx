@@ -40,6 +40,7 @@ import GstComplianceHubPage from '@/pages/GstComplianceHubPage';
 import AnalyticsHubPage from '@/pages/AnalyticsHubPage';
 import FraudRegistersHubPage from '@/pages/FraudRegistersHubPage';
 import VehiclesPage from '@/pages/VehiclesPage';
+import VehicleHistoryPage from '@/pages/VehicleHistoryPage';
 import FuelMileagePage from '@/pages/FuelMileagePage';
 import WorkforcePage from '@/pages/WorkforcePage';
 import DeviceHealthPage from '@/pages/DeviceHealthPage';
@@ -261,6 +262,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/suppliers" element={<CustomerPickerPage lockType="supplier" linkBase="/suppliers" />} />
             <Route path="/suppliers/:id" element={<CustomerProfilePage />} />
             <Route path="/vehicles" element={<VehiclesPage />} />
+            <Route path="/vehicles/:id/history" element={<VehicleHistoryPage />} />
             <Route path="/fuel" element={<FuelMileagePage />} />
             <Route path="/workforce" element={<WorkforcePage />} />
             <Route path="/device-health" element={<DeviceHealthPage />} />
