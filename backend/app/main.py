@@ -568,6 +568,7 @@ async def _gdrive_cleanup_loop():
 # notification_recipient subscribed to event `owner_digest`. Multi-tenant aware.
 
 _last_owner_digest_dates: dict[str, "date"] = {}  # noqa: F821
+_last_eod_midnight_dates: dict[str, "date"] = {}  # noqa: F821 — midnight EOD once/day/tenant
 
 async def _send_owner_digest_for_session(session_factory, label: str) -> None:
     """Compute the digest context and dispatch via send_notification."""
@@ -828,6 +829,54 @@ async def _send_owner_digest_for_session(session_factory, label: str) -> None:
             logger.warning("operator_cash_count reminder failed [%s]: %s", label, e)
 
 
+async def _send_eod_midnight_for_session(session_factory, label: str) -> None:
+    """Fire the EOD Day-Book summary on Telegram at IST midnight (12 AM) for the
+    day that just CLOSED (yesterday) — a final, settled end-of-day book, separate
+    from the running 20:00 owner digest. Gated by app_settings 'eod_summary.midnight'
+    (default ON). Fires once per day per tenant; sends to recipients subscribed to
+    the 'eod_summary' event. Never raises into the loop."""
+    from datetime import timedelta as _td
+    from app.utils.timefmt import to_ist
+    import datetime as _dt
+    from sqlalchemy import text as _sql, select as _select
+
+    ist_now = to_ist(_dt.datetime.now(_dt.timezone.utc))
+    if ist_now.hour != 0:  # only in the 00:00 IST hour
+        return
+    closed_day = ist_now.date() - _td(days=1)
+    if _last_eod_midnight_dates.get(label) == closed_day:
+        return
+
+    async with session_factory() as db:
+        try:
+            row = (await db.execute(
+                _sql("SELECT value FROM app_settings WHERE key = 'eod_summary.midnight'"),
+            )).fetchone()
+        except Exception:
+            return  # tenant DB missing app_settings → skip silently
+        enabled = True
+        if row and row[0] is not None:
+            enabled = str(row[0]).strip().lower() not in ("false", "0", "no", "off")
+        if not enabled:
+            _last_eod_midnight_dates[label] = closed_day  # honour OFF, don't retry all hour
+            return
+
+        from app.models.company import Company
+        co = (await db.execute(_select(Company).limit(1))).scalar_one_or_none()
+        if not co:
+            return
+        _last_eod_midnight_dates[label] = closed_day  # guard BEFORE send → never double-fire
+        try:
+            from app.routers.reports import build_eod_summary_context
+            from app.integrations.notifications.service import send_notification
+            ctx = await build_eod_summary_context(db, co.id, co.name, closed_day)
+            await send_notification(db, co.id, "eod_summary", ctx,
+                                    entity_type="company", entity_id=str(co.id))
+            logger.info("eod_summary (midnight) sent [%s] for %s", label, closed_day)
+        except Exception as e:
+            logger.warning("eod_summary midnight send failed [%s]: %s", label, e)
+
+
 async def _purge_old_tally_jobs(factory, label: str = "default") -> None:
     """Daily retention: delete completed Tally relay jobs older than 30 days
     (keeps `dead` jobs for audit)."""
@@ -856,11 +905,13 @@ async def _owner_digest_loop():
                     try:
                         factory = await tenant_registry.get_session_factory(t.slug)
                         await _send_owner_digest_for_session(factory, label=t.slug)
+                        await _send_eod_midnight_for_session(factory, label=t.slug)
                     except Exception as e:
                         logger.warning("owner_digest failed for tenant %s: %s", t.slug, e)
             else:
                 from app.database import async_session
                 await _send_owner_digest_for_session(async_session, label="default")
+                await _send_eod_midnight_for_session(async_session, label="default")
 
             # ── Once-a-day retention: purge completed Tally relay jobs > 30 days ──
             global _last_tally_purge_date

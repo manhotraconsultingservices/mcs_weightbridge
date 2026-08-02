@@ -571,6 +571,53 @@ async def _auto_create_invoice(db: AsyncSession, token: Token, company: Company,
             sort_order=i,
         ))
 
+    # Baseline snapshot for the draft→final diff (#205) — the finalize Telegram
+    # then reports what the operator changed between drafting and finalising.
+    # Built inline (the invoice's items/party relationships aren't loaded here)
+    # to mirror invoice_to_snapshot()'s shape. Best-effort; never blocks.
+    try:
+        def _mt(v):
+            return round(float(v) / 1000, 3) if v else None
+        invoice.draft_snapshot = {
+            "tax_type": invoice.tax_type,
+            "invoice_date": invoice.invoice_date.isoformat() if invoice.invoice_date else None,
+            "due_date": invoice.due_date.isoformat() if invoice.due_date else None,
+            "party": {"id": str(party.id), "name": party.name, "gstin": party.gstin} if party else None,
+            "customer_name": invoice.customer_name,
+            "vehicle_no": invoice.vehicle_no,
+            "transporter_name": invoice.transporter_name,
+            "gross_weight": _mt(invoice.gross_weight),
+            "tare_weight": _mt(invoice.tare_weight),
+            "net_weight": _mt(invoice.net_weight),
+            "payment_mode": invoice.payment_mode,
+            "notes": invoice.notes,
+            "subtotal": float(invoice.subtotal or 0),
+            "discount_amount": float(invoice.discount_amount or 0),
+            "taxable_amount": float(invoice.taxable_amount or 0),
+            "cgst_amount": float(invoice.cgst_amount or 0),
+            "sgst_amount": float(invoice.sgst_amount or 0),
+            "igst_amount": float(invoice.igst_amount or 0),
+            "tcs_amount": float(getattr(invoice, "tcs_amount", 0) or 0),
+            "freight": float(invoice.freight or 0),
+            "round_off": float(invoice.round_off or 0),
+            "grand_total": float(invoice.grand_total or 0),
+            "items": [
+                {
+                    "product_id": str(it["product_id"]),
+                    "description": it.get("description"),
+                    "hsn_code": it.get("hsn_code"),
+                    "quantity": float(it["quantity"]),
+                    "unit": it["unit"],
+                    "rate": float(it["rate"]),
+                    "gst_rate": float(it.get("gst_rate", 0)),
+                    "total_amount": float(it["total_amount"]),
+                }
+                for it in totals["computed_items"]
+            ],
+        }
+    except Exception:  # noqa: BLE001 — snapshot is best-effort, never blocks the invoice
+        pass
+
 
 # ------------------------------------------------------------------ #
 # Endpoints

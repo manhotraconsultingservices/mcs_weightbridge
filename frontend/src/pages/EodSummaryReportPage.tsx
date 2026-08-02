@@ -57,14 +57,14 @@ interface EodDetailItem {
   party: string;
   detail: string;
   amount: number;
-  direction: 'in' | 'out';
+  direction: 'in' | 'out' | 'info';
 }
 interface EodDetailResponse {
   date: string;
   items: EodDetailItem[];
   summary: EodSummary;
 }
-const CATEGORY_ORDER = ['Cash Sale', 'Bank/UPI Sale', 'Credit Sale', 'Purchase', 'Purchase (draft)', 'Supplier Payment', 'Store', 'Diesel', 'Salary', 'Advance', 'Commission', 'Expense'];
+const CATEGORY_ORDER = ['Cash Sale', 'Bank/UPI Sale', 'Credit Sale', 'Sales Billed', 'Purchase', 'Purchase (draft)', 'Supplier Payment', 'Store', 'Diesel', 'Salary', 'Advance', 'Commission', 'Expense'];
 
 const INR = (v: number | string | null | undefined) =>
   '₹' + Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -108,7 +108,7 @@ export default function EodSummaryReportPage() {
     if (!detail) return;
     const header = ['Date', 'Category', 'In/Out', 'Reference', 'Party / Item', 'Detail', 'Amount'];
     const rows = detail.items.map(it => [
-      detail.date, it.category, it.direction === 'in' ? 'IN' : 'OUT',
+      detail.date, it.category, it.direction === 'in' ? 'IN' : it.direction === 'info' ? 'INFO' : 'OUT',
       it.ref, it.party, it.detail, String(it.amount),
     ]);
     downloadCsv(`day-book-${detail.date}.csv`, [header, ...rows]);
@@ -403,12 +403,17 @@ export default function EodSummaryReportPage() {
                 const rows = detail.items.filter(i => i.category === cat);
                 if (rows.length === 0) return null;
                 const subtotal = rows.reduce((sum, r) => sum + Number(r.amount), 0);
-                const isIn = rows[0].direction === 'in';
+                const dir = rows[0].direction;
+                const isInfo = dir === 'info';
+                const isIn = dir === 'in';
+                const headClass = isInfo
+                  ? 'bg-violet-50 text-violet-700'
+                  : isIn ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700';
                 return (
                   <div key={cat} className="rounded-lg border overflow-hidden">
-                    <div className={`flex items-center justify-between px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${isIn ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                      <span>{cat} · {rows.length}</span>
-                      <span>{isIn ? '+' : '−'}{INR(subtotal)}</span>
+                    <div className={`flex items-center justify-between px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${headClass}`}>
+                      <span>{cat} · {rows.length}{isInfo ? ' · billed today (info)' : ''}</span>
+                      <span>{isInfo ? '' : isIn ? '+' : '−'}{INR(subtotal)}</span>
                     </div>
                     <table className="w-full text-sm">
                       <tbody>

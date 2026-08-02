@@ -1827,6 +1827,32 @@ async def compute_eod_detail(db: AsyncSession, company_id, target_date: date,
                       "party": r.party or "", "detail": str(r.status or "").upper(),
                       "amount": _r2(r.amount), "direction": "in"})
 
+    # SALES BILLED — every sale invoice DATED this day (the same list the Sales
+    # Invoices page shows when filtered by invoice date), with how it was settled.
+    # INFORMATIONAL only (direction 'info') — the Day-Book Net stays collection-based,
+    # so this reconciles the "why is a billed invoice not in the cash book?" gap:
+    # an invoice billed today but PAID on another day shows its cash in THAT day's
+    # book, while a CREDIT one is still outstanding. Superseded/cancelled excluded.
+    for r in await _rows(
+        "SELECT i.invoice_no AS ref, COALESCE(p.name,'') AS party, i.status AS status, "
+        "COALESCE(i.grand_total,0) AS grand, COALESCE(i.amount_paid,0) AS paid "
+        "FROM invoices i LEFT JOIN parties p ON p.id=i.party_id "
+        "WHERE i.company_id=:cid AND i.invoice_type='sale' AND i.status IN ('final','draft') "
+        "AND i.invoice_date=:d ORDER BY i.invoice_no"):
+        grand = float(r.grand or 0)
+        paid = float(r.paid or 0)
+        if str(r.status) == "draft":
+            settle = "DRAFT — not finalised"
+        elif paid >= grand - 0.01:
+            settle = "PAID"
+        elif paid > 0:
+            settle = f"PART-PAID ₹{paid:,.0f} · ₹{grand - paid:,.0f} on credit"
+        else:
+            settle = "ON CREDIT — unpaid"
+        items.append({"category": "Sales Billed", "ref": r.ref or "(draft)",
+                      "party": r.party or "", "detail": settle,
+                      "amount": _r2(r.grand), "direction": "info"})
+
     # MONEY OUT — purchases (accrual basis only; cash basis uses supplier payments below)
     if basis == "accrual":
         for r in await _rows(

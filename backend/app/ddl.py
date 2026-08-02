@@ -494,6 +494,7 @@ def get_column_migrations() -> list[str]:
         # eInvoice (GST IRN) columns on invoices
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS vehicle_rent NUMERIC(14,2) DEFAULT 0",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS royalty_amount NUMERIC(14,2) DEFAULT 0",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS draft_snapshot JSONB",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS irn VARCHAR(64)",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS irn_ack_no VARCHAR(30)",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS irn_ack_date TIMESTAMPTZ",

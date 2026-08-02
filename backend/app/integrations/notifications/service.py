@@ -87,7 +87,7 @@ DEFAULT_TEMPLATES = [
         "channel": "telegram",
         "name": "Invoice Finalized (Telegram)",
         "subject": None,
-        "body": "📄 <b>Invoice Finalized</b>\n\nParty: {{ party_name }}\nInvoice: <b>{{ invoice_no }}</b>\nDate: {{ invoice_date }}\nMaterial: {{ material }}\nQty: <b>{{ qty }}</b>\n{% if taxable_amount %}Taxable: ₹{{ taxable_amount }}\n{% endif %}{% if tax_amount and tax_amount != '0.00' %}GST: ₹{{ tax_amount }}\n{% endif %}{% if freight %}Freight: ₹{{ freight }}\n{% endif %}{% if royalty %}Royalty: ₹{{ royalty }}\n{% endif %}{% if vehicle_rent %}Vehicle Rent: ₹{{ vehicle_rent }}\n{% endif %}Amount: <b>₹{{ grand_total }}</b>\n{% if finalized_by %}Finalized by: {{ finalized_by }}\n{% endif %}\n— {{ company_name }}",
+        "body": "📄 <b>Invoice Finalized</b>\n\nParty: {{ party_name }}\nInvoice: <b>{{ invoice_no }}</b>\nDate: {{ invoice_date }}\nMaterial: {{ material }}\nQty: <b>{{ qty }}</b>\n{% if taxable_amount %}Taxable: ₹{{ taxable_amount }}\n{% endif %}{% if tax_amount and tax_amount != '0.00' %}GST: ₹{{ tax_amount }}\n{% endif %}{% if freight %}Freight: ₹{{ freight }}\n{% endif %}{% if royalty %}Royalty: ₹{{ royalty }}\n{% endif %}{% if vehicle_rent %}Vehicle Rent: ₹{{ vehicle_rent }}\n{% endif %}Amount: <b>₹{{ grand_total }}</b>\n{% if changes %}\n<b>Changed from draft:</b>\n{{ changes }}\n{% endif %}{% if finalized_by %}Finalized by: {{ finalized_by }}\n{% endif %}\n— {{ company_name }}",
     },
     {
         "event_type": "approval_requested",
@@ -861,7 +861,7 @@ async def seed_default_templates(db: AsyncSession, company_id: uuid.UUID) -> Non
 # only inserts MISSING rows, so a changed body never propagates otherwise). Only the
 # listed (event_type, channel) pairs are force-updated, ONCE per tenant per version
 # — so a later admin customisation on the Notifications page survives future restarts.
-_TEMPLATE_REFRESH_VERSION = 6   # v6: finalize (who + GST/rent breakup) + revised (diff + remark) telegram
+_TEMPLATE_REFRESH_VERSION = 7   # v7: finalize telegram gains draft→final "Changed from draft" diff block
 _TEMPLATE_REFRESH_KEYS = {
     ("token_completed", "telegram"),
     ("invoice_finalized", "telegram"),

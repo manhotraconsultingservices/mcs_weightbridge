@@ -122,6 +122,42 @@ async def _load_invoice(db: AsyncSession, invoice_id: uuid.UUID) -> Invoice:
     return inv
 
 
+async def _capture_draft_baseline(db: AsyncSession, invoice_id: uuid.UUID) -> None:
+    """Store the invoice's snapshot as `draft_snapshot` at draft creation, so
+    finalise can diff draft→final (what the operator changed between drafting and
+    finalising) for the finalize notification. Best-effort — never blocks invoice
+    creation; captured once (won't overwrite an existing baseline)."""
+    import logging as _log
+    from app.utils.invoice_diff import invoice_to_snapshot
+    try:
+        inv = await _load_invoice(db, invoice_id)
+        if inv.draft_snapshot:
+            return
+        inv.draft_snapshot = invoice_to_snapshot(inv)
+        await db.flush()
+    except Exception as e:  # noqa: BLE001
+        _log.getLogger(__name__).warning("draft baseline capture failed: %s", e)
+
+
+def _format_diff_for_telegram(diff: dict) -> str:
+    """Compact per-field 'Label: old → new' list for a Telegram message body,
+    from a compute_invoice_diff() result. Empty when nothing meaningful changed."""
+    lines: list[str] = []
+    for c in diff.get("header", []):
+        lines.append(f"• {c['label']}: {c.get('old') or '—'} → {c.get('new') or '—'}")
+    for c in diff.get("amounts", []):
+        lines.append(f"• {c['label']}: ₹{c.get('old_str') or '0'} → ₹{c.get('new_str') or '0'}")
+    items = diff.get("items", {}) or {}
+    for it in items.get("modified", []):
+        for c in it.get("changes", []):
+            lines.append(f"• {c['label']}: {c.get('old_str') or '—'} → {c.get('new_str') or '—'}")
+    for it in items.get("added", []):
+        lines.append(f"• Item added: {it.get('description') or ''}")
+    for it in items.get("removed", []):
+        lines.append(f"• Item removed: {it.get('description') or ''}")
+    return "\n".join(lines[:12])  # cap to keep the message short
+
+
 def _get_ip(request: Request) -> str | None:
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
@@ -299,6 +335,10 @@ async def create_invoice(
                      entity_id=str(invoice.id),
                      details={"type": payload.invoice_type, "status": "draft"})
     await db.commit()
+    # Baseline snapshot for the draft→final diff (#205). Best-effort.
+    if getattr(invoice, "status", "draft") == "draft":
+        await _capture_draft_baseline(db, invoice.id)
+        await db.commit()
     return await _load_invoice(db, invoice.id)
 
 
@@ -1251,6 +1291,20 @@ async def finalise_invoice(
         # re-apply to this revision.
         await _supersede_prior_revisions(db, inv, current_user)
 
+    # Draft→final field diff (non-revision): what the operator changed between
+    # drafting and finalising, for the finalize notification. Computed BEFORE the
+    # commit (while inv + items are still loaded). Best-effort — never blocks.
+    _draft_changes = ""
+    if not is_revision and getattr(inv, "draft_snapshot", None):
+        try:
+            from app.utils.invoice_diff import compute_invoice_diff, invoice_to_snapshot
+            _d = compute_invoice_diff(inv.draft_snapshot, invoice_to_snapshot(inv))
+            if _d.get("has_changes"):
+                _draft_changes = _format_diff_for_telegram(_d)
+        except Exception as _e:  # noqa: BLE001
+            import logging as _log
+            _log.getLogger(__name__).warning("draft→final diff failed: %s", _e)
+
     # Finalising creates a receivable/payable (or a note adjustment) → recompute
     # the party's stored balance from source. Covers sale/purchase + credit/debit
     # notes (all finalise through here). First exhaust any advance the party has
@@ -1301,7 +1355,7 @@ async def finalise_invoice(
         "revision_no": str(inv.revision_no),
         # WHO finalised + WHAT changed (revision: diff vs previous + remark).
         "finalized_by": (current_user.full_name or current_user.username) if current_user else "—",
-        "changes": _rev_info.get("changes", ""),
+        "changes": _rev_info.get("changes", "") or _draft_changes,
         "remark": _rev_info.get("remark", ""),
     }
     # Capture tenant slug for background task routing
