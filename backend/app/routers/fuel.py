@@ -595,18 +595,35 @@ async def mileage_report(
 async def _fuel_left_by_vehicle(db: AsyncSession, cid: str, veh: dict) -> dict:
     """Approx litres left in each tank (point-in-time, all-time).
 
-    From the most recent brim-full fill: tank_capacity − (km driven since / benchmark)
-    + any partial top-ups after it, clamped to [0, tank]. Needs the vehicle's tank
-    capacity + benchmark + at least one tank_full fill; otherwise the estimate is
-    omitted (None). Deliberately approximate — there is no live fuel gauge."""
+    From the most recent brim-full fill: tank_capacity + any partial top-ups after it
+    − (distance driven since / benchmark), clamped to [0, tank]. **Distance driven since
+    the last fill is taken from the vehicle's weighbridge rent trips** (`tokens.rent_km`
+    for COMPLETED sale tokens dated after the fill) so the gauge drops automatically as
+    the vehicle works — no manual odometer needed; if the manually-kept current odometer
+    implies a *longer* distance, that wins (never a shorter one). Needs tank capacity +
+    benchmark + ≥1 tank_full fill; otherwise omitted (None). Approximate — there is no
+    live fuel gauge."""
     from collections import defaultdict
     rows = (await db.execute(text(
-        "SELECT vehicle_id::text AS vid, odometer_km, litres, tank_full "
+        "SELECT vehicle_id::text AS vid, odometer_km, litres, tank_full, entry_date "
         "FROM vehicle_fuel_entries WHERE company_id=:cid ORDER BY vehicle_id, odometer_km"
     ), {"cid": cid})).mappings().all()
     by_v: dict[str, list] = defaultdict(list)
     for r in rows:
         by_v[r["vid"]].append(r)
+
+    # Weighbridge rent-trip km per vehicle, with IST completion date — the automatic
+    # "distance driven since the last fill" signal (summed per-vehicle after each fill
+    # date below). Same trip population as the rent side of the utilisation report.
+    trips_by_v: dict[str, list] = defaultdict(list)
+    for r in (await db.execute(text(
+        "SELECT vehicle_id::text AS vid, "
+        "CAST(COALESCE(completed_at, created_at) AT TIME ZONE 'Asia/Kolkata' AS date) AS d, "
+        "COALESCE(rent_km, 0) AS km FROM tokens "
+        "WHERE company_id=:cid AND token_type='sale' AND status='COMPLETED' "
+        "AND vehicle_id IS NOT NULL AND COALESCE(rent_km, 0) > 0"), {"cid": cid})).mappings():
+        trips_by_v[r["vid"]].append((r["d"], float(r["km"] or 0)))
+
     out: dict[str, float] = {}
     for vid, entries in by_v.items():
         v = veh.get(vid)
@@ -622,10 +639,16 @@ async def _fuel_left_by_vehicle(db: AsyncSession, cid: str, veh: dict) -> dict:
         if full_idx is None:
             continue
         full_odo = float(entries[full_idx]["odometer_km"] or 0)
+        full_date = entries[full_idx]["entry_date"]
         litres_after = sum(float(e["litres"] or 0) for e in entries[full_idx + 1:])
-        cur_odo = (float(v.current_odometer_km) if v.current_odometer_km
-                   else float(entries[-1]["odometer_km"] or full_odo))
-        burnt = max(0.0, cur_odo - full_odo) / bench
+        # Distance since the last full fill: rent-trip km dated strictly after the fill
+        # day (so a just-filled tank reads full), OR the manual current odometer if it
+        # implies more — whichever is larger.
+        trip_dist = sum(km for (d, km) in trips_by_v.get(vid, [])
+                        if full_date is None or d > full_date)
+        odo_dist = (max(0.0, float(v.current_odometer_km) - full_odo)
+                    if v.current_odometer_km else 0.0)
+        burnt = max(trip_dist, odo_dist) / bench
         out[vid] = round(max(0.0, min(tank, tank + litres_after - burnt)), 1)
     return out
 

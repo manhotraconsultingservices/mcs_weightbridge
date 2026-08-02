@@ -261,8 +261,8 @@ function UtilizationTab() {
       </div>
       <p className="text-xs text-muted-foreground -mt-1">
         Own-vehicle rent-out performance: <b>km run</b> and <b>rent earned</b> (from Sales tokens) vs <b>fuel burnt</b>
-        (from the fuel log), and the <b>net</b> per vehicle. <b>Fuel left</b> is an estimate from the last brim-full fill,
-        km driven and the benchmark mileage (needs tank capacity + benchmark set on the vehicle).
+        (from the fuel log), and the <b>net</b> per vehicle. <b>Fuel left ≈</b> tank at the last brim-full fill − (rent-km
+        driven since ÷ benchmark mileage); it drops as the vehicle runs Sales trips (needs tank capacity + benchmark set).
       </p>
 
       {tot && (
