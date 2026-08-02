@@ -19,7 +19,8 @@
  *   ];
  *   <DataTable id="invoices.main" columns={columns} data={rows} rowKey={r => r.id} />
  */
-import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowUpDown, ArrowUp, ArrowDown, Settings2, Download, Filter, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -472,19 +473,40 @@ function ColumnVisibilityMenu<T>({
   onReset: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const anchorRef = useRef<HTMLSpanElement>(null);   // measured button wrapper
+  const menuRef = useRef<HTMLDivElement>(null);      // portaled menu (for click-outside)
+  const MENU_W = 256;                                 // w-64
 
-  // Close on click-outside
+  // Position the PORTALED menu under the button, right-aligned + clamped on-screen.
+  // Rendered to document.body so no ancestor overflow (the table's horizontal-scroll
+  // wrapper, hub tabs, cards) can clip it — the previous absolute menu got cut off.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const b = anchorRef.current?.getBoundingClientRect();
+      if (!b) return;
+      const left = Math.max(8, Math.min(b.right - MENU_W, window.innerWidth - MENU_W - 8));
+      setPos({ top: b.bottom + 4, left });
+    };
+    place();
+    window.addEventListener('scroll', place, true);   // capture: follow scroll in any ancestor
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [open]);
+
+  // Close on click-outside (button OR portaled menu) + Escape
   useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const t = e.target as Node;
+      if (anchorRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
     }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false);
-    }
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setOpen(false); }
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
     return () => {
@@ -497,12 +519,16 @@ function ColumnVisibilityMenu<T>({
   const togglable = columns.filter(c => !c.alwaysVisible);
 
   return (
-    <div className="relative" ref={containerRef}>
+    <span ref={anchorRef} className="inline-flex">
       <Button type="button" size="sm" variant="outline" onClick={() => setOpen(o => !o)}>
         <Settings2 className="mr-1 h-3.5 w-3.5" /> Columns
       </Button>
-      {open && (
-        <div className="absolute right-0 mt-1 z-50 w-64 rounded-md border bg-popover p-2 shadow-md">
+      {open && pos && createPortal(
+        <div
+          ref={menuRef}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width: MENU_W }}
+          className="z-[100] rounded-md border bg-popover p-2 shadow-md"
+        >
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-medium text-muted-foreground">Show columns</p>
             <Button type="button" size="sm" variant="ghost" className="h-6 text-[11px] px-1.5"
@@ -527,8 +553,9 @@ function ColumnVisibilityMenu<T>({
               );
             })}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </span>
   );
 }
