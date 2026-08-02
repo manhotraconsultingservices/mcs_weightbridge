@@ -1574,6 +1574,15 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
         "FROM invoices WHERE company_id=:cid AND invoice_type='sale' "
         "AND status IN ('final','draft') "
         "AND invoice_date>=:fd AND invoice_date<=:td GROUP BY 1")
+    # SALES BILLED — total value of the day's sale invoices BY INVOICE DATE (final+draft;
+    # superseded/cancelled excluded). This is the sale-register view that reconciles with
+    # the Sales table — distinct from the cash-in (cash/electronic) which is by receipt
+    # date. Informational: NOT folded into Net (Net stays a true cash position).
+    sales_billed = await _daily(
+        "SELECT CAST(invoice_date AS date) AS d, SUM(COALESCE(grand_total,0)) AS total "
+        "FROM invoices WHERE company_id=:cid AND invoice_type='sale' "
+        "AND status IN ('final','draft') "
+        "AND invoice_date>=:fd AND invoice_date<=:td GROUP BY 1")
     # DRAFT purchases — purchase bills not yet finalised (the weighbridge auto-creates
     # purchase invoices as drafts). The accrual 'purchases' line above only counts FINAL
     # bills, so these are otherwise invisible. Informational (unconfirmed) → shown in its
@@ -1634,15 +1643,17 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
         "AND voucher_date>=:fd AND voucher_date<=:td GROUP BY 1")
 
     all_days = sorted(set(
-        list(cash) + list(electronic) + list(credit) + list(purchases) + list(draft_purchase)
+        list(cash) + list(electronic) + list(credit) + list(sales_billed)
+        + list(purchases) + list(draft_purchase)
         + list(store) + list(diesel) + list(salary) + list(advance) + list(commission)
         + list(overhead) + list(supplier_pay)))
     days = []
-    tot = {k: 0.0 for k in ("cash_sales", "electronic_sales", "credit_sales", "purchases",
-                            "draft_purchases", "supplier_payments", "store_inventory", "diesel",
-                            "salary", "advance", "commission", "overhead")}
+    tot = {k: 0.0 for k in ("cash_sales", "electronic_sales", "credit_sales", "sales_billed",
+                            "purchases", "draft_purchases", "supplier_payments", "store_inventory",
+                            "diesel", "salary", "advance", "commission", "overhead")}
     for d in all_days:
         cs, es, cr = cash.get(d, 0.0), electronic.get(d, 0.0), credit.get(d, 0.0)
+        sb = sales_billed.get(d, 0.0)
         dpu = draft_purchase.get(d, 0.0)
         pu, st, di = purchases.get(d, 0.0), store.get(d, 0.0), diesel.get(d, 0.0)
         sa, ad, co = salary.get(d, 0.0), advance.get(d, 0.0), commission.get(d, 0.0)
@@ -1655,7 +1666,7 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
         total_exp = _r2(common_out + (sp if basis == "cash" else pu + co))
         days.append({
             "date": d, "cash_sales": cs, "electronic_sales": es, "credit_sales": cr,
-            "total_sales": total_sales,
+            "sales_billed": sb, "total_sales": total_sales,
             "purchases": pu, "draft_purchases": dpu, "supplier_payments": sp,
             "store_inventory": st, "diesel": di,
             "salary": sa, "advance": ad, "commission": co, "overhead": oh,
@@ -1744,6 +1755,8 @@ async def build_eod_summary_context(db: AsyncSession, company_id, company_name: 
         "cash_sales": money(s["cash_sales"]),
         "electronic_sales": money(s["electronic_sales"]),
         "total_sales": money(s["total_sales"]),
+        "sales_billed": money(s["sales_billed"]),
+        "credit_sales": money(s["credit_sales"]),
         "purchases": money(s["purchases"]),
         "store_inventory": money(s["store_inventory"]),
         "diesel": money(s["diesel"]),

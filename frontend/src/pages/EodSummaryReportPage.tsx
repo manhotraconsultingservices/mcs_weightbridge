@@ -28,6 +28,7 @@ interface EodDay {
   cash_sales: number;
   electronic_sales: number;
   credit_sales: number;
+  sales_billed: number;
   total_sales: number;
   purchases: number;
   draft_purchases: number;
@@ -117,9 +118,9 @@ export default function EodSummaryReportPage() {
   function downloadDaysCsv() {
     if (!data) return;
     const outLabel = basis === 'cash' ? 'Supplier Paid' : 'Purchases';
-    const header = ['Date', 'Cash Sales', 'Bank/UPI Collections', 'Total Collected', 'Credit Sales', outLabel, 'Draft Purchases', 'Store', 'Diesel', 'Salary', 'Advance', ...(basis === 'accrual' ? ['Commission'] : []), 'Expenses', 'Total Expenses', 'Net'];
+    const header = ['Date', 'Cash Sales', 'Bank/UPI Collections', 'Total Collected', 'Credit Sales', 'Sales Billed', outLabel, 'Draft Purchases', 'Store', 'Diesel', 'Salary', 'Advance', ...(basis === 'accrual' ? ['Commission'] : []), 'Expenses', 'Total Expenses', 'Net'];
     const rows = data.days.map(d => [
-      d.date, String(d.cash_sales), String(d.electronic_sales), String(d.total_sales), String(d.credit_sales),
+      d.date, String(d.cash_sales), String(d.electronic_sales), String(d.total_sales), String(d.credit_sales), String(d.sales_billed ?? 0),
       String(basis === 'cash' ? d.supplier_payments : d.purchases), String(d.draft_purchases), String(d.store_inventory), String(d.diesel), String(d.salary),
       String(d.advance), ...(basis === 'accrual' ? [String(d.commission)] : []), String(d.overhead), String(d.total_expenses), String(d.net),
     ]);
@@ -185,6 +186,11 @@ export default function EodSummaryReportPage() {
     // invoices. Money still owed, so it is NOT in Total Collected or Net (those are cash).
     { key: 'credit_sales', label: 'Credit Sales', type: 'number', align: 'right', accessor: r => r.credit_sales,
       format: v => <span className="text-amber-700">{INR(v as number)}</span>, exportValue: r => r.credit_sales },
+    // Sales billed = total sale-invoice value BY INVOICE DATE (final+draft, excl. superseded).
+    // The sale-register view that reconciles with the Sales table — distinct from Collected
+    // (by receipt date). Informational, NOT part of Net (Net stays a cash position).
+    { key: 'sales_billed', label: 'Sales Billed', type: 'number', align: 'right', accessor: r => r.sales_billed ?? 0,
+      format: v => <span className="text-violet-700">{INR(v as number)}</span>, exportValue: r => r.sales_billed ?? 0 },
     // Money-out: accrual books the purchase INVOICE; cash books the supplier PAYMENT (voucher).
     ...(basis === 'cash'
       ? [{ key: 'supplier_payments', label: 'Supplier Paid', type: 'number', align: 'right', accessor: (r: EodDay) => r.supplier_payments,
