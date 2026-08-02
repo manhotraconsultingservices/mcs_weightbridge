@@ -711,6 +711,15 @@ async def list_invoices(
         .limit(page_size)
     )).scalars().all()
 
+    # Batch-resolve creator names (created_by → full_name/username) in one query.
+    creator_ids = {inv.created_by for inv in invoices if inv.created_by}
+    creators: dict = {}
+    if creator_ids:
+        for uid, uname, fname in (await db.execute(
+            select(User.id, User.username, User.full_name).where(User.id.in_(creator_ids))
+        )).all():
+            creators[uid] = fname or uname
+
     # Denormalize token_no and token_date for each invoice
     enriched = []
     for inv in invoices:
@@ -726,6 +735,7 @@ async def list_invoices(
         inv_dict = InvoiceResponse.model_validate(inv)
         inv_dict.token_no = token_no
         inv_dict.token_date = token_date
+        inv_dict.created_by_name = creators.get(inv.created_by)
         enriched.append(inv_dict)
 
     return {"items": enriched, "total": total, "page": page, "page_size": page_size}

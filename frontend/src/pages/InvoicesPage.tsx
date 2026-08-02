@@ -32,6 +32,8 @@ const OPTIONAL_COLS: { key: string; label: string }[] = [
   { key: 'token', label: 'Token' },
   { key: 'net_weight', label: 'Net Weight' },
   { key: 'payment_mode', label: 'Payment Mode' },
+  { key: 'created_by', label: 'Created by' },
+  { key: 'timestamp', label: 'Timestamp' },
 ];
 const PM_LABEL: Record<string, string> = {
   cash: 'Cash', credit: 'Credit', upi: 'UPI', bank_transfer: 'Bank',
@@ -1904,7 +1906,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
         <Button
           variant="outline" size="sm"
           onClick={() => {
-            const headers = ['Invoice No', 'Date', 'Party / Customer', 'Vehicle', 'Token No', 'Net Wt (MT)', 'Amount', 'Payment Mode', 'Payment Status', 'Status'];
+            const headers = ['Invoice No', 'Date', 'Party / Customer', 'Vehicle', 'Token No', 'Net Wt (MT)', 'Amount', 'Payment Mode', 'Payment Status', 'Status', 'Created by', 'Timestamp'];
             const rows = displayed.map(inv => [
               inv.invoice_no ?? '(draft)',
               inv.invoice_date ?? '',
@@ -1916,6 +1918,8 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
               pmLabel(inv.payment_mode),
               inv.payment_status ?? '',
               inv.status ?? '',
+              inv.created_by_name ?? '',
+              inv.created_at ? new Date(inv.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '',
             ]);
             downloadCsv(`invoices-${invoiceType}-${new Date().toISOString().slice(0,10)}`, [headers, ...rows]);
           }}
@@ -2013,6 +2017,8 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                         Payment Mode <SortIcon col="payment_mode" />
                       </th>
                     )}
+                    {colShown('created_by') && <th className={thClass}>Created by</th>}
+                    {colShown('timestamp') && <th className={thClass}>Timestamp</th>}
                     <th className={thClass + ' text-center'}>Progress</th>
                     <th className={thClass}></th>
                   </tr>
@@ -2047,6 +2053,8 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                     {colShown('net_weight') && <td className="px-2 py-1" />}
                     <td className="px-2 py-1" />
                     {colShown('payment_mode') && <td className="px-2 py-1" />}
+                    {colShown('created_by') && <td className="px-2 py-1" />}
+                    {colShown('timestamp') && <td className="px-2 py-1" />}
                     <td className="px-2 py-1">
                       <Select value={cf.payment_status || 'all'} onValueChange={v => setCf(f => ({ ...f, payment_status: (v ?? '') === 'all' ? '' : (v ?? '') }))}>
                         <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
@@ -2157,6 +2165,8 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                       )}
                       <td className="px-3 py-2 text-right font-semibold whitespace-nowrap">{INR(inv.grand_total)}</td>
                       {colShown('payment_mode') && <td className="px-3 py-2 text-xs whitespace-nowrap">{pmLabel(inv.payment_mode)}</td>}
+                      {colShown('created_by') && <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{inv.created_by_name ?? '—'}</td>}
+                      {colShown('timestamp') && <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{inv.created_at ? new Date(inv.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>}
                       <td className="px-3 py-2 text-center">
                         <div className="flex flex-col items-center gap-0.5">
                           <InvoicePipeline status={inv.status} paymentStatus={inv.payment_status} />

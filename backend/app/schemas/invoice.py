@@ -196,6 +196,8 @@ class InvoiceResponse(BaseModel):
     original_invoice_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
+    created_by: Optional[UUID] = None
+    created_by_name: Optional[str] = None
     items: list[ItemResponse]
     # Populated by finalise_invoice when a non-critical side-effect (e.g. stock
     # auto-posting) fails. Empty list = all good. Frontend should surface these.
