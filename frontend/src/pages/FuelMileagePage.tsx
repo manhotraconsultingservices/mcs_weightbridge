@@ -389,7 +389,11 @@ function FuelLogTab({ vehicles }: { vehicles: Vehicle[] }) {
 
   const COLS: ColumnDef<FuelEntry>[] = [
     { key: 'entry_date', label: 'Date', type: 'date', accessor: r => r.entry_date, format: v => new Date(String(v)).toLocaleDateString('en-IN') },
-    { key: 'registration_no', label: 'Vehicle', accessor: r => r.registration_no || '—' },
+    { key: 'registration_no', label: 'Vehicle', accessor: r => r.registration_no || '—',
+      format: (_v, r) => r.vehicle_id
+        ? <Link to={`/vehicles/${r.vehicle_id}/history`} className="font-medium text-blue-700 hover:underline">{r.registration_no || '—'}</Link>
+        : (r.registration_no || '—'),
+      exportValue: r => r.registration_no || '' },
     { key: 'odometer_km', label: 'Odometer', type: 'number', align: 'right', accessor: r => r.odometer_km, format: v => `${num(Number(v))} km` },
     { key: 'distance_km', label: 'Distance', type: 'number', align: 'right', accessor: r => r.distance_km ?? 0, format: (_v, r) => r.distance_km == null ? '—' : `${num(r.distance_km)} km`, exportValue: r => r.distance_km ?? '' },
     { key: 'litres', label: 'Litres', type: 'number', align: 'right', accessor: r => r.litres, format: v => num(Number(v), 2) },
@@ -434,7 +438,11 @@ function MileageReportTab() {
   useEffect(() => { load(); }, [load]);
 
   const COLS: ColumnDef<MileageRow>[] = [
-    { key: 'registration_no', label: 'Vehicle', accessor: r => r.registration_no },
+    { key: 'registration_no', label: 'Vehicle', accessor: r => r.registration_no,
+      format: (_v, r) => r.vehicle_id
+        ? <Link to={`/vehicles/${r.vehicle_id}/history`} className="font-medium text-blue-700 hover:underline">{r.registration_no}</Link>
+        : r.registration_no,
+      exportValue: r => r.registration_no },
     { key: 'distance_km', label: 'Distance (actual)', type: 'number', align: 'right', accessor: r => r.distance_km, format: v => `${num(Number(v))} km` },
     { key: 'expected_km', label: 'Expected KM', type: 'number', align: 'right', accessor: r => r.expected_km ?? 0,
       format: (_v, r) => r.expected_km == null ? '—' : <span className="text-slate-600" title="Diesel consumed × benchmark km/l — the distance this vehicle should have covered">{num(r.expected_km)} km</span>,
@@ -598,7 +606,11 @@ function LeakageTab() {
               <CardContent className="p-4">
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="font-semibold">{a.registration_no}</p>
+                    <p className="font-semibold">
+                      {a.vehicle_id
+                        ? <Link to={`/vehicles/${a.vehicle_id}/history`} className="text-blue-700 hover:underline">{a.registration_no}</Link>
+                        : a.registration_no}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {num(a.actual_kmpl, 2)} km/l vs benchmark {num(a.benchmark_kmpl, 2)}{a.benchmark_source === 'auto' ? ' (auto)' : ''}
                     </p>
