@@ -12,11 +12,12 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import {
   Search, Users, ExternalLink, Loader2, AlertCircle, IndianRupee,
-  Phone, Building2,
+  Phone, Building2, Table as TableIcon, LayoutGrid,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 import type { Party } from '@/types';
 
@@ -39,6 +40,42 @@ export default function CustomerPickerPage(
   const [search, setSearch] = useState('');
   // When embedded as a CRM tab the type is fixed (and the chips are hidden).
   const [typeFilter, setTypeFilter] = useState<'all' | 'customer' | 'supplier'>(lockType ?? 'all');
+  // View mode — default TABLE (per the app's DataTable standard); persisted per list.
+  const VIEW_KEY = `crm.pickerView.${lockType ?? 'all'}`;
+  const [view, setView] = useState<'table' | 'tiles'>(() => {
+    try { return (localStorage.getItem(VIEW_KEY) as 'table' | 'tiles') || 'table'; } catch { return 'table'; }
+  });
+  useEffect(() => { try { localStorage.setItem(VIEW_KEY, view); } catch { /* ignore */ } }, [view, VIEW_KEY]);
+
+  const typeLabel = (pt: string) =>
+    pt === 'both' ? t('party.both') : pt === 'supplier' ? t('party.supplier') : t('party.customer');
+
+  const COLUMNS: ColumnDef<Party>[] = useMemo(() => [
+    { key: 'name', label: 'Name', accessor: r => r.name, exportValue: r => r.name,
+      format: (v, r) => (
+        <Link to={`${linkBase}/${r.id}`}
+          className="font-medium text-blue-700 hover:underline inline-flex items-center gap-1">
+          {String(v)} <ExternalLink className="h-3 w-3 opacity-40 shrink-0" />
+        </Link>
+      ) },
+    { key: 'type', label: 'Type', type: 'enum', enumOptions: ['customer', 'supplier', 'both'],
+      accessor: r => r.party_type, exportValue: r => String(r.party_type ?? ''),
+      format: v => <Badge variant="outline" className="text-[10px] uppercase">{typeLabel(String(v))}</Badge> },
+    { key: 'phone', label: 'Phone', accessor: r => r.phone ?? '',
+      format: v => v ? <span className="font-mono text-xs">{String(v)}</span> : <span className="text-slate-300">—</span> },
+    { key: 'city', label: 'City', accessor: r => [r.billing_city, r.billing_state].filter(Boolean).join(', ') },
+    { key: 'gstin', label: 'GSTIN', accessor: r => r.gstin ?? '', defaultVisible: false,
+      format: v => v ? <span className="font-mono text-xs">{String(v)}</span> : <span className="text-slate-300">—</span> },
+    { key: 'balance', label: t('customer360.outstanding'), type: 'number', align: 'right',
+      accessor: r => Number(r.current_balance ?? 0), exportValue: r => Number(r.current_balance ?? 0),
+      format: v => {
+        const b = Number(v ?? 0);
+        const cls = b > 0 ? 'text-rose-700' : b < 0 ? 'text-emerald-700' : 'text-slate-500';
+        const txt = b > 0 ? INR_L(b) : b < 0 ? `(${INR_L(Math.abs(b))})` : '₹0';
+        return <span className={`font-semibold ${cls}`}>{txt}</span>;
+      } },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [t, linkBase]);
 
   useEffect(() => {
     setLoading(true);
@@ -125,6 +162,21 @@ export default function CustomerPickerPage(
           ))}
         </div>
         )}
+        {/* Table / Tiles view toggle (default table) */}
+        <div className="ml-auto inline-flex rounded-md border border-slate-200 overflow-hidden shrink-0">
+          {([['table', TableIcon, 'Table'], ['tiles', LayoutGrid, 'Tiles']] as const).map(([v, Icon, label]) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              title={label}
+              className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs transition-colors ${
+                view === v ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" /> <span className="hidden sm:inline">{label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Error / loading / empty / list */}
@@ -138,6 +190,16 @@ export default function CustomerPickerPage(
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
         </div>
+      ) : view === 'table' ? (
+        <DataTable<Party>
+          id={`crm.parties.${lockType ?? 'all'}`}
+          data={filtered}
+          columns={COLUMNS}
+          rowKey={r => r.id}
+          exportFilename={lockType ? `${lockType}s` : 'parties'}
+          defaultSort={{ key: 'name', direction: 'asc' }}
+          emptyMessage={t('customer360.noCustomersFound')}
+        />
       ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="py-16 text-center">
