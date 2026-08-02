@@ -1241,8 +1241,9 @@ async def finalise_invoice(
 
     # ── If this is a revision, compute diff + SUPERSEDE the prior version(s) ──
     is_revision = inv.revision_no and inv.revision_no > 1 and inv.original_invoice_id
+    _rev_info: dict = {}
     if is_revision:
-        await _finalize_revision_diff(db, inv)
+        _rev_info = await _finalize_revision_diff(db, inv) or {}
         # A revision REPLACES its predecessor. Void the prior finalised version(s)
         # in the chain so revenue / receivables / GSTR aren't double-counted (they
         # all filter status='final'; 'superseded' drops out automatically). Runs
@@ -1293,8 +1294,15 @@ async def finalise_invoice(
         "qty": _qty,
         "royalty": f"{_roy:,.2f}" if _roy > 0 else "",
         "vehicle_rent": f"{_rent:,.2f}" if _rent > 0 else "",
+        "taxable_amount": f"{float(inv.taxable_amount or 0):,.2f}",
+        "tax_amount": f"{float((inv.cgst_amount or 0) + (inv.sgst_amount or 0) + (inv.igst_amount or 0)):,.2f}",
+        "freight": f"{float(inv.freight or 0):,.2f}" if float(inv.freight or 0) > 0 else "",
         "company_name": co.name,
         "revision_no": str(inv.revision_no),
+        # WHO finalised + WHAT changed (revision: diff vs previous + remark).
+        "finalized_by": (current_user.full_name or current_user.username) if current_user else "—",
+        "changes": _rev_info.get("changes", ""),
+        "remark": _rev_info.get("remark", ""),
     }
     # Capture tenant slug for background task routing
     _bg_tenant = None
@@ -1912,10 +1920,11 @@ async def print_invoice(
 # Invoice Revision / Amendment Endpoints
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def _finalize_revision_diff(db: AsyncSession, inv: Invoice) -> None:
+async def _finalize_revision_diff(db: AsyncSession, inv: Invoice) -> dict:
     """
     After a revised invoice is finalized, compute the diff vs its predecessor
-    and update the InvoiceRevision record.
+    and update the InvoiceRevision record. Returns {changes, remark} for the
+    notification (empty dict if no revision record / on error).
     """
     import logging as _log
     from datetime import datetime as _dt, timezone as _tz
@@ -1938,12 +1947,18 @@ async def _finalize_revision_diff(db: AsyncSession, inv: Invoice) -> None:
 
         diff = compute_invoice_diff(old_snap, new_snap)
         rev_row.diff = diff
-        rev_row.change_summary = diff.get("summary_text", "")
+        # Keep the human reason (set at revision creation) as the remark; the diff's
+        # summary_text is WHAT changed.
+        remark = rev_row.change_summary or ""
+        changes = diff.get("summary_text", "")
+        rev_row.change_summary = changes or remark
         rev_row.finalized_at = _dt.now(_tz.utc)
         await db.flush()
+        return {"changes": changes, "remark": remark}
 
     except Exception as e:
         _log.getLogger(__name__).warning("Failed to compute revision diff: %s", e)
+    return {}
 
 
 @router.post("/{invoice_id}/create-revision", response_model=InvoiceResponse, status_code=201)
