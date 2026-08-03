@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 
 from app.database import get_db
-from app.dependencies import get_current_user, require_role
+from app.dependencies import get_current_user, require_role, require_page_permission
 from app.models.user import User
 from app.models.product import Product, ProductCategory
 from app.models.product_unit_rate import ProductUnitRate
@@ -35,7 +35,7 @@ async def list_categories(
 @router.post("/product-categories", response_model=ProductCategoryResponse, status_code=201)
 async def create_category(
     data: ProductCategoryCreate,
-    current_user: User = Depends(require_role("admin", "operator")),
+    current_user: User = Depends(require_page_permission("/products")),
     db: AsyncSession = Depends(get_db),
 ):
     cat = ProductCategory(company_id=current_user.company_id, **data.model_dump())
@@ -49,7 +49,7 @@ async def create_category(
 async def update_category(
     cat_id: uuid.UUID,
     data: ProductCategoryCreate,
-    current_user: User = Depends(require_role("admin", "operator")),
+    current_user: User = Depends(require_page_permission("/products")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -109,7 +109,7 @@ async def list_products(
 @router.post("/products", response_model=ProductResponse, status_code=201)
 async def create_product(
     data: ProductCreate,
-    current_user: User = Depends(require_role("admin", "operator")),
+    current_user: User = Depends(require_page_permission("/products")),
     db: AsyncSession = Depends(get_db),
 ):
     product = Product(company_id=current_user.company_id, **data.model_dump())
@@ -124,7 +124,7 @@ async def create_product(
 @router.put("/products/default-rates")
 async def bulk_update_default_rates(
     data: ProductRatesBulkRequest,
-    current_user: User = Depends(require_role("admin", "operator")),
+    current_user: User = Depends(require_page_permission("/products", "/pricing-matrix")),
     db: AsyncSession = Depends(get_db),
 ):
     """Bulk-set default_rate (and optionally gst_rate) for many products at once.
@@ -196,7 +196,7 @@ async def get_product_unit_rates(
 @router.put("/products/unit-rates")
 async def bulk_update_unit_rates(
     data: ProductUnitRatesBulkRequest,
-    current_user: User = Depends(require_role("admin", "operator")),
+    current_user: User = Depends(require_page_permission("/products", "/pricing-matrix")),
     db: AsyncSession = Depends(get_db),
 ):
     """Upsert per-unit default rates. When a unit == the product's base unit, the
@@ -259,7 +259,7 @@ async def get_product(
 async def update_product(
     product_id: uuid.UUID,
     data: ProductUpdate,
-    current_user: User = Depends(require_role("admin", "operator")),
+    current_user: User = Depends(require_page_permission("/products")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(

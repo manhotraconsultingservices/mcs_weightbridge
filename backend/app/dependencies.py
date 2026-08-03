@@ -77,3 +77,57 @@ def require_role(*roles: str):
             )
         return current_user
     return role_checker
+
+
+def require_page_permission(*pages: str, always: tuple[str, ...] = ("admin", "operator")):
+    """Authorize a data endpoint by the tenant's admin-configured role→pages grant
+    (``app_settings.role_permissions``) instead of a fixed role list.
+
+    Why: a hard ``require_role("admin","operator")`` on a data endpoint blocks a
+    role the admin has deliberately granted the matching page — e.g. an accountant
+    who has ``/products`` (Item Master) either by default (see
+    ``DEFAULT_ROLE_PERMISSIONS``) or by an explicit grant — even though the page
+    opens for them in the UI. This dependency honours that grant, so ANY role
+    (built-in OR admin-created custom) that holds one of ``pages`` may use the
+    endpoint. It upholds the RBAC principle "custom roles are first-class — never
+    hard-code the role list".
+
+    - ``always`` roles bypass the map (``admin`` has ``"*"``; ``operator`` is kept
+      for parity with the legacy ``require_role("admin","operator")`` guards these
+      replace, so weighbridge operators are never regressed).
+    - The stored map is layered over ``DEFAULT_ROLE_PERMISSIONS`` so a role the
+      admin never touched keeps its defaults, while a role the admin explicitly
+      edited uses exactly what they saved (an explicit removal still denies).
+    """
+    async def perm_checker(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ):
+        role = current_user.role
+        if role in always:
+            return current_user
+        # Lazy import avoids a circular import (app_settings imports require_role).
+        from app.routers.app_settings import (
+            _get_raw, DEFAULT_ROLE_PERMISSIONS, PERMISSIONS_KEY,
+        )
+        merged = dict(DEFAULT_ROLE_PERMISSIONS)
+        raw = await _get_raw(db, PERMISSIONS_KEY)
+        if raw:
+            try:
+                import json
+                stored = json.loads(raw)
+                if isinstance(stored, dict):
+                    merged.update(stored)
+            except Exception:
+                pass
+        perms = merged.get(role, [])
+        if "*" in perms or any(p in perms for p in pages):
+            return current_user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Role '{role}' not authorized for this action. Ask an admin to "
+                f"grant this role access to the relevant page in Settings → Permissions."
+            ),
+        )
+    return perm_checker
