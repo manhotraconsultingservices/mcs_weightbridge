@@ -281,6 +281,15 @@ export interface InvoiceItem {
   igst_amount: number;
   total_amount: number;
   sort_order: number;
+  // Per-item adhoc-invoice charges (royalty ₹/MT|CUM · vehicle fare ₹/km/unit × km × qty)
+  royalty_unit?: string | null;
+  royalty_rate?: number | null;
+  royalty_amount?: number | null;
+  fare_unit?: string | null;
+  fare_rate?: number | null;
+  fare_km?: number | null;
+  fare_amount?: number | null;
+  fare_trips?: number[] | null;
 }
 
 export interface InvoiceParty {

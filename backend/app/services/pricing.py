@@ -124,3 +124,107 @@ def token_quantity(token, unit, product=None) -> Decimal:
     else:  # KG or any other → raw kg (legacy behaviour)
         q = net
     return q.quantize(Decimal("0.001"))
+
+
+# ── Per-item royalty (govt mineral charge, ₹ per MT or per CUM) ────────────────
+
+def _to_cft(qty: Decimal, u: str) -> Decimal | None:
+    """A volume quantity → cubic FEET, or None if `u` is not a volume unit."""
+    if u == "CFT":
+        return qty
+    if u in ("CBM", "CUM"):
+        return qty * CFT_PER_M3
+    if u == "BRASS":
+        return qty * CFT_PER_BRASS
+    return None
+
+
+def _to_kg(qty: Decimal, u: str) -> Decimal | None:
+    """A weight quantity → kilograms, or None if `u` is not a weight unit."""
+    if u == "MT":
+        return qty * Decimal("1000")
+    if u == "QUINTAL":
+        return qty * Decimal("100")
+    if u == "KG":
+        return qty
+    return None
+
+
+def royalty_quantity(quantity, line_unit, royalty_unit, product=None) -> Decimal:
+    """Convert a line's billed quantity into the ROYALTY unit (MT or CUM), 3 dp.
+
+    Royalty is levied per metric tonne (``mt``) or per cubic metre (``cum``).
+    - Same dimension (weight↔weight / volume↔volume) → exact unit conversion.
+    - Cross dimension (a weight-billed line charged royalty/CUM, or a
+      volume-billed line charged royalty/MT) → converted via the product's
+      ``bulk_density`` (kg per CFT). Returns 0 when that bridge is needed but the
+      product has no bulk_density (can't derive — the UI flags it), so a wrong
+      number is never invented.
+    """
+    q = Decimal(str(quantity or 0))
+    lu = norm_unit(line_unit)
+    ru = norm_unit(royalty_unit)
+    if q <= 0 or ru not in ("MT", "CUM"):
+        return Decimal("0")
+
+    density = None  # kg per CFT
+    bd = getattr(product, "bulk_density", None) if product is not None else None
+    if bd:
+        try:
+            density = Decimal(str(bd))
+        except Exception:
+            density = None
+
+    if ru == "MT":
+        kg = _to_kg(q, lu)
+        if kg is None:                       # line is a volume → bridge via density
+            cft = _to_cft(q, lu)
+            if cft is None or not density or density <= 0:
+                return Decimal("0")
+            kg = cft * density
+        return (kg / Decimal("1000")).quantize(Decimal("0.001"))
+
+    # ru == "CUM" → cubic metres
+    cft = _to_cft(q, lu)
+    if cft is None:                          # line is a weight → bridge via density
+        kg = _to_kg(q, lu)
+        if kg is None or not density or density <= 0:
+            return Decimal("0")
+        cft = kg / density
+    return (cft / CFT_PER_M3).quantize(Decimal("0.001"))
+
+
+def line_royalty(quantity, line_unit, royalty_unit, royalty_rate, product=None) -> Decimal:
+    """₹ royalty for one line = rate × quantity-in-royalty-unit (2 dp).
+
+    Returns 0 when the rate is unset/≤0 or the royalty unit is blank (royalty not
+    opted in for this line).
+    """
+    try:
+        rate = Decimal(str(royalty_rate or 0))
+    except Exception:
+        return Decimal("0")
+    if rate <= 0 or not (royalty_unit or "").strip():
+        return Decimal("0")
+    qty = royalty_quantity(quantity, line_unit, royalty_unit, product)
+    return (rate * qty).quantize(Decimal("0.01"))
+
+
+def line_vehicle_fare(quantity, line_unit, fare_unit, fare_rate, km, product=None) -> Decimal:
+    """₹ vehicle fare (transport/hire) for one line, 2 dp:
+
+        fare = (₹/km/MT or ₹/km/CUM) × total_km × quantity-in-fare-unit
+
+    where total_km is the sum of the line's trip distances and quantity-in-unit is
+    converted the same way as royalty (MT/CUM, density-aware). Returns 0 when the
+    rate, km, or unit is unset (fare not opted in for this line).
+    """
+    try:
+        rate = Decimal(str(fare_rate or 0))
+        km_d = Decimal(str(km or 0))
+    except Exception:
+        return Decimal("0")
+    if rate <= 0 or km_d <= 0 or not (fare_unit or "").strip():
+        return Decimal("0")
+    qty = royalty_quantity(quantity, line_unit, fare_unit, product)
+    return (rate * km_d * qty).quantize(Decimal("0.01"))

@@ -180,6 +180,69 @@ def _invoice_to_dict(inv: Invoice, token_no: int | None = None,
 # CRUD Endpoints
 # ------------------------------------------------------------------ #
 
+async def _apply_line_charges(db: AsyncSession, items_data: list[dict],
+                              flat_royalty: Decimal | None,
+                              flat_fare: Decimal | None) -> tuple[Decimal, Decimal]:
+    """Compute per-line govt **royalty** (₹/MT or ₹/CUM) AND **vehicle fare**
+    (₹/km/MT or ₹/km/CUM × total km × qty) for an adhoc invoice, mutate each line
+    in place to carry royalty_*/fare_*, and return ``(royalty_total, fare_total)``.
+    Both are density-aware for cross weight↔volume via product.bulk_density.
+
+    Backward-compatible: if NO line opts into a charge (missing unit/rate[/km]),
+    that charge falls back to the flat invoice-level value the caller passed, so
+    pre-per-item invoices and the token→invoice flow are unaffected.
+    """
+    from app.services.pricing import line_royalty as _line_royalty, line_vehicle_fare as _line_fare
+    prod_ids = {it.get("product_id") for it in items_data if it.get("product_id")}
+    prod_map: dict = {}
+    if prod_ids:
+        rows = (await db.execute(select(Product).where(Product.id.in_(prod_ids)))).scalars().all()
+        prod_map = {p.id: p for p in rows}
+
+    roy_total = Decimal("0"); fare_total = Decimal("0")
+    any_roy = False; any_fare = False
+    for it in items_data:
+        prod = prod_map.get(it.get("product_id"))
+        # ── Royalty ──
+        ru = (it.get("royalty_unit") or "").strip().lower() or None
+        rr = it.get("royalty_rate")
+        r_amt = Decimal("0")
+        if ru and rr:
+            any_roy = True
+            r_amt = _line_royalty(it.get("quantity"), it.get("unit"), ru, rr, prod)
+            it["royalty_unit"] = ru
+        else:
+            it["royalty_unit"] = None; it["royalty_rate"] = None
+        it["royalty_amount"] = r_amt
+        roy_total += r_amt
+        # ── Vehicle fare (total km = explicit fare_km, else Σ trip km) ──
+        fu = (it.get("fare_unit") or "").strip().lower() or None
+        fr = it.get("fare_rate")
+        trips = it.get("fare_trips") or []
+        km = it.get("fare_km")
+        if km is None and trips:
+            try:
+                km = sum(Decimal(str(t or 0)) for t in trips)
+            except Exception:
+                km = None
+        f_amt = Decimal("0")
+        if fu and fr and km:
+            any_fare = True
+            f_amt = _line_fare(it.get("quantity"), it.get("unit"), fu, fr, km, prod)
+            it["fare_unit"] = fu
+            it["fare_km"] = km
+            it["fare_trips"] = [float(Decimal(str(t or 0))) for t in trips] if trips else None
+        else:
+            it["fare_unit"] = None; it["fare_rate"] = None
+            it["fare_km"] = None; it["fare_trips"] = None
+        it["fare_amount"] = f_amt
+        fare_total += f_amt
+
+    eff_roy = roy_total if any_roy else (flat_royalty or Decimal("0"))
+    eff_fare = fare_total if any_fare else (flat_fare or Decimal("0"))
+    return eff_roy, eff_fare
+
+
 @router.post("", response_model=InvoiceResponse, status_code=201)
 async def create_invoice(
     payload: InvoiceCreate,
@@ -230,6 +293,14 @@ async def create_invoice(
             if r and r > 0:
                 it["rate"] = float(r)
 
+    # Per-item royalty (₹/MT or ₹/CUM) + vehicle fare (₹/km/unit × km × qty) per
+    # line: compute each line's charge (density-aware), stamp it on the line, and
+    # sum for the invoice-level royalty + vehicle_rent that fold into grand_total
+    # post-tax (like freight). If no line opts in, fall back to the flat payload
+    # values (backward compatible with the token→invoice flow).
+    effective_royalty, effective_fare = await _apply_line_charges(
+        db, items_data, payload.royalty_amount, payload.vehicle_rent)
+
     totals = calculate_invoice_totals(
         items=items_data,
         discount_type=payload.discount_type,
@@ -238,8 +309,8 @@ async def create_invoice(
         tcs_rate=payload.tcs_rate,
         intra_state=intra,
         tax_type=effective_tax_type,
-        vehicle_rent=payload.vehicle_rent or Decimal("0"),
-        royalty=payload.royalty_amount or Decimal("0"),
+        vehicle_rent=effective_fare,
+        royalty=effective_royalty,
     )
 
     gross_weight = payload.gross_weight
@@ -289,8 +360,8 @@ async def create_invoice(
         payment_mode=payload.payment_mode,
         notes=payload.notes,
         tcs_rate=payload.tcs_rate,
-        vehicle_rent=payload.vehicle_rent or Decimal("0"),   # transport rent → billed (in grand_total)
-        royalty_amount=payload.royalty_amount or Decimal("0"),  # royalty → billed (in grand_total)
+        vehicle_rent=effective_fare,   # Σ per-item vehicle fare (or flat) → billed in grand_total
+        royalty_amount=effective_royalty,  # Σ per-item royalty (or flat) → billed in grand_total
         # Transport & dispatch metadata
         royalty_no=payload.royalty_no,
         delivery_note=payload.delivery_note,
@@ -328,6 +399,14 @@ async def create_invoice(
             igst_amount=item_data["igst_amount"],
             total_amount=item_data["total_amount"],
             sort_order=item_data.get("sort_order", i),
+            royalty_unit=item_data.get("royalty_unit"),
+            royalty_rate=(Decimal(str(item_data["royalty_rate"])) if item_data.get("royalty_rate") else None),
+            royalty_amount=Decimal(str(item_data.get("royalty_amount") or 0)),
+            fare_unit=item_data.get("fare_unit"),
+            fare_rate=(Decimal(str(item_data["fare_rate"])) if item_data.get("fare_rate") else None),
+            fare_km=(Decimal(str(item_data["fare_km"])) if item_data.get("fare_km") else None),
+            fare_amount=Decimal(str(item_data.get("fare_amount") or 0)),
+            fare_trips=item_data.get("fare_trips"),
         ))
 
     from app.routers.audit import log_action
@@ -883,7 +962,14 @@ async def invoice_drilldown(
         "items": [
             {"description": it.description, "hsn_code": it.hsn_code,
              "quantity": _f(it.quantity), "unit": it.unit, "rate": _f(it.rate),
-             "gst_rate": _f(it.gst_rate), "total_amount": _f(it.total_amount)}
+             "gst_rate": _f(it.gst_rate), "total_amount": _f(it.total_amount),
+             "royalty_unit": getattr(it, "royalty_unit", None),
+             "royalty_rate": _f(getattr(it, "royalty_rate", 0)),
+             "royalty_amount": _f(getattr(it, "royalty_amount", 0)),
+             "fare_unit": getattr(it, "fare_unit", None),
+             "fare_rate": _f(getattr(it, "fare_rate", 0)),
+             "fare_km": _f(getattr(it, "fare_km", 0)),
+             "fare_amount": _f(getattr(it, "fare_amount", 0))}
             for it in sorted(inv.items, key=lambda x: x.sort_order or 0)
         ],
     }
@@ -1036,6 +1122,10 @@ async def update_invoice(
         intra = is_intra_state(co.state_code, party_place_of_supply(party) if party else None)
 
         items_data = [i.model_dump() for i in payload.items]
+        # Recompute per-item royalty + vehicle fare from the edited lines (falls back
+        # to the invoice's stored values if no line opts in — backward compatible).
+        effective_royalty, effective_fare = await _apply_line_charges(
+            db, items_data, inv.royalty_amount, inv.vehicle_rent)
         totals = calculate_invoice_totals(
             items=items_data,
             discount_type=inv.discount_type,
@@ -1044,12 +1134,15 @@ async def update_invoice(
             tcs_rate=inv.tcs_rate,
             intra_state=intra,
             tax_type=inv.tax_type,
-            vehicle_rent=inv.vehicle_rent or Decimal("0"),
-            royalty=inv.royalty_amount or Decimal("0"),
+            vehicle_rent=effective_fare,
+            royalty=effective_royalty,
         )
         for k, v in totals.items():
             if k != "computed_items":
                 setattr(inv, k, v)
+        # totals dict omits royalty/vehicle_rent; set them explicitly
+        inv.royalty_amount = effective_royalty
+        inv.vehicle_rent = effective_fare
 
         for i, item_data in enumerate(totals["computed_items"]):
             db.add(InvoiceItem(
@@ -1067,6 +1160,14 @@ async def update_invoice(
                 igst_amount=item_data["igst_amount"],
                 total_amount=item_data["total_amount"],
                 sort_order=item_data.get("sort_order", i),
+                royalty_unit=item_data.get("royalty_unit"),
+                royalty_rate=(Decimal(str(item_data["royalty_rate"])) if item_data.get("royalty_rate") else None),
+                royalty_amount=Decimal(str(item_data.get("royalty_amount") or 0)),
+                fare_unit=item_data.get("fare_unit"),
+                fare_rate=(Decimal(str(item_data["fare_rate"])) if item_data.get("fare_rate") else None),
+                fare_km=(Decimal(str(item_data["fare_km"])) if item_data.get("fare_km") else None),
+                fare_amount=Decimal(str(item_data.get("fare_amount") or 0)),
+                fare_trips=item_data.get("fare_trips"),
             ))
 
     await db.commit()

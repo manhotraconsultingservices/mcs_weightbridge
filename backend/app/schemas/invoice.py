@@ -14,6 +14,17 @@ class InvoiceItemCreate(BaseModel):
     rate: Decimal
     gst_rate: Decimal = Decimal("0")
     sort_order: int = 0
+    # Per-item govt mineral royalty: charge ₹ per MT or per CUM against this line.
+    # royalty_unit 'mt'|'cum' (None/blank = no royalty); amount computed server-side
+    # = rate × the line quantity converted to that unit.
+    royalty_unit: Optional[str] = None
+    royalty_rate: Optional[Decimal] = None
+    # Per-item vehicle fare (transport hire): ₹/km/MT or ₹/km/CUM × total km × qty.
+    # fare_trips = list of trip km (summed to fare_km); fare_km may be sent directly.
+    fare_unit: Optional[str] = None
+    fare_rate: Optional[Decimal] = None
+    fare_km: Optional[Decimal] = None
+    fare_trips: Optional[list[Decimal]] = None
 
 
 class InvoiceCreate(BaseModel):
@@ -102,6 +113,14 @@ class ItemResponse(BaseModel):
     igst_amount: Decimal
     total_amount: Decimal
     sort_order: int
+    royalty_unit: Optional[str] = None
+    royalty_rate: Optional[Decimal] = None
+    royalty_amount: Decimal = Decimal("0")
+    fare_unit: Optional[str] = None
+    fare_rate: Optional[Decimal] = None
+    fare_km: Optional[Decimal] = None
+    fare_amount: Decimal = Decimal("0")
+    fare_trips: Optional[list[Decimal]] = None
     model_config = {"from_attributes": True}
 
 

@@ -135,11 +135,124 @@ interface LineItem {
   unit: string;
   rate: string;
   gst_rate: string;
+  royalty_rate: string;   // ₹ per royalty_unit (blank = no royalty on this line)
+  royalty_unit: string;   // '' | 'mt' | 'cum'
+  fare_rate: string;      // ₹ per km per fare_unit (blank = no vehicle fare)
+  fare_unit: string;      // '' | 'mt' | 'cum'
+  fare_trips: string;     // comma-separated trip km, e.g. "12, 8, 10" (summed to total km)
+  showCharges?: boolean;  // UI: reveal the per-line royalty + vehicle-fare row
 }
 
 const emptyLine = (): LineItem => ({
   product_id: '', description: '', hsn_code: '', quantity: '1', unit: 'MT', rate: '', gst_rate: '5',
+  royalty_rate: '', royalty_unit: '', fare_rate: '', fare_unit: '', fare_trips: '',
 });
+
+// Parse "12, 8, 10" → [12,8,10] (positive km only); sum = total trip distance.
+function parseTrips(s: string): number[] {
+  return (s || '').split(',').map(x => parseFloat(x.trim())).filter(n => !isNaN(n) && n > 0);
+}
+function tripsKm(s: string): number {
+  return parseTrips(s).reduce((a, b) => a + b, 0);
+}
+// Vehicle fare preview (mirrors backend line_vehicle_fare): rate × total km × qty-in-unit.
+function lineFare(l: LineItem, bulkDensity?: number | null): number {
+  const rate = parseFloat(l.fare_rate) || 0;
+  const km = tripsKm(l.fare_trips);
+  if (rate <= 0 || km <= 0 || !l.fare_unit) return 0;
+  return rate * km * royaltyQty(l.quantity, l.unit, l.fare_unit, bulkDensity);
+}
+
+// Per-item royalty preview (mirrors backend services/pricing.royalty_quantity):
+// convert the line's billed quantity to the royalty unit (MT/CUM). Same-dimension
+// is exact; cross weight↔volume uses the product's bulk_density (kg/CFT).
+const _WEIGHT_U = new Set(['MT', 'QUINTAL', 'KG']);
+const _VOLUME_U = new Set(['CFT', 'CBM', 'CUM', 'BRASS']);
+function royaltyQty(qtyStr: string, lineUnit: string, royUnit: string, bulkDensity?: number | null): number {
+  const q = parseFloat(qtyStr) || 0;
+  const lu = (lineUnit || '').toUpperCase();
+  const ru = (royUnit || '').toLowerCase();
+  if (q <= 0 || (ru !== 'mt' && ru !== 'cum')) return 0;
+  const density = bulkDensity ? Number(bulkDensity) : 0;   // kg/CFT
+  const toCft = (v: number, u: string) => u === 'CFT' ? v : (u === 'CBM' || u === 'CUM') ? v * 35.3147 : u === 'BRASS' ? v * 100 : NaN;
+  const toKg = (v: number, u: string) => u === 'MT' ? v * 1000 : u === 'QUINTAL' ? v * 100 : u === 'KG' ? v : NaN;
+  if (ru === 'mt') {
+    let kg = toKg(q, lu);
+    if (isNaN(kg)) { const cft = toCft(q, lu); if (isNaN(cft) || !density) return 0; kg = cft * density; }
+    return kg / 1000;
+  }
+  let cft = toCft(q, lu);
+  if (isNaN(cft)) { const kg = toKg(q, lu); if (isNaN(kg) || !density) return 0; cft = kg / density; }
+  return cft / 35.3147;
+}
+function lineRoyalty(l: LineItem, bulkDensity?: number | null): number {
+  const rate = parseFloat(l.royalty_rate) || 0;
+  if (rate <= 0 || !l.royalty_unit) return 0;
+  return rate * royaltyQty(l.quantity, l.unit, l.royalty_unit, bulkDensity);
+}
+// Default royalty basis from the product's own unit (weight→mt, volume→cum); prefill
+// the rate from the product master if set (accountant can still override per line).
+function defaultChargeUnit(unit: string): string {
+  const u = (unit || '').toUpperCase();
+  return _WEIGHT_U.has(u) ? 'mt' : _VOLUME_U.has(u) ? 'cum' : '';
+}
+function prefillRoyalty(p: Product): { royalty_unit: string; royalty_rate: string } {
+  const ru = defaultChargeUnit(p.unit);
+  const rate = ru === 'mt' ? p.royalty_per_mt : ru === 'cum' ? p.royalty_per_cum : null;
+  return (rate && Number(rate) > 0) ? { royalty_unit: ru, royalty_rate: String(rate) } : { royalty_unit: '', royalty_rate: '' };
+}
+
+// Per-line add-on charges for an adhoc Sales Invoice: Royalty (₹/MT or ₹/CUM) and
+// Vehicle fare (₹/km/MT or ₹/km/CUM × total trip km × qty). Optional per line.
+function LineCharges({ line, bulkDensity, onPatch }:
+  { line: LineItem; bulkDensity: number | null; onPatch: (p: Partial<LineItem>) => void }) {
+  const roy = lineRoyalty(line, bulkDensity);
+  const fare = lineFare(line, bulkDensity);
+  const km = tripsKm(line.fare_trips);
+  const open = line.showCharges || roy > 0 || fare > 0 || !!line.royalty_unit || !!line.fare_unit;
+  if (!open) {
+    return (
+      <div className="pl-1 pb-1">
+        <button type="button" className="text-xs text-primary hover:underline"
+          onClick={() => onPatch({ showCharges: true })}>+ Royalty / Vehicle fare</button>
+      </div>
+    );
+  }
+  return (
+    <div className="pl-1 pb-1">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs rounded-md bg-muted/40 px-2 py-1.5">
+        <span className="font-medium text-muted-foreground">Royalty</span>
+        <Input className="h-8 w-20" type="number" min="0" step="0.01" placeholder="₹/unit"
+          value={line.royalty_rate} onChange={e => onPatch({ royalty_rate: e.target.value })} />
+        <Select value={line.royalty_unit || 'none'} onValueChange={v => onPatch({ royalty_unit: (v === 'none' || !v) ? '' : v })}>
+          <SelectTrigger className="h-8 w-24"><SelectValue placeholder="per…" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">— none —</SelectItem>
+            <SelectItem value="mt">per MT</SelectItem>
+            <SelectItem value="cum">per CUM</SelectItem>
+          </SelectContent>
+        </Select>
+        {roy > 0 && <span className="font-mono font-semibold">= {INR(roy)}</span>}
+        <span className="mx-1 h-5 w-px bg-border" />
+        <span className="font-medium text-muted-foreground">Vehicle fare</span>
+        <Input className="h-8 w-24" type="number" min="0" step="0.01" placeholder="₹/km/unit"
+          value={line.fare_rate} onChange={e => onPatch({ fare_rate: e.target.value })} />
+        <Select value={line.fare_unit || 'none'} onValueChange={v => onPatch({ fare_unit: (v === 'none' || !v) ? '' : v })}>
+          <SelectTrigger className="h-8 w-24"><SelectValue placeholder="per…" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">— none —</SelectItem>
+            <SelectItem value="mt">/km/MT</SelectItem>
+            <SelectItem value="cum">/km/CUM</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input className="h-8 w-32" type="text" placeholder="trip km e.g 12,8,10"
+          value={line.fare_trips} onChange={e => onPatch({ fare_trips: e.target.value })} />
+        {km > 0 && <span className="text-muted-foreground">{km} km</span>}
+        {fare > 0 && <span className="font-mono font-semibold">= {INR(fare)}</span>}
+      </div>
+    </div>
+  );
+}
 
 // ------------------------------------------------------------------ //
 // Create Invoice Dialog
@@ -223,9 +336,9 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
     if (token.party) setForm(f => ({ ...f, party_id: token.party?.id ?? f.party_id }));
     if (token.product) {
       setLines([{
+        ...emptyLine(),
         product_id: token.product.id,
         description: token.product.name,
-        hsn_code: '',
         quantity: token.net_weight != null ? String(token.net_weight) : '1',
         unit: token.product.unit,
         rate: '',
@@ -250,6 +363,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
       unit: p.unit,
       rate: String(p.default_rate),
       gst_rate: String(p.gst_rate),
+      ...prefillRoyalty(p),   // prefill per-item royalty rate/unit from product master (if set)
     });
     fillRateFor(idx, productId, p.unit);   // override with the party's unit-aware rate
   }
@@ -285,8 +399,15 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
 
   const subTotalEst = lines.reduce((s, l) => s + lineBase(l), 0);
   const gstTotalEst = lines.reduce((s, l) => s + lineGstAmt(l), 0);
+  const _bd = (id: string) => products.find(p => p.id === id)?.bulk_density ?? null;
+  const royaltyEst = lines.reduce((s, l) => s + lineRoyalty(l, _bd(l.product_id)), 0);
+  const fareEst = lines.reduce((s, l) => s + lineFare(l, _bd(l.product_id)), 0);
+  const anyLineRoyalty = lines.some(l => l.royalty_unit && parseFloat(l.royalty_rate) > 0);
+  const anyLineFare = lines.some(l => l.fare_unit && parseFloat(l.fare_rate) > 0 && tripsKm(l.fare_trips) > 0);
+  const royaltyContribution = anyLineRoyalty ? royaltyEst : (parseFloat(form.royalty_amount) || 0);
+  const fareContribution = anyLineFare ? fareEst : (isOwnVehicle ? (parseFloat(form.vehicle_rent) || 0) : 0);
   const grandEstimate = subTotalEst + gstTotalEst
-    + (parseFloat(form.freight) || 0) + (isOwnVehicle ? (parseFloat(form.vehicle_rent) || 0) : 0) + (parseFloat(form.royalty_amount) || 0);
+    + (parseFloat(form.freight) || 0) + fareContribution + royaltyContribution;
 
   async function handleSubmit() {
     if (!walkIn && !form.party_id) { setError('Select a party or use Walk-in mode'); return; }
@@ -335,6 +456,11 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
           rate: parseFloat(l.rate),
           gst_rate: form.tax_type === 'gst' ? (parseFloat(l.gst_rate) || 0) : 0,
           sort_order: i,
+          royalty_unit: l.royalty_unit || undefined,
+          royalty_rate: (l.royalty_unit && parseFloat(l.royalty_rate) > 0) ? parseFloat(l.royalty_rate) : undefined,
+          fare_unit: l.fare_unit || undefined,
+          fare_rate: (l.fare_unit && parseFloat(l.fare_rate) > 0) ? parseFloat(l.fare_rate) : undefined,
+          fare_trips: (l.fare_unit && parseTrips(l.fare_trips).length) ? parseTrips(l.fare_trips) : undefined,
         })),
       });
       onCreated(data);
@@ -458,7 +584,8 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
             <div className="overflow-x-auto -mx-4 sm:mx-0 pb-1">
               <div className="min-w-[620px] space-y-2">
               {lines.map((line, idx) => (
-                <div key={idx} className="grid gap-2 items-end"
+                <div key={idx} className="space-y-1">
+                <div className="grid gap-2 items-end"
                   style={{ gridTemplateColumns: isGst
                     ? 'minmax(0,1.7fr) minmax(60px,0.8fr) minmax(72px,0.8fr) minmax(84px,1.1fr) minmax(58px,0.7fr) minmax(80px,1fr) 36px'
                     : 'minmax(0,1.9fr) minmax(70px,0.9fr) minmax(80px,0.9fr) minmax(96px,1.2fr) minmax(96px,1fr) 36px' }}>
@@ -519,6 +646,10 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
                     disabled={lines.length === 1}>
                     <XCircle className="h-4 w-4" />
                   </Button>
+                </div>
+                <LineCharges line={line}
+                  bulkDensity={products.find(p => p.id === line.product_id)?.bulk_density ?? null}
+                  onPatch={p => updateLine(idx, p)} />
                 </div>
               ))}
               </div>
@@ -741,6 +872,12 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
             unit: item.unit,
             rate: String(item.rate),
             gst_rate: String(item.gst_rate),
+            royalty_rate: item.royalty_rate != null ? String(item.royalty_rate) : '',
+            royalty_unit: item.royalty_unit ?? '',
+            fare_rate: item.fare_rate != null ? String(item.fare_rate) : '',
+            fare_unit: item.fare_unit ?? '',
+            fare_trips: Array.isArray(item.fare_trips) ? item.fare_trips.join(', ') : '',
+            showCharges: !!(item.royalty_unit || item.fare_unit),
           }))
         : [emptyLine()]
     );
@@ -796,8 +933,15 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
 
   const subTotalEst = lines.reduce((s, l) => s + lineBase(l), 0);
   const gstTotalEst = lines.reduce((s, l) => s + lineGstAmt(l), 0);
+  const _bd = (id: string) => products.find(p => p.id === id)?.bulk_density ?? null;
+  const royaltyEst = lines.reduce((s, l) => s + lineRoyalty(l, _bd(l.product_id)), 0);
+  const fareEst = lines.reduce((s, l) => s + lineFare(l, _bd(l.product_id)), 0);
+  const anyLineRoyalty = lines.some(l => l.royalty_unit && parseFloat(l.royalty_rate) > 0);
+  const anyLineFare = lines.some(l => l.fare_unit && parseFloat(l.fare_rate) > 0 && tripsKm(l.fare_trips) > 0);
+  const royaltyContribution = anyLineRoyalty ? royaltyEst : (parseFloat(form.royalty_amount) || 0);
+  const fareContribution = anyLineFare ? fareEst : (isOwnVehicle ? (parseFloat(form.vehicle_rent) || 0) : 0);
   const grandEstimate = subTotalEst + gstTotalEst
-    + (parseFloat(form.freight) || 0) + (isOwnVehicle ? (parseFloat(form.vehicle_rent) || 0) : 0) + (parseFloat(form.royalty_amount) || 0);
+    + (parseFloat(form.freight) || 0) + fareContribution + royaltyContribution;
 
   async function handleSave() {
     if (!walkIn && !form.party_id) { setError('Select a party or use Walk-in mode'); return; }
@@ -844,6 +988,11 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
           rate: parseFloat(l.rate),
           gst_rate: form.tax_type === 'gst' ? (parseFloat(l.gst_rate) || 0) : 0,
           sort_order: i,
+          royalty_unit: l.royalty_unit || undefined,
+          royalty_rate: (l.royalty_unit && parseFloat(l.royalty_rate) > 0) ? parseFloat(l.royalty_rate) : undefined,
+          fare_unit: l.fare_unit || undefined,
+          fare_rate: (l.fare_unit && parseFloat(l.fare_rate) > 0) ? parseFloat(l.fare_rate) : undefined,
+          fare_trips: (l.fare_unit && parseTrips(l.fare_trips).length) ? parseTrips(l.fare_trips) : undefined,
         })),
       });
       onSaved(data);
@@ -957,7 +1106,8 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
             <div className="overflow-x-auto -mx-4 sm:mx-0 pb-1">
               <div className="min-w-[620px] space-y-2">
               {lines.map((line, idx) => (
-                <div key={idx} className="grid gap-2 items-end"
+                <div key={idx} className="space-y-1">
+                <div className="grid gap-2 items-end"
                   style={{ gridTemplateColumns: isGst
                     ? 'minmax(0,1.7fr) minmax(60px,0.8fr) minmax(72px,0.8fr) minmax(84px,1.1fr) minmax(58px,0.7fr) minmax(80px,1fr) 36px'
                     : 'minmax(0,1.9fr) minmax(70px,0.9fr) minmax(80px,0.9fr) minmax(96px,1.2fr) minmax(96px,1fr) 36px' }}>
@@ -1018,6 +1168,10 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
                     disabled={lines.length === 1}>
                     <XCircle className="h-4 w-4" />
                   </Button>
+                </div>
+                <LineCharges line={line}
+                  bulkDensity={products.find(p => p.id === line.product_id)?.bulk_density ?? null}
+                  onPatch={p => updateLine(idx, p)} />
                 </div>
               ))}
               </div>

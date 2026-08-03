@@ -495,6 +495,16 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS vehicle_rent NUMERIC(14,2) DEFAULT 0",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS royalty_amount NUMERIC(14,2) DEFAULT 0",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS draft_snapshot JSONB",
+        # Per-item royalty (₹ per MT or per CUM) on invoice lines
+        "ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS royalty_unit VARCHAR(8)",
+        "ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS royalty_rate NUMERIC(14,2)",
+        "ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS royalty_amount NUMERIC(14,2) DEFAULT 0",
+        # Per-item vehicle fare (₹/km/MT or ₹/km/CUM × total km × qty) on invoice lines
+        "ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS fare_unit VARCHAR(8)",
+        "ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS fare_rate NUMERIC(14,2)",
+        "ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS fare_km NUMERIC(12,2)",
+        "ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS fare_amount NUMERIC(14,2) DEFAULT 0",
+        "ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS fare_trips JSONB",
         # Petrol pump name for outside-pump fuel fills (drives the fuel-credit PO)
         "ALTER TABLE vehicle_fuel_entries ADD COLUMN IF NOT EXISTS station_name VARCHAR(120)",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS irn VARCHAR(64)",

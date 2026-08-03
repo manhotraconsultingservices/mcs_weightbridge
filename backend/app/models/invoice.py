@@ -157,6 +157,20 @@ class InvoiceItem(Base):
     igst_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     total_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    # Per-item govt mineral royalty (₹ per MT or per CUM). royalty_unit is 'mt'|'cum'
+    # (NULL = no royalty on this line); royalty_amount = rate × qty-in-unit, summed
+    # into invoice.royalty_amount and folded into grand_total post-tax like freight.
+    royalty_unit: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    royalty_rate: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    royalty_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    # Per-item vehicle fare (transport hire): rate ₹/km/MT or ₹/km/CUM × total km ×
+    # qty-in-unit. fare_trips = the individual trip km (JSON list) that sum to fare_km.
+    # Summed into invoice.vehicle_rent, folded into grand_total post-tax like freight.
+    fare_unit: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    fare_rate: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    fare_km: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    fare_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    fare_trips: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     invoice: Mapped["Invoice"] = relationship(back_populates="items")
     # noload by default (never lazy-load in async); eager-loaded where the product
