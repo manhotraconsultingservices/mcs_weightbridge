@@ -11,7 +11,7 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine,
 } from 'recharts';
-import { Fuel, Plus, Loader2, AlertTriangle, Droplet, TrendingDown, Gauge, Settings2, IndianRupee } from 'lucide-react';
+import { Fuel, Plus, Loader2, AlertTriangle, Droplet, TrendingDown, Gauge, Settings2, IndianRupee, Link as LinkIcon } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -43,6 +43,7 @@ interface FuelEntry {
 interface PumpStation {
   station_name: string; po_count: number; unpaid_count: number;
   total_billed: number; total_paid: number; outstanding: number; oldest_unpaid_date: string | null;
+  supplier_party_id: string | null; supplier_name: string | null;
 }
 interface PumpPO {
   id: string; po_no: string; station_name: string; po_date: string | null;
@@ -414,11 +415,19 @@ function RecordPumpPaymentDialog({ open, station, dueHint, onClose, onSaved }: {
 }
 
 function PumpCreditTab() {
+  const nav = useNavigate();
   const [stations, setStations] = useState<PumpStation[]>([]);
   const [totals, setTotals] = useState<{ total_billed: number; total_paid: number; outstanding: number; pumps_with_dues: number; po_count: number } | null>(null);
   const [pos, setPos] = useState<PumpPO[]>([]);
   const [loading, setLoading] = useState(true);
   const [payStation, setPayStation] = useState<{ name: string; due: number } | null>(null);
+  const [linkStation, setLinkStation] = useState<{ name: string; current: string | null } | null>(null);
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    api.get<{ items?: { id: string; name: string; party_type: string }[] } | { id: string; name: string; party_type: string }[]>('/api/v1/parties?page_size=500')
+      .then(r => { const arr = Array.isArray(r.data) ? r.data : (r.data.items ?? []); setSuppliers(arr.filter(p => p.party_type !== 'customer').map(p => ({ id: p.id, name: p.name }))); })
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -434,6 +443,11 @@ function PumpCreditTab() {
 
   const STATION_COLS: ColumnDef<PumpStation>[] = [
     { key: 'station_name', label: 'Petrol pump', accessor: r => r.station_name },
+    { key: 'supplier_name', label: 'Supplier', accessor: r => r.supplier_name ?? '',
+      format: (_v, r) => r.supplier_name
+        ? <button className="text-primary hover:underline" onClick={() => nav(`/customers/${r.supplier_party_id}`)}>{r.supplier_name}</button>
+        : <span className="text-muted-foreground text-xs">— not linked</span>,
+      exportValue: r => r.supplier_name ?? '' },
     { key: 'po_count', label: 'Fills/POs', type: 'number', align: 'right', accessor: r => r.po_count },
     { key: 'total_billed', label: 'Billed', type: 'number', align: 'right', accessor: r => r.total_billed, format: v => INR(v as number) },
     { key: 'total_paid', label: 'Paid', type: 'number', align: 'right', accessor: r => r.total_paid, format: v => INR(v as number) },
@@ -481,11 +495,18 @@ function PumpCreditTab() {
                 rowKey={r => r.station_name} exportFilename="petrol-pump-outstanding"
                 defaultSort={{ key: 'outstanding', direction: 'desc' }}
                 emptyMessage="No credit fuel purchases yet."
-                rowActions={r => r.outstanding > 0 ? (
-                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setPayStation({ name: r.station_name, due: r.outstanding })}>
-                    <IndianRupee className="h-3.5 w-3.5" /> Pay
-                  </Button>
-                ) : <span className="text-xs text-emerald-600">Settled</span>} />
+                rowActions={r => (
+                  <div className="flex gap-1.5 justify-end">
+                    <Button size="sm" variant="ghost" className="gap-1" onClick={() => setLinkStation({ name: r.station_name, current: r.supplier_party_id })}>
+                      <LinkIcon className="h-3.5 w-3.5" /> {r.supplier_party_id ? 'Re-link' : 'Link'}
+                    </Button>
+                    {r.outstanding > 0 && (
+                      <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setPayStation({ name: r.station_name, due: r.outstanding })}>
+                        <IndianRupee className="h-3.5 w-3.5" /> Pay
+                      </Button>
+                    )}
+                  </div>
+                )} />
             </CardContent>
           </Card>
 
@@ -501,6 +522,26 @@ function PumpCreditTab() {
       )}
       <RecordPumpPaymentDialog open={!!payStation} station={payStation?.name ?? ''} dueHint={payStation?.due ?? 0}
         onClose={() => setPayStation(null)} onSaved={load} />
+      <Dialog open={!!linkStation} onOpenChange={v => !v && setLinkStation(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Link pump to a supplier</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Link <b>{linkStation?.name}</b> to a supplier party so this petrol pump appears as a vendor and its dues show on the supplier's 360 page.</p>
+            <Select value={linkStation?.current ?? 'none'}
+              onValueChange={async v => {
+                await api.post('/api/v1/fuel/pump-suppliers', { station_name: linkStation?.name, party_id: v === 'none' ? null : v });
+                setLinkStation(null); load();
+              }}>
+              <SelectTrigger><SelectValue placeholder="Choose a supplier" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">— Not linked —</SelectItem>
+                {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setLinkStation(null)}>Close</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -878,6 +919,11 @@ function FuelSettingsTab() {
           <input type="checkbox" checked={cfg.alert_enabled !== false} onChange={e => set('alert_enabled', e.target.checked)} />
           Send leakage alert on a leaking fill
         </label>
+        <div className="space-y-1">
+          <Label>Petrol-pump due alert (₹)</Label>
+          <Input type="number" min="0" step="1000" value={Number(cfg.pump_alert_threshold ?? 0)} onChange={e => set('pump_alert_threshold', parseFloat(e.target.value) || 0)} />
+          <p className="text-[11px] text-muted-foreground">Telegram alert when a pump's outstanding crosses this. 0 = off.</p>
+        </div>
       </div>
       <div className="flex items-center gap-3">
         <Button onClick={save} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save Settings</Button>

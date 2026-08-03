@@ -213,6 +213,13 @@ DEFAULT_TEMPLATES = [
         "subject": None,
         "body": "ALERT: {{ vehicle_no }} mileage {{ actual_kmpl }} km/l vs benchmark {{ benchmark_kmpl }} ({{ deviation_pct }}% low). Possible diesel leakage - please check.",
     },
+    {
+        "event_type": "fuel_pump_outstanding_alert",
+        "channel": "telegram",
+        "name": "Petrol Pump Outstanding Alert (Telegram)",
+        "subject": None,
+        "body": "⛽ <b>Petrol pump dues crossed the limit</b>\n\nPump: <b>{{ station }}</b>\nOutstanding: <b>₹{{ outstanding }}</b> (limit ₹{{ threshold }})\n{% if po_no %}Latest PO: {{ po_no }} ({{ vehicle_no }})\n{% endif %}\nSettle the pump to keep credit open.\n\n— {{ company_name }}",
+    },
     # ── Sprint 2: overdue payment reminders (one-tap from owner dashboard) ──
     {
         "event_type": "payment_overdue_reminder",

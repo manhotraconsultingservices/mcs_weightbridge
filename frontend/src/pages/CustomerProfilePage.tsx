@@ -145,6 +145,11 @@ export default function CustomerProfilePage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [profileTab, setProfileTab] = useState('invoices');
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [fuelCredit, setFuelCredit] = useState<{ po_count: number; outstanding: number; total_billed: number; total_paid: number; stations: string[] } | null>(null);
+  useEffect(() => {
+    if (!id) return;
+    api.get(`/api/v1/fuel/party/${id}/credit`).then(r => setFuelCredit(r.data)).catch(() => setFuelCredit(null));
+  }, [id]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -445,6 +450,28 @@ export default function CustomerProfilePage() {
           sub={custom_rates.length > 0 ? 'See Pricing tab' : 'Uses defaults'}
         />
       </div>
+
+      {/* ── Fuel-pump credit (unified vendor view) ─────────────────────── */}
+      {fuelCredit && fuelCredit.po_count > 0 && (
+        <Card className="border-amber-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              ⛽ Fuel credit (petrol-pump dues)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+              <div><div className="text-xs text-muted-foreground">Outstanding</div><div className={`text-lg font-bold ${fuelCredit.outstanding > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>₹{Number(fuelCredit.outstanding).toLocaleString('en-IN')}</div></div>
+              <div><div className="text-xs text-muted-foreground">Billed</div><div className="text-lg font-bold">₹{Number(fuelCredit.total_billed).toLocaleString('en-IN')}</div></div>
+              <div><div className="text-xs text-muted-foreground">Paid</div><div className="text-lg font-bold">₹{Number(fuelCredit.total_paid).toLocaleString('en-IN')}</div></div>
+              <div><div className="text-xs text-muted-foreground">Fills (POs)</div><div className="text-lg font-bold">{fuelCredit.po_count}</div></div>
+            </div>
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Pump{fuelCredit.stations.length > 1 ? 's' : ''}: {fuelCredit.stations.join(', ')} · <button className="text-primary hover:underline" onClick={() => nav('/fuel?tab=pump')}>Manage in Fuel → Pump Credit</button>
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Outstanding aging ─────────────────────────────────────────── */}
       <Card>

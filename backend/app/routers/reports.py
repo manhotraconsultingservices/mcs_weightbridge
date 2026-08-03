@@ -1267,15 +1267,28 @@ async def _daybook_lines(db: AsyncSession, cid, day: date) -> tuple[list, list]:
         line[_daybook_col(w["mode"])] = _r2(w["amount"])
         payments.append(line)
 
-    # PAYMENTS — diesel fills (outside purchases; plant-tank issues are internal stock, not cash)
+    # PAYMENTS — diesel fills PAID at the pump (cash out at fill). A fill that created
+    # a CREDIT pump PO is NOT cash-out here — its cash leaves when the pump is paid
+    # (the "Fuel — pump payment" line below), so those are excluded to avoid a
+    # double count. Plant-tank issues are internal stock, not cash.
     for f in await _daybook_savepoint_rows(db,
         "SELECT f.amount AS amount, f.litres AS litres, ve.registration_no AS veh "
         "FROM vehicle_fuel_entries f LEFT JOIN vehicles ve ON ve.id=f.vehicle_id "
         "WHERE f.company_id=:cid AND f.entry_date=:d AND COALESCE(f.fuel_source,'')<>'plant_tank' "
+        "AND NOT EXISTS (SELECT 1 FROM fuel_purchase_orders po WHERE po.fuel_entry_id=f.id) "
         "ORDER BY f.created_at", p):
         label = f"Diesel {f['veh'] or ''} {_r2(f['litres'])}L".strip()
         line = {"particulars": label, "ref": "", **_blank_cols()}
         line["cash"] = _r2(f["amount"])   # fuel fills carry no mode → treated as cash
+        payments.append(line)
+
+    # PAYMENTS — petrol-pump payments (settling credit fuel POs). Real cash out on
+    # the payment date, in the column matching the mode.
+    for pp in await _daybook_savepoint_rows(db,
+        "SELECT amount, mode, station_name AS station, reference AS ref "
+        "FROM fuel_po_payments WHERE company_id=:cid AND payment_date=:d ORDER BY created_at", p):
+        line = {"particulars": f"Fuel — pump payment ({pp['station'] or ''})".strip(), "ref": pp["ref"] or "", **_blank_cols()}
+        line[_daybook_col(pp["mode"])] = _r2(pp["amount"])
         payments.append(line)
 
     # PAYMENTS — agent commission payouts
@@ -1611,10 +1624,19 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
         "WHERE t.company_id=:cid AND t.transaction_type='receipt' "
         "AND CAST(t.created_at AT TIME ZONE 'Asia/Kolkata' AS date)>=:fd "
         "AND CAST(t.created_at AT TIME ZONE 'Asia/Kolkata' AS date)<=:td GROUP BY 1")
+    # Diesel money-out = fuel CASH out (not the accrual expense — that stays in the
+    # P&L). A fill PAID at the pump counts on the fill date; a CREDIT fill (has a pump
+    # PO) does NOT — its cash leaves when the pump is paid (pump_pay below). This keeps
+    # the cash-book honest and avoids a double count. Unchanged for tenants with no
+    # credit fills (no PO → all fills count, zero pump payments).
     diesel = await _daily(
         "SELECT CAST(entry_date AS date) AS d, SUM(amount) AS total FROM vehicle_fuel_entries "
         "WHERE company_id=:cid AND COALESCE(fuel_source,'')<>'plant_tank' "
+        "AND NOT EXISTS (SELECT 1 FROM fuel_purchase_orders po WHERE po.fuel_entry_id = vehicle_fuel_entries.id) "
         "AND entry_date>=:fd AND entry_date<=:td GROUP BY 1")
+    pump_pay = await _daily(
+        "SELECT CAST(payment_date AS date) AS d, SUM(amount) AS total FROM fuel_po_payments "
+        "WHERE company_id=:cid AND payment_date>=:fd AND payment_date<=:td GROUP BY 1")
     salary = await _daily(
         "SELECT CAST(pay_date AS date) AS d, "
         "SUM(CASE WHEN payment_type='deduction' THEN -amount ELSE amount END) AS total "
@@ -1645,7 +1667,7 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
     all_days = sorted(set(
         list(cash) + list(electronic) + list(credit) + list(sales_billed)
         + list(purchases) + list(draft_purchase)
-        + list(store) + list(diesel) + list(salary) + list(advance) + list(commission)
+        + list(store) + list(diesel) + list(pump_pay) + list(salary) + list(advance) + list(commission)
         + list(overhead) + list(supplier_pay)))
     days = []
     tot = {k: 0.0 for k in ("cash_sales", "electronic_sales", "credit_sales", "sales_billed",
@@ -1655,7 +1677,8 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
         cs, es, cr = cash.get(d, 0.0), electronic.get(d, 0.0), credit.get(d, 0.0)
         sb = sales_billed.get(d, 0.0)
         dpu = draft_purchase.get(d, 0.0)
-        pu, st, di = purchases.get(d, 0.0), store.get(d, 0.0), diesel.get(d, 0.0)
+        pu, st = purchases.get(d, 0.0), store.get(d, 0.0)
+        di = diesel.get(d, 0.0) + pump_pay.get(d, 0.0)   # cash fuel fills + pump payments
         sa, ad, co = salary.get(d, 0.0), advance.get(d, 0.0), commission.get(d, 0.0)
         oh, sp = overhead.get(d, 0.0), supplier_pay.get(d, 0.0)
         total_sales = _r2(cs + es)
@@ -1890,14 +1913,24 @@ async def compute_eod_detail(db: AsyncSession, company_id, target_date: date,
                       "detail": f"{float(r.qty or 0):g} @ {float(r.price or 0):g}",
                       "amount": _r2(r.amount), "direction": "out"})
 
-    # Diesel (plant_tank excluded — already counted in store)
+    # Diesel — fuel CASH out only: plant_tank excluded (internal stock), and CREDIT
+    # pump fills excluded (their cash leaves as a pump payment below, not at the fill).
     for r in await _rows(
         "SELECT COALESCE(v.registration_no,'') AS party, f.litres AS litres, "
         "COALESCE(f.fuel_source,'') AS src, f.amount AS amount "
         "FROM vehicle_fuel_entries f LEFT JOIN vehicles v ON v.id=f.vehicle_id "
-        "WHERE f.company_id=:cid AND COALESCE(f.fuel_source,'')<>'plant_tank' AND f.entry_date=:d"):
+        "WHERE f.company_id=:cid AND COALESCE(f.fuel_source,'')<>'plant_tank' AND f.entry_date=:d "
+        "AND NOT EXISTS (SELECT 1 FROM fuel_purchase_orders po WHERE po.fuel_entry_id=f.id)"):
         items.append({"category": "Diesel", "ref": "", "party": r.party or "",
                       "detail": f"{float(r.litres or 0):g} L {r.src or ''}".strip(),
+                      "amount": _r2(r.amount), "direction": "out"})
+
+    # Petrol-pump payments (settling credit fuel POs) — cash out on the payment date.
+    for r in await _rows(
+        "SELECT station_name AS station, mode, amount FROM fuel_po_payments "
+        "WHERE company_id=:cid AND payment_date=:d ORDER BY amount DESC"):
+        items.append({"category": "Diesel", "ref": "", "party": r.station or "",
+                      "detail": f"pump payment {(r.mode or '').upper()}".strip(),
                       "amount": _r2(r.amount), "direction": "out"})
 
     # Salary / wages (deduction negative)

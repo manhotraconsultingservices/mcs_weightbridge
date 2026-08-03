@@ -59,6 +59,7 @@ DEFAULT_FUEL_CONFIG: dict[str, Any] = {
     "min_distance_km": 50,           # ignore intervals shorter than this in mileage calc
     "auto_learn_days": 90,           # window for the rolling-median baseline
     "alert_enabled": True,           # fire a leakage notification on a leaking fill
+    "pump_alert_threshold": 0,       # ₹ — Telegram alert when a pump's outstanding crosses this (0 = off)
 }
 
 
@@ -204,6 +205,36 @@ async def _active_fy_id(db: AsyncSession):
     return fy.id if fy else None
 
 
+async def _pump_supplier_map(db: AsyncSession) -> dict[str, str]:
+    """station_name → supplier party_id, from app_settings `fuel_pump_suppliers`.
+    Lets a petrol pump be linked to a supplier party for a unified vendor view."""
+    try:
+        row = (await db.execute(
+            text("SELECT value FROM app_settings WHERE key='fuel_pump_suppliers'")
+        )).fetchone()
+        if row and row[0]:
+            m = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            return {k: str(v) for k, v in (m or {}).items() if v}
+    except Exception:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+    return {}
+
+
+async def _party_names(db: AsyncSession, party_ids) -> dict[str, str]:
+    ids = [str(p) for p in party_ids if p]
+    if not ids:
+        return {}
+    try:
+        rows = (await db.execute(text(
+            "SELECT id, name FROM parties WHERE id = ANY(:ids)"), {"ids": ids})).all()
+        return {str(r[0]): r[1] for r in rows}
+    except Exception:
+        return {}
+
+
 async def _create_pump_po(db: AsyncSession, user: User, entry: VehicleFuelEntry,
                           station_name: str) -> FuelPurchaseOrder | None:
     """Auto-create a credit PO against the petrol pump for an outside-pump fill.
@@ -217,8 +248,10 @@ async def _create_pump_po(db: AsyncSession, user: User, entry: VehicleFuelEntry,
         fy_id = await _active_fy_id(db)
         po_no = (await next_doc_no(db, user.company_id, fy_id, "fuel_po", "FPO")
                  if fy_id else f"FPO-{str(entry.id)[:8]}")
+        supplier_party_id = (await _pump_supplier_map(db)).get(station)   # linked supplier, if any
         po = FuelPurchaseOrder(
             company_id=user.company_id, po_no=po_no, station_name=station,
+            supplier_party_id=(uuid.UUID(supplier_party_id) if supplier_party_id else None),
             fuel_entry_id=entry.id, vehicle_id=entry.vehicle_id, po_date=entry.entry_date,
             litres=entry.litres, rate_per_litre=entry.rate_per_litre,
             amount=entry.amount or Decimal("0"), amount_paid=Decimal("0"), status="unpaid",
@@ -352,10 +385,37 @@ async def create_entry(payload: FuelEntryCreate, background: BackgroundTasks,
     # Petrol-pump fill on credit → auto-create a credit PO against the pump (no
     # inventory, no P&L re-booking). Only for outside_pump/other fills with a
     # station name and on_credit set; plant-tank fills never create a PO.
+    _pump_alert_ctx = None
     if (entry.fuel_source in ("outside_pump", "other") and getattr(payload, "on_credit", True)
             and (payload.station_name or "").strip() and (amount or 0) > 0):
-        await _create_pump_po(db, user, entry, payload.station_name)
+        _po = await _create_pump_po(db, user, entry, payload.station_name)
+        # Threshold-crossing alert: fire once, only when this fill pushes the pump's
+        # outstanding from below the threshold to at/above it (not on every fill after).
+        try:
+            thr = float(cfg.get("pump_alert_threshold", 0) or 0)
+            if _po is not None and thr > 0:
+                after = float((await db.execute(text(
+                    "SELECT COALESCE(SUM(amount - amount_paid), 0) FROM fuel_purchase_orders "
+                    "WHERE company_id=:c AND station_name=:s"),
+                    {"c": str(user.company_id), "s": _po.station_name})).scalar() or 0)
+                before = after - float(_po.amount or 0)
+                if before < thr <= after:
+                    _pump_alert_ctx = {
+                        "station": _po.station_name,
+                        "outstanding": f"{after:,.2f}",
+                        "threshold": f"{thr:,.2f}",
+                        "vehicle_no": veh.registration_no,
+                        "po_no": _po.po_no,
+                    }
+        except Exception as _e:  # noqa: BLE001
+            log.warning("pump threshold alert check failed: %s", _e)
     await db.commit()
+    if _pump_alert_ctx is not None:
+        from app.models.company import Company as _Co
+        _co = (await db.execute(select(_Co).limit(1))).scalar_one_or_none()
+        _pump_alert_ctx["company_name"] = _co.name if _co else ""
+        background.add_task(_notify_bg, user.company_id, "fuel_pump_outstanding_alert",
+                            _pump_alert_ctx, "fuel_po", None, _ctx_tenant_slug())
     await db.refresh(entry)
 
     resp = await _entry_to_response(db, entry, veh)
@@ -600,6 +660,13 @@ async def pump_outstanding(
     for s in station_list:
         for k in ("total_billed", "total_paid", "outstanding"):
             s[k] = round(s[k], 2)
+    # Attach the linked supplier party (unified vendor view), if any.
+    smap = await _pump_supplier_map(db)
+    pnames = await _party_names(db, [smap[s["station_name"]] for s in station_list if s["station_name"] in smap])
+    for s in station_list:
+        pid = smap.get(s["station_name"])
+        s["supplier_party_id"] = pid
+        s["supplier_name"] = pnames.get(pid) if pid else None
     totals = {
         "total_billed": round(sum(s["total_billed"] for s in station_list), 2),
         "total_paid": round(sum(s["total_paid"] for s in station_list), 2),
@@ -673,6 +740,71 @@ async def record_pump_payment(
     await db.commit()
     return {"ok": True, "id": str(pay.id), "allocated": float(amt - remaining),
             "unallocated": float(remaining)}
+
+
+@router.get("/pump-suppliers")
+async def list_pump_suppliers(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """Station → linked supplier party map (for the unified vendor view)."""
+    smap = await _pump_supplier_map(db)
+    names = await _party_names(db, list(smap.values()))
+    return {"items": [{"station_name": st, "party_id": pid, "party_name": names.get(pid)}
+                      for st, pid in smap.items()]}
+
+
+@router.post("/pump-suppliers")
+async def link_pump_supplier(
+    payload: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    """Link (or unlink) a petrol pump to a supplier party. Updates the station→party
+    map AND stamps `supplier_party_id` on all of that pump's POs, so the pump shows as
+    a supplier in the unified vendor view. `party_id: null` unlinks."""
+    station = str(payload.get("station_name") or "").strip()
+    if not station:
+        raise HTTPException(400, "station_name is required")
+    party_id = payload.get("party_id")
+    smap = await _pump_supplier_map(db)
+    if party_id:
+        smap[station] = str(party_id)
+    else:
+        smap.pop(station, None)
+    await db.execute(text(
+        "INSERT INTO app_settings (key, value, updated_at) VALUES ('fuel_pump_suppliers', :v, NOW()) "
+        "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"),
+        {"v": json.dumps(smap)})
+    await db.execute(text(
+        "UPDATE fuel_purchase_orders SET supplier_party_id = :pid "
+        "WHERE company_id = :c AND station_name = :s"),
+        {"pid": str(party_id) if party_id else None, "c": str(user.company_id), "s": station})
+    await db.commit()
+    return {"ok": True, "station_name": station, "party_id": str(party_id) if party_id else None}
+
+
+@router.get("/party/{party_id}/credit")
+async def party_fuel_credit(
+    party_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    """Fuel-pump credit summary for one supplier party (unified vendor view) — the
+    petrol-pump POs linked to this party, so a pump shows its fuel dues on the
+    Customer/Supplier-360 page alongside its normal ledger."""
+    rows = (await db.execute(
+        select(FuelPurchaseOrder).where(
+            FuelPurchaseOrder.company_id == user.company_id,
+            FuelPurchaseOrder.supplier_party_id == party_id,
+        ).order_by(FuelPurchaseOrder.po_date.desc())
+    )).scalars().all()
+    billed = sum(_pf(r.amount) for r in rows)
+    paid = sum(_pf(r.amount_paid) for r in rows)
+    stations = sorted({r.station_name for r in rows})
+    return {
+        "po_count": len(rows), "stations": stations,
+        "total_billed": round(billed, 2), "total_paid": round(paid, 2),
+        "outstanding": round(billed - paid, 2),
+        "recent": [{
+            "po_no": r.po_no, "po_date": r.po_date.isoformat() if r.po_date else None,
+            "station_name": r.station_name, "amount": _pf(r.amount),
+            "amount_paid": _pf(r.amount_paid), "status": r.status,
+        } for r in rows[:20]],
+    }
 
 
 # ── Mileage / leakage analytics ───────────────────────────────────────────────
