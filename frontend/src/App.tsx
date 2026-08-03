@@ -41,6 +41,7 @@ import AnalyticsHubPage from '@/pages/AnalyticsHubPage';
 import FraudRegistersHubPage from '@/pages/FraudRegistersHubPage';
 import VehiclesPage from '@/pages/VehiclesPage';
 import VehicleHistoryPage from '@/pages/VehicleHistoryPage';
+import InvoiceDrilldownPage from '@/pages/InvoiceDrilldownPage';
 import FuelMileagePage from '@/pages/FuelMileagePage';
 import WorkforcePage from '@/pages/WorkforcePage';
 import DeviceHealthPage from '@/pages/DeviceHealthPage';
@@ -232,6 +233,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/tokens-v1" element={<TokenPageV1 />} />
             <Route path="/invoices" element={<InvoicesPage defaultType="sale" />} />
             <Route path="/purchase-invoices" element={<InvoicesPage defaultType="purchase" />} />
+            <Route path="/invoices/:id/detail" element={<InvoiceDrilldownPage />} />
             <Route path="/quotations" element={<QuotationsPage />} />
             <Route path="/delivery-challans" element={<DeliveryChallansPage />} />
             <Route path="/credit-debit-notes" element={<CreditDebitNotesPage />} />

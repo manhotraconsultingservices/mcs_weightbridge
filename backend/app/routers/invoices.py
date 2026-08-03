@@ -798,6 +798,196 @@ async def get_invoice(
     return resp
 
 
+@router.get("/{invoice_id}/drilldown")
+async def invoice_drilldown(
+    invoice_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """One-shot drill-down for the invoice detail page: Summary (header + items +
+    amounts + settlement) · Audit log (every recorded action on this invoice) ·
+    Where-used (linked token, payments, revision chain, credit/debit notes,
+    source delivery challan, Tally sync, agent commission). Each where-used block
+    runs in its own SAVEPOINT so a tenant missing a feature-module table degrades
+    that block to empty instead of 500-ing the page."""
+    import json as _json
+    inv = await _load_invoice(db, invoice_id)
+    if inv.company_id != current_user.company_id:
+        raise HTTPException(404, "Invoice not found")
+    iid = str(invoice_id)
+    params = {"iid": iid, "cid": str(current_user.company_id)}
+
+    async def _rows(sql: str, extra: dict | None = None):
+        try:
+            async with db.begin_nested():
+                return (await db.execute(text(sql), {**params, **(extra or {})})).all()
+        except Exception as e:  # noqa: BLE001 — missing feature-module table etc.
+            import logging as _log
+            _log.getLogger(__name__).warning("drilldown block skipped: %s", str(e)[:140])
+            return []
+
+    def _f(v):
+        return float(v) if v is not None else 0.0
+
+    # ── Summary ──────────────────────────────────────────────────────────────
+    creator = None
+    if inv.created_by:
+        cr = (await db.execute(
+            select(User.username, User.full_name).where(User.id == inv.created_by)
+        )).first()
+        if cr:
+            creator = cr[1] or cr[0]
+    token = None
+    if inv.token_id:
+        tk = (await db.execute(
+            select(Token.token_no, Token.token_date, Token.vehicle_no, Token.id)
+            .where(Token.id == inv.token_id)
+        )).first()
+        if tk:
+            token = {"id": str(tk[3]), "token_no": tk[0],
+                     "token_date": tk[1].isoformat() if tk[1] else None, "vehicle_no": tk[2]}
+
+    _tax = _f(inv.cgst_amount) + _f(inv.sgst_amount) + _f(inv.igst_amount)
+    summary = {
+        "id": iid,
+        "invoice_no": inv.invoice_no or "(draft)",
+        "invoice_type": inv.invoice_type,
+        "tax_type": inv.tax_type,
+        "status": inv.status,
+        "payment_status": inv.payment_status,
+        "invoice_date": inv.invoice_date.isoformat() if inv.invoice_date else None,
+        "due_date": inv.due_date.isoformat() if inv.due_date else None,
+        "party": {"id": str(inv.party.id), "name": inv.party.name, "gstin": inv.party.gstin,
+                  "phone": inv.party.phone} if inv.party else None,
+        "customer_name": inv.customer_name,
+        "vehicle_no": inv.vehicle_no,
+        "subtotal": _f(inv.subtotal),
+        "discount_amount": _f(inv.discount_amount),
+        "taxable_amount": _f(inv.taxable_amount),
+        "tax_amount": _tax,
+        "freight": _f(inv.freight),
+        "vehicle_rent": _f(getattr(inv, "vehicle_rent", 0)),
+        "royalty_amount": _f(getattr(inv, "royalty_amount", 0)),
+        "round_off": _f(inv.round_off),
+        "grand_total": _f(inv.grand_total),
+        "amount_paid": _f(inv.amount_paid),
+        "amount_due": _f(inv.grand_total) - _f(inv.amount_paid) - _f(getattr(inv, "write_off_amount", 0)),
+        "revision_no": inv.revision_no,
+        "einvoice_status": inv.einvoice_status,
+        "irn": inv.irn,
+        "ewb_no": getattr(inv, "eway_bill_no", None),
+        "ewb_status": getattr(inv, "ewb_status", None),
+        "created_by": creator,
+        "created_at": inv.created_at.isoformat() if inv.created_at else None,
+        "updated_at": inv.updated_at.isoformat() if inv.updated_at else None,
+        "items": [
+            {"description": it.description, "hsn_code": it.hsn_code,
+             "quantity": _f(it.quantity), "unit": it.unit, "rate": _f(it.rate),
+             "gst_rate": _f(it.gst_rate), "total_amount": _f(it.total_amount)}
+            for it in sorted(inv.items, key=lambda x: x.sort_order or 0)
+        ],
+    }
+
+    # ── Audit log ────────────────────────────────────────────────────────────
+    audit = []
+    for r in await _rows(
+        "SELECT a.action, a.details, a.created_at, a.ip_address, "
+        "COALESCE(u.full_name, u.username, '') AS who "
+        "FROM audit_log a LEFT JOIN users u ON u.id=a.user_id "
+        "WHERE a.company_id=:cid AND a.entity_type='invoice' AND a.entity_id=:iid "
+        "ORDER BY a.created_at DESC"):
+        det = r.details
+        if isinstance(det, str):
+            try:
+                det = _json.loads(det)
+            except Exception:
+                det = {"raw": det}
+        audit.append({"action": r.action, "who": r.who or "system",
+                      "at": r.created_at.isoformat() if r.created_at else None,
+                      "ip": r.ip_address, "details": det})
+
+    # ── Where used ───────────────────────────────────────────────────────────
+    payments = []
+    for r in await _rows(
+        "SELECT rc.receipt_no AS ref, 'receipt' AS kind, ip.amount, rc.receipt_date AS dt, "
+        "rc.payment_mode AS mode FROM invoice_payments ip "
+        "JOIN payment_receipts rc ON rc.id=ip.receipt_id WHERE ip.invoice_id=:iid "
+        "UNION ALL "
+        "SELECT vc.voucher_no AS ref, 'voucher' AS kind, ip.amount, vc.voucher_date AS dt, "
+        "vc.payment_mode AS mode FROM invoice_payments ip "
+        "JOIN payment_vouchers vc ON vc.id=ip.voucher_id WHERE ip.invoice_id=:iid "
+        "ORDER BY dt"):
+        payments.append({"ref": r.ref, "kind": r.kind, "amount": _f(r.amount),
+                         "date": r.dt.isoformat() if r.dt else None,
+                         "mode": (r.mode or "").upper()})
+
+    # Revision chain (self + siblings sharing the same root)
+    revisions = []
+    root_id = inv.original_invoice_id or inv.id
+    for r in await _rows(
+        "SELECT id, invoice_no, revision_no, status, grand_total FROM invoices "
+        "WHERE company_id=:cid AND (id=:root OR original_invoice_id=:root) "
+        "ORDER BY revision_no", {"root": str(root_id)}):
+        revisions.append({"id": str(r.id), "invoice_no": r.invoice_no or "(draft)",
+                          "revision_no": r.revision_no, "status": r.status,
+                          "grand_total": _f(r.grand_total), "is_current": str(r.id) == iid})
+    if len(revisions) <= 1:
+        revisions = []  # no amendments → nothing to show
+
+    # Credit/debit notes issued against this invoice
+    notes = []
+    for r in await _rows(
+        "SELECT id, invoice_no, invoice_type, note_reason, grand_total, status FROM invoices "
+        "WHERE company_id=:cid AND reference_invoice_id=:iid "
+        "AND invoice_type IN ('credit_note','debit_note') ORDER BY created_at"):
+        notes.append({"id": str(r.id), "invoice_no": r.invoice_no or "(draft)",
+                      "type": r.invoice_type, "reason": r.note_reason,
+                      "grand_total": _f(r.grand_total), "status": r.status})
+
+    # Source delivery challan (converted into this invoice)
+    challan = None
+    ch = await _rows(
+        "SELECT id, challan_no, challan_date FROM delivery_challans "
+        "WHERE company_id=:cid AND invoice_id=:iid LIMIT 1")
+    if ch:
+        challan = {"id": str(ch[0].id), "challan_no": ch[0].challan_no,
+                   "challan_date": ch[0].challan_date.isoformat() if ch[0].challan_date else None}
+
+    # Tally sync jobs (relay) + synced flag
+    tally = {"synced": bool(getattr(inv, "tally_synced", False)),
+             "synced_at": inv.tally_sync_at.isoformat() if getattr(inv, "tally_sync_at", None) else None,
+             "jobs": []}
+    for r in await _rows(
+        "SELECT status, attempts, last_error, completed_at FROM tally_sync_jobs "
+        "WHERE company_id=:cid AND entity_type='invoice' AND entity_id=:iid "
+        "ORDER BY created_at DESC LIMIT 5"):
+        tally["jobs"].append({"status": r.status, "attempts": r.attempts,
+                              "last_error": (r.last_error or "")[:200],
+                              "completed_at": r.completed_at.isoformat() if r.completed_at else None})
+
+    # Agent commission
+    agent = None
+    if getattr(inv, "agent_id", None):
+        ag = await _rows(
+            "SELECT a.name FROM agents a WHERE a.id=:aid",
+            {"aid": str(inv.agent_id)})
+        if ag:
+            agent = {"name": ag[0].name, "commission_amount": _f(getattr(inv, "commission_amount", 0))}
+
+    where_used = {
+        "token": token,
+        "payments": payments,
+        "revisions": revisions,
+        "notes": notes,
+        "challan": challan,
+        "tally": tally,
+        "agent": agent,
+        "party_balance": _f(inv.party.current_balance) if inv.party else None,
+    }
+
+    return {"summary": summary, "audit": audit, "where_used": where_used}
+
+
 @router.put("/{invoice_id}", response_model=InvoiceResponse)
 async def update_invoice(
     invoice_id: uuid.UUID,

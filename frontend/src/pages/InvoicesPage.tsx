@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { wasSubmittedForApproval } from '@/lib/approvalGate';
@@ -2109,7 +2110,9 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                       </td>
                       <td className="px-3 py-2 font-mono text-xs font-semibold whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
-                          <span>{inv.invoice_no?.split('/Rv')[0] ?? <span className="text-amber-600 italic text-[10px] font-normal">{t('invoice.draftNotAssigned')}</span>}</span>
+                          <Link to={`/invoices/${inv.id}/detail`} className="text-primary hover:underline" title="Open invoice detail (summary · where used · audit log)">
+                            {inv.invoice_no?.split('/Rv')[0] ?? <span className="text-amber-600 italic text-[10px] font-normal">{t('invoice.draftNotAssigned')}</span>}
+                          </Link>
                           {inv.revision_no > 1 && (
                             <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-200" title={`Revision ${inv.revision_no} — click History to see previous versions`}>
                               v{inv.revision_no}
