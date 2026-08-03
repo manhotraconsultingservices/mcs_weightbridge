@@ -229,7 +229,7 @@ export default function LedgerPage() {
           {ledger && !loadingLedger && !ledgerError && (
             <>
               {/* Summary cards */}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <Card>
                   <CardHeader className="pb-1"><CardTitle className="text-sm font-medium text-muted-foreground">{t('ledger.totalDebit')}</CardTitle></CardHeader>
                   <CardContent><p className="text-2xl font-bold text-foreground">{fmt(ledger.total_debit)}</p></CardContent>
@@ -248,10 +248,11 @@ export default function LedgerPage() {
                 </Card>
               </div>
 
-              {/* Ledger table */}
+              {/* Ledger table — horizontal scroll on mobile (7 money columns) */}
               <Card>
                 <CardContent className="p-0">
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] text-sm">
                     <thead>
                       <tr className="border-b bg-muted/50">
                         <th className="px-4 py-2 text-left font-medium text-muted-foreground">{t('common.date')}</th>
@@ -299,6 +300,7 @@ export default function LedgerPage() {
                       </tr>
                     </tbody>
                   </table>
+                  </div>
 
                   {ledger.entries.length === 0 && (
                     <div className="py-10 text-center text-muted-foreground text-sm">{t('ledger.noTransactions')}</div>

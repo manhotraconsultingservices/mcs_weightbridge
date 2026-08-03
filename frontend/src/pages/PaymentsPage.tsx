@@ -574,12 +574,12 @@ export default function PaymentsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">{t('payment.title')}</h1>
-          <p className="text-muted-foreground">{t('payment.subtitle')}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{t('payment.title')}</h1>
+          <p className="text-muted-foreground text-sm">{t('payment.subtitle')}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button variant="outline" onClick={() => openDialog('voucher')}>
             <ArrowUpCircle className="mr-2 h-4 w-4" /> {t('payment.newVoucher')}
           </Button>

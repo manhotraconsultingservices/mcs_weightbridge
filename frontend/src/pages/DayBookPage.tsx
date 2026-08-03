@@ -236,7 +236,7 @@ function OpeningDialog({ open, onClose, onSaved }: { open: boolean; onClose: () 
             <Label className="text-xs">As of date</Label>
             <Input type="date" value={form.as_of_date} onChange={e => set('as_of_date', e.target.value)} />
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1"><Label className="text-xs">Cash ₹</Label><Input type="number" step="0.01" value={form.cash} onChange={e => set('cash', e.target.value)} /></div>
             <div className="space-y-1"><Label className="text-xs">Bank ₹</Label><Input type="number" step="0.01" value={form.bank} onChange={e => set('bank', e.target.value)} /></div>
             <div className="space-y-1"><Label className="text-xs">CC / OD ₹</Label><Input type="number" step="0.01" value={form.cc} onChange={e => set('cc', e.target.value)} /></div>

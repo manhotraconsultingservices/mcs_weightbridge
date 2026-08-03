@@ -580,7 +580,7 @@ export default function PlatformDashboard() {
 
       <div className="max-w-7xl mx-auto p-6 space-y-6">
         {/* Summary cards */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="bg-slate-800/60 border-slate-700"><CardContent className="pt-4 pb-4 flex items-center gap-3"><div className="p-2 rounded-lg bg-blue-500/10"><Building2 className="h-5 w-5 text-blue-400" /></div><div><p className="text-2xl font-bold text-white">{tenants.length}</p><p className="text-xs text-slate-400">Total Tenants</p></div></CardContent></Card>
           <Card className="bg-slate-800/60 border-slate-700"><CardContent className="pt-4 pb-4 flex items-center gap-3"><div className="p-2 rounded-lg bg-green-500/10"><CheckCircle className="h-5 w-5 text-green-400" /></div><div><p className="text-2xl font-bold text-green-400">{activeCt}</p><p className="text-xs text-slate-400">Active</p></div></CardContent></Card>
           <Card className="bg-slate-800/60 border-slate-700"><CardContent className="pt-4 pb-4 flex items-center gap-3"><div className="p-2 rounded-lg bg-amber-500/10"><AlertTriangle className="h-5 w-5 text-amber-400" /></div><div><p className="text-2xl font-bold text-amber-400">{readonlyCt}</p><p className="text-xs text-slate-400">Read-Only</p></div></CardContent></Card>
@@ -739,7 +739,7 @@ export default function PlatformDashboard() {
 
           {/* ── ANALYTICS TAB ── */}
           <TabsContent value="analytics" className="mt-4 space-y-6">
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Weekly Onboarding */}
               <Card className="bg-slate-800/60 border-slate-700 col-span-1">
                 <CardContent className="pt-4 pb-4">

@@ -357,7 +357,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
         <div className="space-y-4">
           {error && <p className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1">
               <Label>{t('invoice.invoiceDate')} *</Label>
               <Input type="date" value={form.invoice_date}
@@ -399,7 +399,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <Label>{walkIn ? `${t('invoice.customerName')} *` : `${t('invoice.party')} *`}</Label>
@@ -531,7 +531,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
           </div>
 
           {/* Other fields */}
-          <div className="grid grid-cols-3 gap-3 border-t pt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border-t pt-3">
             <div className="space-y-1">
               <Label>{t('invoice.discountType')}</Label>
               <Select value={form.discount_type || 'none'}
@@ -594,7 +594,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
               <span className="text-xs font-normal">(Royalty No., Driver, LR/RR, etc.)</span>
             </button>
             {showTransport && (
-              <div className="grid grid-cols-2 gap-3 mt-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                 <div className="space-y-1">
                   <Label>{t('invoice.royaltyNo')}</Label>
                   <Input value={form.royalty_no} onChange={e => setForm(f => ({ ...f, royalty_no: e.target.value }))} placeholder="Mining royalty receipt no." />
@@ -872,7 +872,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
         <div className="space-y-4">
           {error && <p className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1">
               <Label>{t('invoice.invoiceDate')} *</Label>
               <Input type="date" value={form.invoice_date}
@@ -898,7 +898,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <Label>{walkIn ? `${t('invoice.customerName')} *` : `${t('invoice.party')} *`}</Label>
@@ -1030,7 +1030,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
           </div>
 
           {/* Other fields */}
-          <div className="grid grid-cols-3 gap-3 border-t pt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border-t pt-3">
             <div className="space-y-1">
               <Label>{t('invoice.discountType')}</Label>
               <Select value={form.discount_type || 'none'}
@@ -1111,7 +1111,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
               <span className="text-xs font-normal">(Royalty No., Driver, LR/RR, etc.)</span>
             </button>
             {showTransport && (
-              <div className="grid grid-cols-2 gap-3 mt-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                 <div className="space-y-1">
                   <Label>{t('invoice.royaltyNo')}</Label>
                   <Input value={form.royalty_no} onChange={e => setForm(f => ({ ...f, royalty_no: e.target.value }))} placeholder="Mining royalty receipt no." />
@@ -1267,7 +1267,7 @@ function RecordPaymentDialog({ open, invoice, onClose, onSaved }: RecordPaymentD
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>{t('payment.paymentDate')} *</Label>
               <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
@@ -1297,7 +1297,7 @@ function RecordPaymentDialog({ open, invoice, onClose, onSaved }: RecordPaymentD
           </div>
 
           {mode !== 'cash' && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label>{t('payment.reference')}</Label>
                 <Input value={refNo} onChange={e => setRefNo(e.target.value)} placeholder="Cheque / UTR / TXN" />
@@ -1431,7 +1431,7 @@ function SplitInvoiceDialog({ open, invoice, onClose, onSplit }: SplitInvoiceDia
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm space-y-1">
               <p className="font-medium text-amber-800">Cash · Bill of Supply</p>
               <p className="text-[11px] text-muted-foreground">CINV · no GST</p>
@@ -1876,12 +1876,12 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">{t('invoice.title')}</h1>
-          <p className="text-muted-foreground">{t('invoice.invoiceCount', { count: total, shown: displayed.length })}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{t('invoice.title')}</h1>
+          <p className="text-muted-foreground text-sm">{t('invoice.invoiceCount', { count: total, shown: displayed.length })}</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
+        <Button onClick={() => setCreateOpen(true)} className="shrink-0">
           <Plus className="mr-2 h-4 w-4" /> {invoiceType === 'sale' ? t('invoice.newSaleInvoice') : t('invoice.newPurchaseInvoice')}
         </Button>
       </div>

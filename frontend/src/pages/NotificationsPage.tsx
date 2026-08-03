@@ -381,7 +381,8 @@ export default function NotificationsPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="p-0">
-                    <table className="w-full text-sm">
+                    <div className="overflow-x-auto">
+                    <table className="w-full min-w-max text-sm">
                       <thead><tr className="border-b bg-muted/30">
                         <th className="px-4 py-2 text-left font-medium text-muted-foreground">Channel</th>
                         <th className="px-4 py-2 text-left font-medium text-muted-foreground">Name</th>
@@ -408,6 +409,7 @@ export default function NotificationsPage() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   </CardContent>
                 </Card>
               );
@@ -426,7 +428,8 @@ export default function NotificationsPage() {
           </div>
 
           <Card><CardContent className="p-0">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-max text-sm">
               <thead><tr className="border-b bg-muted/50">
                 <th className="px-4 py-2 text-left font-medium text-muted-foreground">Name</th>
                 <th className="px-4 py-2 text-left font-medium text-muted-foreground">Channel</th>
@@ -463,6 +466,7 @@ export default function NotificationsPage() {
                 ))}
               </tbody>
             </table>
+            </div>
             {recipients.length === 0 && (
               <div className="py-12 text-center text-muted-foreground text-sm">
                 No recipients configured. Click "Add Recipient" to add staff/owner contacts.

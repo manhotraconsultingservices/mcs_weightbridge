@@ -474,7 +474,7 @@ function CycleDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1">
               <Label>{t('production.cycleDate')} *</Label>
               <Input type="date" value={cycleDate} onChange={e => setCycleDate(e.target.value)} disabled={!!editing} />
@@ -617,7 +617,7 @@ function CycleDialog({
             </div>
 
             {/* Stage 4 live metrics */}
-            <div className="grid grid-cols-4 gap-2 mb-3 text-center text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3 text-center text-xs">
               <div>
                 <p className="text-muted-foreground">Total Output</p>
                 <p className="font-mono font-semibold">{totalOutputKg.toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} MT</p>
@@ -646,10 +646,11 @@ function CycleDialog({
             {outputs.length === 0 ? (
               <p className="text-xs text-muted-foreground italic">No outputs added. Click "Add Product" above to record finished goods.</p>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[420px] text-sm">
                 <thead className="border-b">
                   <tr>
-                    <th className="text-left p-1 font-medium" style={{ minWidth: '320px' }}>Product</th>
+                    <th className="text-left p-1 font-medium" style={{ minWidth: '220px' }}>Product</th>
                     <th className="text-right p-1 font-medium w-40">Output (MT)</th>
                     <th className="p-1 w-10"></th>
                   </tr>
@@ -689,6 +690,7 @@ function CycleDialog({
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
 
@@ -713,7 +715,7 @@ function CycleDialog({
                     </Badge>
                   )}
                 </div>
-                <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
                   <div>
                     <p className="text-muted-foreground">Raw Input</p>
                     <p className="font-mono font-semibold">{(inp / 1000).toFixed(2)} MT</p>

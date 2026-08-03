@@ -452,7 +452,7 @@ export default function ReportsPage() {
 
           {stData && (
             <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <Card>
                   <CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Total Purchase Value</CardTitle></CardHeader>
                   <CardContent>

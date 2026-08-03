@@ -470,7 +470,7 @@ export default function GstReportsPage() {
                       </div>
                       <p className="text-lg font-bold text-right">{fmt(gstr3bData.section_3_1.a_taxable_outward.total_tax ?? 0)}</p>
                     </div>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div className="text-center p-2 bg-muted/40 rounded"><p className="text-xs text-muted-foreground">CGST</p><p className="font-semibold">{fmt(gstr3bData.section_3_1.a_taxable_outward.cgst)}</p></div>
                       <div className="text-center p-2 bg-muted/40 rounded"><p className="text-xs text-muted-foreground">SGST</p><p className="font-semibold">{fmt(gstr3bData.section_3_1.a_taxable_outward.sgst)}</p></div>
                       <div className="text-center p-2 bg-muted/40 rounded"><p className="text-xs text-muted-foreground">IGST</p><p className="font-semibold">{fmt(gstr3bData.section_3_1.a_taxable_outward.igst)}</p></div>
@@ -499,7 +499,7 @@ export default function GstReportsPage() {
                       </div>
                       <p className="text-lg font-bold text-green-700">{fmt(gstr3bData.section_4.a_itc_available.all_other_itc.total_itc)}</p>
                     </div>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div className="text-center p-2 bg-green-50 rounded"><p className="text-xs text-muted-foreground">CGST</p><p className="font-semibold text-green-700">{fmt(gstr3bData.section_4.a_itc_available.all_other_itc.cgst)}</p></div>
                       <div className="text-center p-2 bg-green-50 rounded"><p className="text-xs text-muted-foreground">SGST</p><p className="font-semibold text-green-700">{fmt(gstr3bData.section_4.a_itc_available.all_other_itc.sgst)}</p></div>
                       <div className="text-center p-2 bg-green-50 rounded"><p className="text-xs text-muted-foreground">IGST</p><p className="font-semibold text-green-700">{fmt(gstr3bData.section_4.a_itc_available.all_other_itc.igst)}</p></div>

@@ -22,7 +22,11 @@ function Tabs({
 }
 
 const tabsListVariants = cva(
-  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-horizontal/tabs:h-8 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
+  // `max-w-full overflow-x-auto` lets a horizontal TabsList SCROLL instead of
+  // overflowing the viewport when it holds more tabs than fit on a phone. Grid-
+  // based TabsLists (callers passing `grid grid-cols-N`) should switch to this
+  // scrolling flex pattern rather than squishing N columns into 375px.
+  "group/tabs-list inline-flex w-fit max-w-full overflow-x-auto items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-horizontal/tabs:h-8 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col group-data-vertical/tabs:overflow-visible data-[variant=line]:rounded-none",
   {
     variants: {
       variant: {

@@ -1364,7 +1364,7 @@ function TallyTab() {
           </CardHeader>
           <CardContent className="space-y-3">
             {connStatus ? (
-              <div className="grid grid-cols-5 gap-2 text-center">
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 text-center">
                 {([
                   ['pending', 'Pending', 'text-amber-600'],
                   ['in_progress', 'In flight', 'text-blue-600'],
