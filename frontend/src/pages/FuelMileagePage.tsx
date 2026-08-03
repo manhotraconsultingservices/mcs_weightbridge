@@ -36,8 +36,18 @@ interface FuelEntry {
   id: string; vehicle_id: string; registration_no: string | null;
   entry_date: string; odometer_km: number; litres: number;
   rate_per_litre: number | null; amount: number | null;
-  fuel_source: string; tank_full: boolean; driver_name: string | null; notes: string | null;
+  fuel_source: string; station_name: string | null; po_no: string | null;
+  tank_full: boolean; driver_name: string | null; notes: string | null;
   distance_km: number | null; interval_kmpl: number | null; flags: string[];
+}
+interface PumpStation {
+  station_name: string; po_count: number; unpaid_count: number;
+  total_billed: number; total_paid: number; outstanding: number; oldest_unpaid_date: string | null;
+}
+interface PumpPO {
+  id: string; po_no: string; station_name: string; po_date: string | null;
+  vehicle_no: string | null; litres: number; rate_per_litre: number; amount: number;
+  amount_paid: number; outstanding: number; status: string; notes: string | null;
 }
 interface MileageRow {
   vehicle_id: string; registration_no: string;
@@ -63,20 +73,22 @@ const FLAG_LABEL: Record<string, string> = {
 };
 
 // ── Record Fill dialog ────────────────────────────────────────────────────────
-function RecordFillDialog({ open, vehicles, onClose, onSaved }: {
-  open: boolean; vehicles: Vehicle[]; onClose: () => void; onSaved: () => void;
+function RecordFillDialog({ open, vehicles, onClose, onSaved, stations = [] }: {
+  open: boolean; vehicles: Vehicle[]; onClose: () => void; onSaved: () => void; stations?: string[];
 }) {
   const [form, setForm] = useState({
     vehicle_id: '', entry_date: today(), odometer_km: '', litres: '',
-    rate_per_litre: '', fuel_source: 'plant_tank', tank_full: true, notes: '',
+    rate_per_litre: '', fuel_source: 'plant_tank', station_name: '', on_credit: true,
+    tank_full: true, notes: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<FuelEntry | null>(null);
+  const atPump = form.fuel_source === 'outside_pump' || form.fuel_source === 'other';
 
   useEffect(() => {
     if (open) {
-      setForm({ vehicle_id: '', entry_date: today(), odometer_km: '', litres: '', rate_per_litre: '', fuel_source: 'plant_tank', tank_full: true, notes: '' });
+      setForm({ vehicle_id: '', entry_date: today(), odometer_km: '', litres: '', rate_per_litre: '', fuel_source: 'plant_tank', station_name: '', on_credit: true, tank_full: true, notes: '' });
       setError(''); setResult(null);
     }
   }, [open]);
@@ -86,6 +98,9 @@ function RecordFillDialog({ open, vehicles, onClose, onSaved }: {
     if (!form.vehicle_id) { setError('Select a vehicle'); return; }
     // Litres is optional: a 0-litre entry is an odometer-only update (no fill).
     if (!form.odometer_km) { setError('Odometer reading is required'); return; }
+    if (atPump && form.on_credit && !form.station_name.trim()) {
+      setError('Enter the petrol pump / station name for a credit fill'); return;
+    }
     setSaving(true); setError(''); setResult(null);
     try {
       const { data } = await api.post<FuelEntry>('/api/v1/fuel/entries', {
@@ -95,6 +110,8 @@ function RecordFillDialog({ open, vehicles, onClose, onSaved }: {
         litres: form.litres ? parseFloat(form.litres) : 0,
         rate_per_litre: form.rate_per_litre ? parseFloat(form.rate_per_litre) : null,
         fuel_source: form.fuel_source,
+        station_name: atPump ? (form.station_name.trim() || null) : null,
+        on_credit: atPump ? form.on_credit : false,
         tank_full: form.tank_full,
         notes: form.notes || null,
       });
@@ -118,8 +135,10 @@ function RecordFillDialog({ open, vehicles, onClose, onSaved }: {
                 ? <>This fill ran <b>{num(result.interval_kmpl, 2)} km/l</b> over {num(result.distance_km)} km.</>
                 : <>First fill for this vehicle — mileage starts from the next fill.</>}
               {result.flags?.length ? <span className="ml-1 text-amber-700">⚠ {result.flags.map(f => FLAG_LABEL[f] || f).join(', ')}</span> : null}
+              {result.po_no ? <div className="mt-1 text-amber-800">📄 Credit PO <b>{result.po_no}</b> created against <b>{result.station_name}</b>.</div> : null}
             </div>
           )}
+          <datalist id="fuel-stations">{stations.map(s => <option key={s} value={s} />)}</datalist>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Vehicle</Label>
@@ -161,6 +180,27 @@ function RecordFillDialog({ open, vehicles, onClose, onSaved }: {
               </Select>
             </div>
           </div>
+          {atPump && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Petrol pump / station <span className="text-destructive">*</span></Label>
+                  <Input list="fuel-stations" value={form.station_name}
+                    onChange={e => set('station_name', e.target.value)}
+                    placeholder="e.g. HP Petrol Pump - NH48" />
+                </div>
+                <label className="flex items-center gap-2 text-sm sm:pt-6">
+                  <input type="checkbox" checked={form.on_credit} onChange={e => set('on_credit', e.target.checked)} />
+                  On credit — auto-create a PO to pay the pump later
+                </label>
+              </div>
+              <p className="text-[11px] text-amber-800">
+                {form.on_credit
+                  ? 'A purchase order is created against this pump (no stock movement). Track dues in the "Pump Credit" tab.'
+                  : 'Paid at the pump (cash) — no credit PO will be created.'}
+              </p>
+            </div>
+          )}
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={form.tank_full} onChange={e => set('tank_full', e.target.checked)} />
             Filled to full tank (improves mileage accuracy)
@@ -313,7 +353,159 @@ function UtilizationTab() {
   );
 }
 
-type Tab = 'log' | 'report' | 'utilization' | 'trends' | 'leakage' | 'settings';
+// ── Petrol-pump credit tab ─────────────────────────────────────────────────────
+function RecordPumpPaymentDialog({ open, station, dueHint, onClose, onSaved }: {
+  open: boolean; station: string; dueHint: number; onClose: () => void; onSaved: () => void;
+}) {
+  const [form, setForm] = useState({ amount: '', payment_date: today(), mode: 'bank', reference: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => { if (open) { setForm({ amount: dueHint ? String(Math.round(dueHint)) : '', payment_date: today(), mode: 'bank', reference: '' }); setError(''); } }, [open, dueHint]);
+  const set = (k: string, v: unknown) => setForm(f => ({ ...f, [k]: v }));
+  async function submit() {
+    if (!form.amount || parseFloat(form.amount) <= 0) { setError('Enter a valid amount'); return; }
+    setSaving(true); setError('');
+    try {
+      await api.post('/api/v1/fuel/pump-payments', {
+        station_name: station, amount: parseFloat(form.amount),
+        payment_date: form.payment_date, mode: form.mode, reference: form.reference || null,
+      });
+      onSaved(); onClose();
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof d === 'string' ? d : 'Failed to record the payment');
+    } finally { setSaving(false); }
+  }
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Pay petrol pump</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          {error && <p className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
+          <div className="text-sm"><span className="text-muted-foreground">Pump:</span> <b>{station}</b>
+            {dueHint > 0 && <span className="text-muted-foreground"> · outstanding {INR(dueHint)}</span>}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1"><Label>Amount (₹)</Label>
+              <Input type="number" min="0" step="0.01" value={form.amount} onChange={e => set('amount', e.target.value)} /></div>
+            <div className="space-y-1"><Label>Date</Label>
+              <Input type="date" value={form.payment_date} onChange={e => set('payment_date', e.target.value)} /></div>
+            <div className="space-y-1"><Label>Mode</Label>
+              <Select value={form.mode} onValueChange={v => set('mode', v ?? 'bank')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="bank">Bank transfer</SelectItem>
+                  <SelectItem value="upi">UPI</SelectItem>
+                  <SelectItem value="cheque">Cheque</SelectItem>
+                </SelectContent>
+              </Select></div>
+            <div className="space-y-1"><Label>Reference</Label>
+              <Input value={form.reference} onChange={e => set('reference', e.target.value)} placeholder="optional" /></div>
+          </div>
+          <p className="text-[11px] text-muted-foreground">Applied oldest-PO-first against this pump's dues.</p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={submit} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Record Payment</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PumpCreditTab() {
+  const [stations, setStations] = useState<PumpStation[]>([]);
+  const [totals, setTotals] = useState<{ total_billed: number; total_paid: number; outstanding: number; pumps_with_dues: number; po_count: number } | null>(null);
+  const [pos, setPos] = useState<PumpPO[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [payStation, setPayStation] = useState<{ name: string; due: number } | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    Promise.all([
+      api.get('/api/v1/fuel/pump-outstanding'),
+      api.get('/api/v1/fuel/pump-pos'),
+    ]).then(([o, p]) => {
+      setStations(o.data.stations ?? []); setTotals(o.data.totals ?? null);
+      setPos(p.data.items ?? []);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const STATION_COLS: ColumnDef<PumpStation>[] = [
+    { key: 'station_name', label: 'Petrol pump', accessor: r => r.station_name },
+    { key: 'po_count', label: 'Fills/POs', type: 'number', align: 'right', accessor: r => r.po_count },
+    { key: 'total_billed', label: 'Billed', type: 'number', align: 'right', accessor: r => r.total_billed, format: v => INR(v as number) },
+    { key: 'total_paid', label: 'Paid', type: 'number', align: 'right', accessor: r => r.total_paid, format: v => INR(v as number) },
+    { key: 'outstanding', label: 'Outstanding', type: 'number', align: 'right', accessor: r => r.outstanding,
+      format: v => <span className={Number(v) > 0 ? 'font-semibold text-rose-600' : 'text-emerald-600'}>{INR(v as number)}</span>, exportValue: r => r.outstanding },
+    { key: 'oldest_unpaid_date', label: 'Oldest due', type: 'date', accessor: r => r.oldest_unpaid_date, format: v => v ? String(v) : '—' },
+  ];
+  const PO_COLS: ColumnDef<PumpPO>[] = [
+    { key: 'po_no', label: 'PO No', accessor: r => r.po_no },
+    { key: 'po_date', label: 'Date', type: 'date', accessor: r => r.po_date, format: v => v ? String(v) : '—' },
+    { key: 'station_name', label: 'Petrol pump', accessor: r => r.station_name },
+    { key: 'vehicle_no', label: 'Vehicle', accessor: r => r.vehicle_no ?? '—' },
+    { key: 'litres', label: 'Litres', type: 'number', align: 'right', accessor: r => r.litres, format: v => num(v as number, 2) },
+    { key: 'amount', label: 'Amount', type: 'number', align: 'right', accessor: r => r.amount, format: v => INR(v as number) },
+    { key: 'amount_paid', label: 'Paid', type: 'number', align: 'right', accessor: r => r.amount_paid, format: v => INR(v as number) },
+    { key: 'outstanding', label: 'Due', type: 'number', align: 'right', accessor: r => r.outstanding, format: v => INR(v as number) },
+    { key: 'status', label: 'Status', type: 'enum', enumOptions: ['unpaid', 'partial', 'paid'], accessor: r => r.status,
+      format: v => { const s = String(v); const c = s === 'paid' ? 'bg-emerald-100 text-emerald-700' : s === 'partial' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'; return <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${c}`}>{s.toUpperCase()}</span>; }, exportValue: r => r.status },
+  ];
+  const KPI = ({ label, value, tone }: { label: string; value: string; tone?: string }) => (
+    <Card><CardContent className="p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={`text-xl font-bold ${tone ?? ''}`}>{value}</div>
+    </CardContent></Card>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-xs text-blue-800">
+        Every credit fill at a petrol pump auto-creates a PO here (no stock movement). This is your <b>outstanding to pay each pump</b>. Record a payment to settle the oldest POs first.
+      </div>
+      {loading ? <div className="py-10 text-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin inline" /> Loading…</div> : (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <KPI label="Total outstanding" value={INR(totals?.outstanding ?? 0)} tone={(totals?.outstanding ?? 0) > 0 ? 'text-rose-600' : 'text-emerald-600'} />
+            <KPI label="Pumps with dues" value={String(totals?.pumps_with_dues ?? 0)} />
+            <KPI label="Billed on credit" value={INR(totals?.total_billed ?? 0)} />
+            <KPI label="Paid to pumps" value={INR(totals?.total_paid ?? 0)} />
+          </div>
+
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">Outstanding by petrol pump</CardTitle></CardHeader>
+            <CardContent className="p-0">
+              <DataTable<PumpStation> id="fuel.pumpOutstanding" data={stations} columns={STATION_COLS}
+                rowKey={r => r.station_name} exportFilename="petrol-pump-outstanding"
+                defaultSort={{ key: 'outstanding', direction: 'desc' }}
+                emptyMessage="No credit fuel purchases yet."
+                rowActions={r => r.outstanding > 0 ? (
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setPayStation({ name: r.station_name, due: r.outstanding })}>
+                    <IndianRupee className="h-3.5 w-3.5" /> Pay
+                  </Button>
+                ) : <span className="text-xs text-emerald-600">Settled</span>} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">Purchase orders (per fill)</CardTitle></CardHeader>
+            <CardContent className="p-0">
+              <DataTable<PumpPO> id="fuel.pumpPos" data={pos} columns={PO_COLS} rowKey={r => r.id}
+                exportFilename="petrol-pump-pos" defaultSort={{ key: 'po_date', direction: 'desc' }}
+                emptyMessage="No pump POs yet." />
+            </CardContent>
+          </Card>
+        </>
+      )}
+      <RecordPumpPaymentDialog open={!!payStation} station={payStation?.name ?? ''} dueHint={payStation?.due ?? 0}
+        onClose={() => setPayStation(null)} onSaved={load} />
+    </div>
+  );
+}
+
+type Tab = 'log' | 'pump' | 'report' | 'utilization' | 'trends' | 'leakage' | 'settings';
 
 export default function FuelMileagePage() {
   const loc = useLocation(); const nav = useNavigate();
@@ -335,6 +527,7 @@ export default function FuelMileagePage() {
 
   const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
     { value: 'log', label: 'Fuel Log', icon: Droplet },
+    { value: 'pump', label: 'Pump Credit', icon: IndianRupee },
     { value: 'report', label: 'Mileage Report', icon: Gauge },
     { value: 'utilization', label: 'Rent vs Fuel', icon: IndianRupee },
     { value: 'trends', label: 'Trends', icon: TrendingDown },
@@ -359,6 +552,7 @@ export default function FuelMileagePage() {
           ); })}
         </TabsList>
         <TabsContent value="log" className="mt-4"><FuelLogTab vehicles={vehicles} /></TabsContent>
+        <TabsContent value="pump" className="mt-4"><PumpCreditTab /></TabsContent>
         <TabsContent value="report" className="mt-4"><MileageReportTab /></TabsContent>
         <TabsContent value="utilization" className="mt-4"><UtilizationTab /></TabsContent>
         <TabsContent value="trends" className="mt-4"><TrendsTab vehicles={vehicles} /></TabsContent>
@@ -413,7 +607,8 @@ function FuelLogTab({ vehicles }: { vehicles: Vehicle[] }) {
       </div>
       {loading ? <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         : <DataTable<FuelEntry> id="fuel.log" data={rows} columns={COLS} rowKey={r => r.id} exportFilename="fuel-log" defaultSort={{ key: 'entry_date', direction: 'desc' }} emptyMessage="No fills recorded in this range" />}
-      <RecordFillDialog open={dialog} vehicles={vehicles} onClose={() => setDialog(false)} onSaved={load} />
+      <RecordFillDialog open={dialog} vehicles={vehicles} onClose={() => setDialog(false)} onSaved={load}
+        stations={[...new Set(rows.map(r => r.station_name).filter((s): s is string => !!s))]} />
     </div>
   );
 }

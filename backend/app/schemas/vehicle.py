@@ -100,6 +100,8 @@ class FuelEntryCreate(BaseModel):
     rate_per_litre: Decimal | None = None
     amount: Decimal | None = None
     fuel_source: str = "plant_tank"      # plant_tank / outside_pump / other
+    station_name: str | None = None      # petrol pump (required for an outside-pump credit PO)
+    on_credit: bool = True               # outside-pump fills default to credit → auto-create a pump PO
     tank_full: bool = True
     driver_id: uuid.UUID | None = None
     notes: str | None = None
@@ -112,8 +114,18 @@ class FuelEntryUpdate(BaseModel):
     rate_per_litre: Decimal | None = None
     amount: Decimal | None = None
     fuel_source: str | None = None
+    station_name: str | None = None
     tank_full: bool | None = None
     driver_id: uuid.UUID | None = None
+    notes: str | None = None
+
+
+class FuelPoPaymentCreate(BaseModel):
+    station_name: str
+    amount: Decimal
+    payment_date: date
+    mode: str = "cash"                   # cash / bank / upi / cheque
+    reference: str | None = None
     notes: str | None = None
 
 
@@ -127,6 +139,8 @@ class FuelEntryResponse(BaseModel):
     rate_per_litre: Decimal | None = None
     amount: Decimal | None = None
     fuel_source: str
+    station_name: str | None = None
+    po_no: str | None = None             # the auto-created pump credit PO, if any
     tank_full: bool
     driver_id: uuid.UUID | None = None
     driver_name: str | None = None

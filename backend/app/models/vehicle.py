@@ -90,6 +90,7 @@ class VehicleFuelEntry(Base):
     rate_per_litre: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     fuel_source: Mapped[str] = mapped_column(String(20), default="plant_tank")  # plant_tank/outside_pump/other
+    station_name: Mapped[str | None] = mapped_column(String(120))  # petrol pump for outside_pump fills
     tank_full: Mapped[bool] = mapped_column(Boolean, default=True)
     inventory_item_id: Mapped[uuid.UUID | None] = mapped_column(default=None)
     inventory_txn_id: Mapped[uuid.UUID | None] = mapped_column(default=None)

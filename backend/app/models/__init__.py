@@ -3,6 +3,7 @@ from app.models.user import User
 from app.models.product import ProductCategory, Product
 from app.models.party import Party, PartyRate
 from app.models.vehicle import Vehicle, TareWeightHistory, Driver, Transporter, VehicleFuelEntry
+from app.models.fuel_po import FuelPurchaseOrder, FuelPoPayment
 from app.models.workforce import Worker, WorkerAttendance, WorkerPayment
 from app.models.token import Token
 from app.models.quotation import Quotation, QuotationItem

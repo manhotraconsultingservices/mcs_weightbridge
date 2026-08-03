@@ -22,8 +22,13 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.vehicle import Vehicle, VehicleFuelEntry, Driver
-from app.schemas.vehicle import FuelEntryCreate, FuelEntryUpdate, FuelEntryResponse
+from app.models.company import FinancialYear
+from app.models.fuel_po import FuelPurchaseOrder, FuelPoPayment
+from app.schemas.vehicle import (
+    FuelEntryCreate, FuelEntryUpdate, FuelEntryResponse, FuelPoPaymentCreate,
+)
 from app.services import fuel as fuel_svc
+from app.services.numbering import next_doc_no
 
 log = logging.getLogger(__name__)
 
@@ -190,6 +195,49 @@ async def _reverse_diesel(db: AsyncSession, user: User, entry: VehicleFuelEntry)
     ))
 
 
+# ── Petrol-pump credit PO ─────────────────────────────────────────────────────
+
+async def _active_fy_id(db: AsyncSession):
+    fy = (await db.execute(
+        select(FinancialYear).where(FinancialYear.is_active == True).limit(1)  # noqa: E712
+    )).scalar_one_or_none()
+    return fy.id if fy else None
+
+
+async def _create_pump_po(db: AsyncSession, user: User, entry: VehicleFuelEntry,
+                          station_name: str) -> FuelPurchaseOrder | None:
+    """Auto-create a credit PO against the petrol pump for an outside-pump fill.
+    Pure accounts-payable — NO inventory movement, NO P&L re-booking (the fuel
+    expense is already recognised via the fuel entry). Best-effort: a PO failure
+    must never lose the physical fuel record. Runs inside the caller's txn."""
+    station = (station_name or "").strip()
+    if not station:
+        return None
+    try:
+        fy_id = await _active_fy_id(db)
+        po_no = (await next_doc_no(db, user.company_id, fy_id, "fuel_po", "FPO")
+                 if fy_id else f"FPO-{str(entry.id)[:8]}")
+        po = FuelPurchaseOrder(
+            company_id=user.company_id, po_no=po_no, station_name=station,
+            fuel_entry_id=entry.id, vehicle_id=entry.vehicle_id, po_date=entry.entry_date,
+            litres=entry.litres, rate_per_litre=entry.rate_per_litre,
+            amount=entry.amount or Decimal("0"), amount_paid=Decimal("0"), status="unpaid",
+            created_by=user.id,
+        )
+        db.add(po)
+        await db.flush()
+        return po
+    except Exception as e:  # noqa: BLE001 — never block the fill
+        log.warning("pump PO auto-create failed: %s", e)
+        return None
+
+
+async def _po_no_for_entry(db: AsyncSession, entry_id) -> str | None:
+    return (await db.execute(
+        select(FuelPurchaseOrder.po_no).where(FuelPurchaseOrder.fuel_entry_id == entry_id).limit(1)
+    )).scalar_one_or_none()
+
+
 # ── Response helper ───────────────────────────────────────────────────────────
 
 async def _entry_to_response(db: AsyncSession, entry: VehicleFuelEntry, veh: Vehicle,
@@ -218,6 +266,7 @@ async def _entry_to_response(db: AsyncSession, entry: VehicleFuelEntry, veh: Veh
         id=entry.id, vehicle_id=entry.vehicle_id, registration_no=veh.registration_no,
         entry_date=entry.entry_date, odometer_km=entry.odometer_km, litres=entry.litres,
         rate_per_litre=entry.rate_per_litre, amount=entry.amount, fuel_source=entry.fuel_source,
+        station_name=entry.station_name, po_no=await _po_no_for_entry(db, entry.id),
         tank_full=entry.tank_full, driver_id=entry.driver_id, driver_name=driver_name,
         notes=entry.notes, created_at=entry.created_at,
         distance_km=distance, interval_kmpl=kmpl, flags=flags,
@@ -281,6 +330,7 @@ async def create_entry(payload: FuelEntryCreate, background: BackgroundTasks,
         rate_per_litre=rate,
         amount=amount,
         fuel_source=payload.fuel_source or "plant_tank",
+        station_name=(payload.station_name or "").strip() or None,
         tank_full=bool(payload.tank_full),
         inventory_item_id=inv_item_id,
         inventory_txn_id=inv_txn_id,
@@ -299,6 +349,12 @@ async def create_entry(payload: FuelEntryCreate, background: BackgroundTasks,
                      details={"vehicle": veh.registration_no, "litres": str(litres),
                               "rate": str(rate), "amount": str(amount),
                               "source": entry.fuel_source, "odometer_km": str(odo)})
+    # Petrol-pump fill on credit → auto-create a credit PO against the pump (no
+    # inventory, no P&L re-booking). Only for outside_pump/other fills with a
+    # station name and on_credit set; plant-tank fills never create a PO.
+    if (entry.fuel_source in ("outside_pump", "other") and getattr(payload, "on_credit", True)
+            and (payload.station_name or "").strip() and (amount or 0) > 0):
+        await _create_pump_po(db, user, entry, payload.station_name)
     await db.commit()
     await db.refresh(entry)
 
@@ -423,6 +479,17 @@ async def update_entry(entry_id: uuid.UUID, payload: FuelEntryUpdate,
     # keep amount consistent if rate/litres changed and amount not explicitly set
     if "amount" not in data and entry.rate_per_litre is not None and entry.litres is not None:
         entry.amount = Decimal(str(entry.litres)) * Decimal(str(entry.rate_per_litre))
+    # Keep a linked, still-UNPAID pump PO in step with the corrected fill.
+    po = (await db.execute(select(FuelPurchaseOrder).where(
+        FuelPurchaseOrder.fuel_entry_id == entry.id, FuelPurchaseOrder.company_id == user.company_id
+    ))).scalar_one_or_none()
+    if po is not None and float(po.amount_paid or 0) == 0:
+        po.amount = entry.amount or Decimal("0")
+        po.litres = entry.litres
+        po.rate_per_litre = entry.rate_per_litre
+        po.po_date = entry.entry_date
+        if entry.station_name:
+            po.station_name = entry.station_name
     await db.commit()
     await db.refresh(entry)
     veh = (await db.execute(select(Vehicle).where(Vehicle.id == entry.vehicle_id))).scalar_one_or_none()
@@ -438,9 +505,174 @@ async def delete_entry(entry_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     if not entry:
         raise HTTPException(404, "Fuel entry not found")
     await _reverse_diesel(db, user, entry)
+    # Remove a linked pump PO only if nothing has been paid against it; a PO with
+    # payments is left in place (unlinked from the deleted fill) for the audit trail.
+    po = (await db.execute(select(FuelPurchaseOrder).where(
+        FuelPurchaseOrder.fuel_entry_id == entry.id, FuelPurchaseOrder.company_id == user.company_id
+    ))).scalar_one_or_none()
+    if po is not None:
+        if float(po.amount_paid or 0) == 0:
+            await db.delete(po)
+        else:
+            po.fuel_entry_id = None
+            po.notes = ((po.notes or "") + " [source fuel entry deleted]").strip()
     await db.delete(entry)
     await db.commit()
     return {"ok": True}
+
+
+# ── Petrol-pump credit — POs · payments · outstanding report ──────────────────
+
+def _pf(v) -> float:
+    return float(v or 0)
+
+
+@router.get("/pump-pos")
+async def list_pump_pos(
+    station: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),      # unpaid | partial | paid
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    """List the auto-created petrol-pump credit POs (one per outside-pump fill)."""
+    q = select(FuelPurchaseOrder).where(FuelPurchaseOrder.company_id == user.company_id)
+    if station:
+        q = q.where(FuelPurchaseOrder.station_name.ilike(f"%{station}%"))
+    if status:
+        q = q.where(FuelPurchaseOrder.status == status)
+    if date_from:
+        q = q.where(FuelPurchaseOrder.po_date >= date_from)
+    if date_to:
+        q = q.where(FuelPurchaseOrder.po_date <= date_to)
+    rows = (await db.execute(
+        q.order_by(FuelPurchaseOrder.po_date.desc(), FuelPurchaseOrder.created_at.desc())
+    )).scalars().all()
+    vids = {r.vehicle_id for r in rows if r.vehicle_id}
+    regos: dict = {}
+    if vids:
+        for vid, rego in (await db.execute(
+            select(Vehicle.id, Vehicle.registration_no).where(Vehicle.id.in_(vids))
+        )).all():
+            regos[vid] = rego
+    return {"items": [{
+        "id": str(r.id), "po_no": r.po_no, "station_name": r.station_name,
+        "po_date": r.po_date.isoformat() if r.po_date else None,
+        "vehicle_no": regos.get(r.vehicle_id), "litres": _pf(r.litres),
+        "rate_per_litre": _pf(r.rate_per_litre), "amount": _pf(r.amount),
+        "amount_paid": _pf(r.amount_paid), "outstanding": _pf(r.amount) - _pf(r.amount_paid),
+        "status": r.status, "notes": r.notes,
+    } for r in rows]}
+
+
+@router.get("/pump-outstanding")
+async def pump_outstanding(
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    """Per-pump accounts-payable — how much is owed to each petrol pump on credit
+    (total billed − paid). This is the "outstanding to petrol pump" report."""
+    q = select(FuelPurchaseOrder).where(FuelPurchaseOrder.company_id == user.company_id)
+    if date_from:
+        q = q.where(FuelPurchaseOrder.po_date >= date_from)
+    if date_to:
+        q = q.where(FuelPurchaseOrder.po_date <= date_to)
+    rows = (await db.execute(q)).scalars().all()
+    stations: dict = {}
+    for r in rows:
+        s = stations.setdefault(r.station_name, {
+            "station_name": r.station_name, "po_count": 0, "unpaid_count": 0,
+            "total_billed": 0.0, "total_paid": 0.0, "outstanding": 0.0,
+            "oldest_unpaid_date": None,
+        })
+        s["po_count"] += 1
+        s["total_billed"] += _pf(r.amount)
+        s["total_paid"] += _pf(r.amount_paid)
+        out = _pf(r.amount) - _pf(r.amount_paid)
+        s["outstanding"] += out
+        if out > 0.01:
+            s["unpaid_count"] += 1
+            d = r.po_date.isoformat() if r.po_date else None
+            if d and (s["oldest_unpaid_date"] is None or d < s["oldest_unpaid_date"]):
+                s["oldest_unpaid_date"] = d
+    station_list = sorted(stations.values(), key=lambda x: x["outstanding"], reverse=True)
+    for s in station_list:
+        for k in ("total_billed", "total_paid", "outstanding"):
+            s[k] = round(s[k], 2)
+    totals = {
+        "total_billed": round(sum(s["total_billed"] for s in station_list), 2),
+        "total_paid": round(sum(s["total_paid"] for s in station_list), 2),
+        "outstanding": round(sum(s["outstanding"] for s in station_list), 2),
+        "pumps_with_dues": sum(1 for s in station_list if s["outstanding"] > 0.01),
+        "po_count": sum(s["po_count"] for s in station_list),
+    }
+    return {"stations": station_list, "totals": totals}
+
+
+@router.get("/pump-payments")
+async def list_pump_payments(
+    station: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    q = select(FuelPoPayment).where(FuelPoPayment.company_id == user.company_id)
+    if station:
+        q = q.where(FuelPoPayment.station_name.ilike(f"%{station}%"))
+    rows = (await db.execute(
+        q.order_by(FuelPoPayment.payment_date.desc(), FuelPoPayment.created_at.desc())
+    )).scalars().all()
+    return {"items": [{
+        "id": str(r.id), "station_name": r.station_name, "amount": _pf(r.amount),
+        "payment_date": r.payment_date.isoformat() if r.payment_date else None,
+        "mode": r.mode, "reference": r.reference, "notes": r.notes,
+    } for r in rows]}
+
+
+@router.post("/pump-payments", status_code=201)
+async def record_pump_payment(
+    payload: FuelPoPaymentCreate,
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    """Record a payment to a petrol pump and allocate it FIFO across that pump's
+    open POs (oldest first), updating each PO's amount_paid + status. Any surplus
+    beyond the pump's dues is recorded but left unallocated."""
+    station = (payload.station_name or "").strip()
+    if not station:
+        raise HTTPException(400, "Station name is required")
+    amt = Decimal(str(payload.amount))
+    if amt <= 0:
+        raise HTTPException(400, "Amount must be positive")
+    pay = FuelPoPayment(
+        company_id=user.company_id, station_name=station, amount=amt,
+        payment_date=payload.payment_date, mode=payload.mode or "cash",
+        reference=payload.reference, notes=payload.notes, created_by=user.id,
+    )
+    db.add(pay)
+    remaining = amt
+    pos = (await db.execute(select(FuelPurchaseOrder).where(
+        FuelPurchaseOrder.company_id == user.company_id,
+        FuelPurchaseOrder.station_name == station,
+        FuelPurchaseOrder.status != "paid",
+    ).order_by(FuelPurchaseOrder.po_date.asc(), FuelPurchaseOrder.created_at.asc())
+        .with_for_update())).scalars().all()
+    for po in pos:
+        if remaining <= 0:
+            break
+        due = (po.amount or Decimal("0")) - (po.amount_paid or Decimal("0"))
+        if due <= 0:
+            continue
+        applied = min(due, remaining)
+        po.amount_paid = (po.amount_paid or Decimal("0")) + applied
+        remaining -= applied
+        po.status = "paid" if (po.amount - po.amount_paid) <= Decimal("0.01") else "partial"
+    await db.flush()
+    from app.routers.audit import log_action
+    await log_action(db, user.company_id, user.id, "create", "fuel_po_payment", entity_id=str(pay.id),
+                     details={"station": station, "amount": str(amt), "mode": payload.mode,
+                              "unallocated": str(remaining)})
+    await db.commit()
+    return {"ok": True, "id": str(pay.id), "allocated": float(amt - remaining),
+            "unallocated": float(remaining)}
 
 
 # ── Mileage / leakage analytics ───────────────────────────────────────────────

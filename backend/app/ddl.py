@@ -495,6 +495,8 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS vehicle_rent NUMERIC(14,2) DEFAULT 0",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS royalty_amount NUMERIC(14,2) DEFAULT 0",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS draft_snapshot JSONB",
+        # Petrol pump name for outside-pump fuel fills (drives the fuel-credit PO)
+        "ALTER TABLE vehicle_fuel_entries ADD COLUMN IF NOT EXISTS station_name VARCHAR(120)",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS irn VARCHAR(64)",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS irn_ack_no VARCHAR(30)",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS irn_ack_date TIMESTAMPTZ",
@@ -749,6 +751,48 @@ def get_column_migrations() -> list[str]:
         """,
         "CREATE INDEX IF NOT EXISTS ix_fuel_entries_vehicle ON vehicle_fuel_entries (company_id, vehicle_id, odometer_km)",
         "CREATE INDEX IF NOT EXISTS ix_fuel_entries_date ON vehicle_fuel_entries (company_id, entry_date)",
+        # ── Petrol-pump fuel-credit POs (auto-created for outside-pump fills on
+        #    credit). Pure accounts-payable ledger to the pump — NO inventory
+        #    movement, NO P&L re-booking (fuel expense is already in the P&L via
+        #    vehicle_fuel_entries). Payments allocate FIFO across a pump's POs.
+        """
+        CREATE TABLE IF NOT EXISTS fuel_purchase_orders (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id UUID NOT NULL REFERENCES companies(id),
+            po_no VARCHAR(40) NOT NULL,
+            station_name VARCHAR(120) NOT NULL,
+            supplier_party_id UUID,
+            fuel_entry_id UUID,
+            vehicle_id UUID,
+            po_date DATE NOT NULL,
+            litres NUMERIC(10,2),
+            rate_per_litre NUMERIC(10,2),
+            amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+            amount_paid NUMERIC(14,2) NOT NULL DEFAULT 0,
+            status VARCHAR(12) NOT NULL DEFAULT 'unpaid',
+            notes VARCHAR(500),
+            created_by UUID,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_fuel_po_company ON fuel_purchase_orders (company_id, status)",
+        "CREATE INDEX IF NOT EXISTS ix_fuel_po_station ON fuel_purchase_orders (company_id, station_name)",
+        "CREATE INDEX IF NOT EXISTS ix_fuel_po_entry ON fuel_purchase_orders (fuel_entry_id)",
+        """
+        CREATE TABLE IF NOT EXISTS fuel_po_payments (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id UUID NOT NULL REFERENCES companies(id),
+            station_name VARCHAR(120) NOT NULL,
+            amount NUMERIC(14,2) NOT NULL,
+            payment_date DATE NOT NULL,
+            mode VARCHAR(20) NOT NULL DEFAULT 'cash',
+            reference VARCHAR(120),
+            notes VARCHAR(500),
+            created_by UUID,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_fuel_po_pay_station ON fuel_po_payments (company_id, station_name)",
         # ── Workforce & Payroll (workers · attendance muster · payments) ──────
         # Workers are NOT logins — just payroll records. Earnings + balance are
         # computed at read time (services/payroll.py) from attendance + payments.
