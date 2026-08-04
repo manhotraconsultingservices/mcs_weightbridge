@@ -2194,36 +2194,41 @@ async def _load_token_for_invoice(db: AsyncSession, inv) -> "Token | None":
     return (await db.execute(select(Token).where(Token.id == inv.token_id))).scalar_one_or_none()
 
 
+async def _load_invoice_print_settings(db: AsyncSession) -> dict:
+    """Tenant's saved invoice print settings (Settings → Print), merged over the
+    defaults. Used by BOTH the download-PDF and the browser-print endpoints so the
+    printed invoice honours the same field toggles (previously only the download
+    path loaded them, so the Print button ignored the settings)."""
+    import json as _json
+    from app.routers.app_settings import INVOICE_PRINT_SETTINGS_KEY, _get_raw
+    from app.utils.pdf_generator import DEFAULT_INVOICE_PRINT_SETTINGS
+
+    ps_raw = await _get_raw(db, INVOICE_PRINT_SETTINGS_KEY)
+    if not ps_raw:
+        return DEFAULT_INVOICE_PRINT_SETTINGS
+    try:
+        stored = _json.loads(ps_raw)
+        merged = {**DEFAULT_INVOICE_PRINT_SETTINGS}
+        for section, defaults in DEFAULT_INVOICE_PRINT_SETTINGS.items():
+            if isinstance(defaults, dict) and section in stored and isinstance(stored[section], dict):
+                merged[section] = {**defaults, **stored[section]}
+            elif section in stored:
+                merged[section] = stored[section]
+        return merged
+    except Exception:
+        return DEFAULT_INVOICE_PRINT_SETTINGS
+
+
 @router.get("/{invoice_id}/pdf")
 async def download_pdf(
     invoice_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    import json as _json
-    from app.routers.app_settings import INVOICE_PRINT_SETTINGS_KEY, _get_raw
-    from app.utils.pdf_generator import DEFAULT_INVOICE_PRINT_SETTINGS
-
     inv = await _load_invoice(db, invoice_id)
     co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
     tok = await _load_token_for_invoice(db, inv)
-
-    # Fetch print settings
-    ps_raw = await _get_raw(db, INVOICE_PRINT_SETTINGS_KEY)
-    if ps_raw:
-        try:
-            stored = _json.loads(ps_raw)
-            print_settings = {**DEFAULT_INVOICE_PRINT_SETTINGS}
-            for section, defaults in DEFAULT_INVOICE_PRINT_SETTINGS.items():
-                if isinstance(defaults, dict) and section in stored and isinstance(stored[section], dict):
-                    print_settings[section] = {**defaults, **stored[section]}
-                elif section in stored:
-                    print_settings[section] = stored[section]
-        except Exception:
-            print_settings = DEFAULT_INVOICE_PRINT_SETTINGS
-    else:
-        print_settings = DEFAULT_INVOICE_PRINT_SETTINGS
-
+    print_settings = await _load_invoice_print_settings(db)
     ctx = invoice_context(inv, co, token=tok, print_settings=print_settings)
     pdf_bytes = generate_pdf("invoice.html", ctx)
     media_type = "application/pdf" if pdf_bytes[:4] == b"%PDF" else "text/html"
@@ -2247,7 +2252,9 @@ async def print_invoice(
     inv = await _load_invoice(db, invoice_id)
     co = (await db.execute(select(Company).limit(1))).scalar_one_or_none()
     tok = await _load_token_for_invoice(db, inv)
-    ctx = invoice_context(inv, co, token=tok)
+    # Honour the tenant's Settings → Print field toggles on the printout too (this
+    # path previously ignored them — the root cause of "print doesn't match Settings").
+    ctx = invoice_context(inv, co, token=tok, print_settings=await _load_invoice_print_settings(db))
 
     if format == "thermal":
         html = render_html("invoice_thermal.html", ctx)

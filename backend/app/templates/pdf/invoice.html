@@ -230,7 +230,7 @@
         {% if psc.get('show_tagline') and psc.get('tagline') %}
         <div class="co-line">{{ psc.tagline }}</div>
         {% endif %}
-        {% if psc.get('show_address', true) %}
+        {% if company.address_line1 or company.address_line2 or company.city or company.state %}{# company address is MANDATORY — always shown, not toggleable #}
         <div class="co-line">
           {%- if company.address_line1 %}{{ company.address_line1 }}{% endif -%}
           {%- if company.address_line2 %}, {{ company.address_line2 }}{% endif -%}
@@ -239,7 +239,7 @@
           {%- if company.pincode %} - {{ company.pincode }}{% endif -%}
         </div>
         {% endif %}
-        {% if psc.get('show_gstin', true) and company.gstin %}
+        {% if company.gstin %}{# company GSTIN is MANDATORY — always shown, not toggleable #}
         <div class="co-line"><span class="b">GSTIN/UIN:</span> {{ company.gstin }}</div>
         {% endif %}
         <div class="co-line">
@@ -535,7 +535,7 @@
   <table class="ftr">
     <tr>
       <td class="bank">
-        {% if pss.get('show_bank_details', true) and company.bank_name %}
+        {% if company.bank_name %}{# bank details are MANDATORY — always shown, not toggleable #}
         <div class="fl">Bank Details</div>
         <div class="ftx">
           <span class="b">Bank:</span> {{ company.bank_name }}{% if company.bank_branch %}, {{ company.bank_branch }}{% endif %}<br>

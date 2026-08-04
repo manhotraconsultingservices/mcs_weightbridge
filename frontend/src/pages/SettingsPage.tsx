@@ -2577,12 +2577,81 @@ const DEFAULT_PRINT_SETTINGS: InvoicePrintSettings = {
   },
 };
 
-function ToggleRow({ label, checked, onCheckedChange }: { label: string; checked: boolean; onCheckedChange: (v: boolean) => void }) {
+function ToggleRow({ label, checked, onCheckedChange, locked, lockedNote }: { label: string; checked: boolean; onCheckedChange: (v: boolean) => void; locked?: boolean; lockedNote?: string }) {
   return (
     <div className="flex items-center justify-between py-2 border-b last:border-0">
-      <span className="text-sm">{label}</span>
-      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+      <span className="text-sm">{label}{locked && <span className="ml-1 text-xs text-muted-foreground">({lockedNote || 'always shown'})</span>}</span>
+      <Switch checked={locked ? true : checked} disabled={locked} onCheckedChange={locked ? undefined : onCheckedChange} />
     </div>
+  );
+}
+
+// Invoice value limits — the "fat-finger / impossible amount" guard that blocks an
+// invoice at finalise (e.g. a mis-typed rate, or KG billed as MT → 1000× amount).
+// Raise these for genuinely large invoices (>₹1 crore), or turn the guard off.
+function InvoiceLimitsCard() {
+  const [cfg, setCfg] = useState<{ enabled: boolean; max_line_amount: number; max_qty_mt: number; max_rate_per_unit: number }>(
+    { enabled: true, max_line_amount: 10000000, max_qty_mt: 100, max_rate_per_unit: 500000 });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  useEffect(() => {
+    api.get('/api/v1/app-settings/sanity-limits').then(r => setCfg(c => ({ ...c, ...r.data }))).catch(() => {});
+  }, []);
+  const INRc = (n: number) => '₹' + Number(n || 0).toLocaleString('en-IN');
+  async function save() {
+    setSaving(true); setMsg('');
+    try {
+      await api.put('/api/v1/app-settings/sanity-limits', {
+        enabled: cfg.enabled,
+        max_line_amount: Number(cfg.max_line_amount) || undefined,
+        max_qty_mt: Number(cfg.max_qty_mt) || undefined,
+        max_rate_per_unit: Number(cfg.max_rate_per_unit) || undefined,
+      });
+      setMsg('Saved');
+    } catch (e) {
+      setMsg((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Save failed (admin only)');
+    } finally { setSaving(false); }
+  }
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-base">Invoice value limits (fat-finger guard)</CardTitle></CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          A safety net that blocks a Sales Invoice from being finalised when a value looks impossible
+          (a mis-typed rate, or KG billed as MT → 1000× amount). For genuinely large invoices raise the
+          limit, or turn the guard off entirely.
+        </p>
+        <div className="flex items-center justify-between py-1">
+          <span className="text-sm font-medium">Enforce limits on finalise</span>
+          <Switch checked={cfg.enabled} onCheckedChange={v => setCfg(c => ({ ...c, enabled: v }))} />
+        </div>
+        {cfg.enabled && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Max line amount (₹)</Label>
+              <Input type="number" min="1" value={cfg.max_line_amount}
+                onChange={e => setCfg(c => ({ ...c, max_line_amount: Number(e.target.value) }))} />
+              <p className="text-[11px] text-muted-foreground">Now {INRc(cfg.max_line_amount)} — e.g. 100000000 = ₹10 cr</p>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Max quantity (MT)</Label>
+              <Input type="number" min="1" value={cfg.max_qty_mt}
+                onChange={e => setCfg(c => ({ ...c, max_qty_mt: Number(e.target.value) }))} />
+              <p className="text-[11px] text-muted-foreground">Per line & per weighment</p>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Max rate (₹ / unit)</Label>
+              <Input type="number" min="1" value={cfg.max_rate_per_unit}
+                onChange={e => setCfg(c => ({ ...c, max_rate_per_unit: Number(e.target.value) }))} />
+            </div>
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <Button size="sm" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save limits'}</Button>
+          {msg && <span className="text-xs text-muted-foreground">{msg}</span>}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -2885,6 +2954,9 @@ function PrintSettingsTab() {
   return (
     <div className="space-y-4">
 
+      {/* Invoice value limits (fat-finger guard — raise for >₹1cr invoices, or disable) */}
+      <InvoiceLimitsCard />
+
       {/* Page Size + Copies */}
       <Card>
         <CardHeader><CardTitle className="text-base">Page Format &amp; Copies</CardTitle></CardHeader>
@@ -2947,8 +3019,8 @@ function PrintSettingsTab() {
               />
             </div>
           )}
-          <ToggleRow label="Show Address" checked={ps.company.show_address} onCheckedChange={v => setCompany('show_address', v)} />
-          <ToggleRow label="Show GSTIN / UIN" checked={ps.company.show_gstin} onCheckedChange={v => setCompany('show_gstin', v)} />
+          <ToggleRow label="Show Address" checked={ps.company.show_address} onCheckedChange={v => setCompany('show_address', v)} locked lockedNote="mandatory" />
+          <ToggleRow label="Show GSTIN / UIN" checked={ps.company.show_gstin} onCheckedChange={v => setCompany('show_gstin', v)} locked lockedNote="mandatory" />
           <ToggleRow label="Show State & Code" checked={ps.company.show_state} onCheckedChange={v => setCompany('show_state', v)} />
           <ToggleRow label="Show Phone" checked={ps.company.show_phone} onCheckedChange={v => setCompany('show_phone', v)} />
           <ToggleRow label="Show Email" checked={ps.company.show_email} onCheckedChange={v => setCompany('show_email', v)} />
@@ -3005,7 +3077,7 @@ function PrintSettingsTab() {
         <CardHeader><CardTitle className="text-base">Sections</CardTitle></CardHeader>
         <CardContent>
           <ToggleRow label="Weight details (Gross / Tare / Net)" checked={ps.sections.show_weight} onCheckedChange={v => setSections('show_weight', v)} />
-          <ToggleRow label="Bank details" checked={ps.sections.show_bank_details} onCheckedChange={v => setSections('show_bank_details', v)} />
+          <ToggleRow label="Bank details" checked={ps.sections.show_bank_details} onCheckedChange={v => setSections('show_bank_details', v)} locked lockedNote="mandatory" />
           <ToggleRow label="Amount in words" checked={ps.sections.show_amount_words} onCheckedChange={v => setSections('show_amount_words', v)} />
           <ToggleRow label="HSN / SAC tax summary table" checked={ps.sections.show_hsn_summary} onCheckedChange={v => setSections('show_hsn_summary', v)} />
           <ToggleRow label="Tax amount in words" checked={ps.sections.show_tax_words} onCheckedChange={v => setSections('show_tax_words', v)} />
