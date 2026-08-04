@@ -14,6 +14,9 @@ import api from '@/services/api';
 import { fetchUnits, saveUnits } from '@/lib/units';
 import { fetchTyreVolumes, saveTyreVolumes, type TyreVolume } from '@/lib/tyreVolumes';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
+import { getCurrentUser } from '@/hooks/useAuth';
+import { usePermissions } from '@/contexts/PermissionsContext';
+import { allowedSettingsTabs } from '@/lib/rbac';
 
 interface Company {
   id: string;
@@ -4016,6 +4019,16 @@ function DeviceHealthSettingsTab() {
 
 export default function SettingsPage() {
   const isSaas = sessionStorage.getItem('multi_tenant') === '1';
+  // Per-role Settings access: admin sees every tab; a non-admin sees ONLY the
+  // business tabs an admin explicitly granted (strict allow-list — integrations,
+  // USB Guard and credential tabs are never delegatable). See lib/rbac.ts.
+  const { roleTabPerms } = usePermissions();
+  const role = getCurrentUser()?.role;
+  const allowedTabs = allowedSettingsTabs(role, roleTabPerms);
+  const canShow = useCallback(
+    (v: string) => allowedTabs === null || allowedTabs.has(v),
+    [allowedTabs],
+  );
   const [tab, setTab] = useState('company');
   const [company, setCompany] = useState<Company | null>(null);
   const [saving, setSaving] = useState(false);
@@ -4032,6 +4045,12 @@ export default function SettingsPage() {
     api.get<Company>('/api/v1/company').then(r => setCompany(r.data)).catch(() => {});
     api.get<FinancialYear[]>('/api/v1/company/financial-years').then(r => setFyears(r.data)).catch(() => {});
   }, []);
+
+  // Land on a tab this role can actually open (default 'company' may not be granted).
+  useEffect(() => {
+    if (allowedTabs === null || allowedTabs.size === 0) return;
+    if (!allowedTabs.has(tab)) setTab([...allowedTabs][0]);
+  }, [allowedTabs, tab]);
 
   function set(k: keyof Company, v: string) {
     setCompany(c => c ? { ...c, [k]: v } : c);
@@ -4071,6 +4090,27 @@ export default function SettingsPage() {
 
   if (!company) return <div className="py-12 text-center text-muted-foreground text-sm">Loading...</div>;
 
+  // Granted the Settings page but no individual tab → say so plainly rather than
+  // rendering an empty tab strip.
+  if (allowedTabs !== null && allowedTabs.size === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+        </div>
+        <Card>
+          <CardContent className="py-10 text-center space-y-2">
+            <Shield className="mx-auto h-8 w-8 text-muted-foreground" />
+            <p className="text-sm font-medium">No settings sections have been granted to your role</p>
+            <p className="text-xs text-muted-foreground">
+              Ask an admin to grant the sections you need in Administration → Role Permissions → Settings.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
 
     <div className="space-y-6">
@@ -4103,47 +4143,55 @@ export default function SettingsPage() {
             { value: 'gate-cameras', label: 'Gate Cameras' },
             { value: 'device-health', label: 'Device Health' },
             { value: 'print', label: 'Print' },
-          ]}
+          ].filter(o => canShow(o.value))}
         />
 
         {/* Desktop: wrapped pill tabs. Use sm: (not md:) to match MobileTabSelect's
             sm:hidden — otherwise 640–767px width shows NEITHER (no tab bar at all). */}
         <TabsList className="hidden sm:flex flex-wrap h-auto gap-1 p-1">
-          <TabsTrigger value="company">Company</TabsTrigger>
-          <TabsTrigger value="bank">Bank Details</TabsTrigger>
-          <TabsTrigger value="prefixes">Invoice Prefixes</TabsTrigger>
-          <TabsTrigger value="fy">Financial Years</TabsTrigger>
-          {!isSaas && <TabsTrigger value="usb">USB Guard</TabsTrigger>}
-          {!isSaas && <TabsTrigger value="scale">Weight Scale</TabsTrigger>}
-          <TabsTrigger value="tally">Tally</TabsTrigger>
-          <TabsTrigger value="weighbridge">Weighbridge</TabsTrigger>
-          <TabsTrigger value="notifications">Notifications</TabsTrigger>
-          {!isSaas && (
+          {canShow('company') && <TabsTrigger value="company">Company</TabsTrigger>}
+          {canShow('bank') && <TabsTrigger value="bank">Bank Details</TabsTrigger>}
+          {canShow('prefixes') && <TabsTrigger value="prefixes">Invoice Prefixes</TabsTrigger>}
+          {canShow('fy') && <TabsTrigger value="fy">Financial Years</TabsTrigger>}
+          {!isSaas && canShow('usb') && <TabsTrigger value="usb">USB Guard</TabsTrigger>}
+          {!isSaas && canShow('scale') && <TabsTrigger value="scale">Weight Scale</TabsTrigger>}
+          {canShow('tally') && <TabsTrigger value="tally">Tally</TabsTrigger>}
+          {canShow('weighbridge') && <TabsTrigger value="weighbridge">Weighbridge</TabsTrigger>}
+          {canShow('notifications') && <TabsTrigger value="notifications">Notifications</TabsTrigger>}
+          {!isSaas && canShow('cameras') && (
             <TabsTrigger value="cameras" className="flex items-center gap-1">
               <Camera className="h-3.5 w-3.5" />Cameras
             </TabsTrigger>
           )}
-          <TabsTrigger value="einvoice" className="flex items-center gap-1">
-            <Shield className="h-3.5 w-3.5" />eInvoice
-          </TabsTrigger>
-          <TabsTrigger value="eway" className="flex items-center gap-1">
-            <Shield className="h-3.5 w-3.5" />E-Way Bill
-          </TabsTrigger>
-          <TabsTrigger value="upi" className="flex items-center gap-1">
-            <Shield className="h-3.5 w-3.5" />UPI / Portal
-          </TabsTrigger>
-          <TabsTrigger value="anpr" className="flex items-center gap-1">
-            <Camera className="h-3.5 w-3.5" />ANPR
-          </TabsTrigger>
-          {!isSaas && (
+          {canShow('einvoice') && (
+            <TabsTrigger value="einvoice" className="flex items-center gap-1">
+              <Shield className="h-3.5 w-3.5" />eInvoice
+            </TabsTrigger>
+          )}
+          {canShow('eway') && (
+            <TabsTrigger value="eway" className="flex items-center gap-1">
+              <Shield className="h-3.5 w-3.5" />E-Way Bill
+            </TabsTrigger>
+          )}
+          {canShow('upi') && (
+            <TabsTrigger value="upi" className="flex items-center gap-1">
+              <Shield className="h-3.5 w-3.5" />UPI / Portal
+            </TabsTrigger>
+          )}
+          {canShow('anpr') && (
+            <TabsTrigger value="anpr" className="flex items-center gap-1">
+              <Camera className="h-3.5 w-3.5" />ANPR
+            </TabsTrigger>
+          )}
+          {!isSaas && canShow('barrier') && (
             <TabsTrigger value="barrier" className="flex items-center gap-1">
               <Truck className="h-3.5 w-3.5" />Barrier
             </TabsTrigger>
           )}
-          <TabsTrigger value="units">Units</TabsTrigger>
-          <TabsTrigger value="gate-cameras">Gate Cameras</TabsTrigger>
-          <TabsTrigger value="device-health">Device Health</TabsTrigger>
-          <TabsTrigger value="print">Print</TabsTrigger>
+          {canShow('units') && <TabsTrigger value="units">Units</TabsTrigger>}
+          {canShow('gate-cameras') && <TabsTrigger value="gate-cameras">Gate Cameras</TabsTrigger>}
+          {canShow('device-health') && <TabsTrigger value="device-health">Device Health</TabsTrigger>}
+          {canShow('print') && <TabsTrigger value="print">Print</TabsTrigger>}
         </TabsList>
 
         {/* Company Info */}

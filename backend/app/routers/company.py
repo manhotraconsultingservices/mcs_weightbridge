@@ -4,7 +4,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database import get_db
-from app.dependencies import get_current_user, require_role
+from app.dependencies import get_current_user, require_role, require_page_permission
+
+# Company / bank / prefixes / financial years are the *business* Settings tabs, so
+# they may be delegated to a non-admin role that an admin granted the Settings page
+# (Settings → business tabs). Integration + credential endpoints stay require_role.
+# always=("admin",) — an operator must NOT get this implicitly.
+_settings_editor = require_page_permission("/settings", always=("admin",))
 from app.models.user import User
 from app.models.company import Company, FinancialYear
 from app.schemas.company import CompanyUpdate, CompanyResponse, FinancialYearCreate, FinancialYearResponse
@@ -27,7 +33,7 @@ async def get_company(
 @router.put("", response_model=CompanyResponse)
 async def update_company(
     data: CompanyUpdate,
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(_settings_editor),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Company).where(Company.id == current_user.company_id))
@@ -58,7 +64,7 @@ async def list_financial_years(
 @router.post("/financial-years", response_model=FinancialYearResponse, status_code=201)
 async def create_financial_year(
     data: FinancialYearCreate,
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(_settings_editor),
     db: AsyncSession = Depends(get_db),
 ):
     fy = FinancialYear(
@@ -76,7 +82,7 @@ async def create_financial_year(
 @router.put("/financial-years/{fy_id}/activate", response_model=FinancialYearResponse)
 async def activate_financial_year(
     fy_id: uuid.UUID,
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(_settings_editor),
     db: AsyncSession = Depends(get_db),
 ):
     # Deactivate all

@@ -20,11 +20,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.database import get_db
-from app.dependencies import get_current_user, require_role
+from app.dependencies import get_current_user, require_role, require_page_permission
 from app.models.user import User
 from app.utils.pdf_generator import DEFAULT_INVOICE_PRINT_SETTINGS
 
 router = APIRouter(prefix="/api/v1/app-settings", tags=["App Settings"])
+
+# Guard for the *business* Settings tabs (Units, Print/Invoice format) — usable by a
+# non-admin role that an admin granted the Settings page. Every integration and
+# credential endpoint in this module keeps require_role("admin").
+# always=("admin",) — an operator must NOT get this implicitly.
+_settings_editor = require_page_permission("/settings", always=("admin",))
 
 TABLE = "app_settings"
 
@@ -455,7 +461,7 @@ async def get_units(
 async def update_units(
     payload: list[str],
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_role("admin")),
+    current_user=Depends(_settings_editor),
 ):
     """Save the custom units-of-measure list. Admin only. Preserves case;
     de-duplicates case-insensitively; strips blanks."""
@@ -498,7 +504,7 @@ async def get_rate_units(
 async def update_rate_units(
     payload: list[str],
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_role("admin")),
+    current_user=Depends(_settings_editor),
 ):
     """Save the rate-unit column list (admin). Upper-cased + de-duplicated."""
     seen: set[str] = set()
@@ -551,7 +557,7 @@ async def get_tyre_volumes(
 async def update_tyre_volumes(
     payload: list[dict],
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_role("admin")),
+    current_user=Depends(_settings_editor),
 ):
     """Save the tyre→volume (CUM) mapping. Admin only. Validates positive
     tyre-count + cum, de-duplicates by tyre, sorts ascending."""
@@ -634,7 +640,7 @@ async def get_sanity_limits_ep(
 async def put_sanity_limits_ep(
     payload: dict,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_role("admin")),
+    current_user=Depends(_settings_editor),
 ):
     """Adjust the sanity band (admin). Unknown keys ignored; values must be positive."""
     from app.services.sanity import DEFAULT_SANITY_LIMITS, SANITY_KEY
@@ -931,7 +937,7 @@ async def get_invoice_print_settings(
 async def save_invoice_print_settings(
     payload: dict,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_role("admin")),
+    current_user=Depends(_settings_editor),
 ):
     """Save invoice PDF print settings. Admin only."""
     await _upsert(db, INVOICE_PRINT_SETTINGS_KEY, json.dumps(payload))

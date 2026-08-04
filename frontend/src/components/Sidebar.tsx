@@ -204,8 +204,15 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
     return true;
   }
 
-  // Filter admin items by SaaS restrictions
+  // A non-admin role can be granted the Settings page (business tabs only — see
+  // lib/rbac.ts). Such a role gets the gear menu too, but it lists ONLY Settings;
+  // every other admin item stays admin-exclusive.
+  const canOpenSettings = permissions.includes('/settings');
+  const showAdminGear = isAdmin || canOpenSettings;
+
+  // Filter admin items by SaaS restrictions + role
   const visibleAdmin = ADMIN_ITEMS.filter(item => {
+    if (!isAdmin) return item.to === '/settings' && canOpenSettings;
     if (isSaaS && item.to === '/backup') return false;
     if (isSaaS && item.to === '/import') return false;
     return true;
@@ -280,8 +287,8 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
             <p className="truncate text-xs text-sidebar-foreground/50 capitalize">{user.role.replace(/_/g, ' ')}</p>
           </div>
           <LanguageToggle className="h-7 px-2 text-xs font-medium text-sidebar-foreground/70 hover:text-sidebar-foreground border border-sidebar-border hover:bg-sidebar-accent" />
-          {/* Admin gear — admins only */}
-          {isAdmin && (
+          {/* Admin gear — admins, plus a role granted the Settings page */}
+          {showAdminGear && (
             <Button
               variant="ghost"
               size="icon"
@@ -304,7 +311,7 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
         </div>
 
         {/* Admin dropup — opens above the user row when gear is clicked */}
-        {isAdmin && adminOpen && (
+        {showAdminGear && adminOpen && (
           <div
             ref={adminMenuRef}
             className="absolute right-3 bottom-16 z-40 w-52 max-w-[calc(100vw-1.5rem)] rounded-lg border border-sidebar-border bg-sidebar shadow-xl overflow-hidden"

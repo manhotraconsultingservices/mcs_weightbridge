@@ -56,6 +56,12 @@ export const CATALOGUE_GROUPS: CatalogueGroup[] = [
     ],
   },
   {
+    group: 'Administration',
+    pages: [
+      { path: '/settings', label: 'Settings (business tabs)', hint: 'Company · Bank · Prefixes · Financial Years · Units · Print. Pick the exact tabs below — integrations, USB Guard & credentials stay admin-only.' },
+    ],
+  },
+  {
     group: 'Finance & Intelligence',
     pages: [
       { path: '/accounts',        label: 'Accounts',          hint: 'Payments · Ledger · Balances · Advances · Activity Log' },
@@ -156,7 +162,44 @@ export const HUB_TABS: Record<string, { value: string; label: string }[]> = {
     { value: 'gate-passes',    label: 'Gate Pass Register' },
     { value: 'token-register', label: 'Token Register' },
   ],
+  // Settings is the ONE delegatable config page, and only these business tabs may
+  // ever be granted. Integration/credential tabs (Tally, eInvoice, E-Way, Cameras,
+  // Gate Cameras, ANPR, Barrier, Scale, Notifications, UPI, Device Health) and USB
+  // Guard are deliberately absent — they can never be handed to a non-admin.
+  '/settings': [
+    { value: 'company',  label: 'Company Profile' },
+    { value: 'bank',     label: 'Bank Details' },
+    { value: 'prefixes', label: 'Invoice Prefixes' },
+    { value: 'fy',       label: 'Financial Years' },
+    { value: 'units',    label: 'Units' },
+    { value: 'print',    label: 'Print / Invoice Format' },
+  ],
 };
+
+/** The only Settings tabs that may be delegated to a non-admin role. */
+export const SETTINGS_DELEGATABLE_TABS: ReadonlySet<string> = new Set(
+  (HUB_TABS['/settings'] ?? []).map(t => t.value),
+);
+
+/**
+ * Which Settings tabs may the current role open?
+ *
+ *   admin  → null  (no restriction — every tab, including integrations)
+ *   others → the EXPLICITLY granted tabs, intersected with the delegatable list.
+ *
+ * NOTE the inverted semantic vs other hubs: elsewhere an empty/absent tab list
+ * means "no restriction, show all". For Settings that would leak integration and
+ * credential tabs to anyone granted the page, so here it is a strict ALLOW-LIST —
+ * an unconfigured or empty grant shows NOTHING.
+ */
+export function allowedSettingsTabs(
+  role: string | undefined,
+  roleTabPerms: Record<string, Record<string, string[]>> | undefined,
+): Set<string> | null {
+  if (role === 'admin') return null;
+  const granted = roleTabPerms?.[role ?? '']?.['/settings'] ?? [];
+  return new Set(granted.filter(t => SETTINGS_DELEGATABLE_TABS.has(t)));
+}
 
 export interface RoleDef { value: string; label: string; color: string }
 
@@ -176,8 +219,10 @@ export const BUILTIN_ROLE_VALUES = new Set(
 );
 
 // Config/admin routes — admin only, never listed in the permission grid.
+// '/settings' is NOT here: it is grantable per-role, but only its business tabs
+// (see HUB_TABS['/settings'] + allowedSettingsTabs). Everything else stays admin.
 export const ADMIN_ROUTES = new Set([
-  '/settings', '/notifications', '/backup', '/import',
+  '/notifications', '/backup', '/import',
   '/admin/branches', '/admin/users', '/admin/permissions',
   '/admin/custom-fields', '/admin/wallpaper', '/approvals',
 ]);
