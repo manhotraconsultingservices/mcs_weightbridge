@@ -2486,6 +2486,7 @@ interface InvoicePrintSettings {
     show_phone: boolean;
   };
   metadata: {
+    show_due_date: boolean;
     show_delivery_note: boolean;
     show_payment_mode: boolean;
     show_suppliers_ref: boolean;
@@ -2543,6 +2544,7 @@ const DEFAULT_PRINT_SETTINGS: InvoicePrintSettings = {
     show_phone: false,
   },
   metadata: {
+    show_due_date: true,
     show_delivery_note: true,
     show_payment_mode: true,
     show_suppliers_ref: true,
@@ -3045,6 +3047,7 @@ function PrintSettingsTab() {
       <Card>
         <CardHeader><CardTitle className="text-base">Invoice Metadata Fields</CardTitle></CardHeader>
         <CardContent>
+          <ToggleRow label="Due Date" checked={ps.metadata.show_due_date} onCheckedChange={v => setMeta('show_due_date', v)} />
           <ToggleRow label="Delivery Note" checked={ps.metadata.show_delivery_note} onCheckedChange={v => setMeta('show_delivery_note', v)} />
           <ToggleRow label="Payment Mode" checked={ps.metadata.show_payment_mode} onCheckedChange={v => setMeta('show_payment_mode', v)} />
           <ToggleRow label="Supplier's Ref." checked={ps.metadata.show_suppliers_ref} onCheckedChange={v => setMeta('show_suppliers_ref', v)} />

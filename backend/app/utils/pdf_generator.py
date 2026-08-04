@@ -30,6 +30,7 @@ DEFAULT_INVOICE_PRINT_SETTINGS = {
         "show_phone": False,
     },
     "metadata": {
+        "show_due_date": True,
         "show_delivery_note": True,
         "show_payment_mode": True,
         "show_suppliers_ref": True,

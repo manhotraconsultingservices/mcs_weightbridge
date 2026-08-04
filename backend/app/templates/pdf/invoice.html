@@ -261,7 +261,7 @@
             <td class="ml">Date</td>
             <td class="mv">{{ invoice.invoice_date.strftime('%d-%b-%Y') if invoice.invoice_date else '—' }}</td>
           </tr>
-          {% if invoice.due_date %}
+          {% if psm.get('show_due_date', true) and invoice.due_date %}
           <tr>
             <td class="ml">Due Date</td>
             <td class="mv">{{ invoice.due_date.strftime('%d-%b-%Y') }}</td>
