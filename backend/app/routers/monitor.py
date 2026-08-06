@@ -161,6 +161,89 @@ async def get_health(
     }
 
 
+# ── Uptime history (root-cause analysis) ─────────────────────────────────────
+@router.get("/history")
+async def get_history(
+    days: int = 7,
+    device_type: str | None = None,
+    device_key: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Device uptime HISTORY — every online<->offline/stale transition recorded by
+    the 60 s health loop, plus per-device outage stats and an hour-of-day
+    histogram.
+
+    Built for root-causing an unstable device: the hour-of-day breakdown is what
+    correlates outages with a physical cause (e.g. a crusher motor starting), and
+    the outage durations separate a brief cable glitch from a hard failure.
+    Hours are IST so they line up with the plant's shift.
+    """
+    days = max(1, min(int(days or 7), 90))
+    cid = str(current_user.company_id)
+    where = ["company_id = :cid", "detected_at >= NOW() - (:days || ' days')::interval"]
+    params: dict[str, Any] = {"cid": cid, "days": str(days)}
+    if device_type:
+        where.append("device_type = :dt")
+        params["dt"] = device_type
+    if device_key:
+        where.append("device_key = :dk")
+        params["dk"] = device_key
+    w = " AND ".join(where)
+
+    rows = (await db.execute(text(f"""
+        SELECT device_key, device_type, label, site, status, reason, down_seconds, detected_at
+        FROM device_events WHERE {w}
+        ORDER BY detected_at DESC LIMIT 2000
+    """), params)).fetchall()
+
+    events = [{
+        "device_key": r.device_key, "device_type": r.device_type,
+        "label": r.label, "site": r.site, "status": r.status, "reason": r.reason,
+        "down_seconds": r.down_seconds,
+        "detected_at": r.detected_at.isoformat() if r.detected_at else None,
+    } for r in rows]
+
+    # Per-device outage stats. An "outage" = a recovery row (it carries the duration
+    # of the outage it ended), so a still-open outage isn't counted until it closes.
+    stats = (await db.execute(text(f"""
+        SELECT device_key, MAX(label) AS label, MAX(device_type) AS device_type,
+               COUNT(*) FILTER (WHERE status <> 'online')                    AS drops,
+               COUNT(*) FILTER (WHERE status = 'online' AND down_seconds > 0) AS recoveries,
+               COALESCE(SUM(down_seconds) FILTER (WHERE status = 'online'), 0) AS total_down_secs,
+               COALESCE(MAX(down_seconds) FILTER (WHERE status = 'online'), 0) AS longest_down_secs
+        FROM device_events WHERE {w}
+        GROUP BY device_key ORDER BY total_down_secs DESC
+    """), params)).fetchall()
+
+    window_secs = days * 86400
+    devices = [{
+        "device_key": s.device_key, "label": s.label, "device_type": s.device_type,
+        "drops": int(s.drops or 0),
+        "outages_closed": int(s.recoveries or 0),
+        "total_down_secs": int(s.total_down_secs or 0),
+        "longest_down_secs": int(s.longest_down_secs or 0),
+        "availability_pct": round(
+            max(0.0, 100.0 * (1 - (float(s.total_down_secs or 0) / window_secs))), 3),
+    } for s in stats]
+
+    # Hour-of-day histogram of DROPS (IST) — the correlation signal.
+    hours = (await db.execute(text(f"""
+        SELECT EXTRACT(HOUR FROM (detected_at AT TIME ZONE 'Asia/Kolkata'))::int AS hr,
+               COUNT(*) AS drops
+        FROM device_events WHERE {w} AND status <> 'online'
+        GROUP BY hr ORDER BY hr
+    """), params)).fetchall()
+    by_hour = {int(h.hr): int(h.drops) for h in hours}
+
+    return {
+        "days": days,
+        "events": events,
+        "devices": devices,
+        "drops_by_hour_ist": [{"hour": h, "drops": by_hour.get(h, 0)} for h in range(24)],
+    }
+
+
 # ── Config (admin) ───────────────────────────────────────────────────────────
 @router.get("/config")
 async def get_config(

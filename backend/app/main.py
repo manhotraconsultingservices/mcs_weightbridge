@@ -359,8 +359,10 @@ async def _low_stock_alert_loop():
 
 async def _device_health_loop():
     """Per-tenant scan every 60 s: alert once when a device is down past the
-    threshold, and once again when it recovers."""
+    threshold, and once again when it recovers. Also appends every status
+    transition to device_events (uptime history for root-cause analysis)."""
     import json as _json
+    import datetime as _dt
     from sqlalchemy import text as _sql
 
     while True:
@@ -399,12 +401,53 @@ async def _device_health_loop():
                         WHERE company_id = :cid
                     """), {"cid": str(co.id)})).fetchall()
 
+                    # Last recorded transition per device — so we only append on an
+                    # actual state CHANGE (append-only uptime history).
+                    last_ev = {
+                        row.device_key: row for row in (await db.execute(_sql("""
+                            SELECT DISTINCT ON (device_key) device_key, status, detected_at
+                            FROM device_events WHERE company_id = :cid
+                            ORDER BY device_key, detected_at DESC
+                        """), {"cid": str(co.id)})).fetchall()
+                    }
+
                     for r in rows:
                         age = float(r.age_secs) if r.age_secs is not None else 10 ** 9
                         down_for = float(r.down_secs) if r.down_secs is not None else 10 ** 9
                         stale = age > stale_secs
                         unhealthy = (r.status == "down") or stale
                         healthy = (r.status == "ok") and not stale
+
+                        # ── Uptime history: append on every state change ──────────
+                        # Recorded independently of the alert threshold below, so brief
+                        # blips (a loose cable, electrical noise) are captured too.
+                        try:
+                            eff = "stale" if stale else ("offline" if r.status == "down" else "online")
+                            prev = last_ev.get(r.device_key)
+                            if prev is None or prev.status != eff:
+                                if eff == "online":
+                                    ev_reason = None
+                                elif stale:
+                                    ev_reason = "no heartbeat — watchdog/PC offline"
+                                else:
+                                    ev_reason = (r.last_error or "device not responding")[:300]
+                                # Duration of the outage we're leaving (only on recovery).
+                                secs = None
+                                if eff == "online" and prev is not None:
+                                    secs = int((_dt.datetime.now(_dt.timezone.utc) - prev.detected_at).total_seconds())
+                                await db.execute(_sql("""
+                                    INSERT INTO device_events
+                                        (company_id, device_key, device_type, label, site,
+                                         status, reason, down_seconds)
+                                    VALUES (:cid, :k, :dt, :lb, :st, :status, :reason, :secs)
+                                """), {
+                                    "cid": str(co.id), "k": r.device_key, "dt": r.device_type,
+                                    "lb": r.label, "st": r.site, "status": eff,
+                                    "reason": ev_reason, "secs": secs,
+                                })
+                                await db.commit()
+                        except Exception as e:
+                            logger.warning("device-event history failed [%s] %s: %s", label, r.device_key, e)
 
                         try:
                             if unhealthy and down_for >= down_secs and not r.alerted:

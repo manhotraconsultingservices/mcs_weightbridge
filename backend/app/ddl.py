@@ -1362,6 +1362,31 @@ def get_column_migrations() -> list[str]:
         """,
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_device_health_key ON device_health(company_id, device_key)",
 
+        # ── Device uptime HISTORY (append-only) ───────────────────────────────
+        # device_health is an UPSERT (one live row per device) so it answers "is it
+        # down NOW?" but keeps no history — you cannot ask "how many times did the
+        # scale drop today, for how long, at what hour". This table records every
+        # status TRANSITION (online <-> offline/stale) detected by the 60 s
+        # _device_health_loop, independent of the (5 min) alert threshold, so short
+        # intermittent blips — the signature of a loose cable / electrical noise —
+        # are captured too. Powers GET /api/v1/monitor/history.
+        """
+        CREATE TABLE IF NOT EXISTS device_events (
+            id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id   UUID REFERENCES companies(id),
+            device_key   VARCHAR(80)  NOT NULL,
+            device_type  VARCHAR(20),
+            label        VARCHAR(120),
+            site         VARCHAR(80),
+            status       VARCHAR(10)  NOT NULL,   -- online | offline | stale
+            reason       VARCHAR(300),            -- last_error / 'no heartbeat'
+            down_seconds INTEGER,                 -- set on the transition BACK to online
+            detected_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_device_events_co_dev ON device_events(company_id, device_key, detected_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_device_events_co_time ON device_events(company_id, detected_at DESC)",
+
         # ── Autonomous gate vehicle counting (truck/car/motorcycle/bus) ───────
         # The on-site camera agent runs a lightweight vehicle-detection model on
         # the frames it already captures and POSTs one row per counted vehicle
