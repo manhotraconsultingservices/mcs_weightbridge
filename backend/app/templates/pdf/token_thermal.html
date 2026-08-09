@@ -239,6 +239,13 @@
   <span class="row-value">{{ token.driver.name }}{% if token.driver.phone %} {{ token.driver.phone }}{% endif %}</span>
 </div>
 {% endif %}
+{# Trip destination + distance — either may be blank. #}
+{% if destination or (rent_km and rent_km > 0) %}
+<div class="row">
+  <span class="row-label">DESTINATION</span>
+  <span class="row-value">{{ destination or '—' }}{% if rent_km and rent_km > 0 %} · {{ '%.0f'|format(rent_km) }} km{% endif %}</span>
+</div>
+{% endif %}
 <hr class="sep">
 
 <div class="row">

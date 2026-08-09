@@ -5,7 +5,7 @@
  * RIGHT-TOP  35% (50% of 70%): Live camera feeds (front + top)
  * RIGHT-BOT  35% (50% of 70%): Active token list (OPEN / FIRST_WEIGHT / LOADING / SECOND_WEIGHT)
  */
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   Search, Scale, CheckCircle2, XCircle, Loader2,
   Truck, Package, User, Wifi, WifiOff, ArrowRight,
@@ -130,6 +130,8 @@ function ScaleStatus() {
 // ------------------------------------------------------------------ //
 interface CreateFormProps {
   onCreated: (token: Token) => void;
+  /** Destinations already used today — offered as suggestions, never a restriction. */
+  recentDestinations?: string[];
 }
 
 // Volume → weight conversion: weight_kg = volume_cft × bulk_density(kg/CFT)
@@ -158,7 +160,7 @@ function fromCft(cft: number, unit: string): number {
 }
 const round3 = (n: number) => Number(n.toFixed(3));
 
-function CreateTokenForm({ onCreated }: CreateFormProps) {
+function CreateTokenForm({ onCreated, recentDestinations = [] }: CreateFormProps) {
   const { t } = useTranslation();
   const [form, setForm] = useState({
     vehicle_no: '',
@@ -173,6 +175,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
     transit_pass_id: '',   // P1: link purchase token to its royalty/transit pass
     vehicle_rent: '',      // optional manual override (blank → auto Rate×Km×qty)
     rent_km: '',           // trip distance → vehicle_rent = rate × km × qty
+    destination: '',       // where the trip went — recorded with the km
     rent_rate_mt: '',      // ₹/km/MT (prefilled from vehicle master, operator-editable) — weighed loads
     rent_rate_cum: '',     // ₹/km/CUM (prefilled from vehicle master, operator-editable) — volume loads
     royalty_on: false,     // operator opts in to royalty for this load
@@ -349,7 +352,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   }, [loadGatePasses]);
 
   function resetForm() {
-    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', rent_rate_mt: '', rent_rate_cum: '', royalty_on: false, royalty_unit: '', royalty_rate: '', royalty_cum: '', agent_id: '', billing_unit: weightMethod === 'weighbridge' ? weightUnit().code : volDefault, rate: '', payment_mode: '' });
+    setForm({ vehicle_no: '', vehicle_type: '', token_type: 'sale', direction: 'outbound', party_id: '', product_id: '', vehicle_id: '', gate_pass_id: '', remarks: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', destination: '', rent_rate_mt: '', rent_rate_cum: '', royalty_on: false, royalty_unit: '', royalty_rate: '', royalty_cum: '', agent_id: '', billing_unit: weightMethod === 'weighbridge' ? weightUnit().code : volDefault, rate: '', payment_mode: '' });
     setRateSource('none');
     rateEditedRef.current = false;
     setCustomValues({});
@@ -425,7 +428,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
   const rateNum = parseFloat(form.rate || '0');
 
   const handleTypeChange = (type: string) => {
-    setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', rent_rate_mt: '', rent_rate_cum: '', royalty_on: false, royalty_unit: '', royalty_rate: '', royalty_cum: '' }));
+    setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', destination: '', rent_rate_mt: '', rent_rate_cum: '', royalty_on: false, royalty_unit: '', royalty_rate: '', royalty_cum: '' }));
     if (type === 'purchase' && moduleEnabled('royalty')) {
       api.get('/api/v1/royalty/passes', { params: { status: 'active', page_size: 100 } })
         .then(r => {
@@ -533,6 +536,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
           // Vehicle rent only for OWN vehicles (in the master → vehicle_id set).
           vehicle_rent: form.vehicle_id && form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
           rent_km: form.vehicle_id && form.rent_km ? Number(form.rent_km) : undefined,
+          destination: form.vehicle_id && form.destination.trim() ? form.destination.trim() : undefined,
           rent_rate_per_km_per_mt: form.vehicle_id && form.rent_rate_mt ? Number(form.rent_rate_mt) : undefined,
           rent_rate_per_km_per_cum: form.vehicle_id && form.rent_rate_cum ? Number(form.rent_rate_cum) : undefined,
           royalty_unit: form.royalty_on ? (form.royalty_unit || 'cum') : undefined,   // operator-selected basis
@@ -590,6 +594,7 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
       // Vehicle rent only for OWN vehicles (in the master → vehicle_id set).
       vehicle_rent: form.vehicle_id && form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
       rent_km: form.vehicle_id && form.rent_km ? Number(form.rent_km) : undefined,
+      destination: form.vehicle_id && form.destination.trim() ? form.destination.trim() : undefined,
       rent_rate_per_km_per_mt: form.vehicle_id && form.rent_rate_mt ? Number(form.rent_rate_mt) : undefined,
       rent_rate_per_km_per_cum: form.vehicle_id && form.rent_rate_cum ? Number(form.rent_rate_cum) : undefined,
       royalty_unit: form.royalty_on ? (form.royalty_unit || 'mt') : undefined,   // operator-selected basis
@@ -1176,16 +1181,37 @@ function CreateTokenForm({ onCreated }: CreateFormProps) {
             non-owned quick-entry plate never bills vehicle rent. */}
         {form.vehicle_id && (<>
         <div className="space-y-1 rounded-md border border-slate-200 bg-slate-50/60 px-2 py-2">
-          <Label className="text-xs font-medium">Vehicle Rent — Distance (km)</Label>
-          <Input
-            className="h-8 text-xs"
-            type="number"
-            min="0"
-            step="0.1"
-            value={form.rent_km}
-            onChange={e => setForm(f => ({ ...f, rent_km: e.target.value }))}
-            placeholder="e.g. 50"
-          />
+          {/* Distance + where it went, side by side — the km on record is only
+              auditable if the destination travels with it. */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">Vehicle Rent — Distance (km)</Label>
+              <Input
+                className="h-8 text-xs"
+                type="number"
+                min="0"
+                step="0.1"
+                value={form.rent_km}
+                onChange={e => setForm(f => ({ ...f, rent_km: e.target.value }))}
+                placeholder="e.g. 50"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">Destination</Label>
+              <Input
+                className="h-8 text-xs"
+                value={form.destination}
+                onChange={e => setForm(f => ({ ...f, destination: e.target.value }))}
+                placeholder="e.g. Rewari site"
+                maxLength={200}
+                list="wb-destinations"
+              />
+              {/* Recently-used destinations — typing a new one is always allowed. */}
+              <datalist id="wb-destinations">
+                {recentDestinations.map(d => <option key={d} value={d} />)}
+              </datalist>
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-2 pt-1">
             <div className="space-y-1">
               <Label className="text-[10px] text-muted-foreground">Rate ₹/MT/km {weightMethod === 'weighbridge' && <span className="text-emerald-600 font-semibold">• used</span>}</Label>
@@ -2055,6 +2081,13 @@ export default function TokenPageV1() {
   const [tokens, setTokens] = useState<Token[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Destinations already seen in the loaded tokens — offered as type-ahead
+  // suggestions on the create form (never a restriction; free text always wins).
+  const recentDestinations = useMemo(
+    () => Array.from(new Set(tokens.map(t => (t.destination ?? '').trim()).filter(Boolean))).slice(0, 30),
+    [tokens],
+  );
+
   // Search + date + status filter + measurement-method filter
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState(today());
@@ -2195,7 +2228,7 @@ export default function TokenPageV1() {
     return (
       <div className="flex flex-col gap-3 pb-20">
         <ScaleStatus />
-        <CreateTokenForm onCreated={handleTokenCreated} />
+        <CreateTokenForm onCreated={handleTokenCreated} recentDestinations={recentDestinations} />
         {camerasEnabled && (
           <div className="grid grid-cols-2 gap-2 h-36">
             <CameraPanel cameraId="front" label={t('token.frontCamera')} wsPort={wsPort} />
@@ -2286,7 +2319,7 @@ export default function TokenPageV1() {
         {/* ==================== LEFT pane ==================== */}
         <div className="h-full flex flex-col gap-2 overflow-hidden pr-1">
           <ScaleStatus />
-          <CreateTokenForm onCreated={handleTokenCreated} />
+          <CreateTokenForm onCreated={handleTokenCreated} recentDestinations={recentDestinations} />
         </div>
 
         {/* ==================== RIGHT pane ==================== */}

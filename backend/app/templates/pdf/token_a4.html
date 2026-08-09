@@ -235,6 +235,12 @@
   </table>
   {% endif %}
 
+  {# Trip destination + distance — printed together; either may be blank. #}
+  {% if destination or (rent_km and rent_km > 0) %}
+  <div style="margin-top:4px; font-size:10px;"><span style="font-weight:bold;">Destination:</span>
+    {{ destination or '—' }}{% if rent_km and rent_km > 0 %} · {{ '%.0f' % rent_km }} km{% endif %}</div>
+  {% endif %}
+
   {% if operator_name %}
   <div style="margin-top:4px; font-size:10px;"><span style="font-weight:bold;">Operator:</span> {{ operator_name }}</div>
   {% endif %}

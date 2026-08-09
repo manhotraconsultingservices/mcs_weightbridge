@@ -30,6 +30,9 @@ interface TokenRow {
   net_weight_mt: number | null;
   volume_cft: number | null;
   gate_pass_no: string | null;
+  destination: string | null;
+  rent_km: number | null;
+  created_by: string | null;
   entered_by: string | null;
   exited_by: string | null;
   entry_time: string | null;
@@ -184,6 +187,14 @@ export default function TokenRegisterPage() {
       format: v => v !== '' && Number(v) > 0 ? `${Number(v).toFixed(2)} CFT` : '—' },
     { key: 'gate_pass_no', label: 'Gate Pass', accessor: r => r.gate_pass_no ?? '—',
       format: v => v !== '—' ? <span className="font-mono text-xs">{String(v)}</span> : <span className="text-muted-foreground">—</span> },
+    // Trip destination + billed distance (own vehicles)
+    { key: 'destination', label: 'Destination', accessor: r => r.destination ?? '—' },
+    { key: 'rent_km', label: 'Distance (km)', type: 'number', align: 'right',
+      accessor: r => r.rent_km ?? '',
+      format: v => v !== '' && Number(v) > 0 ? `${Number(v).toLocaleString('en-IN')} km` : '—',
+      exportValue: r => r.rent_km ?? '' },
+    // Who created the token (the weighbridge operator) — sortable + filterable
+    { key: 'created_by', label: 'Created By', accessor: r => r.created_by ?? '—' },
     // Gate accountability — sourced from the linked gate pass (blank when the token has none)
     { key: 'entry_time', label: 'Entry (IST)', accessor: r => r.entry_time ?? '',
       format: v => fmtIST(v as string | null), exportValue: r => fmtIST(r.entry_time) },

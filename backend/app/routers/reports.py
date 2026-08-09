@@ -2953,6 +2953,19 @@ async def token_register(
             if tk is not None and inv.invoice_type == tk.token_type and key not in inv_by_token:
                 inv_by_token[key] = inv   # first (newest) type-matching invoice wins
 
+    # Who CREATED each token on this page (the weighbridge operator). Batched so the
+    # register can sort/filter on it — distinct from the gate pass's entered/exited by.
+    creator_by_token: dict[str, str] = {}
+    creator_ids = {tk.created_by for tk, _p, _pr in prows if tk.created_by}
+    if creator_ids:
+        urows = (await db.execute(text("""
+            SELECT id, COALESCE(NULLIF(full_name, ''), username) AS name
+            FROM users WHERE id = ANY(CAST(:ids AS uuid[]))
+        """), {"ids": [str(i) for i in creator_ids]})).mappings().all()
+        names = {str(u["id"]): u["name"] for u in urows}
+        creator_by_token = {str(tk.id): names.get(str(tk.created_by), "")
+                            for tk, _p, _pr in prows if tk.created_by}
+
     # Gate-pass accountability for this page's tokens: who let the vehicle in / out and when.
     # Sourced from gate_passes (the single definition, shared with the Gate Pass register) so the
     # two reports can never diverge. Newest pass wins if a token was somehow passed twice.
@@ -3001,6 +3014,10 @@ async def token_register(
             "tare_weight_mt": _r2(token.tare_weight / 1000) if token.tare_weight else None,
             "net_weight_mt": _r2(token.net_weight / 1000) if token.net_weight else None,
             "volume_cft": _f(getattr(token, "volume_cft", None)),
+            # Trip destination + billed distance (own vehicles)
+            "destination": getattr(token, "destination", None),
+            "rent_km": _f(getattr(token, "rent_km", None)),
+            "created_by": creator_by_token.get(tid) or None,
             "gate_pass_no": getattr(token, "gate_pass_no", None) or (gp or {}).get("gate_pass_no"),
             # Gate accountability (from the linked gate pass, if any)
             "entered_by": (gp or {}).get("entered_by"),

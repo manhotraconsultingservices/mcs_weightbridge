@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Truck, Package, User, Scale, Clock, Calendar, Loader2, FileText, CreditCard, UserCheck, Building2, Camera, ImageOff, RefreshCw, ZoomIn, CheckCircle2, Pencil } from 'lucide-react';
+import { Truck, Package, User, Scale, Clock, Calendar, Loader2, FileText, CreditCard, UserCheck, Building2, Camera, ImageOff, RefreshCw, ZoomIn, CheckCircle2, Pencil, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle
@@ -513,6 +513,23 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                       <p className="text-xs">Out: <b>{token.anpr_exit_at ? new Date(token.anpr_exit_at).toLocaleString('en-IN', { hour12: false }) : 'still inside'}</b></p>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Trip — destination travels with the billed distance */}
+              {(token.destination || (token.rent_km != null && Number(token.rent_km) > 0)) && (
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                    <MapPin className="h-3 w-3" /> Trip
+                  </p>
+                  <p className="font-medium">
+                    {token.destination || <span className="text-muted-foreground">No destination recorded</span>}
+                    {token.rent_km != null && Number(token.rent_km) > 0 && (
+                      <span className="ml-2 text-sm text-muted-foreground">
+                        · {Number(token.rent_km).toLocaleString('en-IN')} km
+                      </span>
+                    )}
+                  </p>
                 </div>
               )}
 

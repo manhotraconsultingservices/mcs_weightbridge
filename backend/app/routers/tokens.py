@@ -744,6 +744,7 @@ async def create_token(
         transit_pass_id=payload.transit_pass_id,
         vehicle_rent=payload.vehicle_rent,
         rent_km=payload.rent_km,              # distance → vehicle_rent auto-computed (Rate × Km × qty)
+        destination=(payload.destination or None),   # trip destination shown with the km
         rent_rate_per_km_per_mt=payload.rent_rate_per_km_per_mt,    # operator override (else vehicle master)
         rent_rate_per_km_per_cum=payload.rent_rate_per_km_per_cum,  # operator override (else vehicle master)
         royalty_cum=payload.royalty_cum,      # CUM for royalty → royalty_amount computed at completion
@@ -927,6 +928,7 @@ async def create_volume_token(
         transit_pass_id=payload.transit_pass_id,
         vehicle_rent=payload.vehicle_rent,
         rent_km=payload.rent_km,              # distance → vehicle_rent auto-computed (Rate × Km × qty)
+        destination=(payload.destination or None),   # trip destination shown with the km
         rent_rate_per_km_per_mt=payload.rent_rate_per_km_per_mt,    # operator override (else vehicle master)
         rent_rate_per_km_per_cum=payload.rent_rate_per_km_per_cum,  # operator override (else vehicle master)
         royalty_cum=payload.royalty_cum,      # CUM for royalty (auto-derived from volume if omitted)
@@ -1719,6 +1721,10 @@ async def print_token(
         "amount": amount,
         "royalty": royalty,
         "vehicle_rent": vrent,
+        # Trip destination + distance — printed together so the slip carries WHERE
+        # the km went, not just how many.
+        "destination": token.destination,
+        "rent_km": token.rent_km,
         "total_amount": total_amount,
         "operator_name": operator_name,
         "snapshots": snapshots,

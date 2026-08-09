@@ -240,6 +240,7 @@ export interface Token {
   transit_pass_id: string | null;
   vehicle_rent: number | null;
   rent_km: number | null;
+  destination: string | null;               // where the trip went (shown with the km)
   rent_rate_per_km_per_mt: number | null;   // rent rate used (₹/km/MT)
   rent_rate_per_km_per_cum: number | null;  // rent rate used (₹/km/CUM)
   royalty_cum: number | null;      // CUM the royalty was charged on

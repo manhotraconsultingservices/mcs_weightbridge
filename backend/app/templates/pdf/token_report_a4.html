@@ -88,6 +88,13 @@
       <td class="k">Transporter</td><td class="v" colspan="3">{{ token.transporter.name }}</td>
     </tr>
     {% endif %}
+    {# Trip destination + distance — either may be blank. #}
+    {% if destination or (rent_km and rent_km > 0) %}
+    <tr>
+      <td class="k">Destination</td>
+      <td class="v" colspan="3">{{ destination or '—' }}{% if rent_km and rent_km > 0 %} · {{ '%.0f'|format(rent_km) }} km{% endif %}</td>
+    </tr>
+    {% endif %}
     {# Owner-defined custom attributes flagged to print on the slip (e.g. Moisture %) #}
     {% if slip_custom_fields is defined and slip_custom_fields %}
       {% for f in slip_custom_fields %}

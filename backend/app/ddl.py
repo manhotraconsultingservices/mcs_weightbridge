@@ -1159,6 +1159,9 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS vehicle_rent NUMERIC(14,2) DEFAULT 0",
         # Operator-entered trip distance (km) → vehicle_rent = vehicle rate × km × net MT
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS rent_km NUMERIC(10,2)",
+        # Trip destination captured alongside rent_km (own vehicles) — a km figure
+        # with no place attached can't be audited.
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS destination VARCHAR(200)",
         # Operator-overridable rent rates (₹/km/MT for weighed, ₹/km/CUM for volume)
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS rent_rate_per_km_per_mt NUMERIC(12,4)",
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS rent_rate_per_km_per_cum NUMERIC(12,4)",

@@ -71,6 +71,10 @@ class Token(Base):
     # vehicle.rent_rate_per_km_per_mt × rent_km × net_weight_MT (weight known at
     # completion). vehicle_rent stays an editable override after that.
     rent_km: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # Where the trip went. Captured next to rent_km on the token form (own vehicles
+    # only, where distance is billed) so the km on record always has a place attached
+    # to it — "50 km" alone is unauditable. Free text: sites rarely have a master.
+    destination: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Operator-overridable rent rates (prefilled from the vehicle master on the token
     # form; NULL → fall back to the vehicle master). Weighed loads use the ₹/km/MT
     # rate × net MT; volume loads use the ₹/km/CUM rate × CUM. Amount → vehicle_rent.
