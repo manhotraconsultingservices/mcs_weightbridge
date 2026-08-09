@@ -614,6 +614,7 @@ function InsideCard({ gp, onRefresh, isGuard, captureEnabled }: { gp: GatePass; 
             {gp.material && <p className="text-xs text-muted-foreground">{gp.material}</p>}
             <p className="text-xs text-muted-foreground mt-1">
               IN at <span className="font-semibold text-foreground">{fmt(gp.entry_time)}</span>
+              {gp.entered_by_name && <> · by <span className="font-medium text-foreground">{gp.entered_by_name}</span></>}
               {gp.gate_pass_no && <span className="ml-2 text-[10px] font-mono opacity-60">{gp.gate_pass_no}</span>}
             </p>
             {gp.entry_photo_path && (
@@ -721,7 +722,9 @@ function HistoryRow({ gp, onRefresh, isGuard, captureEnabled }: { gp: GatePass; 
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
             In: {fmt(gp.entry_time)}
+            {gp.entered_by_name && <> (by {gp.entered_by_name})</>}
             {gp.exit_time && <> · Out: {fmt(gp.exit_time)}</>}
+            {gp.exit_time && gp.exited_by_name && <> (by {gp.exited_by_name})</>}
             {gp.token_no && <> · Token #{gp.token_no}</>}
             {gp.material && <> · {gp.material}</>}
           </p>

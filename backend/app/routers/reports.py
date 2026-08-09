@@ -2801,6 +2801,8 @@ async def gate_pass_register(
             t.net_weight,
             COALESCE(pr.name, tp.name) AS product_name,
             u.username AS created_by_name,
+            COALESCE(NULLIF(u.full_name, ''), u.username)   AS entered_by_name,
+            COALESCE(NULLIF(xu.full_name, ''), xu.username) AS exited_by_name,
             inv.id   AS invoice_id,
             inv.invoice_no
         FROM gate_passes gp
@@ -2808,6 +2810,7 @@ async def gate_pass_register(
         LEFT JOIN products pr    ON pr.id = gp.product_id
         LEFT JOIN products tp    ON tp.id = t.product_id
         LEFT JOIN users u        ON u.id  = gp.created_by
+        LEFT JOIN users xu       ON xu.id = gp.exited_by
         LEFT JOIN LATERAL (
             SELECT id, invoice_no FROM invoices
             WHERE token_id     = gp.token_id
@@ -2855,6 +2858,11 @@ async def gate_pass_register(
             "exit_photo_path": r["exit_photo_path"],
             "notes": r["notes"],
             "created_by": r["created_by_name"],
+            # Accountability: who physically let the vehicle in / out.
+            # entered_by == created_by (the pass creator) but named for the register;
+            # exited_by is stamped at exit and is NOT overwritten by later edits.
+            "entered_by": r["entered_by_name"],
+            "exited_by": r["exited_by_name"],
             "invoice_id": str(r["invoice_id"]) if r["invoice_id"] else None,
             "invoice_no": r["invoice_no"],
         })
@@ -2945,10 +2953,33 @@ async def token_register(
             if tk is not None and inv.invoice_type == tk.token_type and key not in inv_by_token:
                 inv_by_token[key] = inv   # first (newest) type-matching invoice wins
 
+    # Gate-pass accountability for this page's tokens: who let the vehicle in / out and when.
+    # Sourced from gate_passes (the single definition, shared with the Gate Pass register) so the
+    # two reports can never diverge. Newest pass wins if a token was somehow passed twice.
+    gate_by_token: dict[str, dict] = {}
+    if tok_by_id:
+        gp_rows = (await db.execute(text("""
+            SELECT gp.token_id,
+                   gp.gate_pass_no,
+                   gp.entry_time,
+                   gp.exit_time,
+                   COALESCE(NULLIF(u.full_name, ''), u.username)   AS entered_by,
+                   COALESCE(NULLIF(xu.full_name, ''), xu.username) AS exited_by
+            FROM gate_passes gp
+            LEFT JOIN users u  ON u.id  = gp.created_by
+            LEFT JOIN users xu ON xu.id = gp.exited_by
+            WHERE gp.company_id = :cid
+              AND gp.token_id = ANY(CAST(:tids AS uuid[]))
+            ORDER BY gp.entry_time DESC NULLS LAST
+        """), {"cid": current_user.company_id, "tids": list(tok_by_id.keys())})).mappings().all()
+        for g in gp_rows:
+            gate_by_token.setdefault(str(g["token_id"]), dict(g))
+
     items = []
     for token, party, product in prows:
         tid = str(token.id)
         invoice = inv_by_token.get(tid)
+        gp = gate_by_token.get(tid)
         items.append({
             "id": tid,
             "token_no": token.token_no,
@@ -2970,7 +3001,12 @@ async def token_register(
             "tare_weight_mt": _r2(token.tare_weight / 1000) if token.tare_weight else None,
             "net_weight_mt": _r2(token.net_weight / 1000) if token.net_weight else None,
             "volume_cft": _f(getattr(token, "volume_cft", None)),
-            "gate_pass_no": getattr(token, "gate_pass_no", None),
+            "gate_pass_no": getattr(token, "gate_pass_no", None) or (gp or {}).get("gate_pass_no"),
+            # Gate accountability (from the linked gate pass, if any)
+            "entered_by": (gp or {}).get("entered_by"),
+            "exited_by": (gp or {}).get("exited_by"),
+            "entry_time": (lambda v: v.isoformat() if v else None)((gp or {}).get("entry_time")),
+            "exit_time": (lambda v: v.isoformat() if v else None)((gp or {}).get("exit_time")),
             "invoice_no": invoice.invoice_no if invoice else None,
             "invoice_status": invoice.status if invoice else None,
             "grand_total": _r2(invoice.grand_total) if invoice else None,

@@ -1295,7 +1295,11 @@ def get_column_migrations() -> list[str]:
             exit_photo_path     TEXT,
             status              VARCHAR(15)  NOT NULL DEFAULT 'inside',
             notes               TEXT,
-            created_by          UUID REFERENCES users(id),
+            created_by          UUID REFERENCES users(id),   -- who let the vehicle IN
+            -- Who released the vehicle OUT. Deliberately NOT updated_by: that is
+            -- overwritten by any later edit, so it cannot answer "who signed the
+            -- vehicle out" for an audit.
+            exited_by           UUID REFERENCES users(id),
             updated_by          UUID REFERENCES users(id),
             created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
             updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
@@ -1307,6 +1311,9 @@ def get_column_migrations() -> list[str]:
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_gate_passes_no ON gate_passes(company_id, gate_pass_no)",
         "CREATE INDEX IF NOT EXISTS ix_gate_passes_status ON gate_passes(company_id, status, pass_date DESC)",
         "ALTER TABLE gate_passes ADD COLUMN IF NOT EXISTS vehicle_type VARCHAR(50)",
+        # Accountability: who signed the vehicle OUT (created_by already records who
+        # let it IN). Separate from updated_by, which any later edit overwrites.
+        "ALTER TABLE gate_passes ADD COLUMN IF NOT EXISTS exited_by UUID REFERENCES users(id)",
 
         # Daily sequence counter — one row per (company, date); INSERT … ON CONFLICT
         # DO UPDATE is atomic so no separate FOR UPDATE lock needed.

@@ -30,6 +30,10 @@ interface TokenRow {
   net_weight_mt: number | null;
   volume_cft: number | null;
   gate_pass_no: string | null;
+  entered_by: string | null;
+  exited_by: string | null;
+  entry_time: string | null;
+  exit_time: string | null;
   invoice_no: string | null;
   invoice_status: string | null;
   grand_total: number | null;
@@ -180,6 +184,13 @@ export default function TokenRegisterPage() {
       format: v => v !== '' && Number(v) > 0 ? `${Number(v).toFixed(2)} CFT` : '—' },
     { key: 'gate_pass_no', label: 'Gate Pass', accessor: r => r.gate_pass_no ?? '—',
       format: v => v !== '—' ? <span className="font-mono text-xs">{String(v)}</span> : <span className="text-muted-foreground">—</span> },
+    // Gate accountability — sourced from the linked gate pass (blank when the token has none)
+    { key: 'entry_time', label: 'Entry (IST)', accessor: r => r.entry_time ?? '',
+      format: v => fmtIST(v as string | null), exportValue: r => fmtIST(r.entry_time) },
+    { key: 'entered_by', label: 'Vehicle Entered By', accessor: r => r.entered_by ?? '—' },
+    { key: 'exit_time', label: 'Exit (IST)', accessor: r => r.exit_time ?? '',
+      format: v => fmtIST(v as string | null), exportValue: r => fmtIST(r.exit_time) },
+    { key: 'exited_by', label: 'Vehicle Exit By', accessor: r => r.exited_by ?? '—' },
     { key: 'invoice_no', label: 'Invoice', accessor: r => r.invoice_no ?? '—' },
     { key: 'grand_total', label: 'Invoice Amt', type: 'number', align: 'right',
       accessor: r => r.grand_total ?? '',

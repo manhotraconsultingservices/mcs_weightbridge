@@ -260,6 +260,8 @@ async def create_gate_pass(
             "material": body.get("material") or "",
             "purpose": body.get("purpose", "weighbridge"),
             "entry_time": _fmt_ist(created.entry_time),
+            # Who issued the gate pass / let the vehicle in (accountability).
+            "entered_by": (current_user.full_name or current_user.username or "—"),
             "company_name": _co_name_row.name if _co_name_row else "",
         }
         background_tasks.add_task(
@@ -405,9 +407,13 @@ async def list_gate_passes(
         rows = await db.execute(
             text(f"""
                 SELECT gp.*,
-                       t.token_no, t.net_weight
+                       t.token_no, t.net_weight,
+                       COALESCE(NULLIF(u.full_name, ''), u.username)   AS entered_by_name,
+                       COALESCE(NULLIF(xu.full_name, ''), xu.username) AS exited_by_name
                 FROM gate_passes gp
                 LEFT JOIN tokens t ON t.id = gp.token_id
+                LEFT JOIN users u  ON u.id  = gp.created_by
+                LEFT JOIN users xu ON xu.id = gp.exited_by
                 WHERE 1=1 {filters}
                 ORDER BY gp.entry_time DESC
                 LIMIT :lim OFFSET :off
@@ -496,11 +502,14 @@ async def get_gate_pass(
                    v.registration_no AS vehicle_registration,
                    t.token_no, t.net_weight,
                    COALESCE(gp.vehicle_type, t.vehicle_type) AS vehicle_type,
-                   u.full_name AS created_by_name
+                   u.full_name AS created_by_name,
+                   COALESCE(NULLIF(u.full_name, ''), u.username)   AS entered_by_name,
+                   COALESCE(NULLIF(xu.full_name, ''), xu.username) AS exited_by_name
             FROM gate_passes gp
             LEFT JOIN vehicles v ON v.id = gp.vehicle_id
             LEFT JOIN tokens t ON t.id = gp.token_id
             LEFT JOIN users u ON u.id = gp.created_by
+            LEFT JOIN users xu ON xu.id = gp.exited_by
             WHERE gp.id = :id
         """),
         {"id": gp_id},
@@ -528,11 +537,14 @@ async def print_gate_pass(
                    t.token_no, t.net_weight,
                    COALESCE(gp.vehicle_type, t.vehicle_type) AS vehicle_type,
                    u.full_name AS created_by_name,
+                   COALESCE(NULLIF(u.full_name, ''), u.username)   AS entered_by_name,
+                   COALESCE(NULLIF(xu.full_name, ''), xu.username) AS exited_by_name,
                    p.name AS product_name
             FROM gate_passes gp
             LEFT JOIN vehicles v ON v.id = gp.vehicle_id
             LEFT JOIN tokens t ON t.id = gp.token_id
             LEFT JOIN users u ON u.id = gp.created_by
+            LEFT JOIN users xu ON xu.id = gp.exited_by
             LEFT JOIN products p ON p.id = gp.product_id
             WHERE gp.id = :id
         """),
@@ -619,7 +631,14 @@ async def record_exit(
 
     # Fetch current state
     existing = await db.execute(
-        text("SELECT purpose, token_id, status, gate_pass_no, vehicle_no FROM gate_passes WHERE id = :id"),
+        text("""
+            SELECT gp.purpose, gp.token_id, gp.status, gp.gate_pass_no, gp.vehicle_no,
+                   gp.entry_time,
+                   COALESCE(u.full_name, u.username, '') AS entered_by_name
+            FROM gate_passes gp
+            LEFT JOIN users u ON u.id = gp.created_by
+            WHERE gp.id = :id
+        """),
         {"id": gp_id},
     )
     gp = existing.fetchone()
@@ -661,6 +680,7 @@ async def record_exit(
                 exit_time  = COALESCE(CAST(:etime AS TIMESTAMPTZ), NOW()),
                 token_id   = COALESCE(:tid, token_id),
                 status     = 'exited',
+                exited_by  = :uid,     -- who released the vehicle (audit)
                 updated_by = :uid,
                 updated_at = NOW()
             WHERE id = :id
@@ -687,6 +707,11 @@ async def record_exit(
             {
                 "gate_pass_no": gp.gate_pass_no,
                 "vehicle_no": gp.vehicle_no or "—",
+                # Full accountability trail on the exit alert: who let it in + when,
+                # and who signed it out + when. Times in IST (see _fmt_ist).
+                "entered_by": gp.entered_by_name or "—",
+                "entry_time": _fmt_ist(gp.entry_time) if gp.entry_time else "—",
+                "exited_by": (current_user.full_name or current_user.username or "—"),
                 "exit_time": _fmt_ist(_dt.now(_tz.utc)),
                 "company_name": _co.name if _co else "",
             },

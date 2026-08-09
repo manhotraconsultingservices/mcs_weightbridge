@@ -66,6 +66,10 @@
       <td class="k">Exit Time</td><td>{{ (gp.exit_time | ist).strftime('%d-%m-%Y %H:%M') if gp.exit_time else '—' }}</td>
     </tr>
     <tr>
+      <td class="k">Vehicle Entered By</td><td>{{ gp.entered_by_name or gp.created_by_name or '—' }}</td>
+      <td class="k">Vehicle Exit By</td><td>{{ gp.exited_by_name or '—' }}</td>
+    </tr>
+    <tr>
       <td class="k">Net Weight</td>
       <td>{% if gp.net_weight %}{{ '%.3f'|format(gp.net_weight|float / 1000) }} MT{% else %}—{% endif %}</td>
       <td class="k">Issued By</td><td>{{ gp.created_by_name or '—' }}</td>

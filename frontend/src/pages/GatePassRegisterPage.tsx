@@ -31,6 +31,8 @@ interface GatePassRow {
   exit_photo_path: string | null;
   notes: string | null;
   created_by: string | null;
+  entered_by: string | null;
+  exited_by: string | null;
   invoice_id: string | null;
   invoice_no: string | null;
 }
@@ -117,7 +119,9 @@ function GatePassDetailDialog({
                 { label: 'Date', value: new Date(pass.pass_date).toLocaleDateString('en-IN') },
                 { label: 'Dwell', value: pass.dwell_minutes != null ? `${pass.dwell_minutes} min` : '—' },
                 { label: 'Entry (IST)', value: fmtIST(pass.entry_time) },
+                { label: 'Vehicle Entered By', value: pass.entered_by ?? '—' },
                 { label: 'Exit (IST)', value: fmtIST(pass.exit_time) },
+                { label: 'Vehicle Exit By', value: pass.exited_by ?? '—' },
                 { label: 'Net Weight', value: pass.net_weight_mt != null ? `${Number(pass.net_weight_mt).toFixed(3)} MT` : '—' },
                 { label: 'Created By', value: pass.created_by ?? '—' },
               ].map(({ label, value }) => (
@@ -301,8 +305,10 @@ export default function GatePassRegisterPage() {
       exportValue: r => r.status },
     { key: 'entry_time', label: 'Entry (IST)', accessor: r => r.entry_time ?? '',
       format: v => fmtIST(v as string | null), exportValue: r => fmtIST(r.entry_time) },
+    { key: 'entered_by', label: 'Vehicle Entered By', accessor: r => r.entered_by ?? '—' },
     { key: 'exit_time', label: 'Exit (IST)', accessor: r => r.exit_time ?? '',
       format: v => fmtIST(v as string | null), exportValue: r => fmtIST(r.exit_time) },
+    { key: 'exited_by', label: 'Vehicle Exit By', accessor: r => r.exited_by ?? '—' },
     { key: 'dwell_minutes', label: 'Dwell (min)', type: 'number', align: 'right',
       accessor: r => r.dwell_minutes ?? '',
       format: v => v !== '' ? `${v} min` : '—' },

@@ -941,6 +941,9 @@ export interface GatePass {
   notes: string | null;
   created_by: string | null;
   created_by_name: string | null;
+  /** Who let the vehicle IN (the pass creator) and OUT (stamped at exit, never overwritten). */
+  entered_by_name: string | null;
+  exited_by_name: string | null;
   created_at: string;
   updated_at: string;
 }
