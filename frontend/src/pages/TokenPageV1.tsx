@@ -428,7 +428,10 @@ function CreateTokenForm({ onCreated, recentDestinations = [] }: CreateFormProps
   const rateNum = parseFloat(form.rate || '0');
 
   const handleTypeChange = (type: string) => {
-    setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', destination: '', rent_rate_mt: '', rent_rate_cum: '', royalty_on: false, royalty_unit: '', royalty_rate: '', royalty_cum: '' }));
+    // Clears the RENT/royalty inputs (they're vehicle- and party-scoped). Destination
+    // is a general trip fact like remarks and the vehicle isn't cleared either, so it
+    // deliberately survives a Sale↔Purchase flip.
+    setForm(f => ({ ...f, token_type: type, direction: type === 'purchase' ? 'inbound' : 'outbound', party_id: '', transit_pass_id: '', vehicle_rent: '', rent_km: '', rent_rate_mt: '', rent_rate_cum: '', royalty_on: false, royalty_unit: '', royalty_rate: '', royalty_cum: '' }));
     if (type === 'purchase' && moduleEnabled('royalty')) {
       api.get('/api/v1/royalty/passes', { params: { status: 'active', page_size: 100 } })
         .then(r => {
@@ -536,7 +539,7 @@ function CreateTokenForm({ onCreated, recentDestinations = [] }: CreateFormProps
           // Vehicle rent only for OWN vehicles (in the master → vehicle_id set).
           vehicle_rent: form.vehicle_id && form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
           rent_km: form.vehicle_id && form.rent_km ? Number(form.rent_km) : undefined,
-          destination: form.vehicle_id && form.destination.trim() ? form.destination.trim() : undefined,
+          destination: form.destination.trim() || undefined,   // any vehicle — a trip fact, not a rent input
           rent_rate_per_km_per_mt: form.vehicle_id && form.rent_rate_mt ? Number(form.rent_rate_mt) : undefined,
           rent_rate_per_km_per_cum: form.vehicle_id && form.rent_rate_cum ? Number(form.rent_rate_cum) : undefined,
           royalty_unit: form.royalty_on ? (form.royalty_unit || 'cum') : undefined,   // operator-selected basis
@@ -594,7 +597,7 @@ function CreateTokenForm({ onCreated, recentDestinations = [] }: CreateFormProps
       // Vehicle rent only for OWN vehicles (in the master → vehicle_id set).
       vehicle_rent: form.vehicle_id && form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
       rent_km: form.vehicle_id && form.rent_km ? Number(form.rent_km) : undefined,
-      destination: form.vehicle_id && form.destination.trim() ? form.destination.trim() : undefined,
+      destination: form.destination.trim() || undefined,   // any vehicle — a trip fact, not a rent input
       rent_rate_per_km_per_mt: form.vehicle_id && form.rent_rate_mt ? Number(form.rent_rate_mt) : undefined,
       rent_rate_per_km_per_cum: form.vehicle_id && form.rent_rate_cum ? Number(form.rent_rate_cum) : undefined,
       royalty_unit: form.royalty_on ? (form.royalty_unit || 'mt') : undefined,   // operator-selected basis
@@ -1174,6 +1177,26 @@ function CreateTokenForm({ onCreated, recentDestinations = [] }: CreateFormProps
           </div>
         )}
 
+        {/* Destination — where the load is going. Recorded for EVERY vehicle (own,
+            hired or a customer's), because it's a trip fact, not a rent input. For an
+            own vehicle the billed Distance sits right below it, so the km and the place
+            still read together. */}
+        <div className="space-y-1">
+          <Label className="text-xs font-medium">Destination</Label>
+          <Input
+            className="h-8 text-xs"
+            value={form.destination}
+            onChange={e => setForm(f => ({ ...f, destination: e.target.value }))}
+            placeholder="e.g. Rewari site"
+            maxLength={200}
+            list="wb-destinations"
+          />
+          {/* Recently-used destinations — typing a new one is always allowed. */}
+          <datalist id="wb-destinations">
+            {recentDestinations.map(d => <option key={d} value={d} />)}
+          </datalist>
+        </div>
+
         {/* Vehicle rent — rate × distance × quantity. Basis follows the load:
             weighed → ₹/km/MT × net MT · volume → ₹/km/CUM × CUM. Rates prefill from
             the vehicle master and are operator-editable; amount shows as Vehicle Rent.
@@ -1181,37 +1204,16 @@ function CreateTokenForm({ onCreated, recentDestinations = [] }: CreateFormProps
             non-owned quick-entry plate never bills vehicle rent. */}
         {form.vehicle_id && (<>
         <div className="space-y-1 rounded-md border border-slate-200 bg-slate-50/60 px-2 py-2">
-          {/* Distance + where it went, side by side — the km on record is only
-              auditable if the destination travels with it. */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <Label className="text-xs font-medium">Vehicle Rent — Distance (km)</Label>
-              <Input
-                className="h-8 text-xs"
-                type="number"
-                min="0"
-                step="0.1"
-                value={form.rent_km}
-                onChange={e => setForm(f => ({ ...f, rent_km: e.target.value }))}
-                placeholder="e.g. 50"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-medium">Destination</Label>
-              <Input
-                className="h-8 text-xs"
-                value={form.destination}
-                onChange={e => setForm(f => ({ ...f, destination: e.target.value }))}
-                placeholder="e.g. Rewari site"
-                maxLength={200}
-                list="wb-destinations"
-              />
-              {/* Recently-used destinations — typing a new one is always allowed. */}
-              <datalist id="wb-destinations">
-                {recentDestinations.map(d => <option key={d} value={d} />)}
-              </datalist>
-            </div>
-          </div>
+          <Label className="text-xs font-medium">Vehicle Rent — Distance (km)</Label>
+          <Input
+            className="h-8 text-xs"
+            type="number"
+            min="0"
+            step="0.1"
+            value={form.rent_km}
+            onChange={e => setForm(f => ({ ...f, rent_km: e.target.value }))}
+            placeholder="e.g. 50"
+          />
           <div className="grid grid-cols-2 gap-2 pt-1">
             <div className="space-y-1">
               <Label className="text-[10px] text-muted-foreground">Rate ₹/MT/km {weightMethod === 'weighbridge' && <span className="text-emerald-600 font-semibold">• used</span>}</Label>

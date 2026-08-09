@@ -1242,6 +1242,12 @@ async def update_token(
             f"can't be changed here. Cancel or revise the invoice first.",
         )
 
+    # Clearing the destination arrives as "" (None is dropped by exclude_none, so an
+    # empty string is the ONLY way the UI can erase it). Store NULL, not "", so the
+    # column keeps one meaning for "not recorded".
+    if isinstance(data.get("destination"), str) and not data["destination"].strip():
+        data["destination"] = None
+
     # Apply all edited fields (every key is a real Token column).
     for field, value in data.items():
         setattr(token, field, value)

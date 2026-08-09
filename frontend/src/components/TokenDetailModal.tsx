@@ -209,8 +209,9 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
   const [dRoyaltyCum, setDRoyaltyCum] = useState('');
   const [dPayMode, setDPayMode] = useState('cash');
   const [dRemarks, setDRemarks] = useState('');
+  const [dDestination, setDDestination] = useState('');
   const [saving, setSaving] = useState(false);
-  const editInit = useRef({ qty: '', rate: '', rent: '', mode: 'cash', royaltyCum: '', royaltyOn: false, royaltyUnit: 'mt' as 'mt' | 'cum', royaltyRate: '' });
+  const editInit = useRef({ qty: '', rate: '', rent: '', mode: 'cash', royaltyCum: '', royaltyOn: false, royaltyUnit: 'mt' as 'mt' | 'cum', royaltyRate: '', destination: '' });
 
   async function openEdit() {
     if (!token) return;
@@ -242,6 +243,8 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
     setDRoyaltyCum(royStr);
     setDPayMode(modeStr);
     setDRemarks(token.remarks ?? '');
+    const destStr = token.destination ?? '';
+    setDDestination(destStr);
     // Rate: prefer the token's stored rate; else the linked invoice's line rate
     // (so the create-page price shows here instead of resetting to 0).
     let rate: number | null = token.rate != null ? Number(token.rate) : null;
@@ -253,7 +256,7 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
     }
     const rateStr = rate != null ? String(rate) : '';
     setDRate(rateStr);
-    editInit.current = { qty: qtyStr, rate: rateStr, rent: rentStr, mode: modeStr, royaltyCum: royStr, royaltyOn: royOn, royaltyUnit: royUnit, royaltyRate: royRateStr };
+    editInit.current = { qty: qtyStr, rate: rateStr, rent: rentStr, mode: modeStr, royaltyCum: royStr, royaltyOn: royOn, royaltyUnit: royUnit, royaltyRate: royRateStr, destination: destStr };
     setEditOpen(true);
     if (dParties.length === 0) {
       api.get<{ items?: Party[] } | Party[]>('/api/v1/parties?page_size=500')
@@ -307,6 +310,9 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
       }
     }
     if (dPayMode !== editInit.current.mode) payload.payment_mode = dPayMode;
+    // Destination: send only when changed. An emptied field sends '' (not undefined)
+    // so the operator can actually CLEAR a wrong destination.
+    if (dDestination.trim() !== editInit.current.destination) payload.destination = dDestination.trim();
 
     setSaving(true);
     try {
@@ -1046,6 +1052,20 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
               <p className="text-[10px] text-muted-foreground">
                 {dPayMode === 'cash' ? 'Cash → Bill of Supply (no GST).' : 'Credit / UPI / Bank → GST Tax Invoice.'}
               </p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Destination</label>
+              <Input
+                value={dDestination}
+                onChange={e => setDDestination(e.target.value)}
+                placeholder="Where the trip went"
+                maxLength={200}
+              />
+              {token?.rent_km != null && Number(token.rent_km) > 0 && (
+                <p className="text-[10px] text-muted-foreground">
+                  Billed distance on this token: {Number(token.rent_km).toLocaleString('en-IN')} km
+                </p>
+              )}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">Remarks</label>
