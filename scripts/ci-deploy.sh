@@ -83,7 +83,30 @@ log "  Git HEAD before pull: $BEFORE"
 
 # Hard reset to remote main — this discards any local commits on the VPS.
 # That's intentional: the VPS is a deploy target, not a dev environment.
-git fetch --quiet origin main
+#
+# The fetch is the single most likely place to fail, and under `set -e` a bare
+# `git fetch` dies with NOTHING in the deploy log — the run just stops after
+# "Git HEAD before pull" and you have to SSH in to find out why (that cost a
+# whole debugging session on 2026-08-09, when the repo was switched to private
+# and the VPS had no credential: git asked for a username, got no tty, exit 128).
+# So: capture the real git error, put it in the log, and name the usual cause.
+# GIT_TERMINAL_PROMPT=0 makes an auth failure fail FAST instead of hanging on a
+# prompt that no one can answer.
+if ! FETCH_ERR=$(GIT_TERMINAL_PROMPT=0 git fetch --quiet origin main 2>&1); then
+    log "❌ git fetch origin main FAILED — deploy aborted, nothing was changed"
+    log "   git said: ${FETCH_ERR:-<no output>}"
+    case "$FETCH_ERR" in
+        # "Repository not found" is what GitHub returns for a private repo you
+        # aren't authorised to see — same root cause as a missing credential.
+        *"could not read Username"*|*"Authentication failed"*|*"Permission denied"*|*"Repository not found"*|*403*)
+            log "   Likely cause: the repo needs credentials the VPS doesn't have"
+            log "   (private repo + no credential helper / no authorized deploy key)."
+            log "   Fix: make the repo readable, add a read-only deploy key, or store a PAT." ;;
+        *"Could not resolve host"*|*"unable to access"*|*"timed out"*)
+            log "   Likely cause: the VPS cannot reach github.com (DNS/network/firewall)." ;;
+    esac
+    exit 1
+fi
 git reset --hard --quiet origin/main
 AFTER=$(git rev-parse HEAD)
 log "  Git HEAD after pull:  $AFTER"
