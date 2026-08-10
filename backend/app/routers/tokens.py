@@ -213,27 +213,52 @@ async def _build_token_notify_ctx(db: AsyncSession, token: Token, company: Compa
     }
 
 
-async def _build_vehicle_move_ctx(db: AsyncSession, token: Token, company: Company, direction: str) -> dict:
+async def _user_display_name(db: AsyncSession, user_id) -> str:
+    """Full name, else username, else '' — the standard way a person is named on
+    alerts and registers (mirrors COALESCE(NULLIF(full_name,''), username))."""
+    if not user_id:
+        return ""
+    u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not u:
+        return ""
+    return (u.full_name or "").strip() or (u.username or "")
+
+
+async def _build_vehicle_move_ctx(db: AsyncSession, token: Token, company: Company,
+                                  direction: str, actor: User | None = None) -> dict:
     """Context for the vehicle_in / vehicle_out movement alerts — vehicle, party,
     material, Buy/Sell, gate pass, and the movement time in IST. Deliberately
     lightweight (no invoice/amount lookup) so it works for a freshly-created OPEN
     token at arrival, not only at completion. `direction`: 'in' → uses created_at,
-    'out' → uses completed_at."""
+    'out' → uses completed_at.
+
+    Accountability: `entered_by` is always the person who booked the truck IN (the
+    token's creator), so the OUT alert carries the whole trail — who let it in, when,
+    who signed it out, when. `exited_by` is the person performing THIS action (the
+    operator recording the second weight / completing the volume token)."""
     from app.utils.timefmt import fmt_ist
     party = (await db.execute(select(Party).where(Party.id == token.party_id))).scalar_one_or_none() if token.party_id else None
     product = (await db.execute(select(Product).where(Product.id == token.product_id))).scalar_one_or_none() if token.product_id else None
     _type_label = {"sale": "Sell (Sale)", "purchase": "Buy (Purchase)"}
     when = token.completed_at if direction == "out" else token.created_at
-    return {
+    entered_by = await _user_display_name(db, token.created_by)
+    actor_name = ((actor.full_name or "").strip() or (actor.username or "")) if actor else ""
+    ctx = {
         "token_no": token.token_no or "PENDING",
         "token_type": _type_label.get(token.token_type, (token.token_type or "").capitalize()),
         "vehicle_no": token.vehicle_no or "—",
         "gate_pass_no": token.gate_pass_no or "",
         "party_name": party.name if party else "—",
         "material": product.name if product else "—",
-        "time": fmt_ist(when),
+        "time": fmt_ist(when),                 # kept: existing templates use {{ time }}
+        "entry_time": fmt_ist(token.created_at),
+        "entered_by": entered_by or (actor_name if direction == "in" else ""),
         "company_name": company.name,
     }
+    if direction == "out":
+        ctx["exit_time"] = fmt_ist(token.completed_at)
+        ctx["exited_by"] = actor_name
+    return ctx
 
 
 async def _check_royalty_unaccounted_bg(
@@ -803,7 +828,7 @@ async def create_token(
             _bg_tenant = current_tenant_slug.get()
         except Exception:
             pass
-        _move_ctx = await _build_vehicle_move_ctx(db, token, company, "in")
+        _move_ctx = await _build_vehicle_move_ctx(db, token, company, "in", current_user)
         background_tasks.add_task(
             _send_notification_bg,
             company.id, "vehicle_in", _move_ctx, "token", str(token.id), _bg_tenant,
@@ -1006,8 +1031,8 @@ async def create_volume_token(
     # Vehicle In + Out movement alerts (background, non-blocking). A volume token is
     # created AND completed in one call — the truck arrived and left — so both fire.
     try:
-        _in_ctx = await _build_vehicle_move_ctx(db, token, company, "in")
-        _out_ctx = await _build_vehicle_move_ctx(db, token, company, "out")
+        _in_ctx = await _build_vehicle_move_ctx(db, token, company, "in", current_user)
+        _out_ctx = await _build_vehicle_move_ctx(db, token, company, "out", current_user)
         background_tasks.add_task(
             _send_notification_bg,
             company.id, "vehicle_in", _in_ctx, "token", str(token.id), _bg_tenant,
@@ -1527,7 +1552,7 @@ async def record_second_weight(
     # Distinct from token_completed (that carries the billing detail); this is the
     # lightweight gate-movement ping. Recipients subscribe to whichever they want.
     try:
-        _move_ctx = await _build_vehicle_move_ctx(db, token, company, "out")
+        _move_ctx = await _build_vehicle_move_ctx(db, token, company, "out", current_user)
         background_tasks.add_task(
             _send_notification_bg,
             company.id, "vehicle_out", _move_ctx, "token", str(token.id), _bg_tenant,

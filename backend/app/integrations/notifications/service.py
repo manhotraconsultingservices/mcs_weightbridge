@@ -669,7 +669,9 @@ DEFAULT_TEMPLATES = [
             "{% if token_type %}Type: {{ token_type }}\n{% endif %}"
             "Party: {{ party_name }}\n"
             "Material: {{ material }}\n"
-            "In: {{ time }}\n\n— {{ company_name }}"
+            "In: {{ time }}\n"
+            "{% if entered_by %}Vehicle entered by: <b>{{ entered_by }}</b>\n{% endif %}"
+            "\n— {{ company_name }}"
         ),
     },
     {
@@ -686,6 +688,7 @@ DEFAULT_TEMPLATES = [
   <tr><td><b>Party</b></td><td>{{ party_name }}</td></tr>
   <tr><td><b>Material</b></td><td>{{ material }}</td></tr>
   <tr><td><b>In</b></td><td>{{ time }}</td></tr>
+  {% if entered_by %}<tr><td><b>Vehicle entered by</b></td><td>{{ entered_by }}</td></tr>{% endif %}
 </table>""",
     },
     {
@@ -701,7 +704,11 @@ DEFAULT_TEMPLATES = [
             "{% if token_type %}Type: {{ token_type }}\n{% endif %}"
             "Party: {{ party_name }}\n"
             "Material: {{ material }}\n"
-            "Out: {{ time }}\n\n— {{ company_name }}"
+            "{% if entry_time %}In: {{ entry_time }}\n{% endif %}"
+            "{% if entered_by %}Vehicle entered by: <b>{{ entered_by }}</b>\n{% endif %}"
+            "Out: {{ time }}\n"
+            "{% if exited_by %}Vehicle exit by: <b>{{ exited_by }}</b>\n{% endif %}"
+            "\n— {{ company_name }}"
         ),
     },
     {
@@ -718,7 +725,10 @@ DEFAULT_TEMPLATES = [
   <tr><td><b>Type</b></td><td>{{ token_type }}</td></tr>
   <tr><td><b>Party</b></td><td>{{ party_name }}</td></tr>
   <tr><td><b>Material</b></td><td>{{ material }}</td></tr>
+  {% if entry_time %}<tr><td><b>In</b></td><td>{{ entry_time }}</td></tr>{% endif %}
+  {% if entered_by %}<tr><td><b>Vehicle entered by</b></td><td>{{ entered_by }}</td></tr>{% endif %}
   <tr><td><b>Out</b></td><td>{{ time }}</td></tr>
+  {% if exited_by %}<tr><td><b>Vehicle exit by</b></td><td>{{ exited_by }}</td></tr>{% endif %}
 </table>""",
     },
 
@@ -878,7 +888,7 @@ async def seed_default_templates(db: AsyncSession, company_id: uuid.UUID) -> Non
 # only inserts MISSING rows, so a changed body never propagates otherwise). Only the
 # listed (event_type, channel) pairs are force-updated, ONCE per tenant per version
 # — so a later admin customisation on the Notifications page survives future restarts.
-_TEMPLATE_REFRESH_VERSION = 8   # v8: gate pass created/exit gain "Vehicle entered by / exit by" + both timestamps
+_TEMPLATE_REFRESH_VERSION = 9   # v8: gate pass created/exit gain "Vehicle entered by / exit by" + both timestamps
 _TEMPLATE_REFRESH_KEYS = {
     ("token_completed", "telegram"),
     ("invoice_finalized", "telegram"),
@@ -886,6 +896,10 @@ _TEMPLATE_REFRESH_KEYS = {
     ("anpr_daily_summary", "telegram"),
     ("anpr_daily_summary", "email"),
     ("eod_summary", "telegram"),
+    ("vehicle_in", "telegram"),
+    ("vehicle_in", "email"),
+    ("vehicle_out", "telegram"),
+    ("vehicle_out", "email"),
     ("gate_pass_created", "telegram"),
     ("gate_pass_created", "email"),
     ("gate_pass_exit", "telegram"),
