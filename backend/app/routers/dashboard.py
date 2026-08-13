@@ -431,6 +431,7 @@ async def dashboard_exceptions(
             "today_revenue": {"today": 0, "median_30d": 0, "variance_pct": 0},
             "today_purchases": {"today": 0, "median_30d": 0, "variance_pct": 0},
             "payables": {"total": 0, "supplier_count": 0},
+            "stale_gate_passes": {"count": 0, "oldest_days": 0, "blocking_count": 0, "items": []},
         }
     today = date.today()
 
@@ -711,6 +712,39 @@ async def dashboard_exceptions(
 
     payables = {"total": round(payables_total, 2), "supplier_count": payables_count}
 
+    # ── 8. Vehicles never signed out (gate passes left `inside` past their day) ─
+    # The guard's own screen is filtered to ONE date, so these become invisible the
+    # next morning and pile up silently. Surfaced here so the owner is told rather
+    # than having to go looking; the fix lives on /admin/open-gate-passes.
+    stale_passes = {"count": 0, "oldest_days": 0, "blocking_count": 0, "items": []}
+    try:
+        gp_rows = (await db.execute(text("""
+            SELECT gp.gate_pass_no, gp.vehicle_no, gp.pass_date,
+                   (CURRENT_DATE - gp.pass_date) AS age_days,
+                   (t.status IN ('OPEN','FIRST_WEIGHT','LOADING','SECOND_WEIGHT')) AS token_open
+            FROM gate_passes gp
+            LEFT JOIN tokens t ON t.id = gp.token_id
+            WHERE gp.status = 'inside' AND gp.pass_date < CURRENT_DATE
+            ORDER BY gp.pass_date ASC
+            LIMIT 200
+        """))).mappings().all()
+        if gp_rows:
+            stale_passes = {
+                "count": len(gp_rows),
+                "oldest_days": max(int(r["age_days"] or 0) for r in gp_rows),
+                # A token left open blocks that plate from starting a new trip —
+                # the part that actually costs the yard time.
+                "blocking_count": sum(1 for r in gp_rows if r["token_open"]),
+                "items": [
+                    {"gate_pass_no": r["gate_pass_no"], "vehicle_no": r["vehicle_no"],
+                     "age_days": int(r["age_days"] or 0), "token_open": bool(r["token_open"])}
+                    for r in gp_rows[:5]
+                ],
+            }
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "dashboard.exceptions: stale gate passes query failed: %s", exc)
+
     # ── Traffic-light overall status + headline ──────────────────────────────
     # critical: anything expired, anything fully out of stock, or critical yield miss
     # warning: any overdue, any low stock, any expiring compliance, yield below target
@@ -726,6 +760,9 @@ async def dashboard_exceptions(
         + (1 if low_stock_items else 0)
         + (1 if comp_items else 0)
         + (1 if (yield_variance and yield_variance["status"] != "on_track") else 0)
+        # Deliberately NOT part of the `critical` escalation below: an unclosed
+        # gate pass is a records-hygiene backlog, not a plant emergency.
+        + (1 if stale_passes["count"] else 0)
     )
 
     if has_expired or has_out_of_stock or yield_critical or has_overdue_60plus:
@@ -751,12 +788,15 @@ async def dashboard_exceptions(
             bits.append(f"{len(comp_items)} compliance expiring")
         if yield_variance and yield_variance["status"] != "on_track":
             bits.append(f"Yield {yield_variance['variance_pct']:+.1f}% vs target")
+        if stale_passes["count"]:
+            bits.append(f"{stale_passes['count']} vehicle(s) never signed out")
         headline = f"{problem_count} thing{'s' if problem_count != 1 else ''} need you — " + " · ".join(bits)
 
     return {
         "status": status,
         "headline": headline,
         "problem_count": problem_count,
+        "stale_gate_passes": stale_passes,
         "overdue_customers": {
             "items": overdue_items,
             "count": len(overdue_items),

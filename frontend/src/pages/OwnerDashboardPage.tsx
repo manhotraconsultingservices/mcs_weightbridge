@@ -17,10 +17,11 @@ import {
   CheckCircle2, AlertTriangle, AlertCircle, Loader2,
   Phone, MessageCircle, ShoppingCart, ShieldAlert, Factory,
   TrendingUp, TrendingDown, IndianRupee, ChevronRight, RefreshCw,
-  BarChart3,
+  BarChart3, DoorOpen,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/services/api';
+import { getCurrentUser } from '@/hooks/useAuth';
 import AnprStatsCard from '@/components/AnprStatsCard';
 
 // ── Types from /api/v1/dashboard/exceptions ────────────────────────────────
@@ -69,6 +70,10 @@ interface ExceptionsResponse {
   today_revenue: { today: number; median_30d: number; variance_pct: number };
   today_purchases: { today: number; median_30d: number; variance_pct: number };
   payables: { total: number; supplier_count: number };
+  stale_gate_passes: {
+    count: number; oldest_days: number; blocking_count: number;
+    items: { gate_pass_no: string; vehicle_no: string | null; age_days: number; token_open: boolean }[];
+  };
 }
 
 const INR = (v: number) =>
@@ -91,6 +96,9 @@ export default function OwnerDashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nav = useNavigate();
+  // The clean-up page is admin-only, so only an admin gets the card —
+  // anyone else would be sent to a No-Access screen.
+  const isAdmin = getCurrentUser()?.role === 'admin';
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -200,6 +208,9 @@ export default function OwnerDashboardPage() {
         <ComplianceCard comp={data.compliance_expiring} onAction={(id) => nav(`/compliance?id=${id}`)} />
         {data.yield_variance && (
           <YieldCard yv={data.yield_variance} onAction={() => nav('/production/dashboard')} />
+        )}
+        {isAdmin && data.stale_gate_passes?.count > 0 && (
+          <StaleGatePassCard gp={data.stale_gate_passes} onAction={() => nav('/admin/open-gate-passes')} />
         )}
       </div>
 
@@ -560,5 +571,59 @@ function YieldCard({ yv, onAction }: { yv: YieldVariance; onAction: () => void }
         : undefined}
       secondary={yv.status === 'on_track' ? { label: t('ownerDash.viewProduction'), onClick: onAction } : undefined}
     />
+  );
+}
+
+
+// ── Vehicles never signed out (gate passes left open past their day) ─────────
+// Surfaces a backlog that is otherwise invisible: the guard's own screen is
+// filtered to ONE date, so yesterday's unclosed pass silently piles up.
+function StaleGatePassCard({ gp, onAction }: {
+  gp: ExceptionsResponse['stale_gate_passes'];
+  onAction: () => void;
+}) {
+  const tone = gp.oldest_days >= 7 ? 'rose' : 'amber';
+  return (
+    <ActionCard
+      icon={DoorOpen}
+      color={tone}
+      title={`${gp.count} vehicle${gp.count === 1 ? '' : 's'} never signed out`}
+      sub={
+        gp.blocking_count > 0
+          ? `Oldest ${gp.oldest_days} days · ${gp.blocking_count} still blocking a vehicle from a new trip`
+          : `Oldest ${gp.oldest_days} days · the gate register shows them as still inside`
+      }
+      primary={{ label: 'Review & close', onClick: onAction, icon: ChevronRight }}
+      expanded
+    >
+      <div className="space-y-1.5">
+        {gp.items.map(i => (
+          <button
+            key={i.gate_pass_no}
+            onClick={onAction}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 hover:border-slate-400 transition-colors text-left"
+          >
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-slate-900 truncate">{i.vehicle_no ?? '—'}</div>
+              <div className="text-xs text-slate-500 font-mono">{i.gate_pass_no}</div>
+            </div>
+            <div className="text-right shrink-0">
+              <div className={`text-xs font-bold ${i.age_days >= 7 ? 'text-rose-700' : 'text-amber-700'}`}>
+                {i.age_days} day{i.age_days === 1 ? '' : 's'}
+              </div>
+              {i.token_open && (
+                <div className="text-[10px] text-amber-700">weighment still open</div>
+              )}
+            </div>
+            <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
+          </button>
+        ))}
+        {gp.count > gp.items.length && (
+          <p className="text-[11px] text-slate-500 px-1">
+            +{gp.count - gp.items.length} more — open the full list to clear them.
+          </p>
+        )}
+      </div>
+    </ActionCard>
   );
 }
