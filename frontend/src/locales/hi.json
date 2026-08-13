@@ -96,9 +96,9 @@
     "gstCompliance": "GST & अनुपालन",
     "analytics": "विश्लेषण",
     "dayBook": "दैनिक बही",
-    "reports": "रिपोर्ट",
     "fraudRegisters": "धोखाधड़ी & रजिस्टर",
-    "compliance": "अनुपालन"
+    "compliance": "अनुपालन",
+    "openGatePasses": "अंदर खड़े वाहन"
   },
   "token": {
     "title": "ट्रिप / गेट रजिस्टर",

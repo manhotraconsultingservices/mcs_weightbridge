@@ -743,6 +743,178 @@ async def _bg_capture_exit_photo(company_id: str, gate_pass_id: str, tenant_slug
             logger.warning("Background exit photo capture failed: %s", exc)
 
 
+# ── Owner clean-up: vehicles recorded IN that were never signed OUT ───────────
+# A truck leaves without the guard closing its pass (shift change, power cut, the
+# driver just drives off). The pass then sits `inside` for ever: it is invisible in
+# the guard's day view (that list is filtered to ONE date), the daily "N inside"
+# count is wrong for ever after, and — if a token was linked — the plate can be
+# blocked from a new token. These two endpoints are the owner's way to close the
+# record honestly: always with a reason, always stamped with who closed it.
+# Deliberately admin-only: this rewrites the physical gate record after the fact.
+
+@router.get("/open-passes")
+async def list_open_gate_passes(
+    older_than_days: int = Query(1, ge=0, le=365),
+    vehicle_no: str | None = None,
+    limit: int = Query(200, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Every gate pass still `inside`, across ALL dates (the guard's list is
+    single-day, which is why these become invisible). `older_than_days=1` (default)
+    shows only passes from a previous day — today's genuinely-inside trucks are not
+    clutter. 0 includes today."""
+    # Build the optional filter in Python: asyncpg cannot infer the type of a bare
+    # `:param IS NULL` and errors with IndeterminateDatatypeError.
+    params: dict = {"older": older_than_days, "lim": limit}
+    vno_filter = ""
+    if vehicle_no and vehicle_no.strip():
+        vno_filter = "AND gp.vehicle_no ILIKE :vno_like"
+        params["vno_like"] = f"%{vehicle_no.strip()}%"
+
+    rows = await db.execute(
+        text(f"""
+            SELECT gp.id, gp.gate_pass_no, gp.pass_date, gp.vehicle_no, gp.driver_name,
+                   gp.material, gp.purpose, gp.entry_time, gp.notes, gp.token_id,
+                   (CURRENT_DATE - gp.pass_date)                        AS age_days,
+                   COALESCE(NULLIF(u.full_name, ''), u.username)        AS entered_by,
+                   t.token_no, t.status AS token_status
+            FROM gate_passes gp
+            LEFT JOIN users  u ON u.id = gp.created_by
+            LEFT JOIN tokens t ON t.id = gp.token_id
+            WHERE gp.status = 'inside'
+              AND gp.pass_date <= CURRENT_DATE - CAST(:older AS INTEGER)
+              {vno_filter}
+            ORDER BY gp.pass_date ASC, gp.entry_time ASC
+            LIMIT :lim
+        """),
+        params,
+    )
+    items = []
+    for r in rows.mappings().all():
+        tok_open = (r["token_status"] or "") in ("OPEN", "FIRST_WEIGHT", "LOADING", "SECOND_WEIGHT")
+        items.append({
+            "id": str(r["id"]),
+            "gate_pass_no": r["gate_pass_no"],
+            "pass_date": r["pass_date"].isoformat() if r["pass_date"] else None,
+            "age_days": int(r["age_days"] or 0),
+            "vehicle_no": r["vehicle_no"],
+            "driver_name": r["driver_name"],
+            "material": r["material"],
+            "purpose": r["purpose"],
+            "entry_time": r["entry_time"].isoformat() if r["entry_time"] else None,
+            "entered_by": r["entered_by"],
+            "notes": r["notes"],
+            "token_id": str(r["token_id"]) if r["token_id"] else None,
+            "token_no": r["token_no"],
+            "token_status": r["token_status"],
+            # A still-open token keeps that plate from getting a new token, so the
+            # owner needs to see it here, not discover it at the weighbridge.
+            "token_still_open": tok_open,
+        })
+    return {"items": items, "count": len(items), "older_than_days": older_than_days}
+
+
+@router.post("/passes/{gp_id}/resolve")
+async def resolve_open_gate_pass(
+    gp_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """Close a pass the guard never closed. `action`: 'exit' (the truck did leave —
+    record the exit) or 'cancel' (it never really came in / duplicate entry).
+
+    A reason is REQUIRED and is APPENDED to the notes (never overwrites what the
+    guard wrote). `exited_by` records who closed it, so a back-dated correction is
+    always attributable.
+
+    This deliberately BYPASSES the "weighbridge pass needs a token before exit"
+    rule that `record_exit` enforces. That rule stops a guard closing a live truck
+    that hasn't weighed — but it also makes exactly these abandoned passes
+    impossible to close (they're weighbridge passes with no token, by definition).
+    The owner overriding it, with a reason on the record, is the intended escape."""
+    action = str(body.get("action") or "").strip().lower()
+    if action not in ("exit", "cancel"):
+        raise HTTPException(400, "action must be 'exit' or 'cancel'")
+    reason = str(body.get("reason") or "").strip()
+    if not reason:
+        raise HTTPException(400, "A reason is required — it goes on the permanent record.")
+
+    row = (await db.execute(
+        text("SELECT status, gate_pass_no, vehicle_no, token_id, pass_date "
+             "FROM gate_passes WHERE id = :id"), {"id": gp_id})).mappings().first()
+    if not row:
+        raise HTTPException(404, "Gate pass not found")
+    if row["status"] != "inside":
+        raise HTTPException(400, f"This pass is already {row['status']} — nothing to close.")
+
+    stamp = f"[{action} by owner] {reason}"
+    if action == "exit":
+        await db.execute(
+            text("""
+                UPDATE gate_passes SET
+                    status     = 'exited',
+                    exit_time  = COALESCE(CAST(:etime AS TIMESTAMPTZ), NOW()),
+                    exited_by  = :uid,
+                    notes      = TRIM(BOTH E'\n' FROM COALESCE(notes || E'\n', '') || :stamp),
+                    updated_by = :uid,
+                    updated_at = NOW()
+                WHERE id = :id
+            """),
+            {"etime": body.get("exit_time"), "uid": str(current_user.id),
+             "stamp": stamp, "id": gp_id},
+        )
+    else:
+        await db.execute(
+            text("""
+                UPDATE gate_passes SET
+                    status     = 'cancelled',
+                    exited_by  = :uid,
+                    notes      = TRIM(BOTH E'\n' FROM COALESCE(notes || E'\n', '') || :stamp),
+                    updated_by = :uid,
+                    updated_at = NOW()
+                WHERE id = :id
+            """),
+            {"uid": str(current_user.id), "stamp": stamp, "id": gp_id},
+        )
+
+    # Optionally release the plate: a token left OPEN blocks a new token for that
+    # vehicle (the duplicate-active-token guard). Never touches a COMPLETED token.
+    token_cancelled = False
+    if body.get("cancel_token") and row["token_id"]:
+        res = await db.execute(
+            text("""
+                UPDATE tokens SET status = 'CANCELLED'
+                WHERE id = :tid
+                  AND status IN ('OPEN','FIRST_WEIGHT','LOADING','SECOND_WEIGHT')
+            """),
+            {"tid": str(row["token_id"])},
+        )
+        token_cancelled = (res.rowcount or 0) > 0
+        if token_cancelled:
+            await db.execute(
+                text("UPDATE gate_passes SET token_id = NULL WHERE token_id = :tid"),
+                {"tid": str(row["token_id"])},
+            )
+    await db.commit()
+
+    try:
+        from app.routers.audit import log_action
+        await log_action(
+            db, current_user.company_id, current_user.id, f"gate_pass_{action}",
+            "gate_pass", gp_id,
+            {"gate_pass_no": row["gate_pass_no"], "vehicle_no": row["vehicle_no"],
+             "pass_date": str(row["pass_date"]), "reason": reason,
+             "token_cancelled": token_cancelled},
+        )
+        await db.commit()
+    except Exception:
+        pass
+
+    return {"ok": True, "action": action, "token_cancelled": token_cancelled}
+
+
 @router.post("/passes/{gp_id}/cancel")
 async def cancel_gate_pass(
     gp_id: str,

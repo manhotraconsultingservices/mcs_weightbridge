@@ -55,6 +55,7 @@ import RoyaltyPassesPage from '@/pages/RoyaltyPassesPage';
 import CustomerPortalPage from '@/pages/CustomerPortalPage';
 import OfflineIndicator from '@/components/OfflineIndicator';
 import BranchAdminPage from '@/pages/BranchAdminPage';
+import OpenGatePassesPage from '@/pages/OpenGatePassesPage';
 import BranchPicker from '@/components/BranchPicker';
 import ProductsPage from '@/pages/ProductsPage';
 import PricingMatrixPage from '@/pages/PricingMatrixPage';
@@ -239,6 +240,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/credit-debit-notes" element={<CreditDebitNotesPage />} />
             <Route path="/royalty" element={<RoyaltyPassesPage />} />
             <Route path="/admin/branches" element={<BranchAdminPage />} />
+            <Route path="/admin/open-gate-passes" element={<OpenGatePassesPage />} />
             {/* Sprint 3 hubs — consolidate sub-pages into tabbed views */}
             <Route path="/sales" element={<SalesHubPage />} />
             <Route path="/crm" element={<CrmHubPage />} />

@@ -96,9 +96,9 @@
     "gstCompliance": "GST & Compliance",
     "analytics": "Analytics",
     "dayBook": "Day Book",
-    "reports": "Reports",
     "fraudRegisters": "Fraud & Registers",
-    "compliance": "Compliance"
+    "compliance": "Compliance",
+    "openGatePasses": "Vehicles Still Inside"
   },
   "token": {
     "title": "Trips / Gate Register",

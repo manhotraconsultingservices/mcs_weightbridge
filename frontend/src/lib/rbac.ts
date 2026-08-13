@@ -225,6 +225,9 @@ export const ADMIN_ROUTES = new Set([
   '/notifications', '/backup', '/import',
   '/admin/branches', '/admin/users', '/admin/permissions',
   '/admin/custom-fields', '/admin/wallpaper', '/approvals',
+  // Owner clean-up of gate passes the guard never closed — rewrites the
+  // physical gate record after the fact, so admin-only and not delegatable.
+  '/admin/open-gate-passes',
 ]);
 
 // Routes that must never be blocked by the guard: the home redirect, detail

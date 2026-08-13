@@ -16,11 +16,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  LayoutDashboard, Scale, FileText, ShoppingCart, Factory,
-  BookOpen, TrendingUp, Package,
-  LogOut, Usb, Settings,
-  Bell, HardDrive, Upload, UserCog, Lock, ImageIcon, Building2,
-  Camera, Cog, FileBarChart, ShieldAlert, FileCheck2, Tags, Users, Truck, Fuel, HardHat, IndianRupee, Handshake, Wallet, Activity, Car, ShieldCheck,
+  Activity, Bell, BookOpen, Building2, Camera, Car, Cog, DoorOpen, Factory, FileBarChart, FileCheck2, FileText, Fuel, Handshake, HardDrive, HardHat, ImageIcon, IndianRupee, LayoutDashboard, Lock, LogOut, Package, Scale, Settings, ShieldAlert, ShieldCheck, ShoppingCart, Tags, TrendingUp, Truck, Upload, Usb, UserCog, Users, Wallet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getTenantModules } from '@/hooks/useAuth';
@@ -119,6 +115,7 @@ const NAV_SECTIONS: NavSection[] = [
 const ADMIN_ITEMS: NavItem[] = [
   { to: '/settings',          icon: Settings,  labelKey: 'sidebar.companySettings' },
   { to: '/admin/branches',    icon: Building2, labelKey: 'sidebar.branches' },
+  { to: '/admin/open-gate-passes', icon: DoorOpen, labelKey: 'sidebar.openGatePasses' },
   { to: '/admin/users',       icon: UserCog,   labelKey: 'sidebar.users' },
   { to: '/admin/permissions', icon: Lock,      labelKey: 'sidebar.rolePermissions' },
   { to: '/approvals',         icon: ShieldCheck, labelKey: 'sidebar.approvals' },
