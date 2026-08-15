@@ -151,7 +151,10 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
   );
   // Route guard — block direct URL access to a page this role wasn't granted.
   // Admin bypasses; detail/utility routes fail open (see rbac.ts).
-  const routeAllowed = canAccessRoute(location.pathname, permissions, user.role);
+  // Tab grants are part of access control, not decoration: a role restricted to
+  // the Gate Register tab must not reach Weigh Tickets by URL either.
+  const routeAllowed = canAccessRoute(
+    location.pathname, permissions, user.role, roleTabPerms[user.role]);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // PWA install prompt (Android Chrome "Add to Home Screen")

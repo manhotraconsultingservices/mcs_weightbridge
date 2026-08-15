@@ -13,7 +13,7 @@ export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
 
   // Gate guard — gate register only; auto-redirected to /gate on login
   gate_guard: [
-    '/weighbridge',  // sidebar: Weighbridge (Gate Register tab only in practice)
+    '/weighbridge',  // + DEFAULT_ROLE_TAB_PERMISSIONS pins them to the Gate Register tab
   ],
 
   // Operator — weighing + camera; auto-redirected to /operator kiosk
@@ -65,6 +65,13 @@ export interface AppSettings {
   roleTabPerms: RoleTabPermissions; // { role → { hubPath → allowedTabValues[] } }
 }
 
+// Default TAB grants, applied only when the tenant has never saved any. A gate
+// guard must land confined to the Gate Register — granting the Weighbridge hub
+// alone would otherwise also hand them Weigh Tickets and the Movement Report.
+export const DEFAULT_ROLE_TAB_PERMISSIONS: RoleTabPermissions = {
+  gate_guard: { '/weighbridge': ['gate'] },
+};
+
 export function useAppSettings(userRole: string): AppSettings {
   // Start from defaults immediately so sidebar renders correctly without flash
   const [permissions, setPermissions] = useState<string[]>(
@@ -72,7 +79,7 @@ export function useAppSettings(userRole: string): AppSettings {
   );
   const [wallpaperUrl, setWallpaperUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [roleTabPerms, setRoleTabPerms] = useState<RoleTabPermissions>({});
+  const [roleTabPerms, setRoleTabPerms] = useState<RoleTabPermissions>(DEFAULT_ROLE_TAB_PERMISSIONS);
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -90,7 +97,10 @@ export function useAppSettings(userRole: string): AppSettings {
 
       setPermissions(rolePerms);
       setWallpaperUrl(wallRes.data?.url ?? null);
-      setRoleTabPerms(tabRes.data ?? {});
+      // Stored config wins per ROLE; a role the tenant never configured keeps its
+      // default (so upgrading doesn't silently widen an existing gate guard).
+      const storedTabs = tabRes.data ?? {};
+      setRoleTabPerms({ ...DEFAULT_ROLE_TAB_PERMISSIONS, ...storedTabs });
     } catch {
       // Network error or unauthenticated — fall back to defaults silently
       setPermissions(userRole === 'admin' ? ['*'] : (DEFAULT_PERMISSIONS[userRole] ?? []));

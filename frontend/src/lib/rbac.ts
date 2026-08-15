@@ -29,7 +29,7 @@ export const CATALOGUE_GROUPS: CatalogueGroup[] = [
   {
     group: 'Operations',
     pages: [
-      { path: '/weighbridge',  label: 'Weighbridge',    hint: 'Gate Register · Weigh Tickets · Movement Report' },
+      { path: '/weighbridge',  label: 'Weighbridge',    hint: 'Gate Register · Weigh Tickets · Movement Report. For a gate guard, tick this then untick every tab except Gate Register — the others become unreachable, not just hidden.' },
       { path: '/cameras-anpr', label: 'Cameras & ANPR', hint: 'Camera & Scale · Snapshots · ANPR · Plate Review' },
       { path: '/device-health', label: 'Device Health',  hint: 'Scale & camera uptime monitor + down-alerts' },
       { path: '/vehicle-count', label: 'Gate Vehicle Count', hint: 'Autonomous truck/car/bike tally vs gate passes (paid add-on)' },
@@ -73,6 +73,18 @@ export const CATALOGUE_GROUPS: CatalogueGroup[] = [
     ],
   },
 ];
+
+// Which hub child ROUTES each tab owns. This is what makes a tab grant real: untick
+// "Weigh Tickets" for a role and /tokens-v1 stops being reachable, not merely hidden.
+// A hub absent from this map keeps the old behaviour (tabs hide, routes stay open),
+// so adding a hub here is opt-in and nothing else changes.
+export const HUB_TAB_ROUTES: Record<string, Record<string, string[]>> = {
+  '/weighbridge': {
+    gate:     ['/gate'],
+    tickets:  ['/tokens-v1', '/tokens'],
+    movement: ['/anpr/trips'],
+  },
+};
 
 // hub → child routes. Granting a hub grants every child; a stored legacy child
 // path (e.g. '/gate') still unlocks its wrapping hub.
@@ -278,10 +290,29 @@ export function routeRequirement(pathname: string): RouteReq {
  * Admin → always. Config routes → admin only. Catalogue pages → require the
  * granting perm. Everything else (details, unknowns) → allowed.
  */
-export function canAccessRoute(pathname: string, permissions: string[], role?: string): boolean {
+export function canAccessRoute(
+  pathname: string,
+  permissions: string[],
+  role?: string,
+  /** { hubPath → allowed tab values } for THIS role. Empty/absent = no tab
+   *  restriction, exactly as isTabAllowed() treats it. */
+  allowedTabsByHub?: Record<string, string[]>,
+): boolean {
   if (role === 'admin' || permissions.includes('*')) return true;
   const req = routeRequirement(pathname);
   if (req.kind === 'allow') return true;
   if (req.kind === 'admin') return false;
-  return hasPagePerm(permissions, req.hub);
+  if (!hasPagePerm(permissions, req.hub)) return false;
+
+  // The hub is granted — but if the admin restricted this role to certain tabs,
+  // a child route belonging to a REMOVED tab must be blocked too, otherwise the
+  // restriction is cosmetic and the page is still reachable by URL.
+  const tabRoutes = HUB_TAB_ROUTES[req.hub];
+  const allowed = allowedTabsByHub?.[req.hub];
+  if (tabRoutes && allowed && allowed.length > 0) {
+    for (const [tab, routes] of Object.entries(tabRoutes)) {
+      if (routes.includes(pathname)) return allowed.includes(tab);
+    }
+  }
+  return true;
 }
