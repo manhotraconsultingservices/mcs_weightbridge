@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
 import { useAuth } from '@/hooks/useAuth';
-import { type RoleDef } from '@/lib/rbac';
+import { BUILTIN_ROLES, roleLabel, type RoleDef } from '@/lib/rbac';
 import api from '@/services/api';
 
 // ── Types ────────────────────────────────────────────────────────────────── //
@@ -56,15 +56,13 @@ function AddEditDialog({ open, user, customRoles, onClose, onSaved }: AddEditDia
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Built from the SAME list the Role Permissions page uses (lib/rbac.ts), resolved
+  // through each role's single i18n key. This used to be a second hand-written list,
+  // which is how gate_guard came to read "Security Guard" here and "Gate Guard" there
+  // — the option was in the dropdown, just under a name nobody was looking for.
   const ROLES = useMemo(() => [
-    { value: 'admin',              label: t('users.roles.admin') },
-    { value: 'gate_guard',         label: t('users.roles.gate_guard') },
-    { value: 'store_manager',      label: t('users.roles.store_manager') },
-    { value: 'operator',           label: t('users.roles.operator') },
-    { value: 'sales_executive',    label: t('users.roles.sales_executive') },
-    { value: 'purchase_executive', label: t('users.roles.purchase_executive') },
-    { value: 'accountant',         label: t('users.roles.accountant') },
-    { value: 'viewer',             label: t('users.roles.viewer') },
+    { value: 'admin', label: t('users.roles.admin') },
+    ...BUILTIN_ROLES.map(r => ({ value: r.value, label: roleLabel(r, t) })),
     // Admin-defined custom roles (from /admin/permissions → New Role)
     ...customRoles.map(r => ({ value: r.value, label: r.label })),
   ], [t, customRoles]);
@@ -357,11 +355,9 @@ function UsersTable({
     store_manager:      t('users.roles.store_manager'),
     operator:           t('users.roles.operator'),
     sales_executive:    t('users.roles.sales_executive'),
-    purchase_executive: t('users.roles.purchase_executive'),
-    accountant:         t('users.roles.accountant'),
-    viewer:             t('users.roles.viewer'),
     private_admin:      t('users.roles.private_admin'),
-    gate_guard:         t('users.roles.gate_guard'),
+    // same single source as the picker above, so the badge can't drift from it
+    ...Object.fromEntries(BUILTIN_ROLES.map(r => [r.value, roleLabel(r, t)])),
     ...Object.fromEntries(customRoles.map(r => [r.value, r.label])),
   }), [t, customRoles]);
 

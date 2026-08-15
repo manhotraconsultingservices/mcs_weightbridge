@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useUsbGuard } from '@/hooks/useUsbGuard';
 import { useAppSettings } from '@/hooks/useAppSettings';
 import { PermissionsContext, buildPermissionsCtx } from '@/contexts/PermissionsContext';
-import { canAccessRoute } from '@/lib/rbac';
+import { canAccessRoute, resolveHomeRoute } from '@/lib/rbac';
 import NoAccessPage from '@/pages/NoAccessPage';
 import LoginPage from '@/pages/LoginPage';
 import LandingPage from '@/pages/LandingPage';
@@ -116,13 +116,12 @@ function isTenantSubdomain(): boolean {
 // Redirect to the first page the user has access to.
 // Operators get the simplified kiosk; everyone else gets the exception-first
 // owner dashboard. Legacy chart-heavy dashboard still reachable at /dashboard-legacy.
-function HomeRedirect({ permissions, role }: { permissions: string[]; role?: string }) {
-  if (role === 'operator') return <Navigate to="/operator" replace />;
-  if (role === 'gate_guard') return <Navigate to="/gate" replace />;
-  if (permissions.includes('*') || permissions.includes('/')) return <OwnerDashboardPage />;
-  const first = permissions[0];
-  if (first) return <Navigate to={first} replace />;
-  return <OwnerDashboardPage />; // absolute fallback
+function HomeRedirect({ permissions, role, tabPerms }: {
+  permissions: string[]; role?: string; tabPerms?: Record<string, string[]>;
+}) {
+  const target = resolveHomeRoute(role, permissions, tabPerms);
+  if (target) return <Navigate to={target} replace />;
+  return <OwnerDashboardPage />;
 }
 
 // AMC expired banner
@@ -230,7 +229,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <ErrorBoundary>
             {!routeAllowed ? <NoAccessPage /> : (
             <Routes>
-            <Route path="/" element={<HomeRedirect permissions={permissions} role={user.role} />} />
+            <Route path="/" element={<HomeRedirect permissions={permissions} role={user.role} tabPerms={roleTabPerms[user.role]} />} />
             {/* Legacy chart-heavy dashboard kept reachable for "View 30-day trends" link */}
             <Route path="/dashboard-legacy" element={<DashboardPage />} />
             <Route path="/tokens" element={<TokenPage />} />
@@ -310,7 +309,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/admin/permissions" element={<PermissionsPage />} />
             <Route path="/admin/custom-fields" element={<CustomFieldsPage />} />
             <Route path="/admin/wallpaper" element={<WallpaperSettingsPage />} />
-              <Route path="*" element={<HomeRedirect permissions={permissions} role={user.role} />} />
+              <Route path="*" element={<HomeRedirect permissions={permissions} role={user.role} tabPerms={roleTabPerms[user.role]} />} />
             </Routes>
             )}
             </ErrorBoundary>
@@ -426,7 +425,7 @@ function RootRoutes() {
       {/* Login page at /login */}
       <Route path="/login" element={
         (isAuthenticated && user)
-          ? <Navigate to="/dashboard" replace />
+          ? <Navigate to="/" replace />
           : <LoginPage onLogin={login} />
       } />
       {/* Dedicated per-tenant login URL: /login/alpha, /login/beta, etc. */}

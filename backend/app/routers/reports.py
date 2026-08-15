@@ -179,9 +179,40 @@ async def sales_register(
     result = await db.execute(q)
     rows = result.all()
 
+    # Item + rate per invoice, batched (one query for the whole page — never per row).
+    # Most sale invoices come from a weighment and carry exactly ONE line, so the
+    # item name and its ₹/unit rate are meaningful columns; a multi-line invoice
+    # lists the names and leaves the rate blank rather than showing a misleading one.
+    lines_by_inv: dict = {}
+    inv_ids = [inv.id for inv, _ in rows]
+    if inv_ids:
+        lres = await db.execute(
+            select(InvoiceItem.invoice_id, InvoiceItem.description, InvoiceItem.quantity,
+                   InvoiceItem.unit, InvoiceItem.rate, Product.name)
+            .outerjoin(Product, InvoiceItem.product_id == Product.id)
+            .where(InvoiceItem.invoice_id.in_(inv_ids))
+            .order_by(InvoiceItem.sort_order)
+        )
+        for iid, desc, qty, unit, rate, pname in lres.all():
+            lines_by_inv.setdefault(iid, []).append(
+                {"name": pname or desc or "", "qty": qty, "unit": unit, "rate": rate})
+
     items = []
-    totals = {k: Decimal(0) for k in ["taxable_amount", "cgst", "sgst", "igst", "grand_total"]}
+    totals = {k: Decimal(0) for k in
+              ["taxable_amount", "cgst", "sgst", "igst", "royalty", "vehicle_rent", "grand_total"]}
     for inv, party in rows:
+        lines = lines_by_inv.get(inv.id, [])
+        names = [ln["name"] for ln in lines if ln["name"]]
+        if len(names) > 3:
+            item_label = ", ".join(names[:3]) + f" +{len(names) - 3} more"
+        else:
+            item_label = ", ".join(names)
+        rates = {ln["rate"] for ln in lines if ln["rate"] is not None}
+        item_rate = _f(rates.pop()) if len(rates) == 1 else None
+        item_unit = lines[0]["unit"] if len(lines) == 1 else None
+        item_qty = _f(lines[0]["qty"]) if len(lines) == 1 else None
+        royalty = inv.royalty_amount or Decimal(0)
+        vehicle_rent = inv.vehicle_rent or Decimal(0)
         items.append({
             "id": str(inv.id),
             "invoice_no": inv.invoice_no,
@@ -190,6 +221,12 @@ async def sales_register(
             "gstin": party.gstin,
             "vehicle_no": inv.vehicle_no,
             "net_weight": _f(inv.net_weight) if inv.net_weight else None,
+            "item": item_label or None,
+            "item_qty": item_qty,
+            "item_unit": item_unit,
+            "item_rate": item_rate,
+            "royalty_amount": _f(royalty),
+            "vehicle_rent": _f(vehicle_rent),
             "taxable_amount": _f(inv.taxable_amount),
             "cgst_amount": _f(inv.cgst_amount),
             "sgst_amount": _f(inv.sgst_amount),
@@ -201,6 +238,8 @@ async def sales_register(
         totals["cgst"] += inv.cgst_amount
         totals["sgst"] += inv.sgst_amount
         totals["igst"] += inv.igst_amount
+        totals["royalty"] += royalty
+        totals["vehicle_rent"] += vehicle_rent
         totals["grand_total"] += inv.grand_total
 
     return {"items": items, "totals": {k: _f(v) for k, v in totals.items()}, "count": len(items)}

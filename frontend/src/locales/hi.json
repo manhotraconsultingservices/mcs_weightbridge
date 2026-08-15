@@ -904,7 +904,7 @@
     "colStatus": "स्थिति",
     "roles": {
       "admin": "एडमिन",
-      "gate_guard": "सुरक्षा गार्ड",
+      "gate_guard": "गेट गार्ड",
       "store_manager": "स्टोर मैनेजर",
       "operator": "वेब्रिज ऑपरेटर",
       "sales_executive": "बिक्री प्रतिनिधि",

@@ -213,17 +213,28 @@ export function allowedSettingsTabs(
   return new Set(granted.filter(t => SETTINGS_DELEGATABLE_TABS.has(t)));
 }
 
-export interface RoleDef { value: string; label: string; color: string }
+// `labelKey` is the single i18n key for this role's display name. Both the Role
+// Permissions page and User Management resolve through it, so a role can no longer
+// show up under two different names (gate_guard read 'Gate Guard' on one screen and
+// 'Security Guard' on the other, which is why nobody could find it — 2026-08-15).
+// `label` is the fallback: admin-created custom roles have no i18n key, their name
+// is whatever the admin typed, so `labelKey` is optional and `label` stands in.
+export interface RoleDef { value: string; label: string; labelKey?: string; color: string }
+
+/** The one place a role's display name is resolved. Pass i18next's `t`. */
+export function roleLabel(r: RoleDef, t?: (k: string) => string): string {
+  return r.labelKey && t ? t(r.labelKey) : r.label;
+}
 
 // Built-in non-admin roles (admin is implicit and always has full access).
 export const BUILTIN_ROLES: RoleDef[] = [
-  { value: 'gate_guard',         label: 'Gate Guard',         color: 'text-rose-600' },
-  { value: 'store_manager',      label: 'Store Manager',      color: 'text-emerald-600' },
-  { value: 'operator',           label: 'Operator',           color: 'text-blue-600' },
-  { value: 'sales_executive',    label: 'Sales Executive',    color: 'text-green-600' },
-  { value: 'purchase_executive', label: 'Purchase Executive', color: 'text-orange-600' },
-  { value: 'accountant',         label: 'Accountant',         color: 'text-cyan-600' },
-  { value: 'viewer',             label: 'Viewer',             color: 'text-gray-500' },
+  { value: 'gate_guard',         label: 'Gate Guard', labelKey: 'users.roles.gate_guard',         color: 'text-rose-600' },
+  { value: 'store_manager',      label: 'Store Manager', labelKey: 'users.roles.store_manager',      color: 'text-emerald-600' },
+  { value: 'operator',           label: 'Weighbridge Operator', labelKey: 'users.roles.operator',           color: 'text-blue-600' },
+  { value: 'sales_executive',    label: 'Sales Executive', labelKey: 'users.roles.sales_executive',    color: 'text-green-600' },
+  { value: 'purchase_executive', label: 'Purchase Executive', labelKey: 'users.roles.purchase_executive', color: 'text-orange-600' },
+  { value: 'accountant',         label: 'Accountant', labelKey: 'users.roles.accountant',         color: 'text-cyan-600' },
+  { value: 'viewer',             label: 'Viewer', labelKey: 'users.roles.viewer',             color: 'text-gray-500' },
 ];
 
 export const BUILTIN_ROLE_VALUES = new Set(
@@ -290,6 +301,39 @@ export function routeRequirement(pathname: string): RouteReq {
  * Admin → always. Config routes → admin only. Catalogue pages → require the
  * granting perm. Everything else (details, unknowns) → allowed.
  */
+/** Roles that always land on one specific page at login, whatever else they hold. */
+export const ROLE_HOME: Record<string, string> = {
+  operator:   '/operator',   // simplified kiosk
+  gate_guard: '/gate',       // Gate Register
+};
+
+/**
+ * Where a user lands at login. `null` = render the owner dashboard in place.
+ *
+ * Tab-aware on purpose: a role granted only a hub (e.g. `/weighbridge`) but
+ * restricted to one tab must land on THAT tab's page, not the hub's default tab
+ * — otherwise a gate guard opens on Weigh Tickets, which they cannot use.
+ */
+export function resolveHomeRoute(
+  role: string | undefined,
+  permissions: string[],
+  allowedTabsByHub?: Record<string, string[]>,
+): string | null {
+  if (role && ROLE_HOME[role]) return ROLE_HOME[role];
+  if (role === 'admin' || permissions.includes('*') || permissions.includes('/')) return null;
+  const first = permissions[0];
+  if (!first) return null;
+  const tabRoutes = HUB_TAB_ROUTES[first];
+  const allowed = allowedTabsByHub?.[first];
+  if (tabRoutes && allowed && allowed.length > 0) {
+    for (const tab of allowed) {
+      const routes = tabRoutes[tab];
+      if (routes && routes.length) return routes[0];
+    }
+  }
+  return first;
+}
+
 export function canAccessRoute(
   pathname: string,
   permissions: string[],

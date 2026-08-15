@@ -44,8 +44,8 @@ function DatePresetChips({ onSelect }: { onSelect: (from: string, to: string) =>
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface SalesRow { id: string; invoice_no: string; invoice_date: string; party_name: string; gstin: string | null; vehicle_no: string | null; net_weight: number | null; taxable_amount: number; cgst_amount: number; sgst_amount: number; igst_amount: number; grand_total: number; payment_status: string; }
-interface SalesTotals { taxable_amount: number; cgst: number; sgst: number; igst: number; grand_total: number; }
+interface SalesRow { id: string; invoice_no: string; invoice_date: string; party_name: string; gstin: string | null; vehicle_no: string | null; net_weight: number | null; item: string | null; item_qty: number | null; item_unit: string | null; item_rate: number | null; royalty_amount: number; vehicle_rent: number; taxable_amount: number; cgst_amount: number; sgst_amount: number; igst_amount: number; grand_total: number; payment_status: string; }
+interface SalesTotals { taxable_amount: number; cgst: number; sgst: number; igst: number; royalty: number; vehicle_rent: number; grand_total: number; }
 interface SalesRegister { items: SalesRow[]; totals: SalesTotals; count: number; }
 
 interface WeightRow { id: string; token_no: number; token_date: string; token_type: string; vehicle_no: string | null; party_name: string | null; product_name: string | null; gross_weight: number | null; tare_weight: number | null; net_weight: number | null; is_manual_weight: boolean; }
@@ -68,8 +68,21 @@ const SALES_COLS: ColumnDef<SalesRow>[] = [
   { key: 'vehicle_no',     label: 'Vehicle',       accessor: r => r.vehicle_no ?? '—' },
   { key: 'net_weight',     label: 'Net Wt (MT)',   accessor: r => r.net_weight, type: 'number', align: 'right',
     format: v => fmtWt(v as number | null), exportValue: r => r.net_weight ?? '' },
+  { key: 'item',           label: 'Item',          accessor: r => r.item ?? '—' },
+  { key: 'item_qty',       label: 'Qty',           accessor: r => r.item_qty, type: 'number', align: 'right',
+    defaultVisible: false,
+    format: (v, r) => v == null ? '—' : `${Number(v).toLocaleString('en-IN')}${r.item_unit ? ' ' + r.item_unit : ''}`,
+    exportValue: r => r.item_qty ?? '' },
+  // Blank on a multi-line invoice: one rate can't describe several items.
+  { key: 'item_rate',      label: 'Item Price',    accessor: r => r.item_rate, type: 'number', align: 'right',
+    format: (v, r) => v == null ? '—' : `${fmt(Number(v))}${r.item_unit ? '/' + r.item_unit : ''}`,
+    exportValue: r => r.item_rate ?? '' },
   { key: 'taxable_amount', label: 'Taxable',       accessor: r => r.taxable_amount, type: 'number', align: 'right',
     format: v => fmt(v as number), exportValue: r => r.taxable_amount },
+  { key: 'royalty_amount', label: 'Royalty',       accessor: r => r.royalty_amount, type: 'number', align: 'right',
+    format: v => Number(v ?? 0) ? fmt(Number(v)) : '—', exportValue: r => r.royalty_amount ?? 0 },
+  { key: 'vehicle_rent',   label: 'Vehicle Rent',  accessor: r => r.vehicle_rent, type: 'number', align: 'right',
+    format: v => Number(v ?? 0) ? fmt(Number(v)) : '—', exportValue: r => r.vehicle_rent ?? 0 },
   { key: 'cgst_amount',    label: 'CGST',          accessor: r => r.cgst_amount, type: 'number', align: 'right',
     format: v => fmt(v as number), defaultVisible: false, exportValue: r => r.cgst_amount },
   { key: 'sgst_amount',    label: 'SGST',          accessor: r => r.sgst_amount, type: 'number', align: 'right',
@@ -293,6 +306,10 @@ export default function ReportsPage() {
                   <span className="text-muted-foreground">{salesData.count} invoices</span>
                   <span>Taxable: <strong>{fmt(salesData.totals.taxable_amount)}</strong></span>
                   <span>GST: <strong>{fmt(salesData.totals.cgst + salesData.totals.sgst + salesData.totals.igst)}</strong></span>
+                  {Number(salesData.totals.royalty ?? 0) > 0 && (
+                    <span>Royalty: <strong>{fmt(Number(salesData.totals.royalty))}</strong></span>)}
+                  {Number(salesData.totals.vehicle_rent ?? 0) > 0 && (
+                    <span>Vehicle Rent: <strong>{fmt(Number(salesData.totals.vehicle_rent))}</strong></span>)}
                   <span>Total: <strong>{fmt(salesData.totals.grand_total)}</strong></span>
                 </div>
               )}

@@ -737,7 +737,7 @@
     "colStatus": "Status",
     "roles": {
       "admin": "Admin",
-      "gate_guard": "Security Guard",
+      "gate_guard": "Gate Guard",
       "store_manager": "Store Manager",
       "operator": "Weighbridge Operator",
       "sales_executive": "Sales Executive",
