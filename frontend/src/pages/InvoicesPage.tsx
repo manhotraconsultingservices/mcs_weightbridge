@@ -32,10 +32,35 @@ const OPTIONAL_COLS: { key: string; label: string }[] = [
   { key: 'vehicle', label: 'Vehicle' },
   { key: 'token', label: 'Token' },
   { key: 'net_weight', label: 'Net Weight' },
+  { key: 'item', label: 'Item' },
+  { key: 'item_rate', label: 'Item Price' },
+  { key: 'royalty', label: 'Royalty' },
+  { key: 'vehicle_rent', label: 'Vehicle Rent' },
   { key: 'payment_mode', label: 'Payment Mode' },
   { key: 'created_by', label: 'Created by' },
   { key: 'timestamp', label: 'Timestamp' },
 ];
+// Columns that existed before the Item/Price/Royalty/Rent set was added. A browser
+// that already saved its column choice only knows about these, so anything NOT in
+// this list is treated as "new" and shown by default — otherwise a column added
+// later would silently stay hidden for every existing user.
+const LEGACY_COL_KEYS = ['date', 'vehicle', 'token', 'net_weight', 'payment_mode', 'created_by', 'timestamp'];
+
+/** Item name + ₹/unit rate for the list. Most invoices carry one line (from a
+ *  weighment); a multi-line invoice lists the names and shows NO single rate,
+ *  because one rate cannot describe several items. */
+function lineSummary(inv: Invoice, productName: (id: string) => string) {
+  const items = inv.items ?? [];
+  const names = items.map(i => productName(i.product_id) || i.description || '').filter(Boolean);
+  const label = names.length > 3 ? `${names.slice(0, 3).join(', ')} +${names.length - 3} more` : names.join(', ');
+  const rates = new Set(items.map(i => Number(i.rate)).filter(r => !Number.isNaN(r)));
+  const one = items.length === 1 ? items[0] : null;
+  return {
+    label: label || '—',
+    rate: rates.size === 1 ? [...rates][0] : null,
+    unit: one?.unit ?? null,
+  };
+}
 const PM_LABEL: Record<string, string> = {
   cash: 'Cash', credit: 'Credit', upi: 'UPI', bank_transfer: 'Bank',
   bank: 'Bank', cheque: 'Cheque', card: 'Card', online: 'Online',
@@ -1727,6 +1752,16 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
   }, [page, search, invoiceType]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
+
+  // Product names for the Item column (invoice lines carry product_id, and their
+  // description is usually blank because the invoice form never fills it).
+  const [productNames, setProductNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api.get<Product[]>('/api/v1/products')
+      .then(({ data }) => setProductNames(Object.fromEntries(data.map(p => [p.id, p.name]))))
+      .catch(() => { /* Item column falls back to the line description */ });
+  }, []);
+  const productName = useCallback((id: string) => productNames[id] ?? '', [productNames]);
   // Clear selection when navigating pages or switching invoice type
   useEffect(() => { setSelectedIds(new Set()); }, [page, invoiceType]);
 
@@ -2015,14 +2050,25 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
 
   // ── Column show/hide (gear) — persisted per browser ──
   const [cols, setCols] = useState<Set<string>>(() => {
+    const ALL = OPTIONAL_COLS.map(c => c.key);
     try {
-      const s = JSON.parse(localStorage.getItem('invoices.cols') || 'null');
-      if (Array.isArray(s)) return new Set(s as string[]);
+      const raw = JSON.parse(localStorage.getItem('invoices.cols') || 'null');
+      // Legacy shape = a bare array of visible keys, saved before these columns
+      // existed. Keep the user's hidden choices, but reveal the new columns.
+      if (Array.isArray(raw))
+        return new Set([...(raw as string[]), ...ALL.filter(k => !LEGACY_COL_KEYS.includes(k))]);
+      if (raw && Array.isArray(raw.visible) && Array.isArray(raw.known))
+        return new Set([...raw.visible, ...ALL.filter(k => !raw.known.includes(k))]);
     } catch { /* ignore */ }
-    return new Set(OPTIONAL_COLS.map(c => c.key));  // all visible by default
+    return new Set(ALL);  // all visible by default
   });
   const [colMenu, setColMenu] = useState(false);
-  useEffect(() => { localStorage.setItem('invoices.cols', JSON.stringify([...cols])); }, [cols]);
+  // Save the keys we knew about too, so a column added in a later release can be
+  // told apart from one the user deliberately unticked.
+  useEffect(() => {
+    localStorage.setItem('invoices.cols',
+      JSON.stringify({ visible: [...cols], known: OPTIONAL_COLS.map(c => c.key) }));
+  }, [cols]);
   const colShown = (k: string) => cols.has(k);
   const toggleCol = (k: string) => setCols(prev => {
     const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n;
@@ -2061,7 +2107,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
         <Button
           variant="outline" size="sm"
           onClick={() => {
-            const headers = ['Invoice No', 'Date', 'Party / Customer', 'Vehicle', 'Token No', 'Net Wt (MT)', 'Amount', 'Payment Mode', 'Payment Status', 'Status', 'Created by', 'Timestamp'];
+            const headers = ['Invoice No', 'Date', 'Party / Customer', 'Vehicle', 'Token No', 'Net Wt (MT)', 'Item', 'Item Price', 'Amount', 'Royalty', 'Vehicle Rent', 'Payment Mode', 'Payment Status', 'Status', 'Created by', 'Timestamp'];
             const rows = displayed.map(inv => [
               inv.invoice_no ?? '(draft)',
               inv.invoice_date ?? '',
@@ -2069,7 +2115,11 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
               inv.vehicle_no ?? '',
               inv.token_no != null ? String(inv.token_no) : '',
               inv.net_weight != null ? (Number(inv.net_weight) / 1000).toFixed(3) : '',
+              lineSummary(inv, productName).label === '—' ? '' : lineSummary(inv, productName).label,
+              lineSummary(inv, productName).rate != null ? Number(lineSummary(inv, productName).rate).toFixed(2) : '',
               Number(inv.grand_total ?? 0).toFixed(2),
+              Number(inv.royalty_amount ?? 0).toFixed(2),
+              Number(inv.vehicle_rent ?? 0).toFixed(2),
               pmLabel(inv.payment_mode),
               inv.payment_status ?? '',
               inv.status ?? '',
@@ -2164,9 +2214,13 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                         {t('invoice.netWeight')} (MT) <SortIcon col="net_weight" />
                       </th>
                     )}
+                    {colShown('item') && <th className={thClass}>Item</th>}
+                    {colShown('item_rate') && <th className={thClass + ' text-right'}>Item Price</th>}
                     <th className={thSortClass + ' text-right'} onClick={() => toggleSort('grand_total')}>
                       {t('common.amount')} <SortIcon col="grand_total" />
                     </th>
+                    {colShown('royalty') && <th className={thClass + ' text-right'}>Royalty</th>}
+                    {colShown('vehicle_rent') && <th className={thClass + ' text-right'}>Vehicle Rent</th>}
                     {colShown('payment_mode') && (
                       <th className={thSortClass} onClick={() => toggleSort('payment_mode')}>
                         Payment Mode <SortIcon col="payment_mode" />
@@ -2206,7 +2260,11 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                     )}
                     {colShown('token') && <td className="px-2 py-1" />}
                     {colShown('net_weight') && <td className="px-2 py-1" />}
+                    {colShown('item') && <td className="px-2 py-1" />}
+                    {colShown('item_rate') && <td className="px-2 py-1" />}
                     <td className="px-2 py-1" />
+                    {colShown('royalty') && <td className="px-2 py-1" />}
+                    {colShown('vehicle_rent') && <td className="px-2 py-1" />}
                     {colShown('payment_mode') && <td className="px-2 py-1" />}
                     {colShown('created_by') && <td className="px-2 py-1" />}
                     {colShown('timestamp') && <td className="px-2 py-1" />}
@@ -2320,7 +2378,31 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                         {inv.net_weight != null ? Number(inv.net_weight).toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '—'}
                       </td>
                       )}
+                      {colShown('item') && (
+                        <td className="px-3 py-2 text-xs text-muted-foreground max-w-[16rem] truncate"
+                            title={lineSummary(inv, productName).label}>
+                          {lineSummary(inv, productName).label}
+                        </td>
+                      )}
+                      {colShown('item_rate') && (() => {
+                        const ls = lineSummary(inv, productName);
+                        return (
+                          <td className="px-3 py-2 text-right text-xs text-muted-foreground whitespace-nowrap">
+                            {ls.rate == null ? '—' : `${INR(ls.rate)}${ls.unit ? '/' + ls.unit : ''}`}
+                          </td>
+                        );
+                      })()}
                       <td className="px-3 py-2 text-right font-semibold whitespace-nowrap">{INR(inv.grand_total)}</td>
+                      {colShown('royalty') && (
+                        <td className="px-3 py-2 text-right text-xs text-muted-foreground whitespace-nowrap">
+                          {Number(inv.royalty_amount ?? 0) ? INR(Number(inv.royalty_amount)) : '—'}
+                        </td>
+                      )}
+                      {colShown('vehicle_rent') && (
+                        <td className="px-3 py-2 text-right text-xs text-muted-foreground whitespace-nowrap">
+                          {Number(inv.vehicle_rent ?? 0) ? INR(Number(inv.vehicle_rent)) : '—'}
+                        </td>
+                      )}
                       {colShown('payment_mode') && <td className="px-3 py-2 text-xs whitespace-nowrap">{pmLabel(inv.payment_mode)}</td>}
                       {colShown('created_by') && <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{inv.created_by_name ?? '—'}</td>}
                       {colShown('timestamp') && <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{inv.created_at ? new Date(inv.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>}
