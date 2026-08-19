@@ -430,13 +430,21 @@ async def agent_pending_events(
         rows = (await db.execute(text("""
             SELECT t.id AS token_id, t.token_no, t.vehicle_no, s.stage AS weight_stage
             FROM tokens t
-            CROSS JOIN (VALUES ('first_weight'), ('second_weight')) AS s(stage)
+            CROSS JOIN (VALUES ('first_weight'), ('second_weight'), ('volume')) AS s(stage)
             WHERE t.updated_at > NOW() - INTERVAL '2 hours'
               AND t.status IN ('FIRST_WEIGHT', 'LOADING', 'IN_PROGRESS', 'COMPLETED')
               AND (
-                  (s.stage = 'first_weight' AND (t.first_weight IS NOT NULL OR t.gross_weight IS NOT NULL OR t.tare_weight IS NOT NULL))
+                  -- Weighbridge stages need real bridge readings. A VOLUME token has
+                  -- neither gross nor tare, which is exactly why it was never offered
+                  -- to the agent and CUM loads went unphotographed.
+                  (s.stage = 'first_weight' AND t.weight_method IS DISTINCT FROM 'volume'
+                       AND (t.first_weight IS NOT NULL OR t.gross_weight IS NOT NULL OR t.tare_weight IS NOT NULL))
                   OR
-                  (s.stage = 'second_weight' AND t.gross_weight IS NOT NULL AND t.tare_weight IS NOT NULL)
+                  (s.stage = 'second_weight' AND t.weight_method IS DISTINCT FROM 'volume'
+                       AND t.gross_weight IS NOT NULL AND t.tare_weight IS NOT NULL)
+                  OR
+                  -- Volume (CUM/CFT) load: one capture, as soon as the token exists.
+                  (s.stage = 'volume' AND t.weight_method = 'volume')
               )
               AND NOT EXISTS (
                   SELECT 1 FROM token_snapshots ts
