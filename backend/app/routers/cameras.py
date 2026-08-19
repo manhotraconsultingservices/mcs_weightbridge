@@ -686,6 +686,10 @@ class CameraConfig(BaseModel):
 class CameraConfigPayload(BaseModel):
     front: CameraConfig = CameraConfig()
     top: CameraConfig = CameraConfig()
+    # Which cameras photograph a VOLUME (CUM/CFT) token. None = keep what is stored;
+    # None-when-unset or [] = all cameras. Lets a site switch the CUM camera later
+    # without a deploy. Weighbridge stages always use every camera.
+    volume_cameras: list[str] | None = None
 
 
 class SnapshotResponse(BaseModel):
@@ -747,6 +751,24 @@ async def _load_camera_config(db: AsyncSession) -> dict:
         return {}
 
 
+def _cameras_for_stage(cfg: dict, weight_stage: str) -> tuple[str, ...]:
+    """Cameras to capture from for a given weighment stage.
+
+    Weighbridge stages always use every camera (unchanged). A VOLUME token reads
+    `camera_config.volume_cameras` — a list of camera ids — so the site can switch
+    which camera photographs a CUM load without a deploy. Missing/blank/invalid
+    falls back to all cameras, so the feature is on by default and can never leave
+    a volume token with no photo because of a typo.
+    """
+    if weight_stage != "volume":
+        return CAMERA_IDS
+    chosen = cfg.get("volume_cameras")
+    if not isinstance(chosen, (list, tuple)):
+        return CAMERA_IDS
+    valid = tuple(c for c in chosen if c in CAMERA_IDS)
+    return valid or CAMERA_IDS
+
+
 async def _query_snapshots(db: AsyncSession, token_id: str) -> list[dict]:
     rows = (await db.execute(
         text("""
@@ -773,7 +795,11 @@ async def get_camera_config(
     cfg = await _load_camera_config(db)
     front = CameraConfig(**cfg.get("front", {})) if cfg.get("front") else CameraConfig()
     top = CameraConfig(**cfg.get("top", {})) if cfg.get("top") else CameraConfig()
-    return CameraConfigPayload(front=_mask_password(front), top=_mask_password(top))
+    stored_vol = cfg.get("volume_cameras")
+    return CameraConfigPayload(
+        front=_mask_password(front), top=_mask_password(top),
+        volume_cameras=list(stored_vol) if isinstance(stored_vol, (list, tuple)) else None,
+    )
 
 
 @router.get("/live-snapshot/{camera_id}")
@@ -914,9 +940,18 @@ async def update_camera_config(
             "enabled": new.enabled,
         }
 
+    # NOTE: this rebuilds the stored JSON, so every key we want to keep must be
+    # listed here — anything omitted is silently dropped on the next save.
+    vol = payload.volume_cameras
+    if vol is None:
+        vol = existing.get("volume_cameras")          # keep what's already stored
+    if isinstance(vol, (list, tuple)):
+        vol = [c for c in vol if c in CAMERA_IDS]
     merged = {
         "front": _merge(payload.front, "front"),
         "top": _merge(payload.top, "top"),
+        # which cameras photograph a VOLUME (CUM) token; None/[] = all cameras
+        "volume_cameras": list(vol) if vol else None,
     }
     await _upsert(db, CAMERA_CONFIG_KEY, json.dumps(merged))
 
@@ -1111,10 +1146,12 @@ async def trigger_snapshot_capture(
 ) -> None:
     """
     Fire-and-forget snapshot capture task.
-    Called from tokens.py via BackgroundTasks after first or second weight.
+    Called from tokens.py via BackgroundTasks after first or second weight, and
+    after a VOLUME (CUM/CFT) token — which never touches the bridge but still
+    wants a photo of the load.
     Opens its own DB session — the request session is already closed.
     tenant_slug: passed explicitly for multi-tenant background task routing.
-    weight_stage: 'first_weight' or 'second_weight' — determines which capture event.
+    weight_stage: 'first_weight' | 'second_weight' | 'volume'.
     """
     try:
         from app.database import get_tenant_session
@@ -1125,8 +1162,11 @@ async def trigger_snapshot_capture(
                 logger.debug("Camera config not set — skipping snapshot capture for token %s", token_id)
                 return
 
-            # Phase 1: insert pending rows for enabled cameras
-            for camera_id in CAMERA_IDS:
+            # Which cameras serve THIS stage. Volume tokens are configurable
+            # (camera_config.volume_cameras) so a site can point CUM weighments at a
+            # different camera later without a code change; weighbridge stages keep
+            # using every camera exactly as before.
+            for camera_id in _cameras_for_stage(cfg, weight_stage):
                 cam = cfg.get(camera_id, {})
                 if not cam.get("enabled") or not cam.get("snapshot_url", "").strip():
                     continue
@@ -1150,8 +1190,11 @@ async def trigger_snapshot_capture(
                 )
             await db.commit()
 
-        # Phase 2: capture each camera (separate session per camera for isolation)
-        for camera_id in CAMERA_IDS:
+        # Phase 2: capture each camera (separate session per camera for isolation).
+        # Must use the SAME stage-aware selection as phase 1 — otherwise a volume
+        # token restricted to one camera would still fire a capture at the other,
+        # writing a snapshot row phase 1 never created.
+        for camera_id in _cameras_for_stage(cfg, weight_stage):
             _session_cm2 = await get_tenant_session(tenant_slug)
             async with _session_cm2 as db:
                 cfg = await _load_camera_config(db)

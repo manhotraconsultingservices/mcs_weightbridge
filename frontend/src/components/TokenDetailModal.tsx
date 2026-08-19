@@ -433,6 +433,10 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
   // Group snapshots by weight stage
   const firstWeightSnaps = snapshots.filter(s => s.weight_stage === 'first_weight');
   const secondWeightSnaps = snapshots.filter(s => s.weight_stage === 'second_weight');
+  // Volume (CUM/CFT) tokens skip the bridge, so their photos are captured once and
+  // belong under their own heading rather than a 1st/2nd weight one.
+  const volumeSnaps = snapshots.filter(s => s.weight_stage === 'volume');
+  const isVolumeToken = token?.weight_method === 'volume';
   const hasAnyCamera = snapshots.length > 0 || token?.status === 'COMPLETED' || token?.status === 'FIRST_WEIGHT';
 
   const open = !!tokenId;
@@ -679,7 +683,7 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                     )}
                   </div>
                   {/* 1st Weight snapshots */}
-                  {(firstWeightSnaps.length > 0 || token.status !== 'OPEN') && (
+                  {!isVolumeToken && (firstWeightSnaps.length > 0 || token.status !== 'OPEN') && (
                     <div className="px-3 pt-3">
                       <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">1st Weight</p>
                       <div className="grid grid-cols-2 gap-3">
@@ -701,7 +705,7 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                     </div>
                   )}
                   {/* 2nd Weight snapshots */}
-                  {(secondWeightSnaps.length > 0 || token.status === 'COMPLETED') && (
+                  {!isVolumeToken && (secondWeightSnaps.length > 0 || token.status === 'COMPLETED') && (
                     <div className="px-3 pt-3 pb-1">
                       <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">2nd Weight</p>
                       <div className="grid grid-cols-2 gap-3">
@@ -718,6 +722,28 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                           cameraId="top"
                           tokenId={token.id}
                           onLightbox={(src, lbl) => setLightbox({ src, label: '2nd Weight — ' + lbl })}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {/* Volume (CUM) load photos — no bridge weighment for these */}
+                  {(isVolumeToken || volumeSnaps.length > 0) && (
+                    <div className="px-3 pt-3 pb-1">
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Load Photos</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <SnapshotCard
+                          snap={volumeSnaps.find(s => s.camera_id === 'front')}
+                          label="Front View"
+                          cameraId="front"
+                          tokenId={token.id}
+                          onLightbox={(src, lbl) => setLightbox({ src, label: 'Load — ' + lbl })}
+                        />
+                        <SnapshotCard
+                          snap={volumeSnaps.find(s => s.camera_id === 'top')}
+                          label="Top View"
+                          cameraId="top"
+                          tokenId={token.id}
+                          onLightbox={(src, lbl) => setLightbox({ src, label: 'Load — ' + lbl })}
                         />
                       </div>
                     </div>

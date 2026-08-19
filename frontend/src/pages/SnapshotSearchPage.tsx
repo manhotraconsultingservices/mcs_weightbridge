@@ -60,6 +60,7 @@ interface TokenGroup {
   party_name: string | null;
   first_weight: SnapshotSearchItem[];
   second_weight: SnapshotSearchItem[];
+  volume: SnapshotSearchItem[];      // CUM/CFT loads — no bridge weighment
 }
 
 function groupByToken(items: SnapshotSearchItem[]): TokenGroup[] {
@@ -75,10 +76,12 @@ function groupByToken(items: SnapshotSearchItem[]): TokenGroup[] {
         party_name: item.party_name,
         first_weight: [],
         second_weight: [],
+        volume: [],
       };
       map.set(item.token_id, g);
     }
     if (item.weight_stage === 'first_weight') g.first_weight.push(item);
+    else if (item.weight_stage === 'volume') g.volume.push(item);
     else g.second_weight.push(item);
   }
   return Array.from(map.values());
@@ -350,6 +353,37 @@ export default function SnapshotSearchPage() {
                       </div>
                     )}
                   </div>
+                  {/* Volume (CUM) load photos — only shown when the token has them */}
+                  {g.volume.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-violet-600 mb-2 flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-full bg-violet-500" />
+                        Load Photos (CUM)
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {g.volume.map(snap => (
+                          <div
+                            key={`${snap.camera_id}-vol`}
+                            className="relative group rounded-lg overflow-hidden border bg-black cursor-pointer"
+                            onClick={() => snap.url && setLightbox({ url: snap.url, label: `${snap.camera_label ?? snap.camera_id} - Load` })}
+                          >
+                            {snap.url ? (
+                              <img src={snap.url} alt={snap.camera_label ?? snap.camera_id}
+                                   className="w-full h-32 object-cover" />
+                            ) : (
+                              <div className="w-full h-32 flex items-center justify-center bg-muted">
+                                <ImageIcon className="h-8 w-8 text-muted-foreground/30" />
+                              </div>
+                            )}
+                            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1">
+                              <p className="text-[10px] text-white font-medium">{snap.camera_label ?? snap.camera_id}</p>
+                              <p className="text-[9px] text-white/60">{fmtDateTime(snap.captured_at)}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

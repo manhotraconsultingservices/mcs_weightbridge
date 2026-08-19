@@ -1051,6 +1051,15 @@ async def create_volume_token(
             company.id, token.token_date, _bg_tenant,
         )
 
+    # Camera snapshots. A volume token never touches the bridge, so it had no capture
+    # at all — the load still deserves a photo. Stage 'volume' (its own row, so it can
+    # never collide with the weighbridge first/second-weight snapshots), and which
+    # cameras fire is configurable per site via camera_config.volume_cameras.
+    # Fire-and-forget, exactly like the weighbridge path: a camera being down must
+    # never fail the token.
+    from app.routers.cameras import trigger_snapshot_capture
+    background_tasks.add_task(trigger_snapshot_capture, token.id, _bg_tenant, "volume")
+
     return await _load_token(db, token.id)
 
 

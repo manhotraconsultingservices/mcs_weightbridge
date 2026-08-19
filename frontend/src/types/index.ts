@@ -503,7 +503,7 @@ export interface SnapshotResult {
   attempts: number;
   error_message: string | null;
   captured_at: string | null;
-  weight_stage: 'first_weight' | 'second_weight';
+  weight_stage: 'first_weight' | 'second_weight' | 'volume';
 }
 
 export interface TokenSnapshotsResponse {
@@ -517,7 +517,7 @@ export interface SnapshotSearchItem {
   token_date: string | null;
   vehicle_no: string | null;
   party_name: string | null;
-  weight_stage: 'first_weight' | 'second_weight';
+  weight_stage: 'first_weight' | 'second_weight' | 'volume';
   camera_id: string;
   camera_label: string | null;
   url: string | null;

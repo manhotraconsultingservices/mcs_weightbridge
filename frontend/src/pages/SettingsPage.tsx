@@ -2037,16 +2037,19 @@ function CameraSettingsTab() {
     sa_email: null as string | null,
     sa_json: null as Record<string, unknown> | null,
   });
+  // Which cameras photograph a VOLUME (CUM) token. null = all cameras.
+  const [volCams, setVolCams] = useState<string[] | null>(null);
   const [savingDrive, setSavingDrive] = useState(false);
   const [gdriveMsg, setGdriveMsg] = useState('');
   const [testingDrive, setTestingDrive] = useState(false);
   const [driveTestResult, setDriveTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
-    api.get<{ front: CameraCfg; top: CameraCfg }>('/api/v1/cameras/config')
+    api.get<{ front: CameraCfg; top: CameraCfg; volume_cameras: string[] | null }>('/api/v1/cameras/config')
       .then(r => {
         if (r.data.front) setFront(r.data.front);
         if (r.data.top) setTop(r.data.top);
+        setVolCams(r.data.volume_cameras ?? null);
       })
       .catch(() => {});
     api.get<{ enabled: boolean; service_account_email: string | null; folder_id: string; archive_folder_id: string; retention_days: number; retention_action: string }>('/api/v1/cameras/google-drive-config')
@@ -2065,7 +2068,7 @@ function CameraSettingsTab() {
   async function save() {
     setSaving(true); setSaveMsg('');
     try {
-      await api.put('/api/v1/cameras/config', { front, top });
+      await api.put('/api/v1/cameras/config', { front, top, volume_cameras: volCams });
       setSaveMsg('Camera settings saved');
       setTimeout(() => setSaveMsg(''), 3000);
     } catch {
@@ -2328,6 +2331,47 @@ function CameraSettingsTab() {
           onTest={() => testCamera('top')}
         />
       </div>
+
+      {/* Which cameras photograph a volume (CUM) load. A CUM token never goes on the
+          bridge, so it has no 1st/2nd weight capture — this picks its cameras. */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Volume (CUM) token photos</CardTitle>
+          <CardDescription>
+            Which cameras capture a photo when a load is billed by volume instead of the
+            weighbridge. Leave both ticked to use every camera.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {(['front', 'top'] as const).map(cam => {
+            const all = volCams === null || volCams.length === 0;
+            const checked = all || volCams.includes(cam);
+            return (
+              <label key={cam} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={checked}
+                  onChange={() => {
+                    const current = all ? ['front', 'top'] : [...volCams];
+                    const next = current.includes(cam)
+                      ? current.filter(c => c !== cam)
+                      : [...current, cam];
+                    // all selected -> store null so future cameras are included too
+                    setVolCams(next.length === 2 ? null : next);
+                  }}
+                />
+                <span className="capitalize">{cam} camera</span>
+              </label>
+            );
+          })}
+          {volCams !== null && volCams.length === 0 && (
+            <p className="text-xs text-amber-600">
+              Nothing selected — all cameras will be used so a CUM load is never left without a photo.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="flex items-center gap-3">
         <Button onClick={save} disabled={saving}>
