@@ -203,6 +203,10 @@ export interface CustomFieldDefinition {
 }
 
 export interface Token {
+  // Who booked the weighment — resolved server-side from tokens.created_by
+  // (full_name, else username). Blank when unknown.
+  created_by?: string | null;
+  created_by_name?: string | null;
   id: string;
   token_no: number | null;
   token_date: string;

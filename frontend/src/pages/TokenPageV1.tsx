@@ -62,6 +62,7 @@ const TOKEN_COL_DEFS = [
   { key: 'gross',    label: 'Gross',       width: '80px',                 alwaysVisible: false },
   { key: 'tare',     label: 'Tare',        width: '80px',                 alwaysVisible: false },
   { key: 'net',      label: 'Net',         width: '160px',                alwaysVisible: true  },
+  { key: 'created_by', label: 'Created by', width: 'minmax(110px, 1fr)',  alwaysVisible: false },
   { key: 'actions',  label: 'Actions',     width: '60px',                 alwaysVisible: true  },
 ] as const;
 
@@ -2171,7 +2172,8 @@ export default function TokenPageV1() {
       const vehicleMatch = t.vehicle_no.toLowerCase().includes(q);
       const partyMatch = t.party?.name.toLowerCase().includes(q) ?? false;
       const materialMatch = t.product?.name.toLowerCase().includes(q) ?? false;
-      if (!vehicleMatch && !partyMatch && !materialMatch) return false;
+      const operatorMatch = t.created_by_name?.toLowerCase().includes(q) ?? false;
+      if (!vehicleMatch && !partyMatch && !materialMatch && !operatorMatch) return false;
     }
     return true;
   });
@@ -2515,6 +2517,7 @@ export default function TokenPageV1() {
               {visibleCols.includes('gross')    && <div className="text-right">{t('token.grossWeight')} (MT)</div>}
               {visibleCols.includes('tare')     && <div className="text-right">{t('token.tareWeight')} (MT)</div>}
               {visibleCols.includes('net')      && <div className="text-right">{t('token.netWeight')} (MT)</div>}
+              {visibleCols.includes('created_by') && <div>Created by</div>}
               {visibleCols.includes('actions')  && <div className="text-center">Act</div>}
             </div>
 
@@ -2623,6 +2626,12 @@ export default function TokenPageV1() {
                         ? <span className="text-primary">{qtyFmt(token)}</span>
                         : <span className="text-muted-foreground">—</span>
                       }
+                    </div>
+                    )}
+                    {visibleCols.includes('created_by') && (
+                    <div className="min-w-0 overflow-hidden">
+                      <p className="text-xs truncate text-muted-foreground"
+                         title={token.created_by_name ?? ''}>{token.created_by_name || '—'}</p>
                     </div>
                     )}
 

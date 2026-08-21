@@ -182,7 +182,7 @@ DEFAULT_TEMPLATES = [
         "channel": "telegram",
         "name": "Weighment Complete (Telegram)",
         "subject": None,
-        "body": "⚖️ <b>Weighment Completed</b>\n\nToken: <b>#{{ token_no }}</b>\n{% if token_type %}Type: <b>{{ token_type }}</b>\n{% endif %}Vehicle: {{ vehicle_no }}\nParty: {{ party_name }}\nMaterial: {{ material }}\nQty: <b>{{ qty }}</b>\n{% if rate %}Rate: ₹{{ rate }}\n{% endif %}{% if royalty %}Royalty: ₹{{ royalty }}\n{% endif %}{% if vehicle_rent %}Vehicle Rent: ₹{{ vehicle_rent }}\n{% endif %}Amount: <b>₹{{ amount }}</b>\nCompleted: {{ completed_at }}\n\n— {{ company_name }}",
+        "body": "⚖️ <b>Weighment Completed</b>\n\nToken: <b>#{{ token_no }}</b>\n{% if token_type %}Type: <b>{{ token_type }}</b>\n{% endif %}Vehicle: {{ vehicle_no }}\nParty: {{ party_name }}\nMaterial: {{ material }}\nQty: <b>{{ qty }}</b>\n{% if rate %}Rate: ₹{{ rate }}\n{% endif %}{% if royalty %}Royalty: ₹{{ royalty }}\n{% endif %}{% if vehicle_rent %}Vehicle Rent: ₹{{ vehicle_rent }}\n{% endif %}Amount: <b>₹{{ amount }}</b>\nCompleted: {{ completed_at }}\n{% if created_by %}Created by: {{ created_by }}\n{% endif %}\n— {{ company_name }}",
     },
     {
         "event_type": "low_product_stock",
@@ -888,7 +888,7 @@ async def seed_default_templates(db: AsyncSession, company_id: uuid.UUID) -> Non
 # only inserts MISSING rows, so a changed body never propagates otherwise). Only the
 # listed (event_type, channel) pairs are force-updated, ONCE per tenant per version
 # — so a later admin customisation on the Notifications page survives future restarts.
-_TEMPLATE_REFRESH_VERSION = 9   # v8: gate pass created/exit gain "Vehicle entered by / exit by" + both timestamps
+_TEMPLATE_REFRESH_VERSION = 10  # v10: token_completed names the operator who created the weighment
 _TEMPLATE_REFRESH_KEYS = {
     ("token_completed", "telegram"),
     ("invoice_finalized", "telegram"),

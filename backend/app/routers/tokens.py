@@ -209,6 +209,10 @@ async def _build_token_notify_ctx(db: AsyncSession, token: Token, company: Compa
         "amount": f"{float(amount):,.2f}" if amount is not None else "—",
         "royalty": f"{royalty:,.2f}" if royalty > 0 else "",
         "vehicle_rent": f"{rent:,.2f}" if rent > 0 else "",
+        # Who booked this weighment. Resolved from tokens.created_by the same way
+        # the registers do it, so the alert and the report name the same person.
+        # Blank when unknown -> the template drops the line entirely.
+        "created_by": await _user_display_name(db, token.created_by),
         "company_name": company.name,
     }
 
@@ -277,6 +281,24 @@ async def _check_royalty_unaccounted_bg(
         _logging.getLogger(__name__).warning("Royalty unaccounted check failed: %s", exc)
 
 
+async def _attach_creator_names(db: AsyncSession, tokens: list) -> None:
+    """Attach created_by_name to each token in place.
+
+    The token table showed no creator at all because TokenResponse never carried
+    one. Resolved here in ONE query for the whole page (never per row) and set as
+    an attribute, so Pydantic reads it off the ORM object.
+    """
+    ids = {t.created_by for t in tokens if getattr(t, "created_by", None)}
+    names: dict = {}
+    if ids:
+        rows = (await db.execute(
+            select(User.id, User.full_name, User.username).where(User.id.in_(ids))
+        )).all()
+        names = {r[0]: ((r[1] or "").strip() or (r[2] or "")) for r in rows}
+    for t in tokens:
+        setattr(t, "created_by_name", names.get(getattr(t, "created_by", None)))
+
+
 async def _load_token(db: AsyncSession, token_id: uuid.UUID) -> Token:
     result = await db.execute(
         select(Token)
@@ -292,6 +314,7 @@ async def _load_token(db: AsyncSession, token_id: uuid.UUID) -> Token:
     token = result.scalar_one_or_none()
     if not token:
         raise HTTPException(404, "Token not found")
+    await _attach_creator_names(db, [token])
     return token
 
 
@@ -1118,9 +1141,10 @@ async def list_tokens(
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    items = result.scalars().all()
+    items = list(result.scalars().all())
+    await _attach_creator_names(db, items)
 
-    return TokenListResponse(items=list(items), total=total, page=page, page_size=page_size)
+    return TokenListResponse(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.get("/last-by-vehicle/{vehicle_no}")

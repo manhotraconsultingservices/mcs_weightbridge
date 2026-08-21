@@ -173,6 +173,11 @@ class LinkedInvoice(BaseModel):
 
 
 class TokenResponse(BaseModel):
+    # Who booked the weighment. Not a tokens column join — resolved from
+    # tokens.created_by and attached before serialization, the same COALESCE
+    # (full_name, username) the registers use, so both name the same person.
+    created_by: Optional[UUID] = None
+    created_by_name: Optional[str] = None
     id: UUID
     token_no: Optional[int]
     token_date: date

@@ -1650,7 +1650,7 @@ interface InvoicesPageProps {
   defaultType?: 'sale' | 'purchase';
 }
 
-type SortCol = 'invoice_no' | 'invoice_date' | 'party' | 'grand_total' | 'net_weight' | 'payment_mode' | 'payment_status' | 'status';
+type SortCol = 'invoice_no' | 'invoice_date' | 'party' | 'grand_total' | 'net_weight' | 'payment_mode' | 'payment_status' | 'status' | 'created_by';
 
 export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps) {
   const { t } = useTranslation();
@@ -1723,7 +1723,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   // Column filters
-  const [cf, setCf] = useState({ invoice_no: '', party: '', vehicle_no: '', payment_status: '', status: '', date_from: '', date_to: '' });
+  const [cf, setCf] = useState({ invoice_no: '', party: '', vehicle_no: '', payment_status: '', status: '', date_from: '', date_to: '', created_by: '' });
 
   function toggleSort(col: SortCol) {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -1773,6 +1773,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
     if (cf.vehicle_no) rows = rows.filter(r => (r.vehicle_no ?? '').toLowerCase().includes(cf.vehicle_no.toLowerCase()));
     if (cf.payment_status) rows = rows.filter(r => r.payment_status === cf.payment_status);
     if (cf.status) rows = rows.filter(r => r.status === cf.status);
+    if (cf.created_by) rows = rows.filter(r => (r.created_by_name ?? '').toLowerCase().includes(cf.created_by.toLowerCase()));
     if (cf.date_from) rows = rows.filter(r => r.invoice_date >= cf.date_from);
     if (cf.date_to) rows = rows.filter(r => r.invoice_date <= cf.date_to);
     rows.sort((a, b) => {
@@ -1785,6 +1786,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
       else if (sortCol === 'payment_mode') { av = pmLabel(a.payment_mode); bv = pmLabel(b.payment_mode); }
       else if (sortCol === 'payment_status') { av = a.payment_status; bv = b.payment_status; }
       else if (sortCol === 'status') { av = a.status; bv = b.status; }
+      else if (sortCol === 'created_by') { av = (a.created_by_name ?? '').toLowerCase(); bv = (b.created_by_name ?? '').toLowerCase(); }
       if (av < bv) return sortDir === 'asc' ? -1 : 1;
       if (av > bv) return sortDir === 'asc' ? 1 : -1;
       return 0;
@@ -2100,7 +2102,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
         </div>
         {Object.values(cf).some(Boolean) && (
           <Button variant="ghost" size="sm" className="text-xs text-muted-foreground"
-            onClick={() => setCf({ invoice_no: '', party: '', vehicle_no: '', payment_status: '', status: '', date_from: '', date_to: '' })}>
+            onClick={() => setCf({ invoice_no: '', party: '', vehicle_no: '', payment_status: '', status: '', date_from: '', date_to: '', created_by: '' })}>
             {t('invoice.clearFilters')}
           </Button>
         )}
@@ -2226,7 +2228,11 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                         Payment Mode <SortIcon col="payment_mode" />
                       </th>
                     )}
-                    {colShown('created_by') && <th className={thClass}>Created by</th>}
+                    {colShown('created_by') && (
+                      <th className={thSortClass} onClick={() => toggleSort('created_by')}>
+                        Created by <SortIcon col="created_by" />
+                      </th>
+                    )}
                     {colShown('timestamp') && <th className={thClass}>Timestamp</th>}
                     <th className={thClass + ' text-center'}>Progress</th>
                     <th className={thClass}></th>
@@ -2266,7 +2272,16 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
                     {colShown('royalty') && <td className="px-2 py-1" />}
                     {colShown('vehicle_rent') && <td className="px-2 py-1" />}
                     {colShown('payment_mode') && <td className="px-2 py-1" />}
-                    {colShown('created_by') && <td className="px-2 py-1" />}
+                    {colShown('created_by') && (
+                      <td className="px-2 py-1">
+                        <input
+                          className="h-7 w-full rounded border px-1.5 text-xs"
+                          placeholder="Filter…"
+                          value={cf.created_by}
+                          onChange={e => setCf(f => ({ ...f, created_by: e.target.value }))}
+                        />
+                      </td>
+                    )}
                     {colShown('timestamp') && <td className="px-2 py-1" />}
                     <td className="px-2 py-1">
                       <Select value={cf.payment_status || 'all'} onValueChange={v => setCf(f => ({ ...f, payment_status: (v ?? '') === 'all' ? '' : (v ?? '') }))}>
