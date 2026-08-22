@@ -1038,8 +1038,13 @@ async def _fetch_trips(
     shown where available (camera-detected trucks), NULL otherwise (manual tokens).
     KPI entry/exit counts are still ANPR-specific; tonnage/revenue cover all tokens.
     """
-    start_ts = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
-    end_ts = datetime.combine(date_to + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+    # The rows are filtered on token_date (the IST business day), so the movement
+    # KPIs must use the SAME day boundaries. Building these at UTC midnight shifted
+    # every entry/exit bucket by 5h30 — a truck arriving 04:00 IST counted against
+    # the previous day. Latent while no camera stamps plates; wrong once one does.
+    _IST = timezone(timedelta(hours=5, minutes=30))
+    start_ts = datetime.combine(date_from, datetime.min.time(), tzinfo=_IST)
+    end_ts = datetime.combine(date_to + timedelta(days=1), datetime.min.time(), tzinfo=_IST)
 
     # Trip rows joined with party + product + invoice — single SELECT for table.
     rows_q = text("""
@@ -1065,10 +1070,15 @@ async def _fetch_trips(
         LEFT JOIN parties  p  ON p.id  = t.party_id
         LEFT JOIN products pr ON pr.id = t.product_id
         LEFT JOIN LATERAL (
+            -- The invoice that is actually alive for this token. This used to take
+            -- the most recently CREATED one whatever its state, so a row could show
+            -- a cancelled or superseded amount that the revenue KPI (final only)
+            -- deliberately excludes — the column never footed to the card above it.
             SELECT id, invoice_no, status, payment_status, grand_total
             FROM invoices
             WHERE token_id = t.id
-            ORDER BY created_at DESC LIMIT 1
+              AND status NOT IN ('cancelled', 'superseded')
+            ORDER BY (status = 'final') DESC, created_at DESC LIMIT 1
         ) i ON TRUE
         WHERE t.company_id = :cid
           AND t.is_supplement = FALSE
@@ -1102,7 +1112,11 @@ async def _fetch_trips(
           COUNT(*) FILTER (WHERE anpr_entry_at >= :s AND anpr_entry_at < :e)::INT AS entries,
           COUNT(*) FILTER (WHERE anpr_exit_at  >= :s AND anpr_exit_at  < :e)::INT AS exits,
           COALESCE(SUM(net_weight) FILTER (WHERE status = 'COMPLETED'
-                       AND token_date BETWEEN :df AND :dt), 0) AS total_kg
+                       AND token_type = 'sale'
+                       AND token_date BETWEEN :df AND :dt), 0) AS dispatched_kg,
+          COALESCE(SUM(net_weight) FILTER (WHERE status = 'COMPLETED'
+                       AND token_type = 'purchase'
+                       AND token_date BETWEEN :df AND :dt), 0) AS received_kg
         FROM tokens
         WHERE company_id = :cid AND is_supplement = FALSE
           AND status NOT IN ('CANCELLED')
@@ -1113,29 +1127,44 @@ async def _fetch_trips(
     })).fetchone()
     entries_n = int(ru.entries or 0) if ru else 0
     exits_n = int(ru.exits or 0) if ru else 0
-    total_kg = float(ru.total_kg or 0) if ru else 0.0
+    # Dispatched vs received kept apart: one blended 'tonnage' number silently
+    # answered two different questions (material sold vs material bought in).
+    dispatched_kg = float(ru.dispatched_kg or 0) if ru else 0.0
+    received_kg = float(ru.received_kg or 0) if ru else 0.0
+    total_kg = dispatched_kg
 
     # Total revenue for invoices linked to those trips
     rev_q = text("""
-        SELECT COALESCE(SUM(i.grand_total), 0)
+        SELECT
+          -- Revenue is SALE invoices only. This used to sum every final invoice
+          -- linked to a token, so purchase bills (money OUT) were added to revenue.
+          COALESCE(SUM(i.grand_total) FILTER (WHERE i.invoice_type = 'sale'), 0)     AS revenue,
+          COALESCE(SUM(i.grand_total) FILTER (WHERE i.invoice_type = 'purchase'), 0) AS purchase_value
         FROM invoices i
         JOIN tokens t ON t.id = i.token_id
         WHERE t.company_id = :cid
           AND i.status = 'final'
           AND t.token_date BETWEEN :df AND :dt
     """)
-    total_revenue = float((await db.execute(rev_q, {
+    _rev = (await db.execute(rev_q, {
         "cid": str(company_id), "df": date_from, "dt": date_to,
-    })).scalar() or 0)
+    })).fetchone()
+    total_revenue = float(_rev.revenue or 0) if _rev else 0.0
+    purchase_value = float(_rev.purchase_value or 0) if _rev else 0.0
 
     # Currently inside = entries in window with no exit yet
     inside_q = text("""
         SELECT COUNT(*) FROM tokens
         WHERE company_id = :cid AND is_supplement = FALSE
           AND anpr_entry_at IS NOT NULL AND anpr_exit_at IS NULL
+          AND anpr_entry_at >= :s AND anpr_entry_at < :e
           AND status NOT IN ('CANCELLED')
     """)
-    currently_inside = int((await db.execute(inside_q, {"cid": str(company_id)})).scalar() or 0)
+    # Bounded to the selected window. Unbounded, this counted every truck ever
+    # stamped-in without an exit, so a spell of flaky ANPR inflated it for ever.
+    currently_inside = int((await db.execute(inside_q, {
+        "cid": str(company_id), "s": start_ts, "e": end_ts,
+    })).scalar() or 0)
 
     # Avg dwell for closed trips in window
     dwell_q = text("""
@@ -1181,8 +1210,12 @@ async def _fetch_trips(
         "entries": entries_n,
         "exits": exits_n,
         "currently_inside": currently_inside,
+        # Dispatched (sale) is the headline tonnage; received is reported beside it
+        # rather than folded in, so neither question is answered by the wrong number.
         "total_tonnage_mt": Decimal(str(round(total_kg / 1000, 3))),
+        "received_tonnage_mt": Decimal(str(round(received_kg / 1000, 3))),
         "total_revenue": Decimal(str(round(total_revenue, 2))),
+        "purchase_value": Decimal(str(round(purchase_value, 2))),
         "avg_dwell_minutes": float(avg_dwell),
     }
 

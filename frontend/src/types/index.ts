@@ -911,7 +911,9 @@ export interface AnprTripListResponse {
   entries: number;
   exits: number;
   currently_inside: number;
-  total_tonnage_mt: number;
+  total_tonnage_mt: number;        // material DISPATCHED (sale tokens)
+  received_tonnage_mt?: number;    // material RECEIVED (purchase tokens)
+  purchase_value?: number;         // purchase bills against these trips
   total_revenue: number;
   avg_dwell_minutes: number;
 }

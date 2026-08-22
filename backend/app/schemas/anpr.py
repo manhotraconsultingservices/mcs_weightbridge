@@ -204,6 +204,8 @@ class AnprTripListResponse(BaseModel):
     entries: int
     exits: int
     currently_inside: int
-    total_tonnage_mt: Decimal
-    total_revenue: Decimal
+    total_tonnage_mt: Decimal          # material DISPATCHED (sale tokens)
+    received_tonnage_mt: Decimal = Decimal("0")   # material RECEIVED (purchase tokens)
+    total_revenue: Decimal             # SALE invoices only — purchases are not revenue
+    purchase_value: Decimal = Decimal("0")        # purchase bills against these trips
     avg_dwell_minutes: float

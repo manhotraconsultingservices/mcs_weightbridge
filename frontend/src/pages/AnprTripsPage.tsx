@@ -238,8 +238,17 @@ export default function AnprTripsPage() {
         <KpiCard title={t('anpr.entries')} value={data?.entries ?? 0} color="text-emerald-700" />
         <KpiCard title={t('anpr.exits')}   value={data?.exits ?? 0} color="text-blue-700" />
         <KpiCard title={t('anpr.insideNow')}  value={data?.currently_inside ?? 0} color="text-amber-700" />
-        <KpiCard title={t('anpr.totalTonnage')} value={`${Number(data?.total_tonnage_mt ?? 0).toFixed(2)} MT`} color="text-slate-800" />
-        <KpiCard title={t('anpr.totalRevenue')} value={fmtINR(data?.total_revenue ?? 0)} color="text-violet-700" />
+        {/* Dispatched vs received are separate numbers: one blended "tonnage"
+            answered two different questions. Revenue is sale invoices only —
+            purchase bills are money out and are shown apart. */}
+        <KpiCard title="Dispatched" value={`${Number(data?.total_tonnage_mt ?? 0).toFixed(2)} MT`} color="text-slate-800" />
+        {Number(data?.received_tonnage_mt ?? 0) > 0 && (
+          <KpiCard title="Received" value={`${Number(data?.received_tonnage_mt ?? 0).toFixed(2)} MT`} color="text-amber-700" />
+        )}
+        <KpiCard title="Sales billed" value={fmtINR(data?.total_revenue ?? 0)} color="text-violet-700" />
+        {Number(data?.purchase_value ?? 0) > 0 && (
+          <KpiCard title="Purchases billed" value={fmtINR(data?.purchase_value ?? 0)} color="text-amber-700" />
+        )}
         <KpiCard title={t('anpr.avgDwell')} value={`${Math.round(data?.avg_dwell_minutes ?? 0)} ${t('anpr.min')}`} color="text-slate-800" />
       </div>
 
