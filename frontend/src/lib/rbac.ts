@@ -335,6 +335,31 @@ export function resolveHomeRoute(
   return first;
 }
 
+/**
+ * Pages the PLATFORM (vendor) has withheld from a tenant.
+ *
+ * This is the ONLY restriction a tenant admin cannot escape: every other check
+ * short-circuits on `role === 'admin'`, and the tenant could otherwise simply grant
+ * the page back to itself from Role Permissions. Set per tenant in the platform
+ * console and delivered at login, so it is not something the tenant can edit.
+ *
+ * A restricted hub takes its child routes with it — withholding "/settings" without
+ * withholding the pages reachable from it would be decoration.
+ */
+export function isPlatformRestricted(pathname: string, restrictions?: string[] | null): boolean {
+  if (!restrictions || restrictions.length === 0) return false;
+  const path = (pathname || '/').toLowerCase();
+  return restrictions.some(rawRule => {
+    const rule = String(rawRule || '').trim().toLowerCase();
+    if (!rule || rule === '/') return false;          // never lock a tenant out entirely
+    if (path === rule || path.startsWith(rule + '/')) return true;
+    // a restricted hub also withholds the child pages it owns
+    const children = HUB_CHILDREN[rule];
+    return !!children && children.some(c => path === c || path.startsWith(c + '/'));
+  });
+}
+
+
 export function canAccessRoute(
   pathname: string,
   permissions: string[],
@@ -342,7 +367,11 @@ export function canAccessRoute(
   /** { hubPath → allowed tab values } for THIS role. Empty/absent = no tab
    *  restriction, exactly as isTabAllowed() treats it. */
   allowedTabsByHub?: Record<string, string[]>,
+  /** Pages the PLATFORM withheld from this tenant. Checked BEFORE the admin
+   *  bypass — this is the one restriction a tenant admin cannot grant back. */
+  platformRestrictions?: string[] | null,
 ): boolean {
+  if (isPlatformRestricted(pathname, platformRestrictions)) return false;
   if (role === 'admin' || permissions.includes('*')) return true;
   const req = routeRequirement(pathname);
   if (req.kind === 'allow') return true;

@@ -60,7 +60,7 @@ export function useAuth() {
 
   const [token, setToken] = useState<string | null>(() => STORE.getItem('token'));
 
-  const login = useCallback((accessToken: string, userData: User, tenantSlug?: string, tenantModules?: Record<string, boolean>, tenantIndustry?: string) => {
+  const login = useCallback((accessToken: string, userData: User, tenantSlug?: string, tenantModules?: Record<string, boolean>, tenantIndustry?: string, tenantAdminRestrictions?: string[]) => {
     STORE.setItem('token', accessToken);
     STORE.setItem('user', JSON.stringify(userData));
     if (tenantSlug) {
@@ -78,6 +78,13 @@ export function useAuth() {
     } else {
       STORE.removeItem('tenant_industry');
     }
+    // Pages the platform withheld from this tenant. Stored alongside the modules
+    // so the route guard can consult them without another round trip.
+    if (tenantAdminRestrictions && tenantAdminRestrictions.length) {
+      STORE.setItem('tenant_admin_restrictions', JSON.stringify(tenantAdminRestrictions));
+    } else {
+      STORE.removeItem('tenant_admin_restrictions');
+    }
     // Swap in (or clear) the industry terminology overlay for this tenant.
     applyIndustryTerminology(tenantIndustry || null);
     setToken(accessToken);
@@ -90,6 +97,7 @@ export function useAuth() {
     STORE.removeItem('tenant_slug');
     STORE.removeItem('tenant_modules');
     STORE.removeItem('tenant_industry');
+    STORE.removeItem('tenant_admin_restrictions');
     applyIndustryTerminology(null);   // reset labels to base
     setToken(null);
     setUser(null);
@@ -123,6 +131,16 @@ export function getAuthToken(): string | null {
 }
 
 /** Get tenant modules from session storage (for sidebar filtering). */
+export function getTenantAdminRestrictions(): string[] {
+  try {
+    const raw = sessionStorage.getItem('tenant_admin_restrictions');
+    const v = raw ? JSON.parse(raw) : null;
+    return Array.isArray(v) ? v as string[] : [];
+  } catch {
+    return [];
+  }
+}
+
 export function getTenantModules(): Record<string, boolean> | null {
   const raw = sessionStorage.getItem('tenant_modules');
   if (!raw) return null;

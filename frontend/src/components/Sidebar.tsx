@@ -19,9 +19,9 @@ import {
   Activity, Bell, BookOpen, Building2, Camera, Car, Cog, DoorOpen, Factory, FileBarChart, FileCheck2, FileText, Fuel, Handshake, HardDrive, HardHat, ImageIcon, IndianRupee, LayoutDashboard, Lock, LogOut, Package, Scale, Settings, ShieldAlert, ShieldCheck, ShoppingCart, Tags, TrendingUp, Truck, Upload, Usb, UserCog, Users, Wallet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { getTenantModules } from '@/hooks/useAuth';
+import { getTenantModules, getTenantAdminRestrictions } from '@/hooks/useAuth';
 import LanguageToggle from '@/components/LanguageToggle';
-import { HUB_CHILDREN } from '@/lib/rbac';
+import { HUB_CHILDREN, isPlatformRestricted } from '@/lib/rbac';
 import type { User } from '@/types';
 
 // HUB_CHILDREN (hub → child paths) is the single source of truth in lib/rbac.ts —
@@ -169,10 +169,17 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
     return () => window.removeEventListener('mousedown', handler);
   }, [adminOpen]);
 
+  const platformRestrictions = getTenantAdminRestrictions();
+
   // Is this item visible for the current user + tenant?
   function isVisible(item: NavItem): boolean {
     // Dashboard is always visible regardless of stored permissions
     if (item.to === '/') return true;
+
+    // Withheld by the PLATFORM for this tenant — hidden even from the tenant admin.
+    // Checked before every other rule: blocking the route while still showing the
+    // menu entry would just produce a dead link.
+    if (isPlatformRestricted(item.permKey ?? item.to, platformRestrictions)) return false;
 
     // Permission + module gating key. A nav item may point at a deep-link
     // (e.g. /reports?tab=eod) yet gate on a hub path via permKey.
@@ -209,6 +216,9 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
 
   // Filter admin items by SaaS restrictions + role
   const visibleAdmin = ADMIN_ITEMS.filter(item => {
+    // The gear menu is where the config pages live, so it is the main thing a
+    // platform restriction is used to withhold.
+    if (isPlatformRestricted(item.to, platformRestrictions)) return false;
     if (!isAdmin) return item.to === '/settings' && canOpenSettings;
     if (isSaaS && item.to === '/backup') return false;
     if (isSaaS && item.to === '/import') return false;

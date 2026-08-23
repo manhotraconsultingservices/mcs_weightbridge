@@ -90,6 +90,50 @@ _ROUTE_TO_MODULE: dict[str, str] = {
 _modules_cache: dict[str, tuple[dict, float]] = {}
 
 
+# ── Platform-imposed page restrictions ───────────────────────────────────────
+# A tenant admin bypasses every in-tenant permission check, so a vendor
+# restriction has to be enforced server-side or it is only a hidden menu item.
+#
+# Only unambiguously-scoped prefixes are listed. /settings is deliberately absent:
+# it is served by /api/v1/app-settings, which also serves units, tyre volumes and
+# other lookups the whole app reads — blocking it wholesale would break pages that
+# were never restricted. Settings is withheld at the route/menu level, and its
+# write endpoints already require admin.
+_RESTRICTION_TO_PREFIXES: dict[str, tuple[str, ...]] = {
+    "/backup":            ("/api/v1/backup",),
+    "/import":            ("/api/v1/import",),
+    "/notifications":     ("/api/v1/notifications",),
+    "/audit":             ("/api/v1/audit",),
+    "/approvals":         ("/api/v1/approvals",),
+    "/admin/branches":    ("/api/v1/branches",),
+    "/admin/users":       ("/api/v1/auth/users",),
+    "/admin/permissions": ("/api/v1/app-settings/role-permissions",
+                           "/api/v1/app-settings/custom-roles"),
+    "/admin/custom-fields": ("/api/v1/custom-fields",),
+}
+
+
+async def _get_tenant_restrictions(slug: str) -> list[str]:
+    """Pages the platform has withheld from this tenant (from tenant config)."""
+    try:
+        from app.multitenancy.registry import tenant_registry
+        tenant = await tenant_registry.get_tenant(slug)
+        cfg = (getattr(tenant, "config", None) or {}) if tenant else {}
+        vals = cfg.get("admin_restrictions") or []
+        return [str(v) for v in vals if v]
+    except Exception:      # never let this break a request
+        return []
+
+
+def _restriction_blocks(path: str, restrictions: list[str]) -> str | None:
+    """The withheld page whose API this request belongs to, if any."""
+    for page in restrictions:
+        for prefix in _RESTRICTION_TO_PREFIXES.get(page, ()):
+            if path.startswith(prefix):
+                return page
+    return None
+
+
 async def _get_tenant_modules(slug: str) -> dict:
     """Fetch tenant modules config with caching (5-min TTL)."""
     now = time.time()
@@ -197,8 +241,24 @@ class TenantMiddleware(BaseHTTPMiddleware):
             else:
                 current_tenant_readonly.set(False)
 
-            # ── Enforce module-level access ──────────────────────────────
+            # ── Enforce platform-imposed page restrictions ───────────────
+            # Checked BEFORE the module gate and regardless of role — this is the
+            # one control a tenant admin cannot grant back to themselves.
             path = request.url.path
+            _restrictions = await _get_tenant_restrictions(tenant_slug_value)
+            if _restrictions:
+                blocked_page = _restriction_blocks(path, _restrictions)
+                if blocked_page:
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "detail": "This section has been disabled for your account. "
+                                      "Contact support if you need it enabled.",
+                            "restricted_page": blocked_page,
+                        },
+                    )
+
+            # ── Enforce module-level access ──────────────────────────────
             module_key = _match_module(path)
             if module_key:
                 modules = await _get_tenant_modules(tenant_slug_value)

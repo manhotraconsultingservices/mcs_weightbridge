@@ -6,6 +6,7 @@ import { useUsbGuard } from '@/hooks/useUsbGuard';
 import { useAppSettings } from '@/hooks/useAppSettings';
 import { PermissionsContext, buildPermissionsCtx } from '@/contexts/PermissionsContext';
 import { canAccessRoute, resolveHomeRoute } from '@/lib/rbac';
+import { getTenantAdminRestrictions } from '@/hooks/useAuth';
 import NoAccessPage from '@/pages/NoAccessPage';
 import LoginPage from '@/pages/LoginPage';
 import LandingPage from '@/pages/LandingPage';
@@ -153,8 +154,12 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
   // Admin bypasses; detail/utility routes fail open (see rbac.ts).
   // Tab grants are part of access control, not decoration: a role restricted to
   // the Gate Register tab must not reach Weigh Tickets by URL either.
+  // The 4th argument is the role's tab grants; the 5th is what the PLATFORM has
+  // withheld from this tenant — checked ahead of the admin bypass, so a tenant
+  // admin cannot grant it back to themselves.
   const routeAllowed = canAccessRoute(
-    location.pathname, permissions, user.role, roleTabPerms[user.role]);
+    location.pathname, permissions, user.role, roleTabPerms[user.role],
+    getTenantAdminRestrictions());
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // PWA install prompt (Android Chrome "Add to Home Screen")

@@ -198,6 +198,9 @@ async def login(
                 tenant_status_message=tenant_status_message,
                 tenant_modules=resolved_modules,
                 tenant_industry=tenant_industry,
+                tenant_admin_restrictions=[
+                    str(r) for r in (tenant_config.get("admin_restrictions") or []) if r
+                ],
             )
     else:
         # ── Single-tenant login (existing behavior) ─────────────────────────

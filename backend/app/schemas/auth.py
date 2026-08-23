@@ -16,6 +16,9 @@ class TokenResponse(BaseModel):
     tenant_status_message: str | None = None      # human-readable message for readonly/suspended
     tenant_modules: dict | None = None            # module-level feature flags per tenant
     tenant_industry: str | None = None            # vertical profile (drives terminology overlay)
+    # Pages the PLATFORM has withheld from this tenant — enforced even for the
+    # tenant's own admin, who otherwise bypasses every permission check.
+    tenant_admin_restrictions: list[str] | None = None
 
 
 class UserCreate(BaseModel):

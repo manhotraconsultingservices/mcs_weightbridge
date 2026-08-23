@@ -42,6 +42,10 @@ class TenantUpdate(BaseModel):
     status: Optional[str] = None              # active / readonly / suspended
     config: Optional[dict] = None
     industry: Optional[str] = None            # convenience: sets config["industry"]
+    # Pages withheld from this tenant ENTIRELY — including its own admin, who
+    # otherwise bypasses every permission check. Platform-set only: the tenant
+    # cannot grant these back to itself from Role Permissions.
+    admin_restrictions: Optional[list[str]] = None   # sets config["admin_restrictions"]
     amc_start_date: Optional[date] = None
     amc_expiry_date: Optional[date] = None
     logo_url: Optional[str] = None

@@ -170,6 +170,8 @@ function EditTenantDialog({ tenant, open, onClose, onSaved }: {
       setAmcStart(tenant.amc_start_date || ''); setAmcExpiry(tenant.amc_expiry_date || '');
       setContactEmail(tenant.contact_email || ''); setContactPhone(tenant.contact_phone || '');
       setIndustry((tenant.config?.industry as string) || 'generic');
+      const stored = tenant.config?.admin_restrictions;
+      setRestrictions(Array.isArray(stored) ? (stored as string[]) : []);
       // Load modules (response also carries the resolved industry)
       setModulesLoading(true);
       platformApi.get(`/api/v1/platform/tenants/${tenant.slug}/modules`)
@@ -185,6 +187,12 @@ function EditTenantDialog({ tenant, open, onClose, onSaved }: {
     setModules(prev => ({ ...prev, ...(INDUSTRY_MODULE_PRESET[v] || {}) }));
   }
 
+  // Pages withheld from this tenant — enforced even for its own admin, who
+  // otherwise bypasses every permission check inside the tenant.
+  const [restrictions, setRestrictions] = useState<string[]>([]);
+  const toggleRestriction = (path: string) =>
+    setRestrictions(prev => prev.includes(path) ? prev.filter(p => p !== path) : [...prev, path]);
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -192,6 +200,7 @@ function EditTenantDialog({ tenant, open, onClose, onSaved }: {
         display_name: displayName, status, amc_start_date: amcStart || null,
         amc_expiry_date: amcExpiry || null, contact_email: contactEmail || null, contact_phone: contactPhone || null,
         industry,
+        admin_restrictions: restrictions,
       });
       // Save modules separately
       await platformApi.put(`/api/v1/platform/tenants/${tenant!.slug}/modules`, modules);
@@ -295,12 +304,62 @@ function EditTenantDialog({ tenant, open, onClose, onSaved }: {
               </div>
             )}
           </div>
+
+          {/* ── Tenant Admin Restrictions ── */}
+          <div className="pt-2 border-t">
+            <div className="flex items-center justify-between mb-1">
+              <Label className="text-sm font-semibold">Tenant Admin Restrictions</Label>
+              <span className="text-[11px] text-muted-foreground">
+                {restrictions.length ? `${restrictions.length} withheld` : 'none'}
+              </span>
+            </div>
+            <p className="text-[11px] text-muted-foreground mb-2">
+              Ticked pages are hidden and blocked for EVERYONE in this tenant, including its
+              own admin. This is the only restriction the tenant cannot grant back to itself
+              from Role Permissions.
+            </p>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 max-h-[200px] overflow-y-auto">
+              {RESTRICTABLE_PAGES.map(pg => (
+                <label key={pg.path}
+                       className="flex items-start gap-2 cursor-pointer group py-1 px-1.5 rounded hover:bg-muted/50">
+                  <input type="checkbox" className="mt-0.5 h-3.5 w-3.5"
+                         checked={restrictions.includes(pg.path)}
+                         onChange={() => toggleRestriction(pg.path)} />
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium leading-tight">{pg.label}</p>
+                    <p className="text-[10px] text-muted-foreground leading-tight">{pg.description}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
         <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={handleSave} disabled={saving}>{saving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}Save Changes</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
+
+// What the platform may withhold from a tenant. Deliberately curated rather than
+// "every route": these are the config and money-sensitive areas a vendor has a
+// reason to hold back, and the hubs. Restricting a hub takes its child pages with
+// it (see isPlatformRestricted).
+const RESTRICTABLE_PAGES: { path: string; label: string; description: string }[] = [
+  { path: '/settings',           label: 'Settings',            description: 'Company, bank, prefixes, integrations' },
+  { path: '/admin/users',        label: 'User Management',     description: 'Create users, reset passwords' },
+  { path: '/admin/permissions',  label: 'Role Permissions',    description: 'Per-role page and tab grants' },
+  { path: '/backup',             label: 'Backup & Restore',    description: 'Database dump, download, restore' },
+  { path: '/import',             label: 'Data Import',         description: 'Bulk import parties/products/vehicles' },
+  { path: '/admin/branches',     label: 'Branches',            description: 'Multi-branch setup and numbering' },
+  { path: '/approvals',          label: 'Approvals',           description: 'Maker-checker console' },
+  { path: '/admin/custom-fields',label: 'Custom Fields',       description: 'Owner-defined weighment attributes' },
+  { path: '/admin/wallpaper',    label: 'Branding',            description: 'Wallpaper upload' },
+  { path: '/notifications',      label: 'Notifications',       description: 'Templates, recipients, delivery log' },
+  { path: '/audit',              label: 'Activity Log',        description: 'Full audit trail' },
+  { path: '/accounts',           label: 'Accounts hub',        description: 'Payments, ledger, balances, govt dues' },
+  { path: '/analytics',          label: 'Analytics hub',       description: 'P&L, GST split, write-offs, day book' },
+  { path: '/fraud-registers',    label: 'Fraud & Registers',   description: 'Anomaly detection, registers' },
+];
 
 // ── Internal User Dialog ─────────────────────────────────────────────────────
 

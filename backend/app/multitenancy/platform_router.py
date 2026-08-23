@@ -294,6 +294,8 @@ async def update_tenant(
     updates = payload.model_dump(exclude_unset=True)
     # `industry` is not a column — it lives in config JSON. Handle separately.
     industry_val = updates.pop("industry", None)
+    # Same treatment: not a column, lives in config JSON.
+    restrictions_val = updates.pop("admin_restrictions", None)
     for field, value in updates.items():
         if hasattr(tenant, field):
             setattr(tenant, field, value)
@@ -304,6 +306,20 @@ async def update_tenant(
         cfg["industry"] = normalize_industry(industry_val)
         tenant.config = cfg
         _modules_cache.pop(slug, None)   # take effect on next request
+    if restrictions_val is not None:
+        from app.multitenancy.middleware import _modules_cache
+        cfg = dict(tenant.config or {})
+        # Normalised + de-duplicated, order preserved so the console shows it back
+        # exactly as saved. An empty list clears every restriction.
+        seen, clean = set(), []
+        for r in restrictions_val:
+            r = str(r or "").strip()
+            if r and r not in seen:
+                seen.add(r); clean.append(r)
+        cfg["admin_restrictions"] = clean
+        tenant.config = cfg
+        _modules_cache.pop(slug, None)
+
     # Keep is_active in sync with status
     if "status" in updates:
         tenant.is_active = updates["status"] != "suspended"
