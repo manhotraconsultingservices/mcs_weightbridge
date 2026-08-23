@@ -1282,7 +1282,10 @@ async def update_token(
     product_changed = "product_id" in data and data["product_id"] != token.product_id
     _BILLING_KEYS = {"party_id", "product_id", "rate", "net_weight", "volume_cft",
                      "vehicle_rent", "payment_mode", "billing_unit", "royalty_cum",
-                     "royalty_unit", "royalty_rate"}
+                     "royalty_unit", "royalty_rate",
+                     # Distance and the per-km rates DRIVE vehicle_rent, so a change
+                     # to them has to re-price the draft like any other billing input.
+                     "rent_km", "rent_rate_per_km_per_mt", "rent_rate_per_km_per_cum"}
     billing_changed = any(k in data for k in _BILLING_KEYS)
 
     # Any invoice linked to this token (drives what edits are safe).
