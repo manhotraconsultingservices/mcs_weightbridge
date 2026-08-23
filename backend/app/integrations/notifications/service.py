@@ -380,6 +380,14 @@ DEFAULT_TEMPLATES = [
             "— {{ company_name }}"
         ),
     },
+    # ── Government dues (royalty + GST owed) ─────────────────────────────────
+    {
+        "event_type": "statutory_dues_summary",
+        "channel": "telegram",
+        "name": "Government Dues Summary (Telegram)",
+        "subject": None,
+        "body": "🏛️ <b>Government Dues</b>\n\nAs on {{ as_of }}\n\nRoyalty due: <b>₹{{ royalty_due }}</b>\nGST due: <b>₹{{ gst_due }}</b>\n\nTotal owed: <b>₹{{ total_due }}</b>\n\nBased on finalised bills only, less payments already recorded.\n\n— {{ company_name }}",
+    },
     # ── EOD Daily Business Summary (day book) ────────────────────────────────
     {
         "event_type": "eod_summary",

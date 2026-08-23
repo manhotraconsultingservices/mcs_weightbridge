@@ -3327,9 +3327,13 @@ async def create_statutory_payment(
         })).mappings().one()
 
     from app.routers.audit import log_action
-    await log_action(db, current_user, "create", "statutory_payment", str(row["id"]),
-                     {"kind": kind, "amount": str(amount), "paid_on": paid_on.isoformat(),
-                      "reference": payload.get("reference") or ""}, request)
+    await log_action(db, current_user.company_id, current_user.id, "create", "statutory_payment",
+                     entity_id=str(row["id"]),
+                     details={"kind": kind, "amount": str(amount),
+                              "paid_on": paid_on.isoformat(),
+                              "reference": payload.get("reference") or "",
+                              "mode": payload.get("mode") or "bank"},
+                     ip_address=(request.client.host if request and request.client else None))
     await db.commit()
     return {"id": str(row["id"]), "ok": True}
 
@@ -3351,8 +3355,33 @@ async def delete_statutory_payment(
         raise HTTPException(404, "Payment not found")
     await db.execute(text("DELETE FROM statutory_payments WHERE id = :id"), {"id": payment_id})
     from app.routers.audit import log_action
-    await log_action(db, current_user, "delete", "statutory_payment", payment_id,
-                     {"kind": row["kind"], "amount": str(row["amount"]),
-                      "paid_on": row["paid_on"].isoformat()}, request)
+    await log_action(db, current_user.company_id, current_user.id, "delete", "statutory_payment",
+                     entity_id=payment_id,
+                     details={"kind": row["kind"], "amount": str(row["amount"]),
+                              "paid_on": row["paid_on"].isoformat()},
+                     ip_address=(request.client.host if request and request.client else None))
     await db.commit()
     return {"ok": True}
+
+
+async def build_statutory_summary_context(db: AsyncSession, company_id, company_name: str,
+                                          as_of: date) -> dict:
+    """Context for the daily 'what do we owe the government' Telegram summary.
+
+    Reports the TOTAL outstanding as of `as_of` — everything accrued on finalised
+    bills, less everything paid — because a due does not reset at month end. Uses
+    the same accrual rules as the Government Dues page, so the alert and the page
+    can never quote different numbers.
+    """
+    out = {"company_name": company_name, "as_of": as_of.strftime("%d-%m-%Y")}
+    total = Decimal("0")
+    for kind in STATUTORY_KINDS:
+        accrued = Decimal(str((await _statutory_accrued(db, company_id, kind, None, as_of))["total"]))
+        paid = await _statutory_paid(db, company_id, kind, None, as_of)
+        due = accrued - paid
+        total += due
+        out[kind + "_due"] = f"{due:,.2f}"
+        out[kind + "_accrued"] = f"{accrued:,.2f}"
+        out[kind + "_paid"] = f"{paid:,.2f}"
+    out["total_due"] = f"{total:,.2f}"
+    return out

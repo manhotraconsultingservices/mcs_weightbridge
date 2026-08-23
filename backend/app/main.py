@@ -809,6 +809,27 @@ async def _send_owner_digest_for_session(session_factory, label: str) -> None:
         except Exception as e:
             logger.warning("anpr_daily_summary send failed [%s]: %s", label, e)
 
+        # ── Government dues summary (royalty + GST still owed) ──────────────
+        # Default OFF: this is opt-in per tenant, so switching it on is a
+        # deliberate act rather than a surprise message. Turn on by setting
+        # app_settings 'statutory_dues_summary.enabled' to true; recipients
+        # subscribe to the 'statutory_dues_summary' event on /notifications.
+        try:
+            sd_row = (await db.execute(
+                _sql("SELECT value FROM app_settings WHERE key = 'statutory_dues_summary.enabled'"),
+            )).fetchone()
+            sd_enabled = False
+            if sd_row and sd_row[0] is not None:
+                sd_enabled = str(sd_row[0]).strip().lower() in ("true", "1", "yes", "on")
+            if sd_enabled:
+                from app.routers.reports import build_statutory_summary_context
+                sd_ctx = await build_statutory_summary_context(db, co.id, co.name, today)
+                await send_notification(db, co.id, "statutory_dues_summary", sd_ctx,
+                                        entity_type="company", entity_id=str(co.id))
+                logger.info("statutory_dues_summary sent [%s]", label)
+        except Exception as e:
+            logger.warning("statutory_dues_summary send failed [%s]: %s", label, e)
+
         # ── EOD Daily Business Summary / day book (fires at the same time) ──
         # Cash vs electronic collections + itemised money-out (incl. advances).
         # Gated by app_settings 'eod_summary.enabled' (default ON). Owner picks
