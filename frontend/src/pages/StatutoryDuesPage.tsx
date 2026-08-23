@@ -245,10 +245,21 @@ export default function StatutoryDuesPage() {
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Payments to government</CardTitle>
-          <CardDescription>
-            Each payment shows as money out in the Day Book on its payment date.
-          </CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <CardTitle className="text-base">Payments to government</CardTitle>
+              <CardDescription>
+                Each payment shows as money out in the Day Book on its payment date.
+              </CardDescription>
+            </div>
+            {/* Recording is offered here as well as in the header — this card is
+                where the accountant is already looking when they settle a challan. */}
+            {canPay && (
+              <Button size="sm" onClick={() => setPayOpen(true)}>
+                <Plus className="mr-1.5 h-4 w-4" /> Record {label} payment
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <DataTable<StatPayment>
