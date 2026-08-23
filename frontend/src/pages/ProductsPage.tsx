@@ -109,6 +109,9 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
         gst_rate: parseFloat(form.gst_rate) || 0,
         bulk_density: form.bulk_density.trim() ? parseFloat(form.bulk_density) : null,
         royalty_per_cum: form.royalty_per_cum.trim() ? parseFloat(form.royalty_per_cum) : null,
+        // Was missing: the form had a ₹/MT input bound to state, but the payload
+        // never sent it, so every ₹/MT the user typed was silently discarded.
+        royalty_per_mt: form.royalty_per_mt.trim() ? parseFloat(form.royalty_per_mt) : null,
         is_raw_material: form.is_raw_material,
         description: form.description.trim() || null,
         is_active: form.is_active,

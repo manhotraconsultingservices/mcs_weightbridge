@@ -67,9 +67,18 @@ class ProductUnitRateItem(BaseModel):
     rate: Decimal | None = None   # None → clear that (product, unit) rate
 
 
+class ProductRoyaltyItem(BaseModel):
+    """Royalty is per PRODUCT, not per unit — hence its own list."""
+    product_id: uuid.UUID
+    royalty_per_mt: Decimal | None = None
+    royalty_per_cum: Decimal | None = None
+
+
 class ProductUnitRatesBulkRequest(BaseModel):
-    """Bulk-set per-unit default rates (₹/MT, ₹/CFT, ₹/CBM, ₹/Brass…)."""
-    items: list[ProductUnitRateItem]
+    """Bulk-set per-unit default rates (₹/MT, ₹/CFT, ₹/CBM, ₹/Brass…) and, in the
+    same save, the per-product govt royalty rates edited alongside them."""
+    items: list[ProductUnitRateItem] = []
+    royalties: list[ProductRoyaltyItem] = []
 
 
 class ProductResponse(BaseModel):

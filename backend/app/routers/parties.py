@@ -1,7 +1,7 @@
 import uuid
 from datetime import date
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -255,6 +255,7 @@ async def get_pricing_matrix(
 async def bulk_set_party_rates(
     party_id: uuid.UUID,
     payload: dict,
+    request: Request,
     current_user: User = Depends(require_role("admin", "accountant")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -301,6 +302,15 @@ async def bulk_set_party_rates(
             ))
             saved += 1
 
+    # Customer/supplier rates drive every invoice for that party, so who changed
+    # them and when has to be traceable — same reason the default rates are audited.
+    if saved or cleared:
+        from app.routers.audit import log_action
+        await log_action(db, current_user.company_id, current_user.id, "update", "pricing",
+                         entity_id=str(party_id),
+                         details={"scope": "party_rates", "party_id": str(party_id),
+                                  "saved": saved, "cleared": cleared},
+                         ip_address=(request.client.host if request and request.client else None))
     await db.commit()
     return {"saved": saved, "cleared": cleared}
 

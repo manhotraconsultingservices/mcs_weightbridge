@@ -15,7 +15,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Search, Save, IndianRupee, Loader2, Download } from 'lucide-react';
-import { downloadCsv } from '@/components/DataTable';
+import { DataTable, downloadCsv, type ColumnDef } from '@/components/DataTable';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +32,9 @@ interface UnitRow {
   base_unit: string;
   gst_rate: number;
   rates: Record<string, number>;   // { MT: 500, CFT: 42, … }
+  // Govt royalty is per PRODUCT (not per unit) and is edited here beside the rates.
+  royalty_per_mt: number | null;
+  royalty_per_cum: number | null;
 }
 interface Cell { party_id: string; product_id: string; unit: string | null; rate: number; }
 
@@ -42,7 +45,7 @@ type Tab = 'default' | 'customer' | 'supplier';
 function DefaultRatesEditor({ unitRows, rateUnits, onSaved }: {
   unitRows: UnitRow[]; rateUnits: string[]; onSaved: () => void;
 }) {
-  const [rows, setRows] = useState<{ product_id: string; name: string; hsn_code: string; base_unit: string; gst: string; rates: Record<string, string> }[]>([]);
+  const [rows, setRows] = useState<{ product_id: string; name: string; hsn_code: string; base_unit: string; gst: string; rates: Record<string, string>; roy_mt: string; roy_cum: string }[]>([]);
   const [dirty, setDirty] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
@@ -52,6 +55,8 @@ function DefaultRatesEditor({ unitRows, rateUnits, onSaved }: {
       product_id: r.product_id, name: r.name, hsn_code: r.hsn_code, base_unit: (r.base_unit || '').toUpperCase(),
       gst: String(Number(r.gst_rate ?? 0)),
       rates: Object.fromEntries(rateUnits.map(u => [u, r.rates[u] != null ? String(r.rates[u]) : ''])),
+      roy_mt: r.royalty_per_mt != null ? String(r.royalty_per_mt) : '',
+      roy_cum: r.royalty_per_cum != null ? String(r.royalty_per_cum) : '',
     })));
     setDirty(new Set());
   }, [unitRows, rateUnits]);
@@ -65,6 +70,11 @@ function DefaultRatesEditor({ unitRows, rateUnits, onSaved }: {
     setRows(rs => rs.map(r => r.product_id === pid ? { ...r, rates: { ...r.rates, [unit]: val } } : r));
     setDirty(d => new Set(d).add(`${pid}::${unit}`));
   }
+  function setRoyalty(pid: string, field: 'roy_mt' | 'roy_cum', val: string) {
+    setRows(rs => rs.map(r => r.product_id === pid ? { ...r, [field]: val } : r));
+    setDirty(d => new Set(d).add(`${pid}::__${field}__`));
+  }
+
   function setGst(pid: string, val: string) {
     setRows(rs => rs.map(r => r.product_id === pid ? { ...r, gst: val } : r));
     setDirty(d => new Set(d).add(`${pid}::__gst__`));
@@ -76,18 +86,26 @@ function DefaultRatesEditor({ unitRows, rateUnits, onSaved }: {
     try {
       const unitItems: { product_id: string; unit: string; rate: number | null }[] = [];
       const gstItems: { product_id: string; gst_rate: number }[] = [];
+      const royItems: { product_id: string; royalty_per_mt?: number | null; royalty_per_cum?: number | null }[] = [];
       for (const key of dirty) {
         const [pid, unit] = key.split('::');
         const row = rows.find(r => r.product_id === pid);
         if (!row) continue;
         if (unit === '__gst__') {
           gstItems.push({ product_id: pid, gst_rate: parseFloat(row.gst) || 0 });
+        } else if (unit === '__roy_mt__' || unit === '__roy_cum__') {
+          // one royalty entry per product, carrying whichever cells were edited
+          let e = royItems.find(x => x.product_id === pid);
+          if (!e) { e = { product_id: pid }; royItems.push(e); }
+          if (unit === '__roy_mt__') e.royalty_per_mt = row.roy_mt.trim() === '' ? null : (parseFloat(row.roy_mt) || 0);
+          else e.royalty_per_cum = row.roy_cum.trim() === '' ? null : (parseFloat(row.roy_cum) || 0);
         } else {
           const v = (row.rates[unit] ?? '').trim();
           unitItems.push({ product_id: pid, unit, rate: v === '' ? null : parseFloat(v) });
         }
       }
-      if (unitItems.length) await api.put('/api/v1/products/unit-rates', { items: unitItems });
+      if (unitItems.length || royItems.length)
+        await api.put('/api/v1/products/unit-rates', { items: unitItems, royalties: royItems });
       if (gstItems.length) await api.put('/api/v1/products/default-rates', { items: gstItems });
       toast.success('Default rates updated');
       onSaved();
@@ -96,6 +114,56 @@ function DefaultRatesEditor({ unitRows, rateUnits, onSaved }: {
       toast.error(err.response?.data?.detail ?? err.message ?? 'Save failed');
     } finally { setSaving(false); }
   }
+
+  type EditRow = typeof rows[number];
+  const cols = useMemo<ColumnDef<EditRow>[]>(() => {
+    const c: ColumnDef<EditRow>[] = [
+      { key: 'name', label: 'Product', accessor: r => r.name,
+        format: (v, r) => <span>{String(v)}{r.base_unit &&
+          <span className="ml-1 text-[10px] text-muted-foreground">({r.base_unit})</span>}</span> },
+      { key: 'hsn_code', label: 'HSN', accessor: r => r.hsn_code },
+    ];
+    for (const u of rateUnits) {
+      c.push({
+        key: `rate_${u}`, label: `₹ / ${u}`, type: 'number', align: 'right',
+        accessor: r => r.rates[u] === '' || r.rates[u] == null ? null : Number(r.rates[u]),
+        exportValue: r => r.rates[u] ?? '',
+        format: (_v, r) => (
+          <Input type="number" min="0" step="0.01" placeholder="—"
+            className={`h-7 text-xs text-right inline-block w-24 ${dirty.has(`${r.product_id}::${u}`) ? 'bg-amber-50' : ''}`}
+            value={r.rates[u] ?? ''} onChange={e => setRate(r.product_id, u, e.target.value)} />
+        ),
+      });
+    }
+    c.push(
+      // Royalty is per product — shown here so the owner sets rates and levies in
+      // one place instead of hunting through the product catalog.
+      { key: 'roy_mt', label: 'Royalty ₹/MT', type: 'number', align: 'right',
+        accessor: r => r.roy_mt === '' ? null : Number(r.roy_mt),
+        exportValue: r => r.roy_mt ?? '',
+        format: (_v, r) => (
+          <Input type="number" min="0" step="0.01" placeholder="—"
+            className={`h-7 text-xs text-right inline-block w-24 ${dirty.has(`${r.product_id}::__roy_mt__`) ? 'bg-amber-50' : ''}`}
+            value={r.roy_mt} onChange={e => setRoyalty(r.product_id, 'roy_mt', e.target.value)} />
+        ) },
+      { key: 'roy_cum', label: 'Royalty ₹/CUM', type: 'number', align: 'right',
+        accessor: r => r.roy_cum === '' ? null : Number(r.roy_cum),
+        exportValue: r => r.roy_cum ?? '',
+        format: (_v, r) => (
+          <Input type="number" min="0" step="0.01" placeholder="—"
+            className={`h-7 text-xs text-right inline-block w-24 ${dirty.has(`${r.product_id}::__roy_cum__`) ? 'bg-amber-50' : ''}`}
+            value={r.roy_cum} onChange={e => setRoyalty(r.product_id, 'roy_cum', e.target.value)} />
+        ) },
+      { key: 'gst', label: 'GST %', type: 'number', align: 'right',
+        accessor: r => Number(r.gst || 0), exportValue: r => r.gst,
+        format: (_v, r) => (
+          <Input type="number" min="0" step="0.01"
+            className={`h-7 text-xs text-right inline-block w-16 ${dirty.has(`${r.product_id}::__gst__`) ? 'bg-amber-50' : ''}`}
+            value={r.gst} onChange={e => setGst(r.product_id, e.target.value)} />
+        ) },
+    );
+    return c;
+  }, [rateUnits, dirty]);
 
   return (
     <Card><CardContent className="p-3 space-y-3">
@@ -116,40 +184,18 @@ function DefaultRatesEditor({ unitRows, rateUnits, onSaved }: {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-max">
-          <thead>
-            <tr className="border-b bg-muted/50">
-              <th className="text-left p-2 font-medium sticky left-0 bg-muted/50">Product</th>
-              <th className="text-left p-2 font-medium">HSN</th>
-              {rateUnits.map(u => <th key={u} className="text-right p-2 font-medium">₹ / {u}</th>)}
-              <th className="text-right p-2 font-medium">GST %</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
-              <tr><td colSpan={rateUnits.length + 3} className="p-6 text-center text-muted-foreground text-xs">No products</td></tr>
-            ) : filtered.map(r => (
-              <tr key={r.product_id} className="border-b hover:bg-muted/20">
-                <td className="p-2 sticky left-0 bg-background">{r.name}
-                  {r.base_unit && <span className="ml-1 text-[10px] text-muted-foreground">({r.base_unit})</span>}</td>
-                <td className="p-2 text-muted-foreground text-xs">{r.hsn_code}</td>
-                {rateUnits.map(u => (
-                  <td key={u} className={`p-2 text-right ${dirty.has(`${r.product_id}::${u}`) ? 'bg-amber-50/60' : ''}`}>
-                    <Input type="number" min="0" step="0.01" placeholder="—"
-                      className="h-7 text-xs text-right inline-block w-24"
-                      value={r.rates[u] ?? ''} onChange={e => setRate(r.product_id, u, e.target.value)} />
-                  </td>
-                ))}
-                <td className={`p-2 text-right ${dirty.has(`${r.product_id}::__gst__`) ? 'bg-amber-50/60' : ''}`}>
-                  <Input type="number" min="0" step="0.01" className="h-7 text-xs text-right inline-block w-16"
-                    value={r.gst} onChange={e => setGst(r.product_id, e.target.value)} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* DataTable gives per-column sort + filter, a show/hide column chooser and a
+          CSV of exactly what is on screen — the editable cells render inside it, so
+          the numbers stay sortable/exportable while remaining editable. */}
+      <DataTable<EditRow>
+        id="pricing.default-rates"
+        data={filtered}
+        columns={cols}
+        rowKey={r => r.product_id}
+        exportFilename="default-rates"
+        defaultSort={{ key: 'name', direction: 'asc' }}
+        emptyMessage="No products"
+      />
     </CardContent></Card>
   );
 }

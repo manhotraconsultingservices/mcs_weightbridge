@@ -1,5 +1,5 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 
@@ -124,6 +124,7 @@ async def create_product(
 @router.put("/products/default-rates")
 async def bulk_update_default_rates(
     data: ProductRatesBulkRequest,
+    request: Request,
     current_user: User = Depends(require_page_permission("/products", "/pricing-matrix")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -140,6 +141,7 @@ async def bulk_update_default_rates(
         select(Product).where(Product.id.in_(ids), Product.company_id == current_user.company_id)
     )).scalars().all()}
     updated = 0
+    _changes: list[dict] = []
     for it in data.items:
         p = prods.get(it.product_id)
         if not p:
@@ -148,15 +150,28 @@ async def bulk_update_default_rates(
         if it.default_rate is not None:
             if it.default_rate < 0:
                 raise HTTPException(400, f"Rate cannot be negative for '{p.name}'")
+            if p.default_rate != it.default_rate:
+                _changes.append({"product": p.name, "field": "default_rate",
+                                 "from": str(p.default_rate), "to": str(it.default_rate)})
             p.default_rate = it.default_rate
             changed = True
         if it.gst_rate is not None:
             if it.gst_rate < 0:
                 raise HTTPException(400, f"GST rate cannot be negative for '{p.name}'")
+            if p.gst_rate != it.gst_rate:
+                _changes.append({"product": p.name, "field": "gst_rate",
+                                 "from": str(p.gst_rate), "to": str(it.gst_rate)})
             p.gst_rate = it.gst_rate
             changed = True
         if changed:
             updated += 1
+    if _changes:
+        from app.routers.audit import log_action
+        await log_action(db, current_user.company_id, current_user.id, "update", "pricing",
+                         entity_id=None,
+                         details={"scope": "default_rates", "count": len(_changes),
+                                  "changes": _changes[:50]},
+                         ip_address=(request.client.host if request and request.client else None))
     await db.commit()
     return {"updated": updated}
 
@@ -189,6 +204,10 @@ async def get_product_unit_rates(
         rows.append({
             "product_id": str(p.id), "name": p.name, "hsn_code": p.hsn_code,
             "base_unit": p.unit, "gst_rate": float(p.gst_rate or 0), "rates": rates,
+            # Govt royalty lives on the product, so it belongs beside the rates
+            # rather than only on the Products page.
+            "royalty_per_mt": float(p.royalty_per_mt) if p.royalty_per_mt is not None else None,
+            "royalty_per_cum": float(p.royalty_per_cum) if p.royalty_per_cum is not None else None,
         })
     return {"rows": rows}
 
@@ -196,19 +215,21 @@ async def get_product_unit_rates(
 @router.put("/products/unit-rates")
 async def bulk_update_unit_rates(
     data: ProductUnitRatesBulkRequest,
+    request: Request,
     current_user: User = Depends(require_page_permission("/products", "/pricing-matrix")),
     db: AsyncSession = Depends(get_db),
 ):
     """Upsert per-unit default rates. When a unit == the product's base unit, the
     value is mirrored into `products.default_rate` so legacy single-rate readers
     stay correct. `rate=None` clears that (product, unit) cell."""
-    if not data.items:
+    if not data.items and not data.royalties:
         return {"updated": 0}
-    ids = {i.product_id for i in data.items}
+    ids = {i.product_id for i in data.items} | {r.product_id for r in data.royalties}
     prods = {p.id: p for p in (await db.execute(
         select(Product).where(Product.id.in_(ids), Product.company_id == current_user.company_id)
     )).scalars().all()}
     updated = 0
+    _changes: list[dict] = []
     for it in data.items:
         p = prods.get(it.product_id)
         if not p:
@@ -216,15 +237,21 @@ async def bulk_update_unit_rates(
         unit = (it.unit or "").strip().upper()
         if not unit:
             continue
+        _before = None
         existing = (await db.execute(
             select(ProductUnitRate).where(
                 ProductUnitRate.product_id == it.product_id,
                 func.upper(ProductUnitRate.unit) == unit,
             )
         )).scalar_one_or_none()
+        if existing:
+            _before = str(existing.rate)
+        elif unit == (p.unit or "").upper() and p.default_rate is not None:
+            _before = str(p.default_rate)
         if it.rate is None:
             if existing:
                 await db.delete(existing)
+                _changes.append({"product": p.name, "unit": unit, "from": _before, "to": None})
                 updated += 1
             continue
         if it.rate < 0:
@@ -235,7 +262,38 @@ async def bulk_update_unit_rates(
             db.add(ProductUnitRate(company_id=current_user.company_id, product_id=it.product_id, unit=unit, rate=it.rate))
         if unit == (p.unit or "").upper():   # keep legacy default_rate in sync
             p.default_rate = it.rate
+        _changes.append({"product": p.name, "unit": unit,
+                         "from": _before, "to": str(it.rate)})
         updated += 1
+
+    # Royalty is per product, not per unit.
+    for r in data.royalties:
+        p = prods.get(r.product_id)
+        if not p:
+            continue
+        for field, val in (("royalty_per_mt", r.royalty_per_mt),
+                           ("royalty_per_cum", r.royalty_per_cum)):
+            old_val = getattr(p, field)
+            if (val is None and old_val is None) or (val is not None and old_val is not None
+                                                     and Decimal(str(val)) == Decimal(str(old_val))):
+                continue
+            if val is not None and val < 0:
+                raise HTTPException(400, f"Royalty cannot be negative for '{p.name}'")
+            setattr(p, field, val)
+            _changes.append({"product": p.name, "unit": field.replace("royalty_per_", "royalty/"),
+                             "from": str(old_val) if old_val is not None else None,
+                             "to": str(val) if val is not None else None})
+            updated += 1
+
+    # Who changed which rate, from what to what. Rates drive every invoice, so a
+    # silent edit is exactly the kind of change an owner needs to be able to trace.
+    if _changes:
+        from app.routers.audit import log_action
+        await log_action(db, current_user.company_id, current_user.id, "update", "pricing",
+                         entity_id=None,
+                         details={"scope": "default_unit_rates", "count": len(_changes),
+                                  "changes": _changes[:50]},
+                         ip_address=(request.client.host if request and request.client else None))
     await db.commit()
     return {"updated": updated}
 
