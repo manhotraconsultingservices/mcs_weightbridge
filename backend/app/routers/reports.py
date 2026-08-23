@@ -1330,6 +1330,17 @@ async def _daybook_lines(db: AsyncSession, cid, day: date) -> tuple[list, list]:
         line[_daybook_col(pp["mode"])] = _r2(pp["amount"])
         payments.append(line)
 
+    # PAYMENTS — royalty / GST paid to the government. Real cash out on the payment
+    # date, so it belongs in the cash book. It is deliberately NOT a P&L expense:
+    # royalty is a pass-through billed to the customer and GST settles a liability.
+    for sp in await _daybook_savepoint_rows(db,
+        "SELECT amount, mode, reference AS ref, kind "
+        "FROM statutory_payments WHERE company_id=:cid AND paid_on=:d ORDER BY created_at", p):
+        label = "Royalty paid (Govt)" if sp["kind"] == "royalty" else "GST paid (Govt)"
+        line = {"particulars": label, "ref": sp["ref"] or "", **_blank_cols()}
+        line[_daybook_col(sp["mode"])] = _r2(sp["amount"])
+        payments.append(line)
+
     # PAYMENTS — agent commission payouts
     for a in await _daybook_savepoint_rows(db,
         "SELECT ap.amount AS amount, ap.payment_mode AS mode, ap.reference_no AS ref, ag.name AS agent "
@@ -1696,6 +1707,12 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
         "SELECT CAST(voucher_date AS date) AS d, SUM(amount) AS total FROM payment_vouchers "
         "WHERE company_id=:cid AND expense_category IS NOT NULL "
         "AND voucher_date>=:fd AND voucher_date<=:td GROUP BY 1")
+    # Royalty / GST paid to the government. Real cash out, on BOTH bases — it is not
+    # an accrual choice, the money left. Kept out of the P&L (royalty is a
+    # pass-through, GST settles a liability) but the cash book must show it.
+    statutory = await _daily(
+        "SELECT CAST(paid_on AS date) AS d, SUM(amount) AS total FROM statutory_payments "
+        "WHERE company_id=:cid AND paid_on>=:fd AND paid_on<=:td GROUP BY 1")
     # Supplier payments (non-expense vouchers) — actual cash paid to suppliers; the
     # CASH-basis replacement for the accrual 'purchases' (invoice) line.
     supplier_pay = await _daily(
@@ -1707,11 +1724,11 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
         list(cash) + list(electronic) + list(credit) + list(sales_billed)
         + list(purchases) + list(draft_purchase)
         + list(store) + list(diesel) + list(pump_pay) + list(salary) + list(advance) + list(commission)
-        + list(overhead) + list(supplier_pay)))
+        + list(overhead) + list(supplier_pay) + list(statutory)))
     days = []
     tot = {k: 0.0 for k in ("cash_sales", "electronic_sales", "credit_sales", "sales_billed",
                             "purchases", "draft_purchases", "supplier_payments", "store_inventory",
-                            "diesel", "salary", "advance", "commission", "overhead")}
+                            "diesel", "salary", "advance", "commission", "overhead", "statutory")}
     for d in all_days:
         cs, es, cr = cash.get(d, 0.0), electronic.get(d, 0.0), credit.get(d, 0.0)
         sb = sales_billed.get(d, 0.0)
@@ -1720,6 +1737,7 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
         di = diesel.get(d, 0.0) + pump_pay.get(d, 0.0)   # cash fuel fills + pump payments
         sa, ad, co = salary.get(d, 0.0), advance.get(d, 0.0), commission.get(d, 0.0)
         oh, sp = overhead.get(d, 0.0), supplier_pay.get(d, 0.0)
+        gv = statutory.get(d, 0.0)   # royalty + GST paid to govt
         total_sales = _r2(cs + es)
         # Money-out depends on the basis: accrual uses purchase invoices + accrued
         # commission; cash uses actual supplier payments (vouchers) and drops accrued
@@ -1731,17 +1749,18 @@ async def compute_eod_summary(db: AsyncSession, company_id, from_date: date, to_
             "sales_billed": sb, "total_sales": total_sales,
             "purchases": pu, "draft_purchases": dpu, "supplier_payments": sp,
             "store_inventory": st, "diesel": di,
-            "salary": sa, "advance": ad, "commission": co, "overhead": oh,
+            "salary": sa, "advance": ad, "commission": co, "overhead": oh, "statutory": gv,
             "total_expenses": total_exp, "net": _r2(total_sales - total_exp),
         })
         tot["cash_sales"] += cs; tot["electronic_sales"] += es; tot["credit_sales"] += cr
         tot["purchases"] += pu; tot["draft_purchases"] += dpu; tot["supplier_payments"] += sp
         tot["store_inventory"] += st; tot["diesel"] += di
         tot["salary"] += sa; tot["advance"] += ad; tot["commission"] += co; tot["overhead"] += oh
+        tot["statutory"] += gv
     summary = {k: _r2(v) for k, v in tot.items()}
     summary["total_sales"] = _r2(summary["cash_sales"] + summary["electronic_sales"])
     _common = (summary["store_inventory"] + summary["diesel"] + summary["salary"]
-               + summary["advance"] + summary["overhead"])
+               + summary["advance"] + summary["overhead"] + summary["statutory"])
     summary["total_expenses"] = _r2(_common + (
         summary["supplier_payments"] if basis == "cash"
         else summary["purchases"] + summary["commission"]))
@@ -3083,3 +3102,224 @@ async def token_register(
         "completed_count": int(completed_count),
         "cancelled_count": int(cancelled_count),
     }
+
+
+# ── Statutory dues: royalty + GST owed to the government ─────────────────────
+#
+# Both are money the business COLLECTS on behalf of the government and later pays
+# over — a liability, not an expense. That is why neither is booked to the P&L:
+# royalty is already treated as a net-zero pass-through (billed to the customer and
+# handed on), and a GST payment settles a liability rather than consuming anything.
+# The cash leaving on payment day IS real, so payments DO appear in the Day Book.
+#
+# Only FINALISED documents accrue. A draft is not a bill anyone owes tax on, and
+# cancelled/superseded ones are dead — counting them would badly overstate the dues
+# (on live data, drafts held ~10x the royalty of finalised invoices).
+
+STATUTORY_KINDS = ("royalty", "gst")
+
+
+async def _statutory_accrued(db: AsyncSession, company_id, kind: str,
+                             date_from: date | None, date_to: date) -> dict:
+    """Statutory liability that AROSE in a window (payments are not considered here).
+
+    `date_from=None` means "everything up to date_to" — used to carry the opening
+    balance forward from every prior period.
+    """
+    params = {"cid": str(company_id), "dt": date_to}
+    window = "i.invoice_date <= :dt"
+    if date_from is not None:
+        window += " AND i.invoice_date >= :df"
+        params["df"] = date_from
+
+    if kind == "royalty":
+        row = (await db.execute(text(
+            "SELECT COALESCE(SUM(i.royalty_amount), 0) AS amt FROM invoices i "
+            "WHERE i.company_id = :cid AND i.invoice_type = 'sale' "
+            "AND i.status = 'final' AND " + window), params)).mappings().one()
+        return {"total": _f(row["amt"] or 0)}
+
+    # GST: output tax on what we billed, less input credit on what we bought.
+    # Credit/debit notes adjust the output side, mirroring GSTR-3B.
+    row = (await db.execute(text(
+        "SELECT "
+        "COALESCE(SUM(i.cgst_amount + i.sgst_amount + i.igst_amount) "
+        "  FILTER (WHERE i.invoice_type IN ('sale', 'debit_note')), 0) AS output_tax, "
+        "COALESCE(SUM(i.cgst_amount + i.sgst_amount + i.igst_amount) "
+        "  FILTER (WHERE i.invoice_type = 'credit_note'), 0) AS credit_notes, "
+        "COALESCE(SUM(i.cgst_amount + i.sgst_amount + i.igst_amount) "
+        "  FILTER (WHERE i.invoice_type = 'purchase'), 0) AS itc "
+        "FROM invoices i WHERE i.company_id = :cid AND i.status = 'final' "
+        "AND " + window), params)).mappings().one()
+    output_tax = Decimal(str(row["output_tax"] or 0)) - Decimal(str(row["credit_notes"] or 0))
+    itc = Decimal(str(row["itc"] or 0))
+    return {"total": _f(output_tax - itc), "output_tax": _f(output_tax), "itc": _f(itc)}
+
+
+async def _statutory_paid(db: AsyncSession, company_id, kind: str,
+                          date_from: date | None, date_to: date) -> Decimal:
+    params = {"cid": str(company_id), "kind": kind, "dt": date_to}
+    window = "paid_on <= :dt"
+    if date_from is not None:
+        window += " AND paid_on >= :df"
+        params["df"] = date_from
+    return Decimal(str((await db.execute(text(
+        "SELECT COALESCE(SUM(amount), 0) FROM statutory_payments "
+        "WHERE company_id = :cid AND kind = :kind AND " + window), params)).scalar() or 0))
+
+
+@router.get("/statutory-dues")
+async def statutory_dues(
+    kind: str = Query("royalty"),
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Royalty or GST owed to the government, with the prior balance carried in.
+
+    opening = everything accrued before from_date, less everything paid before it
+    closing = opening + accrued in period - paid in period
+    """
+    kind = (kind or "royalty").lower()
+    if kind not in STATUTORY_KINDS:
+        raise HTTPException(400, "kind must be one of: " + ", ".join(STATUTORY_KINDS))
+    if from_date > to_date:
+        raise HTTPException(400, "from_date must be on or before to_date")
+
+    cid = current_user.company_id
+    prior_day = from_date - timedelta(days=1)
+
+    # Opening — the "due from previous period" carried forward.
+    opening_accrued = Decimal(str((await _statutory_accrued(db, cid, kind, None, prior_day))["total"]))
+    opening_paid = await _statutory_paid(db, cid, kind, None, prior_day)
+    opening_due = opening_accrued - opening_paid
+
+    accrued = await _statutory_accrued(db, cid, kind, from_date, to_date)
+    accrued_total = Decimal(str(accrued["total"]))
+    paid = await _statutory_paid(db, cid, kind, from_date, to_date)
+
+    # The documents behind this period's accrual, so the figure is auditable rather
+    # than something the owner has to take on trust.
+    if kind == "royalty":
+        doc_rows = (await db.execute(text(
+            "SELECT i.invoice_no, i.invoice_date, p.name AS party_name, "
+            "       i.royalty_amount AS amount, i.grand_total "
+            "FROM invoices i LEFT JOIN parties p ON p.id = i.party_id "
+            "WHERE i.company_id = :cid AND i.invoice_type = 'sale' AND i.status = 'final' "
+            "  AND i.royalty_amount > 0 AND i.invoice_date BETWEEN :df AND :dt "
+            "ORDER BY i.invoice_date DESC, i.invoice_no DESC"),
+            {"cid": str(cid), "df": from_date, "dt": to_date})).mappings().all()
+    else:
+        doc_rows = (await db.execute(text(
+            "SELECT i.invoice_no, i.invoice_date, i.invoice_type, p.name AS party_name, "
+            "       (i.cgst_amount + i.sgst_amount + i.igst_amount) AS amount, i.grand_total "
+            "FROM invoices i LEFT JOIN parties p ON p.id = i.party_id "
+            "WHERE i.company_id = :cid AND i.status = 'final' "
+            "  AND i.invoice_type IN ('sale', 'purchase', 'credit_note', 'debit_note') "
+            "  AND (i.cgst_amount + i.sgst_amount + i.igst_amount) <> 0 "
+            "  AND i.invoice_date BETWEEN :df AND :dt "
+            "ORDER BY i.invoice_date DESC, i.invoice_no DESC"),
+            {"cid": str(cid), "df": from_date, "dt": to_date})).mappings().all()
+
+    pay_rows = (await db.execute(text(
+        "SELECT sp.id, sp.amount, sp.paid_on, sp.mode, sp.reference, "
+        "       sp.period_from, sp.period_to, sp.notes, "
+        "       COALESCE(NULLIF(u.full_name, ''), u.username) AS created_by_name "
+        "FROM statutory_payments sp LEFT JOIN users u ON u.id = sp.created_by "
+        "WHERE sp.company_id = :cid AND sp.kind = :kind AND sp.paid_on BETWEEN :df AND :dt "
+        "ORDER BY sp.paid_on DESC, sp.created_at DESC"),
+        {"cid": str(cid), "kind": kind, "df": from_date, "dt": to_date})).mappings().all()
+
+    return {
+        "kind": kind,
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+        "opening_due": _f(opening_due),
+        "accrued": _f(accrued_total),
+        "paid": _f(paid),
+        "closing_due": _f(opening_due + accrued_total - paid),
+        "breakdown": {k: v for k, v in accrued.items() if k != "total"},
+        "documents": [dict(r) for r in doc_rows],
+        "payments": [dict(r) for r in pay_rows],
+        "notes": [
+            "Only FINALISED documents accrue — drafts, cancelled and superseded are excluded.",
+            "Opening due carries forward everything accrued less everything paid before the from-date.",
+            "Payments show as money out in the Day Book on their payment date. They are not P&L "
+            "expenses: royalty is a pass-through billed to the customer, and a GST payment settles "
+            "a liability rather than consuming anything.",
+        ],
+    }
+
+
+@router.post("/statutory-payments", status_code=201)
+async def create_statutory_payment(
+    payload: dict,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "accountant")),
+):
+    """Record a payment made to the government (royalty challan or GST challan)."""
+    kind = str(payload.get("kind") or "").lower()
+    if kind not in STATUTORY_KINDS:
+        raise HTTPException(400, "kind must be one of: " + ", ".join(STATUTORY_KINDS))
+    try:
+        amount = Decimal(str(payload.get("amount")))
+    except Exception:
+        raise HTTPException(400, "amount is required and must be a number")
+    if amount <= 0:
+        raise HTTPException(400, "amount must be greater than zero")
+
+    def _as_date(v, field: str, default=None):
+        if not v:
+            return default
+        try:
+            return date.fromisoformat(v) if isinstance(v, str) else v
+        except ValueError:
+            raise HTTPException(400, field + " must be YYYY-MM-DD")
+
+    paid_on = _as_date(payload.get("paid_on"), "paid_on", date.today())
+
+    row = (await db.execute(text(
+        "INSERT INTO statutory_payments "
+        "  (company_id, kind, amount, paid_on, mode, reference, period_from, period_to, notes, created_by) "
+        "VALUES (:cid, :kind, :amt, :paid_on, :mode, :ref, :pf, :pt, :notes, :uid) "
+        "RETURNING id"), {
+            "cid": str(current_user.company_id), "kind": kind, "amt": amount,
+            "paid_on": paid_on, "mode": (payload.get("mode") or "bank"),
+            "ref": (payload.get("reference") or "")[:100],
+            "pf": _as_date(payload.get("period_from"), "period_from"),
+            "pt": _as_date(payload.get("period_to"), "period_to"),
+            "notes": (payload.get("notes") or "")[:500], "uid": str(current_user.id),
+        })).mappings().one()
+
+    from app.routers.audit import log_action
+    await log_action(db, current_user, "create", "statutory_payment", str(row["id"]),
+                     {"kind": kind, "amount": str(amount), "paid_on": paid_on.isoformat(),
+                      "reference": payload.get("reference") or ""}, request)
+    await db.commit()
+    return {"id": str(row["id"]), "ok": True}
+
+
+@router.delete("/statutory-payments/{payment_id}")
+async def delete_statutory_payment(
+    payment_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "accountant")),
+):
+    """Remove a mis-keyed payment. Company-scoped and audit-logged, like every other
+    money movement."""
+    row = (await db.execute(text(
+        "SELECT id, kind, amount, paid_on FROM statutory_payments "
+        "WHERE id = :id AND company_id = :cid"),
+        {"id": payment_id, "cid": str(current_user.company_id)})).mappings().first()
+    if not row:
+        raise HTTPException(404, "Payment not found")
+    await db.execute(text("DELETE FROM statutory_payments WHERE id = :id"), {"id": payment_id})
+    from app.routers.audit import log_action
+    await log_action(db, current_user, "delete", "statutory_payment", payment_id,
+                     {"kind": row["kind"], "amount": str(row["amount"]),
+                      "paid_on": row["paid_on"].isoformat()}, request)
+    await db.commit()
+    return {"ok": True}

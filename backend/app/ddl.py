@@ -789,6 +789,26 @@ def get_column_migrations() -> list[str]:
         "CREATE INDEX IF NOT EXISTS ix_fuel_po_station ON fuel_purchase_orders (company_id, station_name)",
         "CREATE INDEX IF NOT EXISTS ix_fuel_po_entry ON fuel_purchase_orders (fuel_entry_id)",
         """
+        CREATE TABLE IF NOT EXISTS statutory_payments (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id UUID NOT NULL REFERENCES companies(id),
+            branch_id UUID,
+            -- 'royalty' = mineral royalty billed on sales and owed to the govt.
+            -- 'gst'     = net GST payable (output tax less input credit).
+            kind VARCHAR(20) NOT NULL,
+            amount NUMERIC(14,2) NOT NULL,
+            paid_on DATE NOT NULL,
+            mode VARCHAR(20),
+            reference VARCHAR(100),
+            period_from DATE,
+            period_to DATE,
+            notes VARCHAR(500),
+            created_by UUID,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_statutory_pay ON statutory_payments (company_id, kind, paid_on)",
+        """
         CREATE TABLE IF NOT EXISTS fuel_po_payments (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             company_id UUID NOT NULL REFERENCES companies(id),

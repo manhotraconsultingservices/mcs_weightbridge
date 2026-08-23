@@ -64,7 +64,7 @@ export const CATALOGUE_GROUPS: CatalogueGroup[] = [
   {
     group: 'Finance & Intelligence',
     pages: [
-      { path: '/accounts',        label: 'Accounts',          hint: 'Payments · Ledger · Balances · Advances · Activity Log' },
+      { path: '/accounts',        label: 'Accounts',          hint: 'Payments · Ledger · Balances · Advances · Government Dues · Activity Log' },
       { path: '/workforce',       label: 'Workforce & Payroll', hint: 'Workers · attendance · wages/salary · advances' },
       { path: '/compliance',      label: 'Compliance',        hint: 'Insurance / License / Permit tracker' },
       { path: '/gst-compliance',  label: 'GST & Compliance',  hint: 'GSTR-1 / 3B / 2B · Compliance Docs' },
@@ -96,7 +96,7 @@ export const HUB_CHILDREN: Record<string, string[]> = {
   '/procurement':     ['/purchase-invoices', '/royalty'],
   '/inventory-hub':   ['/products', '/product-inventory', '/inventory'],
   '/production-hub':  ['/production', '/production/dashboard', '/production/settings'],
-  '/accounts':        ['/payments', '/ledger', '/audit', '/party-balances', '/advances'],
+  '/accounts':        ['/payments', '/ledger', '/audit', '/party-balances', '/advances', '/statutory-dues'],
   '/gst-compliance':  ['/gst-reports', '/compliance'],
   '/analytics':       ['/reports', '/reports-classic'],
   '/fraud-registers': ['/reports', '/reports-classic'],
@@ -156,6 +156,7 @@ export const HUB_TABS: Record<string, { value: string; label: string }[]> = {
   '/accounts': [
     { value: 'payments',  label: 'Payments' },
     { value: 'statement', label: 'Account Statement' },
+    { value: 'statutory', label: 'Government Dues' },
     { value: 'activity',  label: 'Activity Log' },
   ],
   '/gst-compliance': [

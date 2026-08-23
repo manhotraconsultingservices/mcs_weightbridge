@@ -7,7 +7,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { CreditCard, BookOpen, Shield, Wallet, HandCoins } from 'lucide-react';
+import { CreditCard, BookOpen, Shield, Wallet, HandCoins, Landmark } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -16,8 +16,9 @@ import LedgerPage from './LedgerPage';
 import AuditPage from './AuditPage';
 import PartyBalancesPage from './PartyBalancesPage';
 import AdvancesPage from './AdvancesPage';
+import StatutoryDuesPage from './StatutoryDuesPage';
 
-type Tab = 'payments' | 'statement' | 'balances' | 'advances' | 'activity';
+type Tab = 'payments' | 'statement' | 'balances' | 'advances' | 'statutory' | 'activity';
 
 export default function AccountsHubPage() {
   const { t } = useTranslation();
@@ -30,6 +31,7 @@ export default function AccountsHubPage() {
     { value: 'statement', label: t('hubs.accounts.ledger'),    icon: BookOpen },
     { value: 'balances',  label: 'Balances',                   icon: Wallet },
     { value: 'advances',  label: 'Advances',                   icon: HandCoins },
+    { value: 'statutory', label: 'Government Dues',            icon: Landmark },
     { value: 'activity',  label: t('hubs.accounts.activity'),  icon: Shield },
   ];
   const visibleTabs = TABS.filter(t => isTabAllowed('/accounts', t.value));
@@ -63,6 +65,7 @@ export default function AccountsHubPage() {
         <TabsContent value="statement" className="mt-4"><LedgerPage /></TabsContent>
         <TabsContent value="balances"  className="mt-4"><PartyBalancesPage /></TabsContent>
         <TabsContent value="advances"  className="mt-4"><AdvancesPage /></TabsContent>
+        <TabsContent value="statutory" className="mt-4"><StatutoryDuesPage /></TabsContent>
         <TabsContent value="activity"  className="mt-4"><AuditPage /></TabsContent>
       </Tabs>
     </div>
