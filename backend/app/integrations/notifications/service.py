@@ -380,6 +380,14 @@ DEFAULT_TEMPLATES = [
             "— {{ company_name }}"
         ),
     },
+    # ── Master data changed (item / party / pricing) ─────────────────────────
+    {
+        "event_type": "master_data_updated",
+        "channel": "telegram",
+        "name": "Master Data Updated (Telegram)",
+        "subject": None,
+        "body": "✏️ <b>{{ entity }} {{ action }}</b>\n\n<b>{{ name }}</b>\n{% if changes %}\n{{ changes }}\n{% endif %}\nBy: {{ updated_by }}\nAt: {{ updated_at }}\n\n— {{ company_name }}",
+    },
     # ── Government dues (royalty + GST owed) ─────────────────────────────────
     {
         "event_type": "statutory_dues_summary",

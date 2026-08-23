@@ -56,6 +56,20 @@ async def list_parties(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
+# Fields worth alerting on when a customer/supplier record changes.
+_PARTY_ALERT_FIELDS = {
+    "name": "Name", "party_type": "Type", "gstin": "GSTIN", "phone": "Phone",
+    "email": "Email", "billing_city": "City", "billing_state": "State",
+    "credit_limit": "Credit limit", "payment_terms_days": "Payment terms (days)",
+    "default_payment_mode": "Payment mode", "is_active": "Active",
+}
+
+
+def _party_label(p) -> str:
+    """A supplier and a customer are different things to the reader."""
+    return {"supplier": "Supplier", "customer": "Customer"}.get(
+        (getattr(p, "party_type", "") or "").lower(), "Party")
+
 @router.post("", response_model=PartyResponse, status_code=201)
 async def create_party(
     data: PartyCreate,
@@ -70,6 +84,14 @@ async def create_party(
     db.add(party)
     await db.commit()
     await db.refresh(party)
+    from app.services.master_alerts import notify_master_change, _fmt
+    await notify_master_change(
+        db, current_user.company_id, entity=_party_label(party), name=party.name,
+        action="created",
+        changes=[{"field": lbl, "from": "—", "to": _fmt(getattr(party, f, None))}
+                 for f, lbl in _PARTY_ALERT_FIELDS.items()
+                 if getattr(party, f, None) not in (None, "")],
+        user=current_user)
     return PartyResponse.model_validate(party)
 
 
@@ -102,10 +124,18 @@ async def update_party(
     if not party:
         raise HTTPException(status_code=404, detail="Party not found")
 
+    _before = {f: getattr(party, f, None) for f in _PARTY_ALERT_FIELDS}
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(party, field, value)
     await db.commit()
     await db.refresh(party)
+    from app.services.master_alerts import notify_master_change, diff_fields
+    await notify_master_change(
+        db, current_user.company_id, entity=_party_label(party), name=party.name,
+        action="updated",
+        changes=diff_fields(_before, {f: getattr(party, f, None) for f in _PARTY_ALERT_FIELDS},
+                            _PARTY_ALERT_FIELDS),
+        user=current_user)
     return PartyResponse.model_validate(party)
 
 

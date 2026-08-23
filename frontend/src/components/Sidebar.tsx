@@ -150,6 +150,11 @@ function NavItemLink({ to, icon: Icon, labelKey, end, onClick }: NavItem & { end
 export default function Sidebar({ user, onLogout, usbAuthorized = false, permissions = ['*'], mobileOpen = false, onMobileClose }: SidebarProps) {
   const { t } = useTranslation();
   const isAdmin = permissions.includes('*');
+  // An admin who narrowed their OWN view is still an admin. `isAdmin` above means
+  // "unrestricted view", which is the right test for operational nav — but the
+  // administration menu must key off the ROLE, or narrowing the view hides the very
+  // screen that undoes it and there is no way back through the UI.
+  const isAdminRole = user.role === 'admin';
   const modules = getTenantModules();
   const isSaaS = sessionStorage.getItem('multi_tenant') === '1';
   const nav = useNavigate();
@@ -221,7 +226,7 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
     // The gear menu is where the config pages live, so it is the main thing a
     // platform restriction is used to withhold.
     if (isPlatformRestricted(item.to, platformRestrictions)) return false;
-    if (!isAdmin) return item.to === '/settings' && canOpenSettings;
+    if (!isAdminRole) return item.to === '/settings' && canOpenSettings;
     if (isSaaS && item.to === '/backup') return false;
     if (isSaaS && item.to === '/import') return false;
     return true;

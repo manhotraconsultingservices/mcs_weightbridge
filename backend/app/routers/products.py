@@ -107,6 +107,15 @@ async def list_products(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
+# What is worth telling the owner about when an item changes. Anything not listed
+# here is bookkeeping and stays out of the alert.
+_ITEM_ALERT_FIELDS = {
+    "name": "Name", "hsn_code": "HSN", "unit": "Unit",
+    "default_rate": "Default rate", "gst_rate": "GST %",
+    "royalty_per_mt": "Royalty ₹/MT", "royalty_per_cum": "Royalty ₹/CUM",
+    "bulk_density": "Density (kg/CFT)", "is_active": "Active",
+}
+
 @router.post("/products", response_model=ProductResponse, status_code=201)
 async def create_product(
     data: ProductCreate,
@@ -117,6 +126,13 @@ async def create_product(
     db.add(product)
     await db.commit()
     await db.refresh(product)
+    from app.services.master_alerts import notify_master_change, _fmt
+    await notify_master_change(
+        db, current_user.company_id, entity="Item", name=product.name, action="created",
+        changes=[{"field": lbl, "from": "—", "to": _fmt(getattr(product, f, None))}
+                 for f, lbl in _ITEM_ALERT_FIELDS.items()
+                 if getattr(product, f, None) not in (None, "")],
+        user=current_user)
     return ProductResponse.model_validate(product)
 
 
@@ -344,10 +360,18 @@ async def update_product(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
+    # Snapshot before the edit so the alert can report from -> to.
+    _before = {f: getattr(product, f, None) for f in _ITEM_ALERT_FIELDS}
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(product, field, value)
     await db.commit()
     await db.refresh(product)
+    from app.services.master_alerts import notify_master_change, diff_fields
+    await notify_master_change(
+        db, current_user.company_id, entity="Item", name=product.name, action="updated",
+        changes=diff_fields(_before, {f: getattr(product, f, None) for f in _ITEM_ALERT_FIELDS},
+                            _ITEM_ALERT_FIELDS),
+        user=current_user)
     return ProductResponse.model_validate(product)
 
 
