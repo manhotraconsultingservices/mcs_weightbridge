@@ -17,7 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
-from sqlalchemy import select, func, and_, text
+from sqlalchemy import select, func, and_, or_, text
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
@@ -1544,12 +1544,43 @@ async def finalise_invoice(
             import logging
             logging.getLogger(__name__).warning("Commission snapshot failed for invoice %s: %s", inv.id, e)
 
+    # Quantities on the version this revision replaces — read BEFORE it is
+    # superseded (that happens further down), so the delta can be worked out.
+    _prior_qty_for_revision: dict = {}
+    if inv.revision_no and inv.revision_no > 1:
+        _root = inv.original_invoice_id or inv.id
+        _priors = (await db.execute(
+            select(Invoice).options(selectinload(Invoice.items)).where(
+                or_(Invoice.original_invoice_id == _root, Invoice.id == _root),
+                Invoice.id != inv.id, Invoice.status == "final",
+            )
+        )).scalars().all()
+        for _p in _priors:
+            for _it in _p.items:
+                if _it.product_id:
+                    _prior_qty_for_revision[_it.product_id] = (
+                        _prior_qty_for_revision.get(_it.product_id, Decimal("0"))
+                        + Decimal(str(_it.quantity or 0)))
+
     # ── Auto-post product stock movements (finished goods inventory) ──────────
     # Sale finalise → stock down; purchase finalise → stock up. Skip for revisions
     # (share invoice_no with the original → double-count) and for credit/debit
     # notes (a note is a value adjustment, not a goods movement).
     _stock_warning: str | None = None
-    if not (inv.revision_no and inv.revision_no > 1) and inv.invoice_type in ("sale", "purchase"):
+    if (inv.revision_no and inv.revision_no > 1) and inv.invoice_type in ("sale", "purchase"):
+        # A revision does not re-post the whole movement (the original already did),
+        # but if the QUANTITY changed the ledger is now wrong by the difference —
+        # bill 10 MT, revise to 6, and stock stays down 10. Post just the delta.
+        try:
+            from app.routers.product_stock import post_revision_delta
+            await post_revision_delta(db, inv, _prior_qty_for_revision,
+                                      user_id=current_user.id,
+                                      user_name=current_user.full_name or current_user.username)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Stock delta for revision %s failed: %s", inv.id, e)
+    elif inv.invoice_type in ("sale", "purchase"):
         try:
             from app.routers.product_stock import post_invoice_movement
             await post_invoice_movement(

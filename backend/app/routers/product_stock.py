@@ -108,6 +108,54 @@ async def _record_movement(
     return mv
 
 
+async def post_revision_delta(
+    db: AsyncSession, revision, prior_quantities: dict, *,
+    user_id=None, user_name: str | None = None,
+) -> None:
+    """Correct the goods movement when a REVISION changes quantity.
+
+    A revision replaces its predecessor, but the original already posted the physical
+    movement. For a price-only correction there is nothing to do — which is why
+    revisions skipped stock entirely. When the QUANTITY changes, though, that leaves
+    the ledger stating goods that never moved: bill 10 MT, revise to 6, and stock
+    stays down 10.
+
+    Posts the DIFFERENCE per product, as an `adjustment` so it reads as a correction
+    rather than a second sale.
+
+    prior_quantities: {product_id: qty} from the version being superseded.
+    """
+    sign = -1 if revision.invoice_type == "sale" else 1
+    # Query the lines rather than walking revision.items: whether that collection is
+    # loaded depends on how the CALLER fetched the invoice, and a lazy load here
+    # raises MissingGreenlet under async. Fetching makes this independent of that.
+    from app.models.invoice import InvoiceItem as _II
+    rows = (await db.execute(
+        select(_II.product_id, _II.quantity).where(_II.invoice_id == revision.id)
+    )).all()
+    new_q: dict = {}
+    for pid, qty in rows:
+        if pid:
+            new_q[pid] = new_q.get(pid, Decimal("0")) + Decimal(str(qty or 0))
+
+    for pid in set(new_q) | set(prior_quantities):
+        before = Decimal(str(prior_quantities.get(pid, 0)))
+        after = Decimal(str(new_q.get(pid, 0)))
+        diff = after - before
+        if diff == 0:
+            continue
+        await _record_movement(
+            db, revision.company_id, pid,
+            movement_type="adjustment",
+            quantity=Decimal(str(sign)) * diff,
+            reference_type="invoice", reference_id=revision.id,
+            reference_no=revision.invoice_no,
+            notes=(f"Revision {revision.invoice_no}: quantity corrected "
+                   f"{before} -> {after}"),
+            user_id=user_id, user_name=user_name,
+        )
+
+
 # ── Public hooks called from other routers ────────────────────────────────────
 
 async def post_invoice_movement(
