@@ -1368,7 +1368,12 @@ async def update_token(
                     m = (token.payment_mode or "").lower()
                     inv.payment_mode = token.payment_mode
                     inv.tax_type = "non_gst" if m == "cash" else "gst"
-                if "vehicle_rent" in data:
+                # Carry the token's rent whenever anything that DRIVES it changed —
+                # not only when the rent figure itself was posted. Editing the
+                # distance recomputed the token's rent but left the draft invoice on
+                # the old figure, so the bill disagreed with the weighment.
+                if any(k in data for k in ("vehicle_rent", "rent_km", "net_weight", "volume_cft",
+                                           "rent_rate_per_km_per_mt", "rent_rate_per_km_per_cum")):
                     inv.vehicle_rent = token.vehicle_rent or Decimal("0")
                 if any(k in data for k in ("royalty_cum", "royalty_unit", "royalty_rate", "net_weight", "volume_cft")) or product_changed:
                     inv.royalty_amount = token.royalty_amount or Decimal("0")
