@@ -124,7 +124,7 @@ function DefaultRatesEditor({ unitRows, rateUnits, onSaved }: {
       { key: 'name', label: 'Product', accessor: r => r.name,
         format: (v, r) => (
           <span>
-            <Link to={`/audit?entity_type=pricing&search=${r.product_id}`}
+            <Link to={`/audit?entity_type=pricing&search=${encodeURIComponent(r.name)}`}
                   className="text-primary hover:underline"
                   title="Rate history for this item">{String(v)}</Link>
             {r.base_unit && <span className="ml-1 text-[10px] text-muted-foreground">({r.base_unit})</span>}

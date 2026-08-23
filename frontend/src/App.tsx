@@ -147,7 +147,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
   const { permissions, wallpaperUrl, roleTabPerms } = useAppSettings(user.role);
   const location = useLocation();
   const permissionsCtx = useMemo(
-    () => buildPermissionsCtx(user.role, permissions, roleTabPerms),
+    () => buildPermissionsCtx(user.role, permissions, roleTabPerms, getTenantAdminRestrictions()),
     [user.role, permissions, roleTabPerms],
   );
   // Route guard — block direct URL access to a page this role wasn't granted.

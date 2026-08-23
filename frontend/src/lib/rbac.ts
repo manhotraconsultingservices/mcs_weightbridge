@@ -84,6 +84,16 @@ export const HUB_TAB_ROUTES: Record<string, Record<string, string[]>> = {
     tickets:  ['/tokens-v1', '/tokens'],
     movement: ['/anpr/trips'],
   },
+  // Accounts: untick a tab and its page stops being reachable by URL too, not just
+  // hidden — otherwise withholding e.g. Government Dues is only cosmetic.
+  '/accounts': {
+    payments:  ['/payments'],
+    statement: ['/ledger'],
+    balances:  ['/party-balances'],
+    advances:  ['/advances'],
+    statutory: ['/statutory-dues'],
+    activity:  ['/audit'],
+  },
 };
 
 // hub → child routes. Granting a hub grants every child; a stored legacy child

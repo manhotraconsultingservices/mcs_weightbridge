@@ -161,11 +161,46 @@ function formatDt(iso: string) {
   });
 }
 
+/** snake_case / dotted keys -> readable words. */
+function humanKey(k: string): string {
+  return k.replace(/[_.]/g, ' ').replace(/\w/g, c => c.toUpperCase());
+}
+
+/**
+ * Render an audit value for a human.
+ *
+ * The old version interpolated every value straight into a string, so a nested
+ * change list came out as "[object Object],[object Object]" — the one thing the
+ * reader actually wants (what it was, what it became) was the part that got lost.
+ */
+function fmtVal(v: unknown): string {
+  if (v === null || v === undefined || v === '') return '—';
+  if (Array.isArray(v)) return v.map(fmtVal).join(', ');
+  if (typeof v === 'object') {
+    const o = v as Record<string, unknown>;
+    // A change entry: name it, then show before -> after.
+    const label = o.unit ?? o.field ?? o.name;
+    if (label !== undefined && ('from' in o || 'to' in o)) {
+      return `${String(label)}: ${fmtVal(o.from)} → ${fmtVal(o.to)}`;
+    }
+    return Object.entries(o)
+      .filter(([k]) => k !== 'product' && k !== 'product_id')   // already named above
+      .map(([k, val]) => `${humanKey(k)} ${fmtVal(val)}`)
+      .join(' ');
+  }
+  if (typeof v === 'boolean') return v ? 'yes' : 'no';
+  return String(v);
+}
+
 function parseDetails(raw: string | null): string {
   if (!raw) return '';
   try {
-    const obj = JSON.parse(raw);
-    return Object.entries(obj).map(([k, v]) => `${k}: ${v}`).join(' · ');
+    const obj = JSON.parse(raw) as Record<string, unknown>;
+    return Object.entries(obj)
+      // ids are for machines; the readable name is carried alongside them
+      .filter(([k]) => !k.endsWith('_id'))
+      .map(([k, v]) => `${humanKey(k)}: ${fmtVal(v)}`)
+      .join(' · ');
   } catch {
     return raw;
   }
