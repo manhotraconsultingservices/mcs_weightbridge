@@ -539,7 +539,7 @@ function CreateTokenForm({ onCreated, recentDestinations = [] }: CreateFormProps
           gate_pass_id: form.gate_pass_id || undefined,
           // Vehicle rent only for OWN vehicles (in the master → vehicle_id set).
           vehicle_rent: form.vehicle_id && form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
-          rent_km: form.vehicle_id && form.rent_km ? Number(form.rent_km) : undefined,
+          rent_km: form.rent_km ? Number(form.rent_km) : undefined,
           destination: form.destination.trim() || undefined,   // any vehicle — a trip fact, not a rent input
           rent_rate_per_km_per_mt: form.vehicle_id && form.rent_rate_mt ? Number(form.rent_rate_mt) : undefined,
           rent_rate_per_km_per_cum: form.vehicle_id && form.rent_rate_cum ? Number(form.rent_rate_cum) : undefined,
@@ -597,7 +597,7 @@ function CreateTokenForm({ onCreated, recentDestinations = [] }: CreateFormProps
       gate_pass_id: form.gate_pass_id || undefined,
       // Vehicle rent only for OWN vehicles (in the master → vehicle_id set).
       vehicle_rent: form.vehicle_id && form.vehicle_rent ? Number(form.vehicle_rent) : undefined,
-      rent_km: form.vehicle_id && form.rent_km ? Number(form.rent_km) : undefined,
+      rent_km: form.rent_km ? Number(form.rent_km) : undefined,
       destination: form.destination.trim() || undefined,   // any vehicle — a trip fact, not a rent input
       rent_rate_per_km_per_mt: form.vehicle_id && form.rent_rate_mt ? Number(form.rent_rate_mt) : undefined,
       rent_rate_per_km_per_cum: form.vehicle_id && form.rent_rate_cum ? Number(form.rent_rate_cum) : undefined,
@@ -1203,9 +1203,11 @@ function CreateTokenForm({ onCreated, recentDestinations = [] }: CreateFormProps
             the vehicle master and are operator-editable; amount shows as Vehicle Rent.
             Shown ONLY for OWN vehicles (selected from the master → vehicle_id set); a
             non-owned quick-entry plate never bills vehicle rent. */}
-        {form.vehicle_id && (<>
+        <>
         <div className="space-y-1 rounded-md border border-slate-200 bg-slate-50/60 px-2 py-2">
-          <Label className="text-xs font-medium">Vehicle Rent — Distance (km)</Label>
+          <Label className="text-xs font-medium">
+            {form.vehicle_id ? 'Vehicle Rent — Distance (km)' : 'Trip Distance (km)'}
+          </Label>
           <Input
             className="h-8 text-xs"
             type="number"
@@ -1215,6 +1217,12 @@ function CreateTokenForm({ onCreated, recentDestinations = [] }: CreateFormProps
             onChange={e => setForm(f => ({ ...f, rent_km: e.target.value }))}
             placeholder="e.g. 50"
           />
+          {!form.vehicle_id && (
+            <p className="text-[10px] text-muted-foreground">
+              Recorded on the trip. Rent is billed only for your own vehicles.
+            </p>
+          )}
+          {form.vehicle_id && (
           <div className="grid grid-cols-2 gap-2 pt-1">
             <div className="space-y-1">
               <Label className="text-[10px] text-muted-foreground">Rate ₹/MT/km {weightMethod === 'weighbridge' && <span className="text-emerald-600 font-semibold">• used</span>}</Label>
@@ -1237,7 +1245,8 @@ function CreateTokenForm({ onCreated, recentDestinations = [] }: CreateFormProps
               />
             </div>
           </div>
-          {form.rent_km && (
+          )}
+          {form.vehicle_id && form.rent_km && (
             weightMethod === 'volume'
               ? (Number(form.rent_rate_cum) > 0 && volumeCft > 0
                   ? <p className="text-[10px] text-muted-foreground">
@@ -1264,7 +1273,7 @@ function CreateTokenForm({ onCreated, recentDestinations = [] }: CreateFormProps
             placeholder="auto"
           />
         </div>
-        </>)}
+        </>
 
         {/* Royalty — govt mineral levy billed to the customer. The operator picks the
             basis (Per MT × net weight · Per CUM × volume), the rate is prefilled from

@@ -1321,6 +1321,16 @@ async def update_token(
         token.rate = None
     # Royalty basis/volume/material/weight changed → recompute the token's royalty
     # charge (0 when royalty isn't applied / the product has no matching rate).
+    # Distance / rate edited -> recompute the rent from source. Without this the
+    # accountant could change the km and the billed rent would not follow.
+    if any(k in data for k in ("rent_km", "rent_rate_per_km_per_mt",
+                               "rent_rate_per_km_per_cum", "net_weight", "volume_cft")):
+        _rent = await _compute_vehicle_rent(db, token, token.net_weight)
+        if _rent is not None:
+            token.vehicle_rent = _rent
+        elif "rent_km" in data and not data.get("rent_km"):
+            token.vehicle_rent = Decimal("0")   # distance cleared -> no rent
+
     if any(k in data for k in ("royalty_cum", "royalty_unit", "royalty_rate", "net_weight", "volume_cft")) or product_changed:
         _r = await _compute_royalty(db, token)
         token.royalty_amount = _r if _r is not None else Decimal("0")

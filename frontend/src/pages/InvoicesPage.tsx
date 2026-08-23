@@ -430,7 +430,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
   const anyLineRoyalty = lines.some(l => l.royalty_unit && parseFloat(l.royalty_rate) > 0);
   const anyLineFare = lines.some(l => l.fare_unit && parseFloat(l.fare_rate) > 0 && tripsKm(l.fare_trips) > 0);
   const royaltyContribution = anyLineRoyalty ? royaltyEst : (parseFloat(form.royalty_amount) || 0);
-  const fareContribution = anyLineFare ? fareEst : (isOwnVehicle ? (parseFloat(form.vehicle_rent) || 0) : 0);
+  const fareContribution = anyLineFare ? fareEst : (parseFloat(form.vehicle_rent) || 0);
   const grandEstimate = subTotalEst + gstTotalEst
     + (parseFloat(form.freight) || 0) + fareContribution + royaltyContribution;
 
@@ -455,7 +455,7 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
         discount_type: form.discount_type || undefined,
         discount_value: parseFloat(form.discount_value) || 0,
         freight: parseFloat(form.freight) || 0,
-        vehicle_rent: isOwnVehicle ? (parseFloat(form.vehicle_rent) || 0) : 0,
+        vehicle_rent: parseFloat(form.vehicle_rent) || 0,   // accountant's figure wins
         royalty_amount: parseFloat(form.royalty_amount) || 0,
         tcs_rate: parseFloat(form.tcs_rate) || 0,
         payment_mode: form.payment_mode || undefined,
@@ -712,14 +712,19 @@ function CreateInvoiceDialog({ open, invoiceType, onClose, onCreated }: CreatePr
               <Input type="number" min="0" value={form.freight}
                 onChange={e => setForm(f => ({ ...f, freight: e.target.value }))} />
             </div>
-            {/* Vehicle rent only for OWN vehicles (plate in the master). */}
-            {isOwnVehicle && (
+            {/* Always editable. The TOKEN only auto-calculates rent for own vehicles,
+                but the accountant bills the invoice and must be able to enter or
+                overwrite the amount for a hired truck too. */}
             <div className="space-y-1">
               <Label>{t('invoice.vehicleRent')}</Label>
               <Input type="number" min="0" value={form.vehicle_rent}
                 onChange={e => setForm(f => ({ ...f, vehicle_rent: e.target.value }))} />
+              {!isOwnVehicle && form.vehicle_no.trim() && (
+                <p className="text-[10px] text-muted-foreground">
+                  Not one of your vehicles — enter the rent manually if it is being billed.
+                </p>
+              )}
             </div>
-            )}
             <div className="space-y-1">
               <Label>Royalty ₹</Label>
               <Input type="number" min="0" value={form.royalty_amount}
@@ -964,7 +969,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
   const anyLineRoyalty = lines.some(l => l.royalty_unit && parseFloat(l.royalty_rate) > 0);
   const anyLineFare = lines.some(l => l.fare_unit && parseFloat(l.fare_rate) > 0 && tripsKm(l.fare_trips) > 0);
   const royaltyContribution = anyLineRoyalty ? royaltyEst : (parseFloat(form.royalty_amount) || 0);
-  const fareContribution = anyLineFare ? fareEst : (isOwnVehicle ? (parseFloat(form.vehicle_rent) || 0) : 0);
+  const fareContribution = anyLineFare ? fareEst : (parseFloat(form.vehicle_rent) || 0);
   const grandEstimate = subTotalEst + gstTotalEst
     + (parseFloat(form.freight) || 0) + fareContribution + royaltyContribution;
 
@@ -987,7 +992,7 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
         discount_type: form.discount_type || null,
         discount_value: parseFloat(form.discount_value) || 0,
         freight: parseFloat(form.freight) || 0,
-        vehicle_rent: isOwnVehicle ? (parseFloat(form.vehicle_rent) || 0) : 0,
+        vehicle_rent: parseFloat(form.vehicle_rent) || 0,   // accountant's figure wins
         royalty_amount: parseFloat(form.royalty_amount) || 0,
         tcs_rate: parseFloat(form.tcs_rate) || 0,
         payment_mode: form.payment_mode || null,
@@ -1234,14 +1239,19 @@ function EditInvoiceDialog({ open, invoice, onClose, onSaved }: EditProps) {
               <Input type="number" min="0" value={form.freight}
                 onChange={e => setForm(f => ({ ...f, freight: e.target.value }))} />
             </div>
-            {/* Vehicle rent only for OWN vehicles (plate in the master). */}
-            {isOwnVehicle && (
+            {/* Always editable. The TOKEN only auto-calculates rent for own vehicles,
+                but the accountant bills the invoice and must be able to enter or
+                overwrite the amount for a hired truck too. */}
             <div className="space-y-1">
               <Label>{t('invoice.vehicleRent')}</Label>
               <Input type="number" min="0" value={form.vehicle_rent}
                 onChange={e => setForm(f => ({ ...f, vehicle_rent: e.target.value }))} />
+              {!isOwnVehicle && form.vehicle_no.trim() && (
+                <p className="text-[10px] text-muted-foreground">
+                  Not one of your vehicles — enter the rent manually if it is being billed.
+                </p>
+              )}
             </div>
-            )}
             <div className="space-y-1">
               <Label>Royalty ₹</Label>
               <Input type="number" min="0" value={form.royalty_amount}

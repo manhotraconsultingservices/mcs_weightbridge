@@ -210,8 +210,9 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
   const [dPayMode, setDPayMode] = useState('cash');
   const [dRemarks, setDRemarks] = useState('');
   const [dDestination, setDDestination] = useState('');
+  const [dRentKm, setDRentKm] = useState('');      // billed trip distance
   const [saving, setSaving] = useState(false);
-  const editInit = useRef({ qty: '', rate: '', rent: '', mode: 'cash', royaltyCum: '', royaltyOn: false, royaltyUnit: 'mt' as 'mt' | 'cum', royaltyRate: '', destination: '' });
+  const editInit = useRef({ qty: '', rate: '', rent: '', mode: 'cash', royaltyCum: '', royaltyOn: false, royaltyUnit: 'mt' as 'mt' | 'cum', royaltyRate: '', destination: '', rentKm: '' });
 
   async function openEdit() {
     if (!token) return;
@@ -244,6 +245,7 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
     setDPayMode(modeStr);
     setDRemarks(token.remarks ?? '');
     const destStr = token.destination ?? '';
+    const kmStr = token.rent_km != null ? String(token.rent_km) : '';
     setDDestination(destStr);
     // Rate: prefer the token's stored rate; else the linked invoice's line rate
     // (so the create-page price shows here instead of resetting to 0).
@@ -256,7 +258,8 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
     }
     const rateStr = rate != null ? String(rate) : '';
     setDRate(rateStr);
-    editInit.current = { qty: qtyStr, rate: rateStr, rent: rentStr, mode: modeStr, royaltyCum: royStr, royaltyOn: royOn, royaltyUnit: royUnit, royaltyRate: royRateStr, destination: destStr };
+    editInit.current = { qty: qtyStr, rate: rateStr, rent: rentStr, mode: modeStr, royaltyCum: royStr, royaltyOn: royOn, royaltyUnit: royUnit, royaltyRate: royRateStr, destination: destStr, rentKm: kmStr };
+    setDRentKm(kmStr);
     setEditOpen(true);
     if (dParties.length === 0) {
       api.get<{ items?: Party[] } | Party[]>('/api/v1/parties?page_size=500')
@@ -313,6 +316,12 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
     // Destination: send only when changed. An emptied field sends '' (not undefined)
     // so the operator can actually CLEAR a wrong destination.
     if (dDestination.trim() !== editInit.current.destination) payload.destination = dDestination.trim();
+    // Distance: send on change so the accountant can correct or clear it. The
+    // backend treats rent_km as a billing input, so the rent (and the draft
+    // invoice) is recomputed from the new distance.
+    if (dRentKm.trim() !== editInit.current.rentKm) {
+      payload.rent_km = dRentKm.trim() === '' ? 0 : (parseFloat(dRentKm) || 0);
+    }
 
     setSaving(true);
     try {
@@ -1087,11 +1096,20 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                 placeholder="Where the trip went"
                 maxLength={200}
               />
-              {token?.rent_km != null && Number(token.rent_km) > 0 && (
-                <p className="text-[10px] text-muted-foreground">
-                  Billed distance on this token: {Number(token.rent_km).toLocaleString('en-IN')} km
-                </p>
-              )}
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Distance (km)</label>
+              <Input
+                type="number" min="0" step="0.1"
+                value={dRentKm}
+                onChange={e => setDRentKm(e.target.value)}
+                placeholder="e.g. 50"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                {token?.vehicle
+                  ? 'Own vehicle — changing this re-calculates the vehicle rent and the draft invoice.'
+                  : 'Recorded on the trip. Rent is billed only for your own vehicles.'}
+              </p>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">Remarks</label>
