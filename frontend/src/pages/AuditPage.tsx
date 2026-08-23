@@ -188,7 +188,10 @@ export default function AuditPage() {
     () => new URLSearchParams(window.location.search).get('entity_type') ?? '');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [search, setSearch] = useState('');
+  // ?search= lets a page deep-link to one record's history (e.g. Pricing -> a
+  // single product), alongside ?entity_type=.
+  const [search, setSearch] = useState(
+    () => new URLSearchParams(window.location.search).get('search') ?? '');
 
   // Get available actions based on selected entity
   const availableActions = entityType

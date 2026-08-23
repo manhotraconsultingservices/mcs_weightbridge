@@ -4,7 +4,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func, text, or_, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -88,7 +88,12 @@ async def list_audit_logs(
     if to_date:
         q = q.where(func.date(AuditLog.created_at) <= to_date)
     if search:
-        q = q.where(AuditLog.entity_id.ilike(f"%{search}%"))
+        # entity_id matches a deep-link (a product/invoice id); details matches what
+        # a human types (a product name), since that is where the change is recorded.
+        q = q.where(or_(
+            AuditLog.entity_id.ilike(f"%{search}%"),
+            cast(AuditLog.details, String).ilike(f"%{search}%"),
+        ))
 
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar()
     rows = (await db.execute(

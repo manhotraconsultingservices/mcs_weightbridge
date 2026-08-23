@@ -119,9 +119,17 @@ function DefaultRatesEditor({ unitRows, rateUnits, onSaved }: {
   type EditRow = typeof rows[number];
   const cols = useMemo<ColumnDef<EditRow>[]>(() => {
     const c: ColumnDef<EditRow>[] = [
+      // The product name opens THIS item's rate history — every change to it is
+      // audited per product, so the link lands on that record's entries.
       { key: 'name', label: 'Product', accessor: r => r.name,
-        format: (v, r) => <span>{String(v)}{r.base_unit &&
-          <span className="ml-1 text-[10px] text-muted-foreground">({r.base_unit})</span>}</span> },
+        format: (v, r) => (
+          <span>
+            <Link to={`/audit?entity_type=pricing&search=${r.product_id}`}
+                  className="text-primary hover:underline"
+                  title="Rate history for this item">{String(v)}</Link>
+            {r.base_unit && <span className="ml-1 text-[10px] text-muted-foreground">({r.base_unit})</span>}
+          </span>
+        ) },
       { key: 'hsn_code', label: 'HSN', accessor: r => r.hsn_code },
     ];
     for (const u of rateUnits) {
