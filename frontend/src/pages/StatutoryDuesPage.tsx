@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Landmark, Plus, Trash2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,12 +16,18 @@ import api from '@/services/api';
 type Kind = 'royalty' | 'gst';
 
 interface StatDoc {
+  invoice_id: string | null;
   invoice_no: string | null;
   invoice_date: string;
   invoice_type?: string;
   party_name: string | null;
   amount: number;
   grand_total: number;
+  item: string | null;
+  item_qty: number | null;
+  item_unit: string | null;
+  item_rate: number | null;      // blank on a multi-line invoice — see the backend note
+  vehicle_rent: number;
 }
 interface StatPayment {
   id: string;
@@ -127,7 +134,14 @@ export default function StatutoryDuesPage() {
 
   const docCols = useMemo<ColumnDef<StatDoc>[]>(() => {
     const cols: ColumnDef<StatDoc>[] = [
-      { key: 'invoice_no', label: 'Invoice', accessor: r => r.invoice_no ?? '—' },
+      { key: 'invoice_no', label: 'Invoice', accessor: r => r.invoice_no ?? '—',
+        format: (v, r) => r.invoice_id
+          ? <Link to={`/invoices/${r.invoice_id}/detail`}
+                  className="font-mono text-xs font-medium text-primary hover:underline">
+              {String(v ?? '—')}
+            </Link>
+          : <span className="font-mono text-xs">{String(v ?? '—')}</span>,
+        exportValue: r => r.invoice_no ?? '' },
       { key: 'invoice_date', label: 'Date', type: 'date', accessor: r => r.invoice_date },
       { key: 'party_name', label: 'Party', accessor: r => r.party_name ?? '—' },
     ];
@@ -137,6 +151,16 @@ export default function StatutoryDuesPage() {
         accessor: r => r.invoice_type ?? '—' });
     }
     cols.push(
+      { key: 'item', label: 'Material', accessor: r => r.item ?? '—' },
+      { key: 'item_qty', label: 'Qty', type: 'number', align: 'right', accessor: r => r.item_qty,
+        format: (v, r) => v == null ? '—' : `${Number(v).toLocaleString('en-IN')}${r.item_unit ? ' ' + r.item_unit : ''}`,
+        exportValue: r => r.item_qty ?? '' },
+      { key: 'item_rate', label: 'Rate', type: 'number', align: 'right', accessor: r => r.item_rate,
+        format: (v, r) => v == null ? '—' : `${INR(Number(v))}${r.item_unit ? '/' + r.item_unit : ''}`,
+        exportValue: r => r.item_rate ?? '' },
+      { key: 'vehicle_rent', label: 'Vehicle Rent', type: 'number', align: 'right',
+        accessor: r => r.vehicle_rent,
+        format: v => Number(v ?? 0) ? INR(Number(v)) : '—', exportValue: r => r.vehicle_rent ?? 0 },
       { key: 'amount', label: kind === 'royalty' ? 'Royalty' : 'Tax', type: 'number', align: 'right',
         accessor: r => r.amount, format: v => INR(v as number), exportValue: r => r.amount },
       { key: 'grand_total', label: 'Invoice total', type: 'number', align: 'right',

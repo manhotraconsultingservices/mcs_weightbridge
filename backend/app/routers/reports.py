@@ -3203,8 +3203,8 @@ async def statutory_dues(
     # than something the owner has to take on trust.
     if kind == "royalty":
         doc_rows = (await db.execute(text(
-            "SELECT i.invoice_no, i.invoice_date, p.name AS party_name, "
-            "       i.royalty_amount AS amount, i.grand_total "
+            "SELECT i.id, i.invoice_no, i.invoice_date, p.name AS party_name, "
+            "       i.royalty_amount AS amount, i.grand_total, i.vehicle_rent "
             "FROM invoices i LEFT JOIN parties p ON p.id = i.party_id "
             "WHERE i.company_id = :cid AND i.invoice_type = 'sale' AND i.status = 'final' "
             "  AND i.royalty_amount > 0 AND i.invoice_date BETWEEN :df AND :dt "
@@ -3212,8 +3212,9 @@ async def statutory_dues(
             {"cid": str(cid), "df": from_date, "dt": to_date})).mappings().all()
     else:
         doc_rows = (await db.execute(text(
-            "SELECT i.invoice_no, i.invoice_date, i.invoice_type, p.name AS party_name, "
-            "       (i.cgst_amount + i.sgst_amount + i.igst_amount) AS amount, i.grand_total "
+            "SELECT i.id, i.invoice_no, i.invoice_date, i.invoice_type, p.name AS party_name, "
+            "       (i.cgst_amount + i.sgst_amount + i.igst_amount) AS amount, i.grand_total, "
+            "       i.vehicle_rent "
             "FROM invoices i LEFT JOIN parties p ON p.id = i.party_id "
             "WHERE i.company_id = :cid AND i.status = 'final' "
             "  AND i.invoice_type IN ('sale', 'purchase', 'credit_note', 'debit_note') "
@@ -3221,6 +3222,38 @@ async def statutory_dues(
             "  AND i.invoice_date BETWEEN :df AND :dt "
             "ORDER BY i.invoice_date DESC, i.invoice_no DESC"),
             {"cid": str(cid), "df": from_date, "dt": to_date})).mappings().all()
+
+    # Material / qty / rate per invoice, batched — one query for the whole list,
+    # never per row. Same rule as the Sales Register: the rate shown is the one
+    # ACTUALLY BILLED on that invoice, in that invoice's own unit
+    # (invoice_items.rate / .unit), never the product-master rate; and it is left
+    # blank on a multi-line invoice because one rate cannot describe several items.
+    # The item NAME comes from the product master because invoice lines rarely
+    # carry a description.
+    _docs = [dict(r) for r in doc_rows]
+    _ids = [d["id"] for d in _docs if d.get("id")]
+    _lines: dict = {}
+    if _ids:
+        lres = await db.execute(
+            select(InvoiceItem.invoice_id, InvoiceItem.description, InvoiceItem.quantity,
+                   InvoiceItem.unit, InvoiceItem.rate, Product.name)
+            .outerjoin(Product, InvoiceItem.product_id == Product.id)
+            .where(InvoiceItem.invoice_id.in_(_ids))
+            .order_by(InvoiceItem.sort_order)
+        )
+        for iid, desc, qty, unit, rate, pname in lres.all():
+            _lines.setdefault(iid, []).append(
+                {"name": pname or desc or "", "qty": qty, "unit": unit, "rate": rate})
+    for d in _docs:
+        lines = _lines.get(d.get("id"), [])
+        names = [ln["name"] for ln in lines if ln["name"]]
+        d["item"] = (", ".join(names[:3]) + f" +{len(names) - 3} more") if len(names) > 3 else (", ".join(names) or None)
+        rates = {ln["rate"] for ln in lines if ln["rate"] is not None}
+        d["item_rate"] = _f(rates.pop()) if len(rates) == 1 else None
+        d["item_qty"] = _f(lines[0]["qty"]) if len(lines) == 1 else None
+        d["item_unit"] = lines[0]["unit"] if len(lines) == 1 else None
+        d["invoice_id"] = str(d.pop("id")) if d.get("id") else None
+        d["vehicle_rent"] = _f(d.get("vehicle_rent") or 0)
 
     pay_rows = (await db.execute(text(
         "SELECT sp.id, sp.amount, sp.paid_on, sp.mode, sp.reference, "
@@ -3240,7 +3273,7 @@ async def statutory_dues(
         "paid": _f(paid),
         "closing_due": _f(opening_due + accrued_total - paid),
         "breakdown": {k: v for k, v in accrued.items() if k != "total"},
-        "documents": [dict(r) for r in doc_rows],
+        "documents": _docs,
         "payments": [dict(r) for r in pay_rows],
         "notes": [
             "Only FINALISED documents accrue — drafts, cancelled and superseded are excluded.",
