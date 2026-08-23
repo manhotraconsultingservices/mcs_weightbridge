@@ -14,7 +14,8 @@
  */
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Search, Save, IndianRupee, Loader2, Download } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Search, Save, IndianRupee, Loader2, Download, History } from 'lucide-react';
 import { DataTable, downloadCsv, type ColumnDef } from '@/components/DataTable';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -178,6 +179,10 @@ function DefaultRatesEditor({ unitRows, rateUnits, onSaved }: {
               [['Product', 'HSN', ...rateUnits, 'GST %'], ...rows.map(r => [r.name, r.hsn_code, ...rateUnits.map(u => r.rates[u] ?? ''), r.gst])])}>
             <Download className="mr-1 h-3 w-3" /> CSV
           </Button>
+          {/* Every rate change is audited — this is the way in to that history. */}
+          <Link to="/audit?entity_type=pricing" title="Who changed which rate, and when">
+            <Button size="sm" variant="outline"><History className="mr-1 h-3 w-3" /> History</Button>
+          </Link>
           <Button size="sm" onClick={save} disabled={dirty.size === 0 || saving}>
             <Save className="mr-1 h-3 w-3" />{saving ? 'Saving…' : `Save${dirty.size ? ` (${dirty.size})` : ''}`}
           </Button>

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -267,7 +267,22 @@ export default function PermissionsPage() {
   if (!user || user.role !== 'admin') return null;
 
   // Resolve the effective permission list for a role (stored value → default → [])
-  const permsFor = (role: string) => permissions[role] ?? DEFAULT_PERMISSIONS[role] ?? [];
+  // Every grantable page, used to render the admin tab as "all ticked" when the
+  // admin is unrestricted ('*' matches no page path, so it would otherwise look
+  // like the owner has no access at all).
+  const ALL_PAGE_PATHS = useMemo(
+    () => CATALOGUE_GROUPS.flatMap(g => g.pages.map(pg => pg.path)), []);
+
+  const permsFor = (role: string) => {
+    const stored = permissions[role];
+    if (role === 'admin') {
+      // Unrestricted (absent or '*') shows everything ticked; unticking then
+      // narrows the owner's own view.
+      if (!stored || stored.includes('*')) return ALL_PAGE_PATHS;
+      return stored;
+    }
+    return stored ?? DEFAULT_PERMISSIONS[role] ?? [];
+  };
   const invoiceFor = (role: string) => invoicePerms[role] ?? DEFAULT_INVOICE_ACTION_PERMS[role] ?? [];
 
   function setRolePerms(role: string, paths: string[]) {
@@ -338,8 +353,15 @@ export default function PermissionsPage() {
       // Page permissions — the critical save. Only send roles we know about so a
       // deleted role's stale entry doesn't linger.
       const validRoles = new Set(roles.map(r => r.value));
-      const pagePayload: Record<string, string[]> = { admin: ['*'] };
-      for (const r of roles) pagePayload[r.value] = permsFor(r.value);
+      const pagePayload: Record<string, string[]> = {};
+      for (const r of roles) {
+        const picked = permsFor(r.value);
+        // Store '*' (not an exhaustive list) when the admin has everything ticked.
+        // An exhaustive list would freeze today's page set, so a page added in a
+        // later release would silently be missing for the owner.
+        pagePayload[r.value] =
+          r.value === 'admin' && picked.length === ALL_PAGE_PATHS.length ? ['*'] : picked;
+      }
       await api.put('/api/v1/app-settings/role-permissions', pagePayload);
 
       try {

@@ -90,10 +90,15 @@ export function useAppSettings(userRole: string): AppSettings {
       ]);
 
       const map = permsRes.data ?? {};
+      // Admin defaults to full access, but an admin who narrowed their OWN view on
+      // /admin/permissions has a stored list — honour it, or the save appears to do
+      // nothing. An empty/absent entry still means full access, so a tenant that
+      // never touched it is unaffected.
+      const stored = map[userRole];
       const rolePerms =
         userRole === 'admin'
-          ? ['*']
-          : (map[userRole] ?? DEFAULT_PERMISSIONS[userRole] ?? []);
+          ? (Array.isArray(stored) && stored.length > 0 ? stored : ['*'])
+          : (stored ?? DEFAULT_PERMISSIONS[userRole] ?? []);
 
       setPermissions(rolePerms);
       setWallpaperUrl(wallRes.data?.url ?? null);

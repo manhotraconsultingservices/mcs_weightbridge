@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
@@ -251,7 +252,7 @@ async def bulk_update_unit_rates(
         if it.rate is None:
             if existing:
                 await db.delete(existing)
-                _changes.append({"product": p.name, "unit": unit, "from": _before, "to": None})
+                _changes.append({"product_id": p.id, "product": p.name, "unit": unit, "from": _before, "to": None})
                 updated += 1
             continue
         if it.rate < 0:
@@ -262,7 +263,7 @@ async def bulk_update_unit_rates(
             db.add(ProductUnitRate(company_id=current_user.company_id, product_id=it.product_id, unit=unit, rate=it.rate))
         if unit == (p.unit or "").upper():   # keep legacy default_rate in sync
             p.default_rate = it.rate
-        _changes.append({"product": p.name, "unit": unit,
+        _changes.append({"product_id": p.id, "product": p.name, "unit": unit,
                          "from": _before, "to": str(it.rate)})
         updated += 1
 
@@ -271,8 +272,14 @@ async def bulk_update_unit_rates(
         p = prods.get(r.product_id)
         if not p:
             continue
+        # Only touch a field the caller actually SENT. Without this, saving just the
+        # CUM rate wiped the MT rate: the absent field arrives as None and looked
+        # like "clear it". model_fields_set distinguishes "not provided" from an
+        # explicit null (which really does mean clear).
         for field, val in (("royalty_per_mt", r.royalty_per_mt),
                            ("royalty_per_cum", r.royalty_per_cum)):
+            if field not in r.model_fields_set:
+                continue
             old_val = getattr(p, field)
             if (val is None and old_val is None) or (val is not None and old_val is not None
                                                      and Decimal(str(val)) == Decimal(str(old_val))):
@@ -280,20 +287,30 @@ async def bulk_update_unit_rates(
             if val is not None and val < 0:
                 raise HTTPException(400, f"Royalty cannot be negative for '{p.name}'")
             setattr(p, field, val)
-            _changes.append({"product": p.name, "unit": field.replace("royalty_per_", "royalty/"),
+            _changes.append({"product_id": p.id, "product": p.name,
+                             "unit": field.replace("royalty_per_", "royalty/"),
                              "from": str(old_val) if old_val is not None else None,
                              "to": str(val) if val is not None else None})
             updated += 1
 
     # Who changed which rate, from what to what. Rates drive every invoice, so a
     # silent edit is exactly the kind of change an owner needs to be able to trace.
+    # One audit entry PER PRODUCT, keyed by its id — so a product's rate history can
+    # be traced on its own rather than buried inside one bulk-save blob.
     if _changes:
         from app.routers.audit import log_action
-        await log_action(db, current_user.company_id, current_user.id, "update", "pricing",
-                         entity_id=None,
-                         details={"scope": "default_unit_rates", "count": len(_changes),
-                                  "changes": _changes[:50]},
-                         ip_address=(request.client.host if request and request.client else None))
+        by_product: dict = {}
+        for ch in _changes:
+            by_product.setdefault(ch["product_id"], []).append(
+                {k: v for k, v in ch.items() if k != "product_id"})
+        _ip = request.client.host if request and request.client else None
+        for pid, chs in by_product.items():
+            await log_action(db, current_user.company_id, current_user.id, "update", "pricing",
+                             entity_id=str(pid),
+                             details={"scope": "default_unit_rates",
+                                      "product": chs[0].get("product"),
+                                      "changes": chs},
+                             ip_address=_ip)
     await db.commit()
     return {"updated": updated}
 

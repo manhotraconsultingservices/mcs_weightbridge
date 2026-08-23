@@ -182,7 +182,10 @@ export default function AuditPage() {
 
   // Filters
   const [action, setAction] = useState('');
-  const [entityType, setEntityType] = useState('');
+  // Deep-link support: /audit?entity_type=pricing opens filtered to that history,
+  // so a page can link straight to "who changed this and when".
+  const [entityType, setEntityType] = useState(
+    () => new URLSearchParams(window.location.search).get('entity_type') ?? '');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [search, setSearch] = useState('');
