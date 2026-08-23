@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { useAuth } from '@/hooks/useAuth';
 import { DEFAULT_PERMISSIONS } from '@/hooks/useAppSettings';
 import type { RoleTabPermissions } from '@/contexts/PermissionsContext';
-import { CATALOGUE_GROUPS, HUB_TABS, BUILTIN_ROLES, BUILTIN_ROLE_VALUES, type RoleDef } from '@/lib/rbac';
+import { CATALOGUE_GROUPS, HUB_TABS, BUILTIN_ROLES, BUILTIN_ROLE_VALUES, ADMIN_ROLE_DEF, type RoleDef } from '@/lib/rbac';
 import api from '@/services/api';
 
 // ── Invoice action catalogue ─────────────────────────────────────────────── //
@@ -232,7 +232,10 @@ export default function PermissionsPage() {
   const [roleDialog, setRoleDialog] = useState<{ mode: 'create' | 'rename'; value?: string } | null>(null);
   const [roleName, setRoleName] = useState('');
 
-  const roles: RoleDef[] = [...BUILTIN_ROLES, ...customRoles];
+  // Admin first: an owner may want to hide pages they never use from their OWN
+  // sidebar. Administration pages stay reachable regardless (see canAccessRoute),
+  // so narrowing this can always be undone.
+  const roles: RoleDef[] = [ADMIN_ROLE_DEF, ...BUILTIN_ROLES, ...customRoles];
 
   // Guard
   useEffect(() => {

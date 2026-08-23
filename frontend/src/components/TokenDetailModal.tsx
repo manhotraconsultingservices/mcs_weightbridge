@@ -225,7 +225,12 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
     const royStr = token.royalty_cum != null ? String(token.royalty_cum) : '';
     const royOn = token.royalty_unit != null || token.royalty_cum != null || Number(token.royalty_amount ?? 0) > 0;
     // Basis: the token's stored unit, else the method default (weighed → mt, volume → cum).
-    const royUnit: 'mt' | 'cum' = (token.royalty_unit === 'mt' || token.royalty_unit === 'cum')
+    // The method decides the basis. A stored value that disagrees (legacy rows, or a
+    // token created before this rule) is ignored so the dialog cannot show CUM on a
+    // weighed load.
+    const royUnit: 'mt' | 'cum' = token.weight_method === 'volume' ? 'cum'
+      : token.weight_method === 'weighbridge' ? 'mt'
+      : (token.royalty_unit === 'mt' || token.royalty_unit === 'cum')
       ? token.royalty_unit
       : (token.weight_method === 'volume' ? 'cum' : 'mt');
     // Rate: the token's override, else the product master rate for the unit.
@@ -1032,18 +1037,13 @@ export function TokenDetailModal({ tokenId, onClose }: Props) {
                   </label>
                   {dRoyaltyOn && (
                     <>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium">Charge royalty per</label>
-                        <div className="flex gap-1">
-                          {(['mt', 'cum'] as const).map(u => (
-                            <button key={u} type="button"
-                              onClick={() => { setDRoyaltyUnit(u); setDRoyaltyRate(rateFor(u)); }}
-                              className={`flex-1 h-8 rounded border text-xs font-medium ${
-                                dRoyaltyUnit === u ? 'border-amber-500 bg-amber-500 text-white' : 'border-amber-300 bg-white text-amber-700 hover:bg-amber-100'}`}
-                            >{u === 'mt' ? 'MT (weight)' : 'CUM (volume)'}</button>
-                          ))}
-                        </div>
-                      </div>
+                      {/* Basis follows how the load was measured — a volume token is
+                          billed per CUM, a weighed one per MT — so it is shown, not
+                          chosen. Matches the New Trip form. */}
+                      <p className="text-[11px] text-amber-800">
+                        Charged per <span className="font-semibold">{uLabel}</span>
+                        {token?.weight_method === 'volume' ? ' (volume load)' : ' (weighed load)'}
+                      </p>
                       <div className="space-y-1">
                         <label className="text-xs font-medium">Royalty rate (₹/{uLabel})</label>
                         <Input type="number" min="0" step="0.01" value={dRoyaltyRate}

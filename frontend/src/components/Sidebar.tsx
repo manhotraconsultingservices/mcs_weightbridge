@@ -185,7 +185,9 @@ export default function Sidebar({ user, onLogout, usbAuthorized = false, permiss
     // (e.g. /reports?tab=eod) yet gate on a hub path via permKey.
     const key = item.permKey ?? item.to;
 
-    // Admins see everything (module-gated items excepted)
+    // Full view (module-gated items excepted). isAdmin IS permissions.includes('*'),
+    // so an admin who narrowed their own view on /admin/permissions falls through to
+    // the normal per-page checks below, exactly like any other role.
     if (isAdmin) {
       const mods = HUB_MODULES[key];
       if (mods && modules) {

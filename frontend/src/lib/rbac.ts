@@ -228,6 +228,12 @@ export function roleLabel(r: RoleDef, t?: (k: string) => string): string {
 }
 
 // Built-in non-admin roles (admin is implicit and always has full access).
+/** The tenant admin, for screens that let an admin tune their OWN view.
+ *  Not part of BUILTIN_ROLES — the user-role pickers already offer admin. */
+export const ADMIN_ROLE_DEF: RoleDef = {
+  value: 'admin', label: 'Admin / Owner', labelKey: 'users.roles.admin', color: 'text-violet-600',
+};
+
 export const BUILTIN_ROLES: RoleDef[] = [
   { value: 'gate_guard',         label: 'Gate Guard', labelKey: 'users.roles.gate_guard',         color: 'text-rose-600' },
   { value: 'store_manager',      label: 'Store Manager', labelKey: 'users.roles.store_manager',      color: 'text-emerald-600' },
@@ -372,10 +378,18 @@ export function canAccessRoute(
   platformRestrictions?: string[] | null,
 ): boolean {
   if (isPlatformRestricted(pathname, platformRestrictions)) return false;
-  if (role === 'admin' || permissions.includes('*')) return true;
+  // '*' is full access — the default state for admin, and what every admin has
+  // unless they deliberately narrow their own view on /admin/permissions.
+  if (permissions.includes('*')) return true;
+  if (role === 'admin') {
+    // An admin who narrowed their own view keeps the administration pages, so the
+    // change is always reversible. Without this a single wrong tick would lock the
+    // tenant's only admin out of the screen that undoes it.
+    if (pathname.startsWith('/admin/') || pathname === '/settings') return true;
+  }
   const req = routeRequirement(pathname);
   if (req.kind === 'allow') return true;
-  if (req.kind === 'admin') return false;
+  if (req.kind === 'admin') return role === 'admin';
   if (!hasPagePerm(permissions, req.hub)) return false;
 
   // The hub is granted — but if the admin restricted this role to certain tabs,
