@@ -874,6 +874,7 @@ async def _vehicle_summaries(db: AsyncSession, user: User, date_from: date, date
         by_veh.setdefault(f.vehicle_id, []).append({
             "odometer_km": float(f.odometer_km), "litres": float(f.litres),
             "entry_date": f.entry_date,
+            "tank_full": bool(f.tank_full),
             "rate_per_litre": float(f.rate_per_litre) if f.rate_per_litre else None,
         })
 
@@ -924,8 +925,30 @@ async def _vehicle_summaries(db: AsyncSession, user: User, date_from: date, date
             km_shortfall = round(expected_km - dist, 1)
             if cost > 0:
                 excess_cost = round(excess * (cost / litres), 2)
+        # How much diesel is left and how far it goes. Anchored on the last fill
+        # that actually filled the tank — that is the last moment the level was
+        # known. Uses the mileage the vehicle really achieves when there is one,
+        # falling back to its benchmark, and says which it used.
+        _fills = [e for e in ents if float(e.get("litres") or 0) > 0]
+        _last = max(_fills, key=lambda e: e["odometer_km"]) if _fills else None
+        _range_kmpl = actual or bench
+        _rng = fuel_svc.estimate_range(
+            tank_capacity=tank,
+            last_fill_odometer=_last["odometer_km"] if _last else None,
+            last_fill_was_full=bool(_last.get("tank_full")) if _last else False,
+            current_odometer=(float(veh.current_odometer_km)
+                              if veh.current_odometer_km is not None
+                              else (_last["odometer_km"] if _last else None)),
+            kmpl=_range_kmpl,
+        )
         summaries.append({
             "vehicle_id": str(vid), "registration_no": veh.registration_no,
+            "tank_capacity_litres": tank,
+            "fuel_left_litres": _rng["fuel_left_litres"],
+            "range_km": _rng["range_km"],
+            "km_since_fill": _rng["km_since_fill"],
+            "range_basis": ("actual" if actual else ("benchmark" if bench else None)),
+            "range_note": _rng["reason"],
             "distance_km": round(dist, 1), "litres": round(litres, 2),
             "actual_kmpl": actual, "benchmark_kmpl": bench, "benchmark_source": bench_src,
             "deviation_pct": deviation, "expected_km": expected_km, "km_shortfall": km_shortfall,

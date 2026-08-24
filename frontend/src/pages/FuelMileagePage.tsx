@@ -57,6 +57,9 @@ interface MileageRow {
   deviation_pct: number | null; expected_litres: number | null;
   expected_km: number | null; km_shortfall: number | null;
   excess_litres: number | null; excess_cost: number | null;
+  tank_capacity_litres: number | null; fuel_left_litres: number | null;
+  range_km: number | null; km_since_fill: number | null;
+  range_basis: string | null; range_note: string | null;
   status: string; flags: string[];
 }
 interface SeriesPoint { period: string; distance_km: number; litres: number; actual_kmpl: number | null; cost: number; }
@@ -707,8 +710,25 @@ function MileageReportTab() {
     { key: 'actual_kmpl', label: 'Actual km/l', type: 'number', align: 'right', accessor: r => r.actual_kmpl ?? 0, format: (_v, r) => r.actual_kmpl == null ? '—' : num(r.actual_kmpl, 2), exportValue: r => r.actual_kmpl ?? '' },
     { key: 'benchmark_kmpl', label: 'Benchmark', type: 'number', align: 'right', accessor: r => r.benchmark_kmpl ?? 0, format: (_v, r) => r.benchmark_kmpl == null ? '—' : `${num(r.benchmark_kmpl, 2)}${r.benchmark_source === 'auto' ? ' (auto)' : ''}`, exportValue: r => r.benchmark_kmpl ?? '' },
     { key: 'deviation_pct', label: 'Deviation', type: 'number', align: 'right', accessor: r => r.deviation_pct ?? 0, format: (_v, r) => r.deviation_pct == null ? '—' : <span className={r.deviation_pct >= 15 ? 'text-red-600 font-semibold' : r.deviation_pct >= 7.5 ? 'text-amber-600' : ''}>{num(r.deviation_pct, 1)}%</span>, exportValue: r => r.deviation_pct ?? '' },
+    { key: 'fuel_left_litres', label: 'Diesel left (L)', type: 'number', align: 'right',
+      accessor: r => r.fuel_left_litres ?? -1,
+      format: (_v, r) => r.fuel_left_litres == null
+        ? <span className="text-muted-foreground" title={r.range_note || ''}>—</span>
+        : <span>{num(r.fuel_left_litres, 1)}{r.tank_capacity_litres ? <span className="text-muted-foreground"> / {num(r.tank_capacity_litres, 0)}</span> : null}</span>,
+      exportValue: r => r.fuel_left_litres ?? '' },
+    { key: 'range_km', label: 'Can run (km)', type: 'number', align: 'right',
+      accessor: r => r.range_km ?? -1,
+      format: (_v, r) => r.range_km == null
+        ? <span className="text-muted-foreground" title={r.range_note || ''}>—</span>
+        : <span className={r.range_km < 100 ? 'font-semibold text-amber-600' : ''}
+                title={`Before refuelling, at the ${r.range_basis === 'actual' ? 'mileage this vehicle actually achieves' : 'benchmark mileage'}`}>
+            {num(r.range_km, 0)} km
+          </span>,
+      exportValue: r => r.range_km ?? '' },
     { key: 'excess_litres', label: 'Excess L', type: 'number', align: 'right', accessor: r => r.excess_litres ?? 0, format: (_v, r) => r.excess_litres == null ? '—' : num(r.excess_litres, 1), exportValue: r => r.excess_litres ?? '' },
-    { key: 'excess_cost', label: 'Excess ₹', type: 'number', align: 'right', accessor: r => r.excess_cost ?? 0, format: (_v, r) => r.excess_cost == null ? '—' : <span className={(r.excess_cost || 0) > 0 ? 'text-red-600 font-semibold' : ''}>{INR(r.excess_cost)}</span>, exportValue: r => r.excess_cost ?? '' },
+    { key: 'excess_cost', label: 'Excess ₹', type: 'number', align: 'right', accessor: r => r.excess_cost ?? 0, format: (_v, r) => r.excess_cost == null
+        ? <span className="text-muted-foreground" title="No rate recorded on the fills for this vehicle — enter the rate per litre when recording a fill to see the cost">—</span>
+        : <span className={(r.excess_cost || 0) > 0 ? 'text-red-600 font-semibold' : ''}>{INR(r.excess_cost)}</span>, exportValue: r => r.excess_cost ?? '' },
     { key: 'status', label: 'Status', type: 'enum', enumOptions: ['leak', 'watch', 'ok', 'unknown'], accessor: r => r.status, format: v => <Badge variant="outline" className={STATUS_STYLE[String(v)]}>{String(v)}</Badge> },
   ];
 
@@ -873,7 +893,8 @@ function LeakageTab() {
                 <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                   <div><p className="text-xs text-muted-foreground">Distance</p><p className="text-sm font-mono">{num(a.distance_km)} km</p></div>
                   <div><p className="text-xs text-muted-foreground">Excess diesel</p><p className="text-sm font-mono text-red-600">{num(a.excess_litres, 1)} L</p></div>
-                  <div><p className="text-xs text-muted-foreground">Excess ₹</p><p className="text-sm font-mono text-red-600">{a.excess_cost == null ? '—' : INR(a.excess_cost)}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Excess ₹</p><p className="text-sm font-mono text-red-600">{a.excess_cost == null ? <span className="text-muted-foreground" title="No rate per litre recorded on the fills for this vehicle">no rate</span> : INR(a.excess_cost)}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Can still run</p><p className="text-sm font-mono">{a.range_km == null ? <span className="text-muted-foreground" title={a.range_note || ''}>—</span> : `${num(a.range_km, 0)} km`}</p></div>
                 </div>
                 {a.flags?.length ? <p className="mt-2 text-xs text-amber-700">⚠ {a.flags.map(f => FLAG_LABEL[f] || f).join(', ')}</p> : null}
               </CardContent>

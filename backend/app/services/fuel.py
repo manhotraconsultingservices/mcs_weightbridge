@@ -140,6 +140,44 @@ def aggregate(
     return result
 
 
+def estimate_range(
+    tank_capacity: float | None,
+    last_fill_odometer: float | None,
+    last_fill_was_full: bool,
+    current_odometer: float | None,
+    kmpl: float | None,
+) -> dict:
+    """How much diesel is likely left, and how far that goes.
+
+    The only moment the level in a tank is known is a brim-full fill, so the
+    estimate is anchored there: subtract what the vehicle has burned since, at the
+    mileage it actually achieves. Anything missing returns a reason rather than a
+    confident-looking number, because a wrong range estimate strands a truck.
+    """
+    out = {"fuel_left_litres": None, "range_km": None, "km_since_fill": None,
+           "reason": None}
+    if not tank_capacity or tank_capacity <= 0:
+        out["reason"] = "Set the vehicle's tank capacity to estimate range"
+        return out
+    if not kmpl or kmpl <= 0:
+        out["reason"] = "Need a mileage figure — set a benchmark or record two fills"
+        return out
+    if last_fill_odometer is None or current_odometer is None:
+        out["reason"] = "No odometer reading since the last fill"
+        return out
+    if not last_fill_was_full:
+        out["reason"] = "Last fill was not a full tank, so the level is unknown"
+        return out
+
+    km_since = max(0.0, current_odometer - last_fill_odometer)
+    out["km_since_fill"] = round(km_since, 1)
+    used = km_since / kmpl
+    left = max(0.0, tank_capacity - used)
+    out["fuel_left_litres"] = round(left, 1)
+    out["range_km"] = round(left * kmpl, 0)
+    return out
+
+
 def learn_baseline(interval_kmpls: list[float | None]) -> float | None:
     """Auto-learned benchmark = median of a vehicle's own per-interval mileages.
     Needs >= 3 clean intervals, else None (not enough history)."""
