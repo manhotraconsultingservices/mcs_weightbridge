@@ -93,6 +93,7 @@ function RecordFillDialog({ open, vehicles, onClose, onSaved, stations = [] }: {
       setError(''); setResult(null);
     }
   }, [open]);
+  const fillAmount = (parseFloat(form.litres || '0') || 0) * (parseFloat(form.rate_per_litre || '0') || 0);
   const set = (k: string, v: unknown) => setForm(f => ({ ...f, [k]: v }));
 
   async function submit() {
@@ -101,6 +102,13 @@ function RecordFillDialog({ open, vehicles, onClose, onSaved, stations = [] }: {
     if (!form.odometer_km) { setError('Odometer reading is required'); return; }
     if (atPump && form.on_credit && !form.station_name.trim()) {
       setError('Enter the petrol pump / station name for a credit fill'); return;
+    }
+    // A pump fill's amount IS the expense — without it the fill cannot reach the
+    // Day Book or the pump's credit balance, so stop it here rather than let it
+    // save into a state nothing can account for.
+    if (atPump && parseFloat(form.litres || '0') > 0 && !parseFloat(form.rate_per_litre || '0')) {
+      setError('Enter the rate per litre — a petrol-pump fill needs its cost to reach the Day Book and Pump Credit');
+      return;
     }
     setSaving(true); setError(''); setResult(null);
     try {
@@ -166,8 +174,15 @@ function RecordFillDialog({ open, vehicles, onClose, onSaved, stations = [] }: {
               <p className="text-[10px] text-muted-foreground">Leave blank or 0 to just record a new odometer reading without a fill.</p>
             </div>
             <div className="space-y-1">
-              <Label>Rate (₹/litre)</Label>
-              <Input type="number" min="0" step="0.01" value={form.rate_per_litre} onChange={e => set('rate_per_litre', e.target.value)} placeholder="optional" />
+              <Label>Rate (₹/litre){atPump && <span className="text-destructive"> *</span>}</Label>
+              <Input type="number" min="0" step="0.01" value={form.rate_per_litre}
+                onChange={e => set('rate_per_litre', e.target.value)}
+                placeholder={atPump ? 'Required for a pump fill' : 'optional (plant tank is costed from store stock)'} />
+              {fillAmount > 0 && (
+                <p className="text-[11px] font-medium text-foreground">
+                  Amount: ₹{fillAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </p>
+              )}
             </div>
             <div className="space-y-1">
               <Label>Source</Label>
@@ -197,8 +212,10 @@ function RecordFillDialog({ open, vehicles, onClose, onSaved, stations = [] }: {
               </div>
               <p className="text-[11px] text-amber-800">
                 {form.on_credit
-                  ? 'A purchase order is created against this pump (no stock movement). Track dues in the "Pump Credit" tab.'
-                  : 'Paid at the pump (cash) — no credit PO will be created.'}
+                  ? (fillAmount > 0
+                      ? `₹${fillAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} will be owed to this pump — a purchase order is created against it (no stock movement). Track and pay it in the "Pump Credit" tab.`
+                      : 'A purchase order is created against this pump (no stock movement). Enter the rate above so the amount owed can be recorded.')
+                  : 'Paid at the pump (cash) — no credit PO will be created; it shows as fuel money-out in the Day Book.'}
               </p>
             </div>
           )}

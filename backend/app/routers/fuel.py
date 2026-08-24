@@ -235,6 +235,11 @@ async def _party_names(db: AsyncSession, party_ids) -> dict[str, str]:
         return {}
 
 
+def entry_source_is_pump(fuel_source: str | None) -> bool:
+    """Fuel bought outside, from someone who has to be paid."""
+    return (fuel_source or "") in ("outside_pump", "other")
+
+
 async def _create_pump_po(db: AsyncSession, user: User, entry: VehicleFuelEntry,
                           station_name: str) -> FuelPurchaseOrder | None:
     """Auto-create a credit PO against the petrol pump for an outside-pump fill.
@@ -343,6 +348,19 @@ async def create_entry(payload: FuelEntryCreate, background: BackgroundTasks,
     rate = Decimal(str(payload.rate_per_litre)) if payload.rate_per_litre is not None else None
     amount = (Decimal(str(payload.amount)) if payload.amount is not None
               else (litres * rate if rate is not None else None))
+
+    # A plant-tank fill is already costed by the store issue, so its rate is
+    # optional. A pump fill is the opposite: the amount IS the expense, and the
+    # pump's credit balance is built from it. Recorded without one, the fill was
+    # silently invisible to the Day Book, the P&L and Pump Credit alike — so it is
+    # refused here rather than accepted into a state nothing can account for.
+    if (entry_source_is_pump(payload.fuel_source) and litres > 0
+            and (amount is None or amount <= 0)):
+        raise HTTPException(
+            400,
+            "Enter the rate per litre (or the total amount) for a petrol-pump fill — "
+            "without it the fill cannot appear in the Day Book or in Pump Credit.",
+        )
 
     inv_item_id = None
     inv_txn_id = None
@@ -550,6 +568,12 @@ async def update_entry(entry_id: uuid.UUID, payload: FuelEntryUpdate,
         po.po_date = entry.entry_date
         if entry.station_name:
             po.station_name = entry.station_name
+    elif po is None and entry_source_is_pump(entry.fuel_source)             and (entry.station_name or "").strip() and float(entry.amount or 0) > 0:
+        # The fill only becomes chargeable now — e.g. the operator went back and
+        # added the rate they had left blank. Without this the correction fixed the
+        # fuel record but left the pump's credit permanently empty, which is exactly
+        # the dead end an operator hits when trying to repair their own mistake.
+        await _create_pump_po(db, user, entry, entry.station_name)
     await db.commit()
     await db.refresh(entry)
     veh = (await db.execute(select(Vehicle).where(Vehicle.id == entry.vehicle_id))).scalar_one_or_none()
