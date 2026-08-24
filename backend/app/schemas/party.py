@@ -87,12 +87,16 @@ class PartyRateCreate(BaseModel):
     rate: Decimal
     effective_from: date
     effective_to: date | None = None
+    # The bulk matrix save has always been per-unit; without this the single-rate
+    # endpoint silently dropped a caller's unit and wrote a base-unit rate instead.
+    unit: str | None = None
 
 
 class PartyRateResponse(BaseModel):
     id: uuid.UUID
     product_id: uuid.UUID
     rate: Decimal
+    unit: str | None = None
     effective_from: date
     effective_to: date | None
 

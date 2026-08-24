@@ -51,10 +51,13 @@ const EVENT_TYPES = [
   { value: 'diesel_transaction', label: 'Diesel Transaction (every fill)' },
   { value: 'fuel_leakage_alert', label: 'Fuel / Mileage Fraud Alert' },
   { value: 'royalty_unaccounted_alert', label: 'Royalty Unaccounted Alert' },
+  // ── Master data ──
+  { value: 'master_data_updated', label: 'Master Data Changed (item / party / pricing)' },
   // ── Owner digests ──
   { value: 'owner_digest', label: 'Daily Owner Digest' },
   { value: 'eod_summary', label: 'Day Book — EOD Summary' },
   { value: 'eod_csv_pack', label: 'Day Book — Daily CSV Pack (attachments)' },
+  { value: 'statutory_dues_summary', label: 'Government Dues Summary (royalty + GST owed)' },
 ];
 
 const CHANNELS = [
@@ -137,6 +140,9 @@ const VARS_HINT: Record<string, string[]> = {
   low_product_stock: ['product_name', 'current_stock', 'unit', 'min_stock_level', 'status', 'company_name'],
   fuel_leakage_alert: ['vehicle_no', 'actual_kmpl', 'benchmark_kmpl', 'deviation_pct', 'litres', 'distance_km'],
   royalty_unaccounted_alert: ['date', 'inbound_mt', 'consumed_mt', 'unaccounted_mt', 'threshold_mt', 'company_name'],
+  // Master data
+  master_data_updated: ['entity', 'name', 'action', 'changes', 'change_count', 'updated_by', 'updated_at', 'company_name'],
+  statutory_dues_summary: ['as_of', 'royalty_due', 'gst_due', 'total_due', 'company_name'],
   // Owner digests
   owner_digest: ['date', 'tokens_today', 'tonnage_today', 'revenue_today', 'collected_today', 'status_emoji', 'status_headline', 'overdue_count', 'overdue_total', 'low_stock_count', 'compliance_count', 'yield_emoji', 'yield_pct', 'target_yield_pct', 'company_name'],
   eod_summary: ['date', 'cash_sales', 'electronic_sales', 'total_sales', 'purchases', 'store_inventory', 'diesel', 'salary', 'advance', 'commission', 'total_expenses', 'net_emoji', 'net', 'company_name'],

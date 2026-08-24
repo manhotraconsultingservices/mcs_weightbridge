@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -170,15 +170,57 @@ async def list_party_rates(
     return [PartyRateResponse.model_validate(r) for r in result.scalars().all()]
 
 
+
+async def _audit_party_rate(db, request, current_user, party_id, product_id,
+                            unit, before: str | None, after: str | None) -> None:
+    """Record and announce one party-rate cell change (set or cleared)."""
+    if before == after:
+        return
+    party = await db.get(Party, party_id)
+    product = await db.get(Product, product_id)
+    pname = product.name if product else str(product_id)
+    from app.routers.audit import log_action
+    await log_action(
+        db, current_user.company_id, current_user.id, "update", "pricing",
+        entity_id=str(party_id),
+        details={"scope": "party_rates", "party_id": str(party_id),
+                 "changes": [{"product_id": str(product_id), "product": pname,
+                              "unit": unit, "from": before, "to": after}]},
+        ip_address=(request.client.host if request and request.client else None))
+    from app.services.master_alerts import notify_pricing_change, rate_label
+    await notify_pricing_change(
+        db, current_user.company_id,
+        entity=f"{_party_label(party)} pricing" if party else "Customer pricing",
+        groups=[(f"{party.name if party else party_id} — {pname}",
+                 [{"field": rate_label(unit), "from": before or "—",
+                   "to": after or "cleared (uses default)"}])],
+        user=current_user)
+
 @router.post("/{party_id}/rates", response_model=PartyRateResponse, status_code=201)
 async def set_party_rate(
     party_id: uuid.UUID,
     data: PartyRateCreate,
+    request: Request,
     current_user: User = Depends(require_role("admin", "operator", "accountant")),
     db: AsyncSession = Depends(get_db),
 ):
-    rate = PartyRate(party_id=party_id, **data.model_dump())
+    # A rate set here reprices this party's invoices exactly as the matrix save
+    # does, so it is traced the same way — what it was, what it became, by whom.
+    _unit = (getattr(data, "unit", None) or "").strip().upper() or None
+    _prior = (await db.execute(
+        select(PartyRate).where(
+            PartyRate.party_id == party_id, PartyRate.product_id == data.product_id,
+            (func.upper(PartyRate.unit) == _unit) if _unit is not None else PartyRate.unit.is_(None),
+        # Several rates can share a date; the newest ROW is the one in force.
+        ).order_by(PartyRate.effective_from.desc(),
+                   PartyRate.created_at.desc()).limit(1)
+    )).scalar_one_or_none()
+    _payload = data.model_dump()
+    _payload["unit"] = _unit          # normalised, so "mt" and "MT" are one cell
+    rate = PartyRate(party_id=party_id, **_payload)
     db.add(rate)
+    await _audit_party_rate(db, request, current_user, party_id, data.product_id,
+                            _unit, str(_prior.rate) if _prior else None, str(data.rate))
     await db.commit()
     await db.refresh(rate)
     return PartyRateResponse.model_validate(rate)
@@ -188,6 +230,7 @@ async def set_party_rate(
 async def delete_party_rate(
     party_id: uuid.UUID,
     product_id: uuid.UUID,
+    request: Request,
     current_user: User = Depends(require_role("admin", "accountant")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -198,8 +241,15 @@ async def delete_party_rate(
             PartyRate.product_id == product_id,
         )
     )
-    for row in result.scalars().all():
+    rows = result.scalars().all()
+    _prior = max(rows, key=lambda r: (r.effective_from or date.min,
+                                      r.created_at or datetime.min)) if rows else None
+    for row in rows:
         await db.delete(row)
+    if rows:
+        await _audit_party_rate(db, request, current_user, party_id, product_id,
+                                (_prior.unit or None) if _prior else None,
+                                str(_prior.rate) if _prior else None, None)
     await db.commit()
 
 
@@ -301,9 +351,17 @@ async def bulk_set_party_rates(
     rates = payload.get("rates") or []
     today = date.today()
     saved, cleared = 0, 0
+    _changes: list[dict] = []
 
     def _norm(u):
         return (u or "").strip().upper() or None
+
+    # Name the products once so the audit entry and the alert read as the operator
+    # sees them on screen, not as raw ids.
+    _pids = {(uuid.UUID(e["product_id"]) if isinstance(e.get("product_id"), str) else e.get("product_id"))
+             for e in rates if e.get("product_id")}
+    _pname = {p.id: p.name for p in (await db.execute(
+        select(Product).where(Product.id.in_(_pids)))).scalars().all()} if _pids else {}
 
     for entry in rates:
         product_id = entry.get("product_id")
@@ -321,8 +379,16 @@ async def bulk_set_party_rates(
                 (func.upper(PartyRate.unit) == unit) if unit is not None else PartyRate.unit.is_(None),
             )
         )).scalars().all()
+        # The rate that was in force is the newest of the rows about to be dropped.
+        # Capture it BEFORE the delete, or the history has no "from" side.
+        _before = None
+        if existing:
+            _cur = max(existing, key=lambda r: (r.effective_from or date.min,
+                                                r.created_at or datetime.min))
+            _before = str(_cur.rate)
         for row in existing:
             await db.delete(row)
+        _after = None if rate_value is None else str(Decimal(str(rate_value)))
         if rate_value is None:
             cleared += 1
         else:
@@ -331,16 +397,32 @@ async def bulk_set_party_rates(
                 rate=Decimal(str(rate_value)), unit=unit, effective_from=today,
             ))
             saved += 1
+        # Re-saving the same number is not a change worth recording.
+        if _before != _after:
+            _changes.append({"product_id": str(pid), "product": _pname.get(pid) or "—",
+                             "unit": unit, "from": _before, "to": _after})
 
     # Customer/supplier rates drive every invoice for that party, so who changed
     # them and when has to be traceable — same reason the default rates are audited.
-    if saved or cleared:
+    if _changes:
         from app.routers.audit import log_action
         await log_action(db, current_user.company_id, current_user.id, "update", "pricing",
                          entity_id=str(party_id),
                          details={"scope": "party_rates", "party_id": str(party_id),
-                                  "saved": saved, "cleared": cleared},
+                                  "saved": saved, "cleared": cleared,
+                                  "changes": _changes[:50]},
                          ip_address=(request.client.host if request and request.client else None))
+        party = await db.get(Party, party_id)
+        from app.services.master_alerts import notify_pricing_change, rate_label
+        _label = f"{_party_label(party)} pricing" if party else "Customer pricing"
+        _pname_disp = party.name if party else str(party_id)
+        await notify_pricing_change(
+            db, current_user.company_id, entity=_label,
+            groups=[(f"{_pname_disp} — {c['product']}",
+                     [{"field": rate_label(c["unit"]), "from": c["from"] or "—",
+                       "to": c["to"] or "cleared (uses default)"}])
+                    for c in _changes],
+            user=current_user)
     await db.commit()
     return {"saved": saved, "cleared": cleared}
 

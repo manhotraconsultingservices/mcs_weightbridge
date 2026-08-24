@@ -168,7 +168,7 @@ async def bulk_update_default_rates(
             if it.default_rate < 0:
                 raise HTTPException(400, f"Rate cannot be negative for '{p.name}'")
             if p.default_rate != it.default_rate:
-                _changes.append({"product": p.name, "field": "default_rate",
+                _changes.append({"product_id": p.id, "product": p.name, "field": "default_rate",
                                  "from": str(p.default_rate), "to": str(it.default_rate)})
             p.default_rate = it.default_rate
             changed = True
@@ -176,7 +176,7 @@ async def bulk_update_default_rates(
             if it.gst_rate < 0:
                 raise HTTPException(400, f"GST rate cannot be negative for '{p.name}'")
             if p.gst_rate != it.gst_rate:
-                _changes.append({"product": p.name, "field": "gst_rate",
+                _changes.append({"product_id": p.id, "product": p.name, "field": "gst_rate",
                                  "from": str(p.gst_rate), "to": str(it.gst_rate)})
             p.gst_rate = it.gst_rate
             changed = True
@@ -187,8 +187,17 @@ async def bulk_update_default_rates(
         await log_action(db, current_user.company_id, current_user.id, "update", "pricing",
                          entity_id=None,
                          details={"scope": "default_rates", "count": len(_changes),
-                                  "changes": _changes[:50]},
+                                  "changes": [{k: (str(v) if k == "product_id" else v)
+                                               for k, v in c.items()} for c in _changes[:50]]},
                          ip_address=(request.client.host if request and request.client else None))
+        # Tell whoever asked to be told: a rate edit reprices every future invoice.
+        from app.services.master_alerts import notify_pricing_change, rate_label
+        _groups: dict = {}
+        for ch in _changes:
+            _groups.setdefault(ch["product_id"], (ch["product"], []))[1].append(
+                {"field": rate_label(ch["field"]), "from": ch["from"], "to": ch["to"]})
+        await notify_pricing_change(db, current_user.company_id, entity="Pricing",
+                                    groups=list(_groups.values()), user=current_user)
     await db.commit()
     return {"updated": updated}
 
@@ -327,6 +336,14 @@ async def bulk_update_unit_rates(
                                       "product": chs[0].get("product"),
                                       "changes": chs},
                              ip_address=_ip)
+        from app.services.master_alerts import notify_pricing_change, rate_label
+        await notify_pricing_change(
+            db, current_user.company_id, entity="Pricing",
+            groups=[(chs[0].get("product") or "—",
+                     [{"field": rate_label(c.get("unit")), "from": c.get("from"), "to": c.get("to")}
+                      for c in chs])
+                    for chs in by_product.values()],
+            user=current_user)
     await db.commit()
     return {"updated": updated}
 
