@@ -58,7 +58,7 @@ interface MileageRow {
   expected_km: number | null; km_shortfall: number | null;
   excess_litres: number | null; excess_cost: number | null;
   tank_capacity_litres: number | null; fuel_left_litres: number | null;
-  range_km: number | null; km_since_fill: number | null;
+  range_km: number | null;
   range_basis: string | null; range_note: string | null;
   status: string; flags: string[];
 }
@@ -262,6 +262,7 @@ interface UtilRow {
   rent_km: number; rent_earned: number; fuel_litres: number; fuel_cost: number;
   net: number; fuel_left_est: number | null; odometer_km: number | null;
   tank_capacity_litres: number | null; benchmark_mileage_kmpl: number | null;
+  range_km: number | null; range_basis: string | null; range_note: string | null;
 }
 interface UtilResp {
   date_from: string; date_to: string; rows: UtilRow[];
@@ -304,9 +305,18 @@ function UtilizationTab() {
       format: (_v, r) => r.odometer_km == null ? '—' : num(r.odometer_km, 0),
       exportValue: r => r.odometer_km ?? '' },
     { key: 'fuel_left_est', label: 'Fuel left ≈ (L)', type: 'number', align: 'right', accessor: r => r.fuel_left_est ?? -1,
-      format: (_v, r) => r.fuel_left_est == null ? '—'
-        : `${num(r.fuel_left_est, 1)}${r.tank_capacity_litres ? ` / ${num(r.tank_capacity_litres, 0)}` : ''}`,
+      format: (_v, r) => r.fuel_left_est == null
+        ? <span className="text-muted-foreground" title={r.range_note || ''}>—</span>
+        : <>{num(r.fuel_left_est, 1)}{r.tank_capacity_litres ? <span className="text-muted-foreground"> / {num(r.tank_capacity_litres, 0)}</span> : null}</>,
       exportValue: r => r.fuel_left_est ?? '' },
+    { key: 'range_km', label: 'Can run (km)', type: 'number', align: 'right', accessor: r => r.range_km ?? -1,
+      format: (_v, r) => r.range_km == null
+        ? <span className="text-muted-foreground" title={r.range_note || ''}>—</span>
+        : <span className={r.range_km < 100 ? 'font-semibold text-amber-600' : ''}
+                title={`Before refuelling, at the ${r.range_basis === 'actual' ? 'mileage this vehicle actually achieves' : 'benchmark mileage'}`}>
+            {num(r.range_km, 0)} km
+          </span>,
+      exportValue: r => r.range_km ?? '' },
   ];
   const chartData = (data?.rows ?? []).slice(0, 12).map(r => ({ name: r.registration_no, Rent: r.rent_earned, Fuel: r.fuel_cost }));
 
@@ -328,8 +338,11 @@ function UtilizationTab() {
       </div>
       <p className="text-xs text-muted-foreground -mt-1">
         Own-vehicle rent-out performance: <b>km run</b> and <b>rent earned</b> (from Sales tokens) vs <b>fuel burnt</b>
-        (from the fuel log), and the <b>net</b> per vehicle. <b>Fuel left ≈</b> tank at the last brim-full fill − (rent-km
-        driven since ÷ benchmark mileage); it drops as the vehicle runs Sales trips (needs tank capacity + benchmark set).
+        (from the fuel log), and the <b>net</b> per vehicle. <b>Fuel left ≈</b> tank at the last brim-full fill,
+        plus any top-ups since, less the distance driven since ÷ the mileage this vehicle actually
+        achieves (its benchmark only when there is too little fill history to measure). It drops as the
+        vehicle runs Sales trips. Needs tank capacity and at least one brim-full fill — the same figure
+        appears on the Mileage Report tab.
       </p>
 
       {tot && (
@@ -710,7 +723,7 @@ function MileageReportTab() {
     { key: 'actual_kmpl', label: 'Actual km/l', type: 'number', align: 'right', accessor: r => r.actual_kmpl ?? 0, format: (_v, r) => r.actual_kmpl == null ? '—' : num(r.actual_kmpl, 2), exportValue: r => r.actual_kmpl ?? '' },
     { key: 'benchmark_kmpl', label: 'Benchmark', type: 'number', align: 'right', accessor: r => r.benchmark_kmpl ?? 0, format: (_v, r) => r.benchmark_kmpl == null ? '—' : `${num(r.benchmark_kmpl, 2)}${r.benchmark_source === 'auto' ? ' (auto)' : ''}`, exportValue: r => r.benchmark_kmpl ?? '' },
     { key: 'deviation_pct', label: 'Deviation', type: 'number', align: 'right', accessor: r => r.deviation_pct ?? 0, format: (_v, r) => r.deviation_pct == null ? '—' : <span className={r.deviation_pct >= 15 ? 'text-red-600 font-semibold' : r.deviation_pct >= 7.5 ? 'text-amber-600' : ''}>{num(r.deviation_pct, 1)}%</span>, exportValue: r => r.deviation_pct ?? '' },
-    { key: 'fuel_left_litres', label: 'Diesel left (L)', type: 'number', align: 'right',
+    { key: 'fuel_left_litres', label: 'Fuel left ≈ (L)', type: 'number', align: 'right',
       accessor: r => r.fuel_left_litres ?? -1,
       format: (_v, r) => r.fuel_left_litres == null
         ? <span className="text-muted-foreground" title={r.range_note || ''}>—</span>

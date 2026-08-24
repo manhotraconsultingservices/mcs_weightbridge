@@ -878,6 +878,12 @@ async def _vehicle_summaries(db: AsyncSession, user: User, date_from: date, date
             "rate_per_litre": float(f.rate_per_litre) if f.rate_per_litre else None,
         })
 
+    # One source of truth for "how much is left / how far can it go" — the same
+    # figures the Rent vs Fuel tab shows. Two screens answering that question with
+    # different maths is worse than either answer.
+    fuel_left = await _fuel_left_by_vehicle(
+        db, str(user.company_id), {str(k): v for k, v in vehicles.items()})
+
     summaries: list[dict] = []
     series_acc: dict[str, dict[str, float]] = {}   # period -> {distance, litres, cost}
     for vid, veh in vehicles.items():
@@ -925,30 +931,14 @@ async def _vehicle_summaries(db: AsyncSession, user: User, date_from: date, date
             km_shortfall = round(expected_km - dist, 1)
             if cost > 0:
                 excess_cost = round(excess * (cost / litres), 2)
-        # How much diesel is left and how far it goes. Anchored on the last fill
-        # that actually filled the tank — that is the last moment the level was
-        # known. Uses the mileage the vehicle really achieves when there is one,
-        # falling back to its benchmark, and says which it used.
-        _fills = [e for e in ents if float(e.get("litres") or 0) > 0]
-        _last = max(_fills, key=lambda e: e["odometer_km"]) if _fills else None
-        _range_kmpl = actual or bench
-        _rng = fuel_svc.estimate_range(
-            tank_capacity=tank,
-            last_fill_odometer=_last["odometer_km"] if _last else None,
-            last_fill_was_full=bool(_last.get("tank_full")) if _last else False,
-            current_odometer=(float(veh.current_odometer_km)
-                              if veh.current_odometer_km is not None
-                              else (_last["odometer_km"] if _last else None)),
-            kmpl=_range_kmpl,
-        )
+        _rng = fuel_left.get(str(vid)) or {}
         summaries.append({
             "vehicle_id": str(vid), "registration_no": veh.registration_no,
             "tank_capacity_litres": tank,
-            "fuel_left_litres": _rng["fuel_left_litres"],
-            "range_km": _rng["range_km"],
-            "km_since_fill": _rng["km_since_fill"],
-            "range_basis": ("actual" if actual else ("benchmark" if bench else None)),
-            "range_note": _rng["reason"],
+            "fuel_left_litres": _rng.get("left"),
+            "range_km": _rng.get("range_km"),
+            "range_basis": _rng.get("basis"),
+            "range_note": _rng.get("reason"),
             "distance_km": round(dist, 1), "litres": round(litres, 2),
             "actual_kmpl": actual, "benchmark_kmpl": bench, "benchmark_source": bench_src,
             "deviation_pct": deviation, "expected_km": expected_km, "km_shortfall": km_shortfall,
@@ -1042,12 +1032,22 @@ async def _fuel_left_by_vehicle(db: AsyncSession, cid: str, veh: dict) -> dict:
         last_fill_date = entries[-1]["entry_date"]
         cur_manual = float(v.current_odometer_km) if (v and v.current_odometer_km) else None
         # Odometer to SHOW: the highest HARD reading — manual current or the last fill.
-        rec = {"left": None, "odo": round(max(last_fill_odo, cur_manual or 0.0), 1)}
+        rec = {"left": None, "odo": round(max(last_fill_odo, cur_manual or 0.0), 1),
+               "range_km": None, "basis": None, "reason": None}
         out[vid] = rec
-        if not v or not v.tank_capacity_litres or not v.benchmark_mileage_kmpl:
+        if not v or not v.tank_capacity_litres:
+            rec["reason"] = "Set the vehicle's tank capacity to estimate range"
             continue
-        tank = float(v.tank_capacity_litres); bench = float(v.benchmark_mileage_kmpl)
-        if bench <= 0:
+        tank = float(v.tank_capacity_litres)
+        # What this vehicle actually gets beats what it is supposed to get: a truck
+        # doing 2 km/l does not have a 5 km/l tank of range. The benchmark is only
+        # the fallback for a vehicle without enough fill history to say.
+        bench = float(v.benchmark_mileage_kmpl) if v.benchmark_mileage_kmpl else None
+        actual = fuel_svc.achieved_kmpl([dict(e) for e in entries])
+        kmpl = actual or bench
+        rec["basis"] = "actual" if actual else ("benchmark" if bench else None)
+        if not kmpl or kmpl <= 0:
+            rec["reason"] = "Need a mileage figure — set a benchmark or record two fills"
             continue
         # Reference = the most recent brim-FULL fill (tank is known = capacity there).
         full_idx = None
@@ -1055,6 +1055,7 @@ async def _fuel_left_by_vehicle(db: AsyncSession, cid: str, veh: dict) -> dict:
             if e["tank_full"]:
                 full_idx = i
         if full_idx is None:
+            rec["reason"] = "No brim-full fill on record, so the tank level is unknown"
             continue
         full_odo = float(entries[full_idx]["odometer_km"] or 0)
         litres_after = sum(float(e["litres"] or 0) for e in entries[full_idx + 1:])
@@ -1065,9 +1066,13 @@ async def _fuel_left_by_vehicle(db: AsyncSession, cid: str, veh: dict) -> dict:
         trip_after = sum(km for (d, km) in trips_by_v.get(vid, [])
                          if last_fill_date is None or d > last_fill_date)
         current_odo = max(last_fill_odo + trip_after, cur_manual or 0.0)
-        burnt = max(0.0, current_odo - full_odo) / bench
-        # tank was full at full_odo → − fuel burnt since + partial top-ups since.
-        rec["left"] = round(max(0.0, min(tank, tank + litres_after - burnt)), 1)
+        est = fuel_svc.estimate_range(
+            tank_capacity=tank, anchor_odometer=full_odo,
+            current_odometer=current_odo, kmpl=kmpl, litres_since=litres_after,
+        )
+        rec["left"] = est["fuel_left_litres"]
+        rec["range_km"] = est["range_km"]
+        rec["reason"] = est["reason"]
     return out
 
 
@@ -1130,6 +1135,8 @@ async def vehicle_utilization(
             "trips": trips, "rent_km": rk, "rent_earned": re_,
             "fuel_litres": fl, "fuel_cost": fc, "net": net,
             "fuel_left_est": finfo.get("left"), "odometer_km": odo,
+            "range_km": finfo.get("range_km"), "range_basis": finfo.get("basis"),
+            "range_note": finfo.get("reason"),
             "tank_capacity_litres": (float(v.tank_capacity_litres) if v and v.tank_capacity_litres else None),
             "benchmark_mileage_kmpl": (float(v.benchmark_mileage_kmpl) if v and v.benchmark_mileage_kmpl else None),
         })

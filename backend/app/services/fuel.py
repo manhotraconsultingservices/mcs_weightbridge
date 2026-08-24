@@ -142,17 +142,17 @@ def aggregate(
 
 def estimate_range(
     tank_capacity: float | None,
-    last_fill_odometer: float | None,
-    last_fill_was_full: bool,
+    anchor_odometer: float | None,
     current_odometer: float | None,
     kmpl: float | None,
+    litres_since: float = 0.0,
 ) -> dict:
     """How much diesel is likely left, and how far that goes.
 
-    The only moment the level in a tank is known is a brim-full fill, so the
-    estimate is anchored there: subtract what the vehicle has burned since, at the
-    mileage it actually achieves. Anything missing returns a reason rather than a
-    confident-looking number, because a wrong range estimate strands a truck.
+    The caller anchors this on the last brim-FULL fill — the only moment a tank's
+    level is known — and passes any partial top-ups made since as ``litres_since``.
+    Anything missing returns a reason rather than a confident-looking number,
+    because a wrong range estimate strands a truck.
     """
     out = {"fuel_left_litres": None, "range_km": None, "km_since_fill": None,
            "reason": None}
@@ -162,20 +162,37 @@ def estimate_range(
     if not kmpl or kmpl <= 0:
         out["reason"] = "Need a mileage figure — set a benchmark or record two fills"
         return out
-    if last_fill_odometer is None or current_odometer is None:
-        out["reason"] = "No odometer reading since the last fill"
-        return out
-    if not last_fill_was_full:
-        out["reason"] = "Last fill was not a full tank, so the level is unknown"
+    if anchor_odometer is None or current_odometer is None:
+        out["reason"] = "No odometer reading since the last full tank"
         return out
 
-    km_since = max(0.0, current_odometer - last_fill_odometer)
+    km_since = max(0.0, current_odometer - anchor_odometer)
     out["km_since_fill"] = round(km_since, 1)
-    used = km_since / kmpl
-    left = max(0.0, tank_capacity - used)
+    burnt = km_since / kmpl
+    # Full at the anchor, plus what was topped up since, less what was burned —
+    # and never outside the physical tank.
+    left = max(0.0, min(tank_capacity, tank_capacity + (litres_since or 0.0) - burnt))
     out["fuel_left_litres"] = round(left, 1)
     out["range_km"] = round(left * kmpl, 0)
     return out
+
+
+def achieved_kmpl(entries: list[dict]) -> float | None:
+    """The mileage this vehicle actually gets, brim to brim over its own history.
+
+    Distance between the first and last fill, over the litres put in after the
+    first — those are what powered the distance. Returns None when there is not
+    enough history to say, so the caller can fall back to the benchmark.
+    """
+    rows = [e for e in entries if e.get("odometer_km") is not None]
+    if len(rows) < 2:
+        return None
+    rows = sorted(rows, key=lambda e: float(e["odometer_km"]))
+    dist = float(rows[-1]["odometer_km"]) - float(rows[0]["odometer_km"])
+    litres = sum(float(e.get("litres") or 0) for e in rows[1:])
+    if dist <= 0 or litres <= 0:
+        return None
+    return round(dist / litres, 2)
 
 
 def learn_baseline(interval_kmpls: list[float | None]) -> float | None:
