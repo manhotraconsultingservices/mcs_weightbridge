@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.database import get_db
-from app.dependencies import get_current_user, require_role
+from app.dependencies import get_current_user, require_role, require_page_permission
 from app.models.user import User
 from app.models.vehicle import Vehicle, TareWeightHistory, Driver, Transporter
 from app.schemas.vehicle import (
@@ -44,7 +44,7 @@ async def list_vehicles(
 @router.post("/vehicles", response_model=VehicleResponse, status_code=201)
 async def create_vehicle(
     data: VehicleCreate,
-    current_user: User = Depends(require_role("admin", "operator")),
+    current_user: User = Depends(require_page_permission("/vehicles")),
     db: AsyncSession = Depends(get_db),
 ):
     vehicle = Vehicle(company_id=current_user.company_id, **data.model_dump())
@@ -87,7 +87,7 @@ async def get_vehicle(
 async def update_vehicle(
     vehicle_id: uuid.UUID,
     data: VehicleUpdate,
-    current_user: User = Depends(require_role("admin", "operator")),
+    current_user: User = Depends(require_page_permission("/vehicles")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -140,7 +140,7 @@ async def list_drivers(
 @router.post("/drivers", response_model=DriverResponse, status_code=201)
 async def create_driver(
     data: DriverCreate,
-    current_user: User = Depends(require_role("admin", "operator")),
+    current_user: User = Depends(require_page_permission("/vehicles")),
     db: AsyncSession = Depends(get_db),
 ):
     driver = Driver(company_id=current_user.company_id, **data.model_dump())
@@ -154,7 +154,7 @@ async def create_driver(
 async def update_driver(
     driver_id: uuid.UUID,
     data: DriverCreate,
-    current_user: User = Depends(require_role("admin", "operator")),
+    current_user: User = Depends(require_page_permission("/vehicles")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -191,7 +191,7 @@ async def list_transporters(
 @router.post("/transporters", response_model=TransporterResponse, status_code=201)
 async def create_transporter(
     data: TransporterCreate,
-    current_user: User = Depends(require_role("admin", "operator")),
+    current_user: User = Depends(require_page_permission("/vehicles")),
     db: AsyncSession = Depends(get_db),
 ):
     transporter = Transporter(company_id=current_user.company_id, **data.model_dump())
@@ -205,7 +205,7 @@ async def create_transporter(
 async def update_transporter(
     transporter_id: uuid.UUID,
     data: TransporterCreate,
-    current_user: User = Depends(require_role("admin", "operator")),
+    current_user: User = Depends(require_page_permission("/vehicles")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(

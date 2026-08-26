@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.database import get_db
-from app.dependencies import get_current_user, require_role
+from app.dependencies import get_current_user, require_role, require_page_permission
 from app.models.user import User
 from app.models.customer_user import CustomerUser
 from app.utils.auth import hash_password
@@ -73,7 +73,7 @@ def _party_label(p) -> str:
 @router.post("", response_model=PartyResponse, status_code=201)
 async def create_party(
     data: PartyCreate,
-    current_user: User = Depends(require_role("admin", "operator", "accountant")),
+    current_user: User = Depends(require_page_permission("/parties", "/crm", always=("admin", "operator", "accountant"))),
     db: AsyncSession = Depends(get_db),
 ):
     party = Party(
@@ -114,7 +114,7 @@ async def get_party(
 async def update_party(
     party_id: uuid.UUID,
     data: PartyUpdate,
-    current_user: User = Depends(require_role("admin", "operator", "accountant")),
+    current_user: User = Depends(require_page_permission("/parties", "/crm", always=("admin", "operator", "accountant"))),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -201,7 +201,7 @@ async def set_party_rate(
     party_id: uuid.UUID,
     data: PartyRateCreate,
     request: Request,
-    current_user: User = Depends(require_role("admin", "operator", "accountant")),
+    current_user: User = Depends(require_page_permission("/parties", "/crm", always=("admin", "operator", "accountant"))),
     db: AsyncSession = Depends(get_db),
 ):
     # A rate set here reprices this party's invoices exactly as the matrix save

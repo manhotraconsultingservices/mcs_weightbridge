@@ -958,6 +958,7 @@ async def _purge_old_tally_jobs(factory, label: str = "default") -> None:
 
 async def _owner_digest_loop():
     """Multi-tenant aware: minute-resolution check, sends once per day at configured time."""
+    import datetime as _dt          # used by the once-a-day retention block below
     while True:
         await asyncio.sleep(60)
         try:
