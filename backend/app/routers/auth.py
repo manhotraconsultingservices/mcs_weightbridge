@@ -54,6 +54,10 @@ DEFAULT_MODULES = {
 from fastapi import Request
 from sqlalchemy import text as _sql
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 # ── Internal auth helper (shared by single-tenant and multi-tenant) ──────────
 
@@ -261,11 +265,35 @@ async def refresh_token(current_user: User = Depends(get_current_user)):
         if tenant_slug:
             data["tenant"] = tenant_slug
     token = create_access_token(data=data)
-    return TokenResponse(
+    resp = TokenResponse(
         access_token=token,
         user=UserResponse.model_validate(current_user),
         tenant_slug=tenant_slug,
     )
+    # Carry the tenant's current modules / industry / platform restrictions so a
+    # change made by the platform admin reaches an open session on the next
+    # refresh. Without this the browser keeps whatever it was handed at login and
+    # only learns of the change when the user happens to log out and back in.
+    # Best-effort: a lookup failure must never cost the operator their session.
+    if tenant_slug:
+        try:
+            from app.multitenancy.registry import tenant_registry
+            from app.multitenancy.industry import industry_modules, normalize_industry
+            tenant = await tenant_registry.get_tenant(tenant_slug)
+            cfg = (getattr(tenant, "config", None) or {}) if tenant else {}
+            industry = normalize_industry(cfg.get("industry"))
+            resp.tenant_modules = {
+                **DEFAULT_MODULES,
+                **industry_modules(industry),
+                **cfg.get("modules", {}),
+            }
+            resp.tenant_industry = industry
+            resp.tenant_admin_restrictions = [
+                str(r) for r in (cfg.get("admin_restrictions") or []) if r
+            ]
+        except Exception as exc:   # noqa: BLE001
+            logger.warning("refresh: tenant config lookup failed [%s]: %s", tenant_slug, exc)
+    return resp
 
 
 @router.put("/change-password")

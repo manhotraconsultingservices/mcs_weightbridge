@@ -28,6 +28,21 @@ async function _refreshToken(): Promise<void> {
   try {
     const { data } = await api.post('/api/v1/auth/refresh');
     if (data?.access_token) STORE.setItem('token', data.access_token);
+    // Pick up a platform-admin change (modules, industry, withheld pages) without
+    // making the user log out and back in. Each field is applied ONLY when the
+    // response actually carries it: treating an absent field as "cleared" would
+    // silently drop a restriction the platform still intends to apply.
+    if (data?.tenant_modules) {
+      STORE.setItem('tenant_modules', JSON.stringify(data.tenant_modules));
+    }
+    if (Array.isArray(data?.tenant_admin_restrictions)) {
+      if (data.tenant_admin_restrictions.length) {
+        STORE.setItem('tenant_admin_restrictions', JSON.stringify(data.tenant_admin_restrictions));
+      } else {
+        STORE.removeItem('tenant_admin_restrictions');   // explicitly lifted
+      }
+    }
+    if (data?.tenant_industry) STORE.setItem('tenant_industry', data.tenant_industry);
   } catch {
     /* offline / transient — keep the still-valid token; only a 401 logs out (interceptor) */
   }
