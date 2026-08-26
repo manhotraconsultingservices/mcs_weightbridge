@@ -468,11 +468,14 @@ function TenantDataDialog({ tenant, open, onClose }: {
   const [adminPass, setAdminPass] = useState('');
   const [err, setErr] = useState('');
   const [done, setDone] = useState('');
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restoreConfirm, setRestoreConfirm] = useState('');
 
   useEffect(() => {
     if (open) {
       setBackup(null); setDownloaded(false); setConfirm('');
       setErr(''); setDone(''); setMode('transactions'); setAdminPass('');
+      setRestoreFile(null); setRestoreConfirm('');
     }
   }, [open, tenant?.slug]);
 
@@ -525,6 +528,25 @@ function TenantDataDialog({ tenant, open, onClose }: {
     finally { setBusy(''); }
   }
 
+  async function doRestore() {
+    if (!restoreFile) return;
+    setBusy('restore'); setErr('');
+    try {
+      const fd = new FormData();
+      fd.append('file', restoreFile);
+      fd.append('confirm_slug', restoreConfirm);
+      fd.append('backup_downloaded', String(downloaded));
+      const { data } = await platformApi.post(
+        '/api/v1/platform/tenants/' + slug + '/restore', fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } });
+      setDone('Restored from ' + data.restored_from + ' — ' + data.tables + ' tables'
+        + (data.warnings ? ' (' + data.warnings + ' SQL warnings)' : '') + '.');
+      setRestoreFile(null); setRestoreConfirm('');
+    } catch (e: unknown) { setErr(detail(e) || 'Restore failed'); }
+    finally { setBusy(''); }
+  }
+
+  const canRestore = downloaded && !!restoreFile && restoreConfirm.trim() === slug;
   const canReset = downloaded && confirm.trim() === slug
     && (mode === 'transactions' || (adminUser.trim().length > 0 && adminPass.length >= 6));
 
@@ -593,6 +615,33 @@ function TenantDataDialog({ tenant, open, onClose }: {
             <Button size="sm" variant="destructive" onClick={doReset} disabled={!canReset || busy.length > 0}>
               {busy === 'reset' && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
               {mode === 'full' ? 'Erase everything' : 'Clear activity'}
+            </Button>
+          </div>
+
+          <div className={'rounded-lg border p-3 space-y-3 ' + (downloaded ? 'border-amber-800' : 'border-slate-800 opacity-50')}>
+            <div className="text-sm font-semibold text-amber-300">Or · Restore from an earlier backup</div>
+            <p className="text-xs text-slate-400">
+              Puts this tenant back to a dump taken earlier. It <b>replaces everything they
+              have now</b>, so take and download a fresh backup above first — that is the only
+              way back if this is the wrong file. Older dumps are fine: any schema changes made
+              since are re-applied afterwards.
+            </p>
+            <Input type="file" accept=".sql" disabled={!downloaded}
+              onChange={e => setRestoreFile(e.target.files?.[0] ?? null)}
+              className="bg-slate-800 border-slate-700 h-8 text-xs" />
+            {restoreFile && (
+              <p className="text-xs text-slate-300 font-mono">
+                {restoreFile.name} · {(restoreFile.size / 1024 / 1024).toFixed(2)} MB
+              </p>
+            )}
+            <div>
+              <Label className="text-xs">Type <code className="text-amber-300">{slug}</code> to confirm</Label>
+              <Input value={restoreConfirm} onChange={e => setRestoreConfirm(e.target.value)}
+                disabled={!downloaded} placeholder={slug}
+                className="bg-slate-800 border-slate-700 h-8 text-sm" />
+            </div>
+            <Button size="sm" variant="outline" onClick={doRestore} disabled={!canRestore || busy.length > 0}>
+              {busy === 'restore' && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}Restore this backup
             </Button>
           </div>
 

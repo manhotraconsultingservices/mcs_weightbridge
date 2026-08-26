@@ -205,3 +205,105 @@ async def reset_full(slug: str, tenant_name: str, admin_username: str,
         admin_username=admin_username, admin_password=admin_password,
     ))
     return {"rebuilt": True, "admin_username": admin_username}
+
+
+# ── Restore ──────────────────────────────────────────────────────────────────
+
+DUMP_MARKERS = ("PostgreSQL database dump", "CREATE TABLE")
+
+
+def looks_like_pg_dump(path: str) -> tuple[bool, str]:
+    """Cheap sanity check before anything destructive happens.
+
+    Reads only the head of the file: a wrong or truncated upload should be
+    rejected while the tenant's data is still there, not after it is gone.
+    """
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            head = f.read(200_000)
+    except OSError as e:
+        return False, f"Could not read the uploaded file: {e}"
+    if not head.strip():
+        return False, "The uploaded file is empty"
+    if not any(m in head for m in DUMP_MARKERS):
+        return False, "That does not look like a PostgreSQL dump produced by this system"
+    return True, ""
+
+
+async def restore_from_dump(slug: str, db_name: str, dump_path: str) -> dict:
+    """Replace a tenant's schema with the contents of a dump.
+
+    The schema is dropped first so the restore lands in a clean namespace rather
+    than colliding with existing objects. Afterwards the normal tenant DDL is
+    re-run: it is idempotent, and it brings a dump taken before a later migration
+    up to the schema the running code expects — otherwise restoring an older
+    backup would leave the tenant missing columns the app requires.
+    """
+    import asyncio
+    import os
+    import subprocess
+    from urllib.parse import urlparse
+
+    from app.config import get_settings
+    from app.multitenancy.registry import tenant_registry
+    from app.multitenancy.router import _run_tenant_ddl
+
+    settings = get_settings()
+    parsed = urlparse(settings.MASTER_DATABASE_URL_SYNC)
+    host = parsed.hostname or "localhost"
+    port = parsed.port or 5432
+    user = parsed.username or "weighbridge"
+    password = parsed.password or ""
+    container = os.environ.get("PG_CONTAINER", "weighbridge_db")
+
+    factory = await tenant_registry.get_session_factory(slug)
+    async with factory() as db:
+        current = (await db.execute(text("SELECT current_user"))).scalar()
+        await db.execute(text("DROP SCHEMA public CASCADE"))
+        await db.execute(text("CREATE SCHEMA public"))
+        await db.execute(text(f'GRANT ALL ON SCHEMA public TO "{current}"'))
+        await db.commit()
+
+    def _do_restore() -> str:
+        env = os.environ.copy()
+        env["PGPASSWORD"] = password
+        try:
+            r = subprocess.run(
+                ["psql", "-h", host, "-p", str(port), "-U", user, "-d", db_name,
+                 "-v", "ON_ERROR_STOP=0", "-f", dump_path],
+                capture_output=True, text=True, env=env, timeout=600,
+            )
+            if r.returncode == 0:
+                return r.stderr or ""
+        except FileNotFoundError:
+            pass
+        # Fallback: pipe the dump through docker exec, as the backup path does.
+        with open(dump_path, "rb") as f:
+            data = f.read()
+        r = subprocess.run(
+            ["docker", "exec", "-i", "-e", f"PGPASSWORD={password}", container,
+             "psql", "-U", user, "-d", db_name, "-v", "ON_ERROR_STOP=0"],
+            input=data, capture_output=True, timeout=600,
+        )
+        if r.returncode != 0:
+            raise RuntimeError(f"psql restore failed: {r.stderr.decode('utf-8', 'ignore')[:500]}")
+        return r.stderr.decode("utf-8", "ignore")
+
+    loop = asyncio.get_running_loop()
+    stderr = await loop.run_in_executor(None, _do_restore)
+
+    # Bring an older dump up to the current schema.
+    await _run_tenant_ddl(slug)
+
+    async with factory() as db:
+        tables = await list_tenant_tables(db)
+        rows = 0
+        for t in ("companies", "users"):
+            if t in tables:
+                rows += (await db.execute(text(f'SELECT count(*) FROM "{t}"'))).scalar() or 0
+    # A restore that leaves no company and no user did not really work, whatever
+    # psql's exit code said.
+    if rows == 0:
+        raise RuntimeError("Restore completed but the tenant has no company or users — "
+                           "the dump may be for a different database")
+    return {"tables": len(tables), "warnings": (stderr or "").count("ERROR:")}

@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlalchemy import select, text, func, delete
@@ -886,3 +886,75 @@ async def platform_reset_tenant(
                    len(result.get("truncated") or []), files.get("files_deleted"))
     return {"slug": slug, "mode": payload.mode, "performed_by": user.username,
             "uploads": files, **result}
+
+
+@router.post("/tenants/{slug}/restore")
+async def platform_restore_tenant(
+    slug: str,
+    file: UploadFile = File(...),
+    confirm_slug: str = Form(...),
+    backup_downloaded: bool = Form(False),
+    db: AsyncSession = Depends(get_master_db),
+    user: PlatformUser = Depends(require_platform_role("platform_admin")),
+):
+    """Roll a tenant back to a dump taken earlier.
+
+    This REPLACES everything the tenant currently has, so it demands the same
+    discipline as a reset: a fresh backup downloaded first, and the slug typed out.
+    """
+    import os
+    import tempfile
+
+    from app.multitenancy import tenant_reset as tr
+
+    tenant = await _tenant_or_404(db, slug)
+    if confirm_slug.strip() != slug:
+        raise HTTPException(400, "Type the tenant slug exactly to confirm this restore")
+    if not backup_downloaded:
+        raise HTTPException(400, "Back up the CURRENT data first — a restore overwrites it")
+
+    name = os.path.basename(file.filename or "")
+    # Our dumps are named tenant_<slug>_<timestamp>.sql. Insisting on that is a
+    # real guard against the actual mistake: picking the wrong tenant's file out of
+    # a folder full of similar-looking dumps.
+    if not name.startswith(f"tenant_{slug}_") or not name.endswith(".sql"):
+        raise HTTPException(
+            400,
+            f"That file is not a backup of '{slug}'. Expected a file named "
+            f"tenant_{slug}_<timestamp>.sql",
+        )
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".sql")
+    size = 0
+    try:
+        while chunk := await file.read(1024 * 1024):     # stream: dumps can be large
+            size += len(chunk)
+            tmp.write(chunk)
+        tmp.close()
+
+        ok, why = tr.looks_like_pg_dump(tmp.name)
+        if not ok:
+            raise HTTPException(400, why)          # rejected while the data is still there
+
+        was_active = tenant.is_active
+        tenant.is_active = False
+        await db.commit()
+        try:
+            result = await tr.restore_from_dump(slug, tenant.db_name, tmp.name)
+        finally:
+            tenant.is_active = was_active
+            await db.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Restore failed: {e}")
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
+    logger.warning("TENANT RESTORE (%s) by %s from %s (%s bytes)",
+                   slug, user.username, name, size)
+    return {"slug": slug, "restored_from": name, "size_bytes": size,
+            "performed_by": user.username, **result}
