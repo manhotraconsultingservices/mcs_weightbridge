@@ -366,6 +366,143 @@ async def purge_old_vehicle_events(factory, label: str = "default",
                     except ValueError:
                         continue
                     if d < cutoff:
+                        # Labelled frames were copied into gate/training when they
+                        # were reviewed, so dropping the day folder cannot lose
+                        # them — that copy is the whole point of the promotion.
                         shutil.rmtree(os.path.join(root, name), ignore_errors=True)
     except Exception as e:  # pragma: no cover - best effort
         log.warning("purge_old_vehicle_events files [%s] failed: %s", label, e)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  Review & training set
+#  The counter can only ever answer in the six words its model knows. Teaching it
+#  the yard's own vocabulary — tractor, camper, tipper — needs examples from THIS
+#  gate, so every corrected event is kept as one.
+# ════════════════════════════════════════════════════════════════════════════
+
+def _training_dir(slug: str | None) -> str:
+    parts = [_uploads_base(), "gate", "training"] + ([slug] if slug else [])
+    return os.path.join(*parts)
+
+
+@router.get("/review")
+async def review_queue(
+    limit: int = Query(40, ge=1, le=200),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    only_class: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Counted events that nobody has confirmed yet, newest first.
+
+    Deliberately biased towards events that carry a snapshot — an event with no
+    image teaches nothing and would only waste the reviewer's time.
+    """
+    where = ["company_id = :cid", "reviewed_class IS NULL",
+             "snapshot_path IS NOT NULL", "snapshot_path <> ''"]
+    params: dict = {"cid": str(user.company_id), "lim": limit}
+    if date_from:
+        where.append("detected_at >= :df")
+        params["df"] = date_from
+    if date_to:
+        where.append("detected_at < (:dt::date + 1)")
+        params["dt"] = date_to
+    if only_class:
+        where.append("vehicle_class = :cls")
+        params["cls"] = only_class
+    rows = (await db.execute(text(
+        "SELECT id, position, vehicle_class, confidence, snapshot_path, detected_at "
+        "FROM gate_vehicle_events WHERE " + " AND ".join(where) +
+        " ORDER BY detected_at DESC LIMIT :lim"), params)).mappings().all()
+    return {"items": [{
+        "id": str(r["id"]), "position": r["position"],
+        "model_class": r["vehicle_class"],
+        "confidence": float(r["confidence"] or 0),
+        "snapshot_url": f"/uploads/{r['snapshot_path']}",
+        "detected_at": r["detected_at"],
+    } for r in rows]}
+
+
+@router.post("/events/{event_id}/label")
+async def label_event(
+    event_id: uuid.UUID,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Confirm or correct one event's category, and keep the frame for training.
+
+    The image is COPIED into the training folder rather than left where it is:
+    snapshots are purged on a short clock, and a labelled frame is the one thing
+    that must outlive it.
+    """
+    cls = str(payload.get("vehicle_class") or "").strip().lower()
+    if not cls:
+        raise HTTPException(400, "vehicle_class is required")
+
+    row = (await db.execute(text(
+        "SELECT snapshot_path FROM gate_vehicle_events "
+        "WHERE id = :i AND company_id = :c"),
+        {"i": str(event_id), "c": str(user.company_id)})).mappings().first()
+    if not row:
+        raise HTTPException(404, "Event not found")
+
+    training_rel = None
+    rel = (row["snapshot_path"] or "").lstrip("/")
+    if rel:
+        src = os.path.join(_uploads_base(), rel.replace("/", os.sep))
+        if os.path.isfile(src):
+            slug = _ctx_tenant_slug()
+            dest_dir = os.path.join(_training_dir(slug), cls)
+            os.makedirs(dest_dir, exist_ok=True)
+            dest = os.path.join(dest_dir, f"{event_id}.jpg")
+            try:
+                import shutil
+                shutil.copy2(src, dest)
+                parts = ["gate", "training"] + ([slug] if slug else []) + [cls, f"{event_id}.jpg"]
+                training_rel = "/".join(parts)
+            except OSError as e:
+                log.warning("could not copy training frame %s: %s", src, e)
+
+    await db.execute(text(
+        "UPDATE gate_vehicle_events SET reviewed_class = :cls, reviewed_by = :u, "
+        "reviewed_at = NOW(), training_path = COALESCE(:tp, training_path) "
+        "WHERE id = :i AND company_id = :c"),
+        {"cls": cls, "u": str(user.id), "tp": training_rel,
+         "i": str(event_id), "c": str(user.company_id)})
+    await db.commit()
+    return {"ok": True, "id": str(event_id), "vehicle_class": cls,
+            "kept_for_training": training_rel is not None}
+
+
+@router.get("/training-set")
+async def training_set_summary(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """How much labelled material exists, per category — the number that decides
+    whether a retraining run is worth doing yet."""
+    rows = (await db.execute(text(
+        "SELECT reviewed_class AS cls, count(*) AS n, "
+        "count(*) FILTER (WHERE reviewed_class <> vehicle_class) AS corrected "
+        "FROM gate_vehicle_events WHERE company_id = :c AND reviewed_class IS NOT NULL "
+        "GROUP BY reviewed_class ORDER BY n DESC"),
+        {"c": str(user.company_id)})).mappings().all()
+    total = sum(r["n"] for r in rows)
+    unreviewed = (await db.execute(text(
+        "SELECT count(*) FROM gate_vehicle_events WHERE company_id = :c "
+        "AND reviewed_class IS NULL AND snapshot_path IS NOT NULL"),
+        {"c": str(user.company_id)})).scalar() or 0
+    # A rough, honest bar: fine-tuning a detector needs a few hundred examples of
+    # each category before it is worth the effort.
+    TARGET = 200
+    return {
+        "classes": [{"vehicle_class": r["cls"], "labelled": r["n"],
+                     "model_got_it_wrong": r["corrected"],
+                     "short_of_target": max(0, TARGET - r["n"])} for r in rows],
+        "total_labelled": total, "awaiting_review": unreviewed,
+        "per_class_target": TARGET,
+        "ready_to_train": bool(rows) and all(r["n"] >= TARGET for r in rows),
+    }

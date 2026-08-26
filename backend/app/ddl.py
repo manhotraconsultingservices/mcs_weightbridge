@@ -1437,6 +1437,17 @@ def get_column_migrations() -> list[str]:
             created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """,
+        # Human-confirmed category, and the box the model drew. A reviewer only ever
+        # corrects the CLASS — the detector already produced the box — which is what
+        # makes labelling one click instead of drawing rectangles.
+        "ALTER TABLE gate_vehicle_events ADD COLUMN IF NOT EXISTS reviewed_class VARCHAR(30)",
+        "ALTER TABLE gate_vehicle_events ADD COLUMN IF NOT EXISTS reviewed_by UUID",
+        "ALTER TABLE gate_vehicle_events ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ",
+        "ALTER TABLE gate_vehicle_events ADD COLUMN IF NOT EXISTS bbox JSONB",
+        # A labelled frame is training data, not a transient snapshot: it is copied
+        # out of the day folders so the 20-day purge can never take it.
+        "ALTER TABLE gate_vehicle_events ADD COLUMN IF NOT EXISTS training_path VARCHAR(300)",
+        "CREATE INDEX IF NOT EXISTS ix_gate_veh_unreviewed ON gate_vehicle_events(company_id, detected_at DESC) WHERE reviewed_class IS NULL",
         "CREATE INDEX IF NOT EXISTS ix_gate_veh_company_detected ON gate_vehicle_events(company_id, detected_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_gate_veh_company_pos_detected ON gate_vehicle_events(company_id, position, detected_at DESC)",
 
