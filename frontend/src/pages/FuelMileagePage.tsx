@@ -43,6 +43,7 @@ interface FuelEntry {
 interface PumpStation {
   station_name: string; po_count: number; unpaid_count: number;
   total_billed: number; total_paid: number; outstanding: number; oldest_unpaid_date: string | null;
+  advance: number; net_due: number;
   supplier_party_id: string | null; supplier_name: string | null;
 }
 interface PumpPO {
@@ -450,7 +451,7 @@ function RecordPumpPaymentDialog({ open, station, dueHint, onClose, onSaved }: {
 function PumpCreditTab() {
   const nav = useNavigate();
   const [stations, setStations] = useState<PumpStation[]>([]);
-  const [totals, setTotals] = useState<{ total_billed: number; total_paid: number; outstanding: number; pumps_with_dues: number; po_count: number } | null>(null);
+  const [totals, setTotals] = useState<{ total_billed: number; total_paid: number; outstanding: number; advance: number; net_due: number; pumps_with_advance: number; pumps_with_dues: number; po_count: number } | null>(null);
   const [pos, setPos] = useState<PumpPO[]>([]);
   const [loading, setLoading] = useState(true);
   const [payStation, setPayStation] = useState<{ name: string; due: number } | null>(null);
@@ -484,8 +485,19 @@ function PumpCreditTab() {
     { key: 'po_count', label: 'Fills/POs', type: 'number', align: 'right', accessor: r => r.po_count },
     { key: 'total_billed', label: 'Billed', type: 'number', align: 'right', accessor: r => r.total_billed, format: v => INR(v as number) },
     { key: 'total_paid', label: 'Paid', type: 'number', align: 'right', accessor: r => r.total_paid, format: v => INR(v as number) },
-    { key: 'outstanding', label: 'Outstanding', type: 'number', align: 'right', accessor: r => r.outstanding,
-      format: v => <span className={Number(v) > 0 ? 'font-semibold text-rose-600' : 'text-emerald-600'}>{INR(v as number)}</span>, exportValue: r => r.outstanding },
+    { key: 'advance', label: 'Advance with pump', type: 'number', align: 'right', accessor: r => r.advance ?? 0,
+      format: (_v, r) => (r.advance ?? 0) > 0
+        ? <span className="font-semibold text-emerald-700" title="Paid to this pump beyond what it has billed. The next credit fill here draws it down automatically.">{INR(r.advance)}</span>
+        : <span className="text-muted-foreground">—</span>,
+      exportValue: r => r.advance ?? 0 },
+    { key: 'net_due', label: 'Outstanding', type: 'number', align: 'right', accessor: r => r.net_due ?? r.outstanding,
+      format: (_v, r) => {
+        const due = r.net_due ?? r.outstanding;
+        if (due > 0) return <span className="font-semibold text-rose-600">{INR(due)}</span>;
+        return (r.advance ?? 0) > 0
+          ? <span className="text-emerald-700" title="Nothing owed — this pump is holding an advance">in advance</span>
+          : <span className="text-emerald-600">{INR(0)}</span>;
+      }, exportValue: r => r.net_due ?? r.outstanding },
     { key: 'oldest_unpaid_date', label: 'Oldest due', type: 'date', accessor: r => r.oldest_unpaid_date, format: v => v ? String(v) : '—' },
   ];
   const PO_COLS: ColumnDef<PumpPO>[] = [
@@ -510,12 +522,13 @@ function PumpCreditTab() {
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-xs text-blue-800">
-        Every credit fill at a petrol pump auto-creates a PO here (no stock movement). This is your <b>outstanding to pay each pump</b>. Record a payment to settle the oldest POs first.
+        Every credit fill at a petrol pump auto-creates a PO here (no stock movement). This is your <b>outstanding to pay each pump</b>. Record a payment to settle the oldest POs first. Pay more than is due and the surplus is held as an <b>advance with that pump</b> — the next credit fill there is offset against it automatically.
       </div>
       {loading ? <div className="py-10 text-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin inline" /> Loading…</div> : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <KPI label="Total outstanding" value={INR(totals?.outstanding ?? 0)} tone={(totals?.outstanding ?? 0) > 0 ? 'text-rose-600' : 'text-emerald-600'} />
+            <KPI label="Total outstanding" value={INR(totals?.net_due ?? totals?.outstanding ?? 0)} tone={(totals?.net_due ?? 0) > 0 ? 'text-rose-600' : 'text-emerald-600'} />
+            <KPI label="Advance with pumps" value={INR(totals?.advance ?? 0)} tone={(totals?.advance ?? 0) > 0 ? 'text-emerald-700' : ''} />
             <KPI label="Pumps with dues" value={String(totals?.pumps_with_dues ?? 0)} />
             <KPI label="Billed on credit" value={INR(totals?.total_billed ?? 0)} />
             <KPI label="Paid to pumps" value={INR(totals?.total_paid ?? 0)} />

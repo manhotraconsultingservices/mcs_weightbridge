@@ -264,10 +264,60 @@ async def _create_pump_po(db: AsyncSession, user: User, entry: VehicleFuelEntry,
         )
         db.add(po)
         await db.flush()
+        # If this pump is already holding our money, spend that before adding to
+        # what we owe them.
+        await _apply_pump_advance(db, user.company_id, station)
+        await db.refresh(po)
         return po
     except Exception as e:  # noqa: BLE001 — never block the fill
         log.warning("pump PO auto-create failed: %s", e)
         return None
+
+
+async def _pump_advance_by_station(db: AsyncSession, company_id) -> dict[str, Decimal]:
+    """Money paid to each pump beyond what it has billed us — an advance sitting
+    with them. Deliberately all-time regardless of any report date filter: what a
+    pump holds is a balance, not something that belongs to a window."""
+    paid = {r[0]: Decimal(str(r[1] or 0)) for r in (await db.execute(text(
+        "SELECT station_name, COALESCE(SUM(amount),0) FROM fuel_po_payments "
+        "WHERE company_id=:c GROUP BY station_name"), {"c": str(company_id)})).all()}
+    allocated = {r[0]: Decimal(str(r[1] or 0)) for r in (await db.execute(text(
+        "SELECT station_name, COALESCE(SUM(amount_paid),0) FROM fuel_purchase_orders "
+        "WHERE company_id=:c GROUP BY station_name"), {"c": str(company_id)})).all()}
+    out: dict[str, Decimal] = {}
+    for st in set(paid) | set(allocated):
+        adv = paid.get(st, Decimal("0")) - allocated.get(st, Decimal("0"))
+        out[st] = adv if adv > Decimal("0.01") else Decimal("0")
+    return out
+
+
+async def _apply_pump_advance(db: AsyncSession, company_id, station: str) -> Decimal:
+    """Settle a pump's open POs from any advance already sitting with it, oldest
+    first. Called after a new credit fill so a fresh due is offset instead of the
+    owner being told they owe money they have already handed over."""
+    adv = (await _pump_advance_by_station(db, company_id)).get(station, Decimal("0"))
+    if adv <= Decimal("0.01"):
+        return Decimal("0")
+    pos = (await db.execute(select(FuelPurchaseOrder).where(
+        FuelPurchaseOrder.company_id == company_id,
+        FuelPurchaseOrder.station_name == station,
+        FuelPurchaseOrder.status != "paid",
+    ).order_by(FuelPurchaseOrder.po_date.asc(), FuelPurchaseOrder.created_at.asc()))).scalars().all()
+    used = Decimal("0")
+    for po in pos:
+        if adv <= Decimal("0.01"):
+            break
+        due = (po.amount or Decimal("0")) - (po.amount_paid or Decimal("0"))
+        if due <= 0:
+            continue
+        applied = min(due, adv)
+        po.amount_paid = (po.amount_paid or Decimal("0")) + applied
+        po.status = "paid" if (po.amount - po.amount_paid) <= Decimal("0.01") else "partial"
+        adv -= applied
+        used += applied
+    if used > 0:
+        await db.flush()
+    return used
 
 
 async def _po_no_for_entry(db: AsyncSession, entry_id) -> str | None:
@@ -680,10 +730,22 @@ async def pump_outstanding(
             d = r.po_date.isoformat() if r.po_date else None
             if d and (s["oldest_unpaid_date"] is None or d < s["oldest_unpaid_date"]):
                 s["oldest_unpaid_date"] = d
+    # Overpay a pump and the surplus sits with them as an advance. Showing only
+    # "outstanding 0" hides it, so it is reported and netted off explicitly.
+    advances = await _pump_advance_by_station(db, user.company_id)
+    for st, adv in advances.items():
+        if adv > Decimal("0.01") and st not in stations:
+            # a pump we have only ever paid, with nothing billed yet
+            stations[st] = {"station_name": st, "po_count": 0, "unpaid_count": 0,
+                            "total_billed": 0.0, "total_paid": 0.0, "outstanding": 0.0,
+                            "oldest_unpaid_date": None}
     station_list = sorted(stations.values(), key=lambda x: x["outstanding"], reverse=True)
     for s in station_list:
         for k in ("total_billed", "total_paid", "outstanding"):
             s[k] = round(s[k], 2)
+        s["advance"] = round(float(advances.get(s["station_name"], 0) or 0), 2)
+        # What is actually still owed once their advance is taken into account.
+        s["net_due"] = round(max(0.0, s["outstanding"] - s["advance"]), 2)
     # Attach the linked supplier party (unified vendor view), if any.
     smap = await _pump_supplier_map(db)
     pnames = await _party_names(db, [smap[s["station_name"]] for s in station_list if s["station_name"] in smap])
@@ -695,7 +757,10 @@ async def pump_outstanding(
         "total_billed": round(sum(s["total_billed"] for s in station_list), 2),
         "total_paid": round(sum(s["total_paid"] for s in station_list), 2),
         "outstanding": round(sum(s["outstanding"] for s in station_list), 2),
-        "pumps_with_dues": sum(1 for s in station_list if s["outstanding"] > 0.01),
+        "advance": round(sum(s["advance"] for s in station_list), 2),
+        "net_due": round(sum(s["net_due"] for s in station_list), 2),
+        "pumps_with_advance": sum(1 for s in station_list if s["advance"] > 0.01),
+        "pumps_with_dues": sum(1 for s in station_list if s["net_due"] > 0.01),
         "po_count": sum(s["po_count"] for s in station_list),
     }
     return {"stations": station_list, "totals": totals}
@@ -763,7 +828,10 @@ async def record_pump_payment(
                               "unallocated": str(remaining)})
     await db.commit()
     return {"ok": True, "id": str(pay.id), "allocated": float(amt - remaining),
-            "unallocated": float(remaining)}
+            "unallocated": float(remaining),
+            # named for what it is: the pump is now holding this much of ours, and
+            # the next credit fill there draws it down automatically.
+            "advance": float(remaining)}
 
 
 @router.get("/pump-suppliers")
