@@ -14,6 +14,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from passlib.context import CryptContext
+from pydantic import BaseModel
 from sqlalchemy import select, text, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -753,3 +754,135 @@ async def tenant_summary(
             "revenue_this_month": float(revenue_month),
         },
     }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  Tenant data: backup · download · reset
+#  Every tenant is its own database, so all three are naturally isolated — none
+#  of this can reach another tenant's rows.
+# ════════════════════════════════════════════════════════════════════════════
+
+class TenantResetRequest(BaseModel):
+    mode: str                              # "transactions" | "full"
+    confirm_slug: str                      # must be typed to match — no generic yes/no
+    backup_downloaded: bool = False        # the operator confirms they hold a copy
+    admin_username: Optional[str] = None   # full mode only: the new tenant login
+    admin_password: Optional[str] = None
+
+
+async def _tenant_or_404(db: AsyncSession, slug: str) -> Tenant:
+    t = (await db.execute(select(Tenant).where(Tenant.slug == slug))).scalar_one_or_none()
+    if not t:
+        raise HTTPException(404, f"Tenant '{slug}' not found")
+    return t
+
+
+@router.post("/tenants/{slug}/backup")
+async def platform_backup_tenant(
+    slug: str,
+    db: AsyncSession = Depends(get_master_db),
+    user: PlatformUser = Depends(require_platform_role("platform_admin")),
+):
+    """pg_dump one tenant. The file stays on the server only until it is
+    downloaded — the download endpoint removes it."""
+    import os
+    from app.multitenancy.router import _backup_tenant_db
+
+    tenant = await _tenant_or_404(db, slug)
+    try:
+        path = await _backup_tenant_db(tenant.db_name, slug)
+    except Exception as e:
+        raise HTTPException(500, f"Backup failed: {e}")
+
+    size = os.path.getsize(path) if os.path.exists(path) else 0
+    # A dump that produced nothing is worse than no dump, because it invites a
+    # reset that cannot be undone. Refuse to report success for it.
+    if size < 1024:
+        raise HTTPException(500, "Backup produced an empty file — refusing to report success")
+    logger.info("platform backup: %s by %s (%s bytes)", slug, user.username, size)
+    return {"slug": slug, "file": os.path.basename(path), "size_bytes": size}
+
+
+@router.get("/tenants/{slug}/backup/download")
+async def platform_download_backup(
+    slug: str,
+    file: str,
+    db: AsyncSession = Depends(get_master_db),
+    user: PlatformUser = Depends(require_platform_role("platform_admin")),
+):
+    """Stream a tenant dump to the caller, then delete the server copy."""
+    import os
+    from fastapi.responses import FileResponse
+    from starlette.background import BackgroundTask
+
+    await _tenant_or_404(db, slug)
+    name = os.path.basename(file)          # never let a path escape the folder
+    if not name.startswith(f"tenant_{slug}_") or not name.endswith(".sql"):
+        raise HTTPException(400, "That file does not belong to this tenant")
+    backup_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "backups",
+    )
+    path = os.path.join(backup_dir, name)
+    if not os.path.isfile(path):
+        raise HTTPException(404, "Backup not found — it may already have been downloaded")
+
+    def _remove():
+        try:
+            os.remove(path)
+            logger.info("platform backup downloaded and removed from server: %s", name)
+        except OSError as e:
+            logger.warning("could not remove backup %s: %s", name, e)
+
+    return FileResponse(path, filename=name, media_type="application/sql",
+                        background=BackgroundTask(_remove))
+
+
+@router.post("/tenants/{slug}/reset")
+async def platform_reset_tenant(
+    slug: str,
+    payload: TenantResetRequest,
+    db: AsyncSession = Depends(get_master_db),
+    user: PlatformUser = Depends(require_platform_role("platform_admin")),
+):
+    """Give a tenant a clean slate. Irreversible — take the backup first."""
+    from app.multitenancy import tenant_reset as tr
+    from app.multitenancy.registry import tenant_registry
+
+    tenant = await _tenant_or_404(db, slug)
+    if payload.confirm_slug.strip() != slug:
+        raise HTTPException(400, "Type the tenant slug exactly to confirm this reset")
+    if payload.mode not in ("transactions", "full"):
+        raise HTTPException(400, "mode must be 'transactions' or 'full'")
+    if not payload.backup_downloaded:
+        raise HTTPException(400, "Download a backup first — this cannot be undone")
+    if payload.mode == "full" and not (payload.admin_username and payload.admin_password):
+        raise HTTPException(
+            400, "A full reset removes every login — supply the new tenant admin username and password")
+
+    # Resolve the tenant's uploaded files BEFORE the rows that name them are gone.
+    factory = await tenant_registry.get_session_factory(slug)
+    async with factory() as tdb:
+        paths = await tr.collect_upload_paths(tdb, slug)
+
+    was_active = tenant.is_active
+    tenant.is_active = False               # keep operators out of a database being rebuilt
+    await db.commit()
+    try:
+        if payload.mode == "transactions":
+            async with factory() as tdb:
+                result = await tr.reset_transactions(tdb, slug)
+        else:
+            result = await tr.reset_full(
+                slug, tenant.name if hasattr(tenant, "name") else slug,
+                payload.admin_username, payload.admin_password)
+    finally:
+        tenant.is_active = was_active
+        await db.commit()
+
+    files = tr.purge_paths(paths)
+    logger.warning("TENANT RESET (%s) mode=%s by %s — %s tables, %s files",
+                   slug, payload.mode, user.username,
+                   len(result.get("truncated") or []), files.get("files_deleted"))
+    return {"slug": slug, "mode": payload.mode, "performed_by": user.username,
+            "uploads": files, **result}

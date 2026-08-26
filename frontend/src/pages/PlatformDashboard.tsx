@@ -4,7 +4,7 @@ import {
   Building2, Plus, Search, Shield, UserPlus, UserMinus,
   AlertTriangle, CheckCircle, PauseCircle, Calendar, ExternalLink,
   LogOut, Pencil, Loader2, Users, BarChart3, Power, Ban,
-  TrendingUp, UserCheck, Eye, EyeOff, KeyRound, Copy, Check, Send, Download,
+  TrendingUp, UserCheck, Eye, EyeOff, KeyRound, Copy, Check, Send, Download, Database
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RTooltip, ResponsiveContainer, CartesianGrid, Legend,
@@ -448,6 +448,163 @@ function UserDialog({ open, onClose, onSaved, editUser }: {
 
 // ── Reset Password Dialog ────────────────────────────────────────────────────
 
+
+/** Backup a tenant, download the dump, then wipe their data.
+ *
+ *  The order is enforced rather than advised: Reset stays disabled until a backup
+ *  has actually been downloaded, because a reset cannot be undone and a client
+ *  with no copy of their own history has lost it for good. The slug must be typed
+ *  out too — a generic "are you sure" is too easy to click past.
+ */
+function TenantDataDialog({ tenant, open, onClose }: {
+  tenant: TenantOverview | null; open: boolean; onClose: () => void;
+}) {
+  const [busy, setBusy] = useState('');
+  const [backup, setBackup] = useState<{ file: string; size_bytes: number } | null>(null);
+  const [downloaded, setDownloaded] = useState(false);
+  const [mode, setMode] = useState<'transactions' | 'full'>('transactions');
+  const [confirm, setConfirm] = useState('');
+  const [adminUser, setAdminUser] = useState('admin');
+  const [adminPass, setAdminPass] = useState('');
+  const [err, setErr] = useState('');
+  const [done, setDone] = useState('');
+
+  useEffect(() => {
+    if (open) {
+      setBackup(null); setDownloaded(false); setConfirm('');
+      setErr(''); setDone(''); setMode('transactions'); setAdminPass('');
+    }
+  }, [open, tenant?.slug]);
+
+  if (!tenant) return null;
+  const slug = tenant.slug;
+  const mb = (n: number) => (n / 1024 / 1024).toFixed(2) + ' MB';
+  const detail = (e: unknown) =>
+    (e as { response?: { data?: { detail?: string } } }).response?.data?.detail;
+
+  async function takeBackup() {
+    setBusy('backup'); setErr('');
+    try {
+      const { data } = await platformApi.post('/api/v1/platform/tenants/' + slug + '/backup');
+      setBackup(data); setDownloaded(false);
+    } catch (e: unknown) { setErr(detail(e) || 'Backup failed'); }
+    finally { setBusy(''); }
+  }
+
+  async function download() {
+    if (!backup) return;
+    setBusy('download'); setErr('');
+    try {
+      const res = await platformApi.get(
+        '/api/v1/platform/tenants/' + slug + '/backup/download?file=' + encodeURIComponent(backup.file),
+        { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = url; a.download = backup.file; a.click();
+      URL.revokeObjectURL(url);
+      setDownloaded(true);
+    } catch (e: unknown) { setErr(detail(e) || 'Download failed'); }
+    finally { setBusy(''); }
+  }
+
+  async function doReset() {
+    setBusy('reset'); setErr('');
+    try {
+      const { data } = await platformApi.post('/api/v1/platform/tenants/' + slug + '/reset', {
+        mode, confirm_slug: confirm, backup_downloaded: downloaded,
+        admin_username: mode === 'full' ? adminUser : null,
+        admin_password: mode === 'full' ? adminPass : null,
+      });
+      setDone(mode === 'full'
+        ? 'Rebuilt. The tenant admin is now "' + data.admin_username + '".'
+        : 'Cleared ' + (data.truncated?.length ?? 0) + ' tables, kept ' + (data.kept?.length ?? 0)
+          + '. Removed ' + (data.uploads?.files_deleted ?? 0) + ' files and '
+          + (data.uploads?.dirs_deleted ?? 0) + ' folders.');
+      setConfirm('');
+    } catch (e: unknown) { setErr(detail(e) || 'Reset failed'); }
+    finally { setBusy(''); }
+  }
+
+  const canReset = downloaded && confirm.trim() === slug
+    && (mode === 'transactions' || (adminUser.trim().length > 0 && adminPass.length >= 6));
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="bg-slate-900 border-slate-700 text-slate-100 sm:max-w-2xl">
+        <DialogHeader><DialogTitle>Data — {tenant.display_name}</DialogTitle></DialogHeader>
+        <div className="space-y-4">
+
+          <div className="rounded-lg border border-slate-700 p-3 space-y-2">
+            <div className="text-sm font-semibold">1 · Back up</div>
+            <p className="text-xs text-slate-400">
+              A full dump of <code>{slug}</code> alone. The file sits on the server only long
+              enough to download — downloading removes the server copy.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" onClick={takeBackup} disabled={busy.length > 0}>
+                {busy === 'backup' && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}Create backup
+              </Button>
+              {backup && <span className="text-xs text-slate-300 font-mono">{backup.file} · {mb(backup.size_bytes)}</span>}
+            </div>
+          </div>
+
+          <div className={'rounded-lg border p-3 space-y-2 ' + (backup ? 'border-slate-700' : 'border-slate-800 opacity-50')}>
+            <div className="text-sm font-semibold">2 · Download it</div>
+            <p className="text-xs text-slate-400">Save it somewhere safe before going any further.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" onClick={download} disabled={!backup || busy.length > 0}>
+                {busy === 'download' && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}Download .sql
+              </Button>
+              {downloaded && <span className="text-xs text-emerald-400">Downloaded — server copy removed</span>}
+            </div>
+          </div>
+
+          <div className={'rounded-lg border p-3 space-y-3 ' + (downloaded ? 'border-rose-800' : 'border-slate-800 opacity-50')}>
+            <div className="text-sm font-semibold text-rose-300">3 · Reset — this cannot be undone</div>
+            <div className="space-y-2">
+              <label className="flex items-start gap-2 text-xs">
+                <input type="radio" checked={mode === 'transactions'} onChange={() => setMode('transactions')} className="mt-0.5" />
+                <span><b>Clear activity only</b> — keeps company details, logins, customers, products,
+                  vehicles, staff and settings. Wipes weighments, invoices, payments, stock, fuel,
+                  attendance and gate records, and restarts invoice and token numbering at 1.
+                  <span className="text-slate-400"> Use this when a client finishes trialling and goes live.</span></span>
+              </label>
+              <label className="flex items-start gap-2 text-xs">
+                <input type="radio" checked={mode === 'full'} onChange={() => setMode('full')} className="mt-0.5" />
+                <span><b>Erase everything</b> — rebuilds the tenant exactly as a brand-new one. Every
+                  login is removed, so a new tenant admin must be set here.</span>
+              </label>
+            </div>
+            {mode === 'full' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div><Label className="text-xs">New admin username</Label>
+                  <Input value={adminUser} onChange={e => setAdminUser(e.target.value)}
+                    className="bg-slate-800 border-slate-700 h-8 text-sm" /></div>
+                <div><Label className="text-xs">New admin password</Label>
+                  <Input type="password" value={adminPass} onChange={e => setAdminPass(e.target.value)}
+                    placeholder="min 6 characters" className="bg-slate-800 border-slate-700 h-8 text-sm" /></div>
+              </div>
+            )}
+            <div>
+              <Label className="text-xs">Type <code className="text-rose-300">{slug}</code> to confirm</Label>
+              <Input value={confirm} onChange={e => setConfirm(e.target.value)} disabled={!downloaded}
+                placeholder={slug} className="bg-slate-800 border-slate-700 h-8 text-sm" />
+            </div>
+            <Button size="sm" variant="destructive" onClick={doReset} disabled={!canReset || busy.length > 0}>
+              {busy === 'reset' && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+              {mode === 'full' ? 'Erase everything' : 'Clear activity'}
+            </Button>
+          </div>
+
+          {err && <div className="rounded bg-rose-950/50 border border-rose-800 p-2 text-xs text-rose-300">{err}</div>}
+          {done && <div className="rounded bg-emerald-950/50 border border-emerald-800 p-2 text-xs text-emerald-300">{done}</div>}
+        </div>
+        <DialogFooter><Button variant="outline" onClick={onClose}>Close</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ResetPasswordDialog({ user, open, onClose }: { user: PlatformUser | null; open: boolean; onClose: () => void }) {
   const [pw, setPw] = useState('');
   const [saving, setSaving] = useState(false);
@@ -493,6 +650,7 @@ export default function PlatformDashboard() {
   // Dialogs
   const [onboardOpen, setOnboardOpen] = useState(false);
   const [editTenant, setEditTenant] = useState<TenantOverview | null>(null);
+  const [dataTenant, setDataTenant] = useState<TenantOverview | null>(null);
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<PlatformUser | null>(null);
   const [resetPwUser, setResetPwUser] = useState<PlatformUser | null>(null);
@@ -713,6 +871,7 @@ export default function PlatformDashboard() {
                               {isPlatformAdmin && (
                                 <>
                                   <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-white" title="Edit" onClick={() => setEditTenant(t)}><Pencil className="h-3.5 w-3.5" /></Button>
+                                  <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-amber-400" title="Backup / reset data" onClick={() => setDataTenant(t)}><Database className="h-3.5 w-3.5" /></Button>
                                   {t.status === 'active' && (
                                     <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-red-400" title="Suspend" onClick={() => toggleTenantStatus(t, 'suspended')}><Ban className="h-3.5 w-3.5" /></Button>
                                   )}
@@ -973,6 +1132,7 @@ export default function PlatformDashboard() {
       {/* Dialogs */}
       <OnboardDialog open={onboardOpen} onClose={() => setOnboardOpen(false)} onCreated={fetchData} />
       <EditTenantDialog tenant={editTenant} open={!!editTenant} onClose={() => setEditTenant(null)} onSaved={fetchData} />
+      <TenantDataDialog tenant={dataTenant} open={!!dataTenant} onClose={() => { setDataTenant(null); fetchData(); }} />
       <UserDialog open={userDialogOpen} onClose={() => { setUserDialogOpen(false); setEditingUser(null); }} onSaved={fetchData} editUser={editingUser} />
       <ResetPasswordDialog user={resetPwUser} open={!!resetPwUser} onClose={() => setResetPwUser(null)} />
     </div>
