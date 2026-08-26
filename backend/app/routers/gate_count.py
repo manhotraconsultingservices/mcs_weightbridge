@@ -20,6 +20,7 @@ Design / safety:
 from __future__ import annotations
 
 import logging
+import json
 import os
 import uuid
 from datetime import date, datetime, timezone
@@ -304,21 +305,51 @@ async def vehicle_events(
 #  Retention — called once/day from the digest loop (wired in a later phase)
 # ════════════════════════════════════════════════════════════════════════════
 
-async def purge_old_vehicle_events(factory, label: str = "default", retain_days: int = 30,
+# Snapshots are what fill the disk — thousands of JPEGs a day at ~150 KB each. The
+# event ROWS are tiny and are what the count report reads, so they are kept far
+# longer: deleting them would silently shorten how far back the report can look.
+DEFAULT_SNAPSHOT_RETAIN_DAYS = 20
+DEFAULT_ROW_RETAIN_DAYS = 365
+RETENTION_SETTING_KEY = "vehicle_count"
+
+
+async def _retention_days(db) -> tuple[int, int]:
+    """(snapshot days, row days) — per-tenant override, else the defaults above."""
+    snaps, rows = DEFAULT_SNAPSHOT_RETAIN_DAYS, DEFAULT_ROW_RETAIN_DAYS
+    try:
+        raw = (await db.execute(text("SELECT value FROM app_settings WHERE key = :k"),
+                                {"k": RETENTION_SETTING_KEY})).scalar()
+        cfg = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        if isinstance(cfg, dict):
+            snaps = int(cfg.get("retain_days") or snaps)
+            rows = int(cfg.get("retain_rows_days") or rows)
+    except Exception:      # a malformed setting must not stop the purge
+        pass
+    # Never let a bad value delete today's captures.
+    return max(1, snaps), max(1, rows)
+
+
+async def purge_old_vehicle_events(factory, label: str = "default",
+                                   retain_days: int | None = None,
                                    tenant_slug: str | None = None) -> None:
-    """Delete event rows AND their snapshot day-dirs older than `retain_days`. The
-    permanent tally lives in the aggregated report; short local retention keeps
-    snapshots off the VPS disk. Fully guarded — never raises."""
+    """Delete snapshot day-dirs older than the snapshot retention, and event rows
+    older than the (much longer) row retention. Both configurable per tenant via
+    ``app_settings.vehicle_count``. Fully guarded — never raises."""
+    snap_days, row_days = DEFAULT_SNAPSHOT_RETAIN_DAYS, DEFAULT_ROW_RETAIN_DAYS
     # 1) DB rows
     try:
         async with factory() as db:
+            snap_days, row_days = await _retention_days(db)
+            if retain_days is not None:        # explicit caller override wins
+                snap_days = max(1, int(retain_days))
             await db.execute(
                 text("DELETE FROM gate_vehicle_events WHERE detected_at < NOW() - make_interval(days => :d)"),
-                {"d": retain_days},
+                {"d": row_days},
             )
             await db.commit()
     except Exception as e:  # pragma: no cover - best effort
         log.warning("purge_old_vehicle_events rows [%s] failed: %s", label, e)
+    retain_days = snap_days
     # 2) snapshot day-dirs (uploads/gate/vehicle/[<slug>/]<YYYYMMDD>)
     try:
         import datetime as _dt, shutil
