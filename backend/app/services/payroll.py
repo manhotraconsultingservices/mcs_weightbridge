@@ -72,11 +72,12 @@ def worker_summary(worker: dict, attendance: list[dict], payments: list[dict],
                    dfrom: date, dto: date, cfg: dict) -> dict:
     """Per-worker payroll summary over [dfrom, dto]."""
     rate = _f(worker.get("rate"))
+    units = daily_units(attendance, cfg)
     if worker.get("worker_type") == "monthly_salary":
-        units = None
+        # Attendance is recorded for salaried staff too, but it is a record of who
+        # turned up — the salary is pro-rated by period, not by days marked.
         earned = salary_earned(rate, dfrom, dto)
     else:
-        units = daily_units(attendance, cfg)
         earned = round(units * rate, 2)
 
     advances   = round(sum(_f(p["amount"]) for p in payments if p.get("payment_type") == "advance"), 2)
@@ -86,7 +87,7 @@ def worker_summary(worker: dict, attendance: list[dict], payments: list[dict],
     balance_due = round(earned - total_paid, 2)
 
     return {
-        "days_units": units,           # None for salaried workers
+        "days_units": units,           # informational for salaried: pay is the salary
         "earned": earned,
         "advances": advances,
         "settled": settled,

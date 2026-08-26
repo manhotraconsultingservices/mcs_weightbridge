@@ -202,12 +202,14 @@ async def attendance_grid(
     out = []
     for w in workers:
         amap = by_worker.get(w.id, {})
+        units = payroll.daily_units(
+            [{"status": v["status"], "ot_hours": v["ot_hours"]} for v in amap.values()], cfg)
         if w.worker_type == "monthly_salary":
-            units = None
+            # Salaried staff can be marked present/absent for the record, but their
+            # pay is the salary pro-rated over the period — the day count is shown
+            # for information and deliberately does NOT drive what they earn.
             earned = payroll.salary_earned(float(w.rate), dfrom, dto)
         else:
-            units = payroll.daily_units(
-                [{"status": v["status"], "ot_hours": v["ot_hours"]} for v in amap.values()], cfg)
             earned = round(units * float(w.rate), 2)
         out.append({
             "worker_id": str(w.id), "name": w.name, "worker_type": w.worker_type,

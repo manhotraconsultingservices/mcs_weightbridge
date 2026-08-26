@@ -311,7 +311,7 @@ function AttendanceTab() {
     setCell(w, date, next === '' ? 'clear' : next, next === 'overtime' ? 2 : 0);
   };
   const markAllPresent = async (date: string) => {
-    try { await api.post('/api/v1/workforce/attendance/bulk', { items: rows.filter(r => r.worker_type !== 'monthly_salary').map(r => ({ worker_id: r.worker_id, att_date: date, status: 'present', ot_hours: 0 })) }); load(); }
+    try { await api.post('/api/v1/workforce/attendance/bulk', { items: rows.map(r => ({ worker_id: r.worker_id, att_date: date, status: 'present', ot_hours: 0 })) }); load(); }
     catch { /* ignore */ }
   };
   const shift = (dir: number) => {
@@ -364,7 +364,7 @@ function AttendanceTab() {
           {rows.map(w => (
             <div key={w.worker_id} className="flex items-center gap-3 px-4 py-3">
               <div className="flex-1 font-medium">{w.name}{w.worker_type === 'monthly_salary' && <span className="ml-1 text-[10px] text-muted-foreground">(salary)</span>}</div>
-              {w.worker_type === 'monthly_salary' ? <span className="text-xs text-muted-foreground">salaried</span> : statusSelect(w, range.from, true)}
+              {statusSelect(w, range.from, true)}
               <div className="w-24 text-right font-mono text-sm">{INR(w.earned)}</div>
             </div>
           ))}
@@ -393,8 +393,7 @@ function AttendanceTab() {
                   </td>
                   {days.map(d => (
                     <td key={d} className="p-1 text-center">
-                      {w.worker_type === 'monthly_salary' ? <span className="text-muted-foreground">—</span>
-                        : view === 'weekly' ? statusSelect(w, d)
+                      {view === 'weekly' ? statusSelect(w, d)
                         : (() => { const cell = CELL[w.attendance[d]?.status || ''] || CELL['']; return <button onClick={() => cycle(w, d)} className={`h-9 w-9 rounded text-xs font-semibold ${cell.c}`} title={w.attendance[d]?.status || 'mark'}>{cell.t}</button>; })()}
                     </td>
                   ))}
