@@ -381,6 +381,30 @@ async def purge_old_vehicle_events(factory, label: str = "default",
 #  gate, so every corrected event is kept as one.
 # ════════════════════════════════════════════════════════════════════════════
 
+# The yard's own vocabulary — what a reviewer may label a frame, and the classes a
+# retrained model will be taught. Deliberately WIDER than what the model can output
+# today: COCO knows only car/truck/bus/motorcycle/bicycle/person, so tractor, camper,
+# jcb, tanker and trailer can be LABELLED now and only DETECTED once there are enough
+# examples to train on. Changing this list later invalidates labels already collected,
+# so it is defined in one place rather than typed into a screen.
+LABEL_CLASSES = [
+    "truck", "tractor", "camper", "car", "jcb", "tanker", "trailer",
+    "bus", "motorcycle", "bicycle", "person", "other",
+]
+
+
+@router.get("/label-classes")
+async def label_classes(user: User = Depends(get_current_user)):
+    """The categories a reviewer can assign, and which of them the CURRENT model can
+    actually produce on its own — so the screen can show the difference honestly."""
+    model_can_emit = sorted(set(ALLOWED_CLASSES))
+    return {
+        "classes": LABEL_CLASSES,
+        "detectable_today": [c for c in LABEL_CLASSES if c in model_can_emit],
+        "needs_training": [c for c in LABEL_CLASSES if c not in model_can_emit],
+    }
+
+
 def _training_dir(slug: str | None) -> str:
     parts = [_uploads_base(), "gate", "training"] + ([slug] if slug else [])
     return os.path.join(*parts)
@@ -441,6 +465,9 @@ async def label_event(
     cls = str(payload.get("vehicle_class") or "").strip().lower()
     if not cls:
         raise HTTPException(400, "vehicle_class is required")
+    if cls not in LABEL_CLASSES:
+        raise HTTPException(
+            400, f"'{cls}' is not one of the agreed categories: {', '.join(LABEL_CLASSES)}")
 
     row = (await db.execute(text(
         "SELECT snapshot_path FROM gate_vehicle_events "
