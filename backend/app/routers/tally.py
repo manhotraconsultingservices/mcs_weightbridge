@@ -39,6 +39,8 @@ from app.integrations.tally.xml_builder import (
     build_sales_order_xml, build_purchase_order_xml,
     TallyLedgerMap, NarrationOptions,
 )
+from app.integrations.tally import units as tally_units
+from app.services.pricing import VOLUME_UNITS
 from app.models.product import Product
 
 router = APIRouter(prefix="/api/v1/tally", tags=["Tally"])
@@ -72,6 +74,8 @@ class TallyConfigIn(BaseModel):
     accounting_only: bool = False
     # Also sync non-GST (Bill of Supply) invoices to Tally.
     sync_non_gst: bool = False
+    # Volume unit Tally stock items carry as their alternate unit (CUM default).
+    volume_unit: Optional[str] = None
     # Invoice-number prefix filter (comma-separated; blank = sync all). Only
     # invoices whose number starts with one of these prefixes go to Tally.
     sync_invoice_prefix: Optional[str] = None
@@ -103,6 +107,7 @@ class TallyConfigOut(BaseModel):
     narration_weight: bool
     accounting_only: bool = False
     sync_non_gst: bool = False
+    volume_unit: Optional[str] = None
     sync_invoice_prefix: Optional[str] = None
     mode: Optional[str] = None
 
@@ -264,16 +269,21 @@ async def _build_invoice_xml(
     _pids = {getattr(it, "product_id", None) for it in _items if getattr(it, "product_id", None)}
     _pmap: dict = {}
     if _pids:
-        for _pid, _pname, _punit in (await db.execute(
-            select(Product.id, Product.name, Product.unit).where(Product.id.in_(_pids))
-        )).all():
-            _pmap[_pid] = (_pname, _punit)
+        for _p in (await db.execute(
+            select(Product).where(Product.id.in_(_pids))
+        )).scalars().all():
+            _pmap[_p.id] = _p
     for item in _items:
-        _pname, _punit = _pmap.get(getattr(item, "product_id", None), (None, None))
+        _prod = _pmap.get(getattr(item, "product_id", None))
+        _pname = getattr(_prod, "name", None) if _prod is not None else None
+        _punit = getattr(_prod, "unit", None) if _prod is not None else None
         # STOCKITEMNAME = product name (matches the master); description is a fallback.
         item._product_name = _pname or getattr(item, "description", None) or "Item"
         if _punit and not getattr(item, "unit", None):
             item.unit = _punit
+        # The product's base unit + bulk density let _extract_items express the
+        # line in a unit the Tally Stock Item actually knows (base or alternate).
+        item._product = _prod
 
     ledger_map = TallyLedgerMap(
         sales=cfg.ledger_sales or "Sales",
@@ -292,10 +302,13 @@ async def _build_invoice_xml(
         include_weight=cfg.narration_weight,
     )
     acct_only = bool(getattr(cfg, "accounting_only", False))
+    vol_unit = tally_units.canonical_volume_unit(cfg)
     if invoice.invoice_type == "sale":
-        return build_sales_xml(invoice, company, party, ledger_map, narration_opts, accounting_only=acct_only), ""
+        return build_sales_xml(invoice, company, party, ledger_map, narration_opts,
+                               accounting_only=acct_only, volume_unit=vol_unit), ""
     if invoice.invoice_type == "purchase":
-        return build_purchase_xml(invoice, company, party, ledger_map, narration_opts, accounting_only=acct_only), ""
+        return build_purchase_xml(invoice, company, party, ledger_map, narration_opts,
+                                  accounting_only=acct_only, volume_unit=vol_unit), ""
     if invoice.invoice_type in ("credit_note", "debit_note"):
         # Settle the note "Agst Ref" the original invoice number (GSTR-1 CDNR link).
         ref_no = None
@@ -305,7 +318,8 @@ async def _build_invoice_xml(
             )).scalar_one_or_none()
         builder = build_credit_note_xml if invoice.invoice_type == "credit_note" else build_debit_note_xml
         return builder(invoice, company, party, ledger_map, narration_opts,
-                       reference_invoice_no=ref_no, accounting_only=acct_only), ""
+                       reference_invoice_no=ref_no, accounting_only=acct_only,
+                       volume_unit=vol_unit), ""
     return None, (
         f"Invoice type '{invoice.invoice_type}' cannot be exported to Tally. "
         "Only sale, purchase, credit_note and debit_note are supported."
@@ -442,6 +456,8 @@ async def update_tally_config(
     cfg.narration_weight = payload.narration_weight
     cfg.accounting_only = payload.accounting_only
     cfg.sync_non_gst = payload.sync_non_gst
+    _vu = (payload.volume_unit or "").strip().upper()
+    cfg.volume_unit = _vu if _vu in VOLUME_UNITS else None
     # Invoice prefix filter — normalise blank → NULL (means "sync all")
     cfg.sync_invoice_prefix = (payload.sync_invoice_prefix or "").strip() or None
     # Transport mode is set by provisioning/admin; the normal Settings save omits
@@ -646,6 +662,33 @@ async def list_pending_orders(
     }
 
 
+async def _party_master_xml(db, party, company) -> str:
+    """Build a party's Tally ledger master, grouped by how the party is ACTUALLY used.
+
+    Tally holds one ledger per name, so a ``both``-type party cannot sit under
+    Sundry Debtors and Sundry Creditors at once. Routing every ``both`` party to
+    Debtors (the old rule) mis-grouped parties we only ever buy from, so the group
+    is taken from their finalised invoices: purchases but no sales → Creditors,
+    otherwise Debtors. A party used both ways stays a Debtor — a Tally limitation,
+    not a choice — and purchase vouchers against it still post correctly.
+    """
+    ptype = (party.party_type or "").lower()
+    if ptype == "customer":
+        return build_customer_master_xml(party, company)
+    if ptype == "supplier":
+        return build_supplier_master_xml(party, company)
+    kinds = set((await db.execute(
+        select(Invoice.invoice_type).where(
+            Invoice.party_id == party.id,
+            Invoice.company_id == party.company_id,
+            Invoice.status == "final",
+        ).distinct()
+    )).scalars().all())
+    if "purchase" in kinds and "sale" not in kinds:
+        return build_supplier_master_xml(party, company)
+    return build_customer_master_xml(party, company)
+
+
 @router.post("/sync/party/{party_id}")
 async def sync_party_to_tally(
     party_id: uuid.UUID,
@@ -668,11 +711,7 @@ async def sync_party_to_tally(
 
     company = await _get_company(db, current_user.company_id)
 
-    # Route to customer or supplier builder
-    if party.party_type in ("customer", "both"):
-        xml = build_customer_master_xml(party, company)
-    else:
-        xml = build_supplier_master_xml(party, company)
+    xml = await _party_master_xml(db, party, company)
 
     company_name = cfg.tally_company_name or getattr(company, "name", "") or ""
     op_ok, message, synced = await _dispatch_xml(cfg, "party", party.id, company_name, xml, db)
@@ -719,10 +758,16 @@ async def sync_product_to_tally(
     company = await _get_company(db, current_user.company_id)
 
     unit = (getattr(product, "unit", None) or "Nos").strip() or "Nos"
-    xml = _merge_master_xmls([
-        build_unit_xml(unit, company),         # unit must exist before the item
-        build_stock_item_xml(product, company),
-    ])
+    vol_unit = tally_units.canonical_volume_unit(cfg)
+    # Every unit the item references must exist in Tally BEFORE the item does —
+    # the base, and the alternate unit that lets Tally accept a quantity billed in
+    # the other dimension (e.g. an MT item sold by the cubic metre).
+    _alt = tally_units.alternate_unit(product, vol_unit)
+    _units = [unit] + ([_alt[0]] if _alt and _alt[0].upper() != unit.upper() else [])
+    xml = _merge_master_xmls(
+        [build_unit_xml(u, company) for u in _units]
+        + [build_stock_item_xml(product, company, volume_unit=vol_unit)]
+    )
 
     company_name = cfg.tally_company_name or getattr(company, "name", "") or ""
     op_ok, message, _synced = await _dispatch_xml(cfg, "product", product.id, company_name, xml, db)
@@ -734,6 +779,8 @@ async def sync_product_to_tally(
         "product_id": str(product.id),
         "product_name": product.name,
         "unit": unit,
+        "alternate_unit": _alt[0] if _alt else None,
+        "conversion": tally_units.format_conversion(_alt[1]) if _alt else None,
     }
 
 
@@ -762,15 +809,32 @@ async def sync_ledgers_to_tally(
         roundoff=cfg.ledger_roundoff or "Round Off",
     )
     specs = gl_ledger_specs(lmap)
-    xml = _merge_master_xmls([
-        build_ledger_master_xml(n, parent, company, gst_duty_head=duty)
-        for (n, parent, duty) in specs
-    ])
+    # Seed the Units of Measure too: a Stock Item import fails outright if its
+    # unit does not exist yet, and lines are billed in units beyond the product
+    # masters' own (CBM/CUM/CFT/BRASS/QUINTAL…). Cheap and idempotent.
+    vol_unit = tally_units.canonical_volume_unit(cfg)
+    prod_units = [u for (u,) in (await db.execute(
+        select(Product.unit).where(
+            Product.company_id == current_user.company_id, Product.unit.isnot(None)
+        ).distinct()
+    )).all() if (u or "").strip()]
+    unit_syms, _seen = [], set()
+    for u in [*prod_units, vol_unit, "MT"]:
+        k = u.strip().upper()
+        if k and k not in _seen:
+            _seen.add(k)
+            unit_syms.append(u.strip())
+    xml = _merge_master_xmls(
+        [build_unit_xml(u, company) for u in unit_syms]
+        + [build_ledger_master_xml(n, parent, company, gst_duty_head=duty)
+           for (n, parent, duty) in specs]
+    )
     company_name = cfg.tally_company_name or getattr(company, "name", "") or ""
     eid = uuid.uuid5(uuid.NAMESPACE_URL, f"tally-ledgers:{current_user.company_id}")
     op_ok, message, _synced = await _dispatch_xml(cfg, "ledger", eid, company_name, xml, db)
     await db.commit()
-    return {"success": op_ok, "message": message, "ledgers": [n for (n, _, _) in specs]}
+    return {"success": op_ok, "message": message,
+            "ledgers": [n for (n, _, _) in specs], "units": unit_syms}
 
 
 @router.post("/sync/parties")
@@ -804,10 +868,7 @@ async def bulk_sync_parties_to_tally(
     failed_count = 0
 
     for party in parties:
-        if party.party_type in ("customer", "both"):
-            xml = build_customer_master_xml(party, company)
-        else:
-            xml = build_supplier_master_xml(party, company)
+        xml = await _party_master_xml(db, party, company)
 
         op_ok, message, synced = await _dispatch_xml(cfg, "party", party.id, company_name, xml, db)
         party.tally_synced = synced

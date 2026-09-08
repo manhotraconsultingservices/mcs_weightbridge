@@ -987,6 +987,8 @@ interface TallyConfig {
   // No-GST / accounting-only export (legacy Tally + non-GST demo companies)
   accounting_only: boolean;
   sync_non_gst: boolean;
+  // Volume unit Tally stock items carry as their alternate unit
+  volume_unit?: string | null;
   // Invoice-number prefix filter (comma-separated; blank = sync all)
   sync_invoice_prefix: string;
   // Transport mode: 'direct' (on-prem) | 'relay' (SaaS, via the Tally Connector)
@@ -1241,6 +1243,7 @@ const DEFAULT_TALLY_CFG: TallyConfig = {
   narration_vehicle: true, narration_token: true, narration_weight: true,
   accounting_only: false,
   sync_non_gst: false,
+  volume_unit: 'CUM',
 };
 
 function TallyTab() {
@@ -1291,8 +1294,8 @@ function TallyTab() {
   async function createLedgers() {
     setSaveMsg('Creating ledgers in Tally…');
     try {
-      const { data } = await api.post<{ success: boolean; message?: string; ledgers?: string[] }>('/api/v1/tally/sync/ledgers');
-      setSaveMsg(data?.message ? `Ledgers → Tally: ${data.message}` : 'Ledgers sent to Tally');
+      const { data } = await api.post<{ success: boolean; message?: string; ledgers?: string[]; units?: string[] }>('/api/v1/tally/sync/ledgers');
+      setSaveMsg(data?.message ? `Ledgers + units → Tally: ${data.message}` : 'Ledgers and units sent to Tally');
       setTimeout(() => setSaveMsg(''), 6000);
     } catch (e: any) {
       const detail = e?.response?.data?.detail;
@@ -1597,6 +1600,39 @@ function TallyTab() {
         </CardContent>
       </Card>
 
+      {/* Units — Tally holds ONE alternate unit per stock item */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Units in Tally</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Tally allows each stock item <b>one</b> alternate unit besides its own. Pick the volume
+            unit Tally should hold, and every volume a bill is raised in (CBM, CUM, CFT, Brass) is
+            converted onto it exactly — the amount never changes. Items need a
+            <b> bulk density</b> on the Item Catalog page for this; without one, a volume-billed
+            line cannot be expressed in a weight item's units and Tally will reject it.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="max-w-xs">
+            <Label htmlFor="tally-volume-unit">Volume unit</Label>
+            <select
+              id="tally-volume-unit"
+              className="mt-1 w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+              value={cfg.volume_unit || 'CUM'}
+              onChange={e => setCfg(c => ({ ...c, volume_unit: e.target.value }))}
+            >
+              <option value="CUM">CUM — cubic metre</option>
+              <option value="CBM">CBM — cubic metre (alt. spelling)</option>
+              <option value="CFT">CFT — cubic foot</option>
+              <option value="BRASS">BRASS — 100 cubic feet</option>
+            </select>
+            <p className="text-xs text-muted-foreground mt-1">
+              Re-sync your Items after changing this so Tally picks up the new alternate unit.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* One-time ledger setup — creates the GL ledgers Tally needs for vouchers */}
       <Card>
         <CardHeader className="pb-2">
@@ -1606,13 +1642,15 @@ function TallyTab() {
           <p className="text-xs text-muted-foreground">
             Creates the GL ledgers vouchers post to — <span className="font-mono">Sales, Purchase, CGST, SGST,
             IGST, Round Off, Freight, Trade Discount, TCS</span> — under the right groups (GST ledgers get a
-            duty head). Run this once after enabling Tally so invoices don't fail "Ledger 'CGST' does not exist".
+            duty head), plus <span className="font-mono">Walk-in Customer</span> for counter sales with no party,
+            and every unit of measure your items use. Run this once after enabling Tally so invoices don't fail
+            "Ledger 'CGST' does not exist".
             (For GST invoices, also enable GST in the Tally company: <span className="font-mono">F11 → GST</span>.)
           </p>
         </CardHeader>
         <CardContent>
           <Button variant="outline" onClick={createLedgers}>
-            <RefreshCw className="mr-2 h-4 w-4" /> Create ledgers in Tally
+            <RefreshCw className="mr-2 h-4 w-4" /> Create ledgers + units in Tally
           </Button>
         </CardContent>
       </Card>

@@ -31,7 +31,9 @@ Balance check (Sales):
 from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date as _date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
+
+from app.integrations.tally import units as tally_units
 from xml.etree import ElementTree as ET
 from xml.dom import minidom
 import uuid as _uuid
@@ -279,7 +281,7 @@ def _build_voucher_xml(
         inv_entry = _sub(vch, "INVENTORYENTRIES.LIST")
         _sub(inv_entry, "STOCKITEMNAME", item["name"])
         _sub(inv_entry, "ISDEEMEDPOSITIVE", "No" if is_sale else "Yes")
-        _sub(inv_entry, "RATE", f"{float(item['rate']):.2f}/{item['unit']}")
+        _sub(inv_entry, "RATE", f"{_fmt_rate(item['rate'])}/{item['unit']}")
         _sub(inv_entry, "AMOUNT", _fmt_amt(item["amount"], stock_sign))
         _sub(inv_entry, "ACTUALQTY", f"{float(item['qty']):.3f} {item['unit']}")
         _sub(inv_entry, "BILLEDQTY", f"{float(item['qty']):.3f} {item['unit']}")
@@ -403,6 +405,11 @@ def _build_party_master_xml(
 
     _sub(ledger, "NAME", party_name)
     _sub(ledger, "PARENT", parent_group)
+    # Bill-wise tracking. Sale/purchase vouchers carry BILLALLOCATIONS ("New Ref")
+    # and credit/debit notes settle "Agst Ref" the original invoice — Tally only
+    # honours those on a ledger with bill-wise details on, so without this the
+    # GSTR-1 CDNR link between a note and its invoice is silently lost.
+    _sub(ledger, "ISBILLWISEON", "Yes")
 
     # GST registration
     if gstin:
@@ -496,9 +503,20 @@ def build_ledger_master_xml(name: str, parent: str, company, gst_duty_head: str 
     return _pretty(root)
 
 
-def gl_ledger_specs(ledgers: "TallyLedgerMap") -> list[tuple[str, str, str | None]]:
-    """The GL ledgers Tally needs for vouchers → (name, parent_group, gst_duty_head)."""
+WALKIN_LEDGER = "Walk-in Customer"
+
+
+def gl_ledger_specs(ledgers: "TallyLedgerMap",
+                    walkin_ledger: str = WALKIN_LEDGER) -> list[tuple[str, str, str | None]]:
+    """The GL ledgers Tally needs for vouchers → (name, parent_group, gst_duty_head).
+
+    Includes the walk-in party ledger: a B2C sale with no party record posts to
+    ``invoice.customer_name or "Walk-in Customer"``, and nothing else ever creates
+    that ledger, so those vouchers failed "Ledger does not exist". A named walk-in
+    customer still needs its own ledger — this covers the unnamed default.
+    """
     return [
+        (walkin_ledger, "Sundry Debtors", None),
         (ledgers.sales,    "Sales Accounts",    None),
         (ledgers.purchase, "Purchase Accounts", None),
         (ledgers.cgst,     "Duties & Taxes",    "Central Tax"),
@@ -531,7 +549,7 @@ def build_unit_xml(symbol: str, company, decimals: int = 3) -> str:
     return _pretty(root)
 
 
-def build_stock_item_xml(product, company) -> str:
+def build_stock_item_xml(product, company, volume_unit: str = "CUM") -> str:
     """Build Tally XML to create a Stock Item master.
 
     Minimal by default (name + base unit + HSN) so it imports on legacy Tally too.
@@ -540,6 +558,14 @@ def build_stock_item_xml(product, company) -> str:
     against the item's own rate, so without this a full GST invoice referencing the
     item is rejected with EXCEPTIONS=1. The base unit must already exist in Tally
     (push build_unit_xml first when seeding a fresh company).
+
+    An **alternate unit** is added when the product has a ``bulk_density``: the
+    same material is routinely billed by volume as well as by weight (live data:
+    ~48% of sss's sale lines are CBM/CUM against MT items), and Tally rejects a
+    quantity in a unit the item does not know. One alternate is all Tally allows,
+    so it is the tenant's canonical volume unit for a weight item and MT for a
+    volume item; ``tally_units.convert_line`` then maps every billed unit of that
+    dimension onto it exactly. Both units must exist in Tally first.
     """
     tally_company = getattr(company, "tally_company_name", None) or company.name
     name = getattr(product, "name", None) or "Item"
@@ -562,6 +588,14 @@ def build_stock_item_xml(product, company) -> str:
     item.set("ACTION", "Create")
     _sub(item, "NAME", name)
     _sub(item, "BASEUNITS", unit)
+    _alt = tally_units.alternate_unit(product, volume_unit)
+    if _alt is not None:
+        # 1 <alt> = <conversion> <base> — lets Tally accept a quantity billed in
+        # the other dimension and show the stock in both.
+        _alt_sym, _conv = _alt
+        _sub(item, "ADDITIONALUNITS", _alt_sym)
+        _sub(item, "CONVERSION", tally_units.format_conversion(_conv))
+        _sub(item, "DENOMINATOR", "1")
     if _hsn:
         _sub(item, "HSNCODE", _hsn)          # for GSTR-1 HSN summary (harmless in no-GST)
     if _gst_rate > 0:
@@ -823,6 +857,7 @@ def build_sales_xml(
     ledgers: TallyLedgerMap | None = None,
     narration_opts: NarrationOptions | None = None,
     accounting_only: bool = False,
+    volume_unit: str = "CUM",
 ) -> str:
     """Build Tally XML for a Sales voucher."""
     if ledgers is None:
@@ -851,7 +886,7 @@ def build_sales_xml(
         party_gstin=_party_gstin(party),
         place_of_supply=_place_of_supply(party),
         tally_company=_tally_company(invoice, company),
-        items=_extract_items(invoice),
+        items=_extract_items(invoice, volume_unit),
         taxable_amount=invoice.taxable_amount or Decimal("0"),
         discount_amount=invoice.discount_amount or Decimal("0"),
         freight=invoice.freight or Decimal("0"),
@@ -873,6 +908,7 @@ def build_purchase_xml(
     ledgers: TallyLedgerMap | None = None,
     narration_opts: NarrationOptions | None = None,
     accounting_only: bool = False,
+    volume_unit: str = "CUM",
 ) -> str:
     """Build Tally XML for a Purchase voucher."""
     if ledgers is None:
@@ -901,7 +937,7 @@ def build_purchase_xml(
         party_gstin=_party_gstin(party),
         place_of_supply=_place_of_supply(party),
         tally_company=_tally_company(invoice, company),
-        items=_extract_items(invoice),
+        items=_extract_items(invoice, volume_unit),
         taxable_amount=invoice.taxable_amount or Decimal("0"),
         discount_amount=invoice.discount_amount or Decimal("0"),
         freight=invoice.freight or Decimal("0"),
@@ -941,6 +977,7 @@ def build_credit_note_xml(
     narration_opts: NarrationOptions | None = None,
     reference_invoice_no: str | None = None,
     accounting_only: bool = False,
+    volume_unit: str = "CUM",
 ) -> str:
     """Build Tally XML for a Credit Note (seller-issued, against a SALE invoice).
 
@@ -966,7 +1003,7 @@ def build_credit_note_xml(
         party_gstin=_party_gstin(party),
         place_of_supply=_place_of_supply(party),
         tally_company=_tally_company(invoice, company),
-        items=_extract_items(invoice),
+        items=_extract_items(invoice, volume_unit),
         taxable_amount=invoice.taxable_amount or Decimal("0"),
         discount_amount=invoice.discount_amount or Decimal("0"),
         freight=invoice.freight or Decimal("0"),
@@ -989,6 +1026,7 @@ def build_debit_note_xml(
     narration_opts: NarrationOptions | None = None,
     reference_invoice_no: str | None = None,
     accounting_only: bool = False,
+    volume_unit: str = "CUM",
 ) -> str:
     """Build Tally XML for a Debit Note (seller-issued supplementary, against a
     SALE invoice). A debit note increases the sale: the customer is DEBITED
@@ -1012,7 +1050,7 @@ def build_debit_note_xml(
         party_gstin=_party_gstin(party),
         place_of_supply=_place_of_supply(party),
         tally_company=_tally_company(invoice, company),
-        items=_extract_items(invoice),
+        items=_extract_items(invoice, volume_unit),
         taxable_amount=invoice.taxable_amount or Decimal("0"),
         discount_amount=invoice.discount_amount or Decimal("0"),
         freight=invoice.freight or Decimal("0"),
@@ -1034,7 +1072,7 @@ def build_debit_note_xml(
 def _party_name(invoice, party) -> str:
     if party and (getattr(party, "tally_ledger_name", None) or party.name):
         return party.tally_ledger_name or party.name
-    return invoice.customer_name or "Walk-in Customer"
+    return invoice.customer_name or WALKIN_LEDGER
 
 
 def _party_gstin(party) -> str | None:
@@ -1054,16 +1092,44 @@ def _tally_company(invoice, company) -> str:
     return getattr(company, "tally_company_name", None) or company.name
 
 
-def _extract_items(invoice) -> list[dict]:
+def _fmt_rate(rate) -> str:
+    """Rate for a voucher line: 2 dp as always, more only when the extra digits
+    are real. A converted line's rate is derived from the amount and can need 4
+    dp for qty x rate to still equal it; an unconverted line prints exactly as
+    it always has."""
+    d = Decimal(str(rate or 0))
+    q2 = d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if d == q2:
+        return f"{q2:.2f}"
+    return f"{d.quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP):.4f}"
+
+
+def _extract_items(invoice, volume_unit: str = "CUM") -> list[dict]:
+    """Voucher lines, each expressed in a unit its Tally Stock Item knows.
+
+    A line can be billed in any unit of the app's list (155 of sss's 208 final
+    sale lines are in a unit that is NOT the product's base unit), but Tally only
+    accepts the item's base or its one alternate. Each line is therefore converted
+    exactly onto whichever of those shares its dimension — the AMOUNT is never
+    touched, the rate scales inversely, so qty x rate still foots. The caller
+    attaches ``_product`` (name/unit/bulk_density) in ``routers.tally``; without
+    it the line passes through unchanged, exactly as before.
+    """
     items = []
     for it in (invoice.items or []):
+        prod = getattr(it, "_product", None)
+        qty, rate, unit, note = it.quantity, it.rate, (it.unit or "Nos"), None
+        if prod is not None:
+            qty, rate, unit, note = tally_units.convert_line(
+                it.quantity, it.rate, it.unit, prod, volume_unit, amount=it.amount)
         items.append({
             "name": getattr(it, "_product_name", None) or it.description or "Item",
-            "unit": it.unit or "Nos",
-            "qty": it.quantity,
-            "rate": it.rate,
+            "unit": unit,
+            "qty": qty,
+            "rate": rate,
             "amount": it.amount,
             "hsn": it.hsn_code or "",
             "gst_rate": getattr(it, "gst_rate", Decimal("0")),
+            "unit_note": note,
         })
     return items

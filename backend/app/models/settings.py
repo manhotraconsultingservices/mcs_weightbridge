@@ -83,6 +83,11 @@ class TallyConfig(Base):
     # eligible for Tally sync (pending list / auto-sync / manual). Default False
     # keeps the historical GST-only behaviour (cash sales stay out of the books).
     sync_non_gst: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Which volume unit Tally stock items carry as their alternate unit. Tally
+    # allows ONE alternate per item, and the app bills volume under several
+    # labels (CBM/CUM/CFT/BRASS), so the tenant picks the one Tally should hold;
+    # every other volume unit is converted exactly onto it. NULL → "CUM".
+    volume_unit: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
 
 class AuditLog(Base):

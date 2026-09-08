@@ -232,6 +232,12 @@ function ProductDialog({ open, editing, categories, onClose, onSaved }: ProductD
                 {t('product.bulkDensityTip')}
               </span>
             </p>
+            {!form.bulk_density.trim() && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                Without a density this item can only be billed in its own unit. A bill raised in
+                cubic metres or brass cannot be converted, so Tally will reject that invoice.
+              </p>
+            )}
           </div>
           )}
 
