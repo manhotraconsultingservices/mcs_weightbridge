@@ -1359,6 +1359,8 @@ async def _supersede_prior_revisions(db: AsyncSession, inv: Invoice, current_use
     ``_apply_party_advances`` re-applies them to this revision. The append-only
     stock ledger is left untouched: the original posted the single physical
     movement once (revisions never re-post at finalise), so it stays correct.
+    Tally relay jobs still queued for the prior versions are closed, because the
+    revision carries the same voucher GUID and replaces them in Tally.
     """
     from sqlalchemy import or_ as _or, delete as _del
     from app.models.payment import InvoicePayment as _IP
@@ -1381,6 +1383,32 @@ async def _supersede_prior_revisions(db: AsyncSession, inv: Invoice, current_use
         import logging
         logging.getLogger(__name__).info(
             "Revision %s superseded %d prior version(s)", inv.invoice_no, len(priors))
+        # Tally: every version of a document shares ONE voucher GUID (see
+        # xml_builder.voucher_guid), so a prior version delivered AFTER this
+        # revision would ALTER Tally's voucher back to the old figures. Close any
+        # undelivered relay job for the superseded versions — the revision's own
+        # job creates-or-alters the voucher. A job already in flight is left
+        # alone: it was claimed before this revision existed and the revision's
+        # job is queued behind it (FIFO), so Tally still ends on the revision.
+        # SAVEPOINT-guarded: this must never be able to undo a finalisation.
+        try:
+            async with db.begin_nested():
+                await db.execute(text(
+                    "UPDATE tally_sync_jobs SET status='done', completed_at=now(), "
+                    "claim_token=NULL, claimed_until=NULL, last_error=:why "
+                    "WHERE company_id=:cid "
+                    "AND entity_type IN ('invoice','credit_note','debit_note') "
+                    "AND entity_id = ANY(:ids) AND status IN ('pending','failed','dead')"
+                ), {
+                    "why": f"Superseded by {inv.invoice_no}: the revision replaces "
+                           "this voucher in Tally (same GUID) — nothing to send",
+                    "cid": inv.company_id,
+                    "ids": [p.id for p in priors],
+                })
+        except Exception as _e:
+            logging.getLogger(__name__).warning(
+                "could not close Tally relay jobs for superseded versions of %s: %s",
+                inv.invoice_no, _e)
 
 
 @router.post("/{invoice_id}/apply-advance", response_model=InvoiceResponse)

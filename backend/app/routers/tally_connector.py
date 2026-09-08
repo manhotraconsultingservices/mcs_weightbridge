@@ -15,6 +15,7 @@ Endpoints:
 """
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -82,13 +83,29 @@ async def _rebuild_invoice_job_xml(db, job) -> bool:
         return False
     try:
         from sqlalchemy import select as _select
+        from sqlalchemy.orm import selectinload as _selectinload
         from app.routers.tally import _get_config, _get_company, _build_invoice_xml
         from app.models.invoice import Invoice
+        # Load the lines up front: Invoice.items is lazy, and a lazy load under
+        # asyncio raises MissingGreenlet — which the except below would swallow,
+        # silently replaying the stale XML instead of rebuilding it.
         inv = (await db.execute(
-            _select(Invoice).where(Invoice.id == job.entity_id)
+            _select(Invoice).options(_selectinload(Invoice.items)).where(Invoice.id == job.entity_id)
         )).scalar_one_or_none()
         if inv is None:
             return False
+        if inv.status in ("superseded", "cancelled"):
+            # Nothing to send. A superseded version shares its voucher GUID with
+            # the revision that replaced it, so re-sending it would ALTER Tally's
+            # voucher back to the old figures; a cancelled invoice has no place
+            # in Tally at all. Close the job instead of re-arming it.
+            job.status = "done"
+            job.completed_at = datetime.now(timezone.utc)
+            job.claim_token = None
+            job.claimed_until = None
+            job.last_error = (f"Invoice {inv.invoice_no or ''} is {inv.status} — "
+                              "voucher not re-sent")
+            return True
         cfg = await _get_config(db, job.company_id)
         company = await _get_company(db, job.company_id)
         new_xml, _err = await _build_invoice_xml(inv, company, cfg, db)
@@ -219,6 +236,12 @@ async def requeue_job(
         raise HTTPException(404, "Job not found or not re-queueable")
 
     rebuilt = await _rebuild_invoice_job_xml(db, job)
+    if job.status == "done":
+        # The rebuild closed it: the source invoice is superseded or cancelled,
+        # so there is nothing to retry. Keep the closure, tell the caller why.
+        reason = job.last_error
+        await db.commit()
+        raise HTTPException(409, reason or "Nothing to retry for this job")
 
     job.status = "pending"
     job.attempts = 0

@@ -796,6 +796,26 @@ def build_purchase_order_xml(
     return _pretty(root)
 
 
+def voucher_guid(invoice) -> str:
+    """The GUID Tally files this invoice's voucher under.
+
+    A revision is a NEW invoice row in the app, but commercially it is the SAME
+    document as the version it supersedes — so it must reach Tally as an ALTER
+    of that voucher, never as a second voucher beside it. Keying the GUID on the
+    ROOT of the revision chain (``original_invoice_id`` — every revision carries
+    it and it always points at v1) gives every version one GUID; with Tally's
+    "Overwrite voucher when a voucher with same GUID exists = Yes" the newest
+    finalised revision replaces the voucher in place, voucher number included.
+
+    A credit/debit note is a separate document (it links to its invoice through
+    ``reference_invoice_id``, never ``original_invoice_id``) so it keeps its own
+    id. A plain, never-revised invoice is unchanged: ``original_invoice_id`` is
+    NULL and the GUID is its own id, exactly as before.
+    """
+    root = getattr(invoice, "original_invoice_id", None)
+    return str(root or invoice.id)
+
+
 def build_sales_xml(
     invoice,
     company,
@@ -842,7 +862,7 @@ def build_sales_xml(
         round_off=invoice.round_off or Decimal("0"),
         grand_total=invoice.grand_total,
         ledgers=ledgers,
-        guid=str(invoice.id),
+        guid=voucher_guid(invoice),
     )
 
 
@@ -892,7 +912,7 @@ def build_purchase_xml(
         round_off=invoice.round_off or Decimal("0"),
         grand_total=invoice.grand_total,
         ledgers=ledgers,
-        guid=str(invoice.id),
+        guid=voucher_guid(invoice),
     )
 
 
@@ -957,7 +977,7 @@ def build_credit_note_xml(
         round_off=invoice.round_off or Decimal("0"),
         grand_total=invoice.grand_total,
         ledgers=ledgers,
-        guid=str(invoice.id),
+        guid=voucher_guid(invoice),
     )
 
 
@@ -1003,7 +1023,7 @@ def build_debit_note_xml(
         round_off=invoice.round_off or Decimal("0"),
         grand_total=invoice.grand_total,
         ledgers=ledgers,
-        guid=str(invoice.id),
+        guid=voucher_guid(invoice),
     )
 
 
