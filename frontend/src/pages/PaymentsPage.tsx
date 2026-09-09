@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo, Fragment } from 'react';
 import { Plus, Search, ArrowUpCircle } from 'lucide-react';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { useTranslation } from 'react-i18next';
+import { useTallyEnabled } from '@/hooks/useTallyEnabled';
 import { PrintButton } from '@/components/PrintButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -497,6 +498,7 @@ function PaymentsTable({
 }) {
   const { t } = useTranslation();
 
+  const tallyEnabled = useTallyEnabled();
   const columns = useMemo<ColumnDef<PaymentRecord>[]>(() => [
     {
       key: 'no', label: type === 'receipt' ? t('payment.receiptNo') : t('payment.voucherNo'),
@@ -529,15 +531,16 @@ function PaymentsTable({
     { key: 'reference_no', label: t('payment.reference'), accessor: r => r.reference_no ?? '', className: 'text-xs text-muted-foreground' },
     { key: 'bank_name', label: t('payment.bankCol'), defaultVisible: false, accessor: r => r.bank_name ?? '', className: 'text-xs' },
     { key: 'notes', label: t('common.notes'), defaultVisible: false, accessor: r => r.notes ?? '' },
-    {
+    // Only offer a Tally column to a tenant that actually uses Tally.
+    ...(tallyEnabled ? [{
       key: 'tally_synced', label: t('payment.tallyCol'), type: 'enum', align: 'center', defaultVisible: false,
       enumOptions: [t('payment.synced'), t('payment.pendingSync')],
-      accessor: r => r.tally_synced ? t('payment.synced') : t('payment.pendingSync'),
-      format: v => v === t('payment.synced')
+      accessor: (r: PaymentRecord) => r.tally_synced ? t('payment.synced') : t('payment.pendingSync'),
+      format: (v: unknown) => v === t('payment.synced')
         ? <Badge className="bg-green-100 text-green-700 text-[10px]">{t('payment.synced')}</Badge>
         : <Badge variant="secondary" className="text-[10px]">{t('payment.pendingSync')}</Badge>,
-    },
-  ], [type, t]);
+    } as ColumnDef<PaymentRecord>] : []),
+  ], [type, t, tallyEnabled]);
 
   return (
     <DataTable<PaymentRecord>

@@ -8,13 +8,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Users, Truck } from 'lucide-react';
+import { Users, Truck, Contact } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import CustomerPickerPage from './CustomerPickerPage';
+import PartiesPage from './PartiesPage';
 
-type Tab = 'customers' | 'suppliers';
+type Tab = 'customers' | 'suppliers' | 'master';
 
 export default function CrmHubPage() {
   const { t } = useTranslation();
@@ -25,6 +26,7 @@ export default function CrmHubPage() {
   const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
     { value: 'customers', label: t('hubs.crm.customers'), icon: Users },
     { value: 'suppliers', label: t('hubs.crm.suppliers'), icon: Truck },
+    { value: 'master',    label: t('hubs.crm.master'),    icon: Contact },
   ];
   const visibleTabs = TABS.filter(tb => isTabAllowed('/crm', tb.value));
   const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'customers';
@@ -55,6 +57,9 @@ export default function CrmHubPage() {
         </TabsList>
         <TabsContent value="customers" className="mt-4">
           <CustomerPickerPage lockType="customer" />
+        </TabsContent>
+        <TabsContent value="master" className="mt-4">
+          <PartiesPage />
         </TabsContent>
         <TabsContent value="suppliers" className="mt-4">
           <CustomerPickerPage lockType="supplier" linkBase="/suppliers" />

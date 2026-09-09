@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useTallyEnabled } from '@/hooks/useTallyEnabled';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Save, RotateCcw, Info, FileText, Layout, Plus, Pencil, Trash2 } from 'lucide-react';
@@ -50,6 +51,7 @@ interface RoleTabProps {
 }
 
 function RoleTab({ allowed, onChange, invoiceActions, onInvoiceActionsChange, hubTabPerms, onHubTabPermsChange }: RoleTabProps) {
+  const tallyEnabled = useTallyEnabled();
   function toggle(path: string) {
     onChange(allowed.includes(path) ? allowed.filter(p => p !== path) : [...allowed, path]);
   }
@@ -184,7 +186,7 @@ function RoleTab({ allowed, onChange, invoiceActions, onInvoiceActionsChange, hu
           Control which invoice action buttons this role can use. Print &amp; Download are always available.
         </p>
         <div className="grid grid-cols-2 gap-2">
-          {INVOICE_ACTION_ITEMS.map(action => {
+          {INVOICE_ACTION_ITEMS.filter(a => a.key !== 'tally_sync' || tallyEnabled).map(action => {
             const isChecked = invoiceActions.includes(action.key);
             return (
               <label

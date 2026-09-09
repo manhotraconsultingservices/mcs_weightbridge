@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
+import { useTallyEnabled } from '@/hooks/useTallyEnabled';
 
 const INR = (v: number | null | undefined) =>
   '₹' + Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -69,6 +70,7 @@ const StatusPill = ({ status }: { status: string }) => {
 };
 
 export default function InvoiceDrilldownPage() {
+  const tallyEnabled = useTallyEnabled();
   const { id } = useParams<{ id: string }>();
   const nav = useNavigate();
   const [data, setData] = useState<Drill | null>(null);
@@ -119,7 +121,7 @@ export default function InvoiceDrilldownPage() {
     { key: 'payments', label: 'Payments', icon: IndianRupee, count: w.payments.length },
     { key: 'revisions', label: 'Revisions', icon: GitFork, count: w.revisions.length },
     { key: 'notes', label: 'Credit / Debit Notes', icon: FileMinus, count: w.notes.length },
-    { key: 'related', label: 'Challan · Tally · Agent', icon: Link2 },
+    { key: 'related', label: tallyEnabled ? 'Challan · Tally · Agent' : 'Challan · Agent', icon: Link2 },
     { group: 'History' },
     { key: 'audit', label: 'Audit Log', icon: History, count: data.audit.length },
   ];
@@ -347,6 +349,7 @@ export default function InvoiceDrilldownPage() {
                   ) : <span className="text-sm text-muted-foreground">No sales partner on this invoice.</span>}
                 </CardContent>
               </Card>
+              {tallyEnabled && (
               <Card className="md:col-span-2">
                 <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2">Tally Sync {w.tally.synced ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <Clock className="h-4 w-4 text-amber-500" />}</CardTitle></CardHeader>
                 <CardContent className="pt-0">
@@ -365,6 +368,7 @@ export default function InvoiceDrilldownPage() {
                   )}
                 </CardContent>
               </Card>
+              )}
             </div>
           )}
 

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Save, Loader2, Plus, CheckCircle2, Usb, Shield, Trash2, Mail, Phone, MessageSquare, TestTube, Send, RefreshCw, CheckCircle, XCircle, Server, Scale, ScanLine, Play, RotateCcw, Camera, Truck, X, Download, HardDrive, Upload } from 'lucide-react';
+import { Save, Loader2, Plus, CheckCircle2, Usb, Shield, Trash2, Mail, Phone, MessageSquare, TestTube, Send, RefreshCw, CheckCircle, XCircle, Server, Scale, ScanLine, Play, RotateCcw, Camera, Truck, X, Download, HardDrive, Upload, ClipboardList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -1308,6 +1308,9 @@ function TallyTab() {
     try {
       const { data } = await api.put<TallyConfig>('/api/v1/tally/config', cfg);
       setCfg({ ...data, tally_company_name: data.tally_company_name || '' });
+      // Every Tally control in the app is gated on this switch — tell them at once
+      // so buttons appear/disappear without a reload.
+      window.dispatchEvent(new CustomEvent('tally:updated'));
       setSaveMsg('Saved successfully');
       setTimeout(() => setSaveMsg(''), 3000);
     } catch (e: any) {
@@ -1651,6 +1654,24 @@ function TallyTab() {
         <CardContent>
           <Button variant="outline" onClick={createLedgers}>
             <RefreshCw className="mr-2 h-4 w-4" /> Create ledgers + units in Tally
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Did it actually land? Tally's own verdict, per record. */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <ClipboardList className="h-4 w-4" /> Sync log
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Every record sent to Tally and what Tally replied — delivered, waiting, or rejected with
+            the reason in Tally's own words. Use this to answer "did that invoice reach Tally?".
+          </p>
+        </CardHeader>
+        <CardContent>
+          <Button variant="outline" onClick={() => window.open('/tally-log', '_blank')}>
+            <ClipboardList className="mr-2 h-4 w-4" /> Open sync log
           </Button>
         </CardContent>
       </Card>

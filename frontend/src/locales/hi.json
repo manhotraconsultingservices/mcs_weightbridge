@@ -952,7 +952,8 @@
     },
     "crm": {
       "customers": "ग्राहक",
-      "suppliers": "आपूर्तिकर्ता"
+      "suppliers": "आपूर्तिकर्ता",
+      "master": "पार्टी मास्टर"
     },
     "procurement": {
       "purchaseInvoices": "खरीद चालान",

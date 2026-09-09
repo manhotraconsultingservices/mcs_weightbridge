@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DataTable, type ColumnDef } from '@/components/DataTable';
 import api from '@/services/api';
 import { moduleEnabled } from '@/hooks/useAuth';
+import { useTallyEnabled } from '@/hooks/useTallyEnabled';
 import { fetchUnits, withUnit } from '@/lib/units';
 import type { Product, ProductCategory } from '@/types';
 
@@ -464,13 +465,7 @@ function ProductsTable({
   const { t } = useTranslation();
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<{ id: string; text: string; ok: boolean } | null>(null);
-  const [tallyEnabled, setTallyEnabled] = useState(false);
-
-  useEffect(() => {
-    api.get<{ is_enabled?: boolean }>('/api/v1/tally/config')
-      .then(({ data }) => setTallyEnabled(!!data?.is_enabled))
-      .catch(() => setTallyEnabled(false));
-  }, []);
+  const tallyEnabled = useTallyEnabled();
 
   async function syncToTally(p: Product) {
     setSyncingId(p.id); setSyncMsg(null);
@@ -563,16 +558,18 @@ function ProductsTable({
               {syncMsg.text}
             </span>
           )}
-          <Button
-            variant="ghost" size="icon"
-            onClick={() => syncToTally(p)}
-            disabled={syncingId === p.id || !tallyEnabled}
-            title={tallyEnabled ? 'Sync this item to Tally' : 'Enable Tally Integration in Settings → Tally to sync'}
-          >
-            {syncingId === p.id
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <RefreshCw className={`h-4 w-4 ${tallyEnabled ? 'text-emerald-600' : 'text-muted-foreground'}`} />}
-          </Button>
+          {tallyEnabled && (
+            <Button
+              variant="ghost" size="icon"
+              onClick={() => syncToTally(p)}
+              disabled={syncingId === p.id}
+              title="Sync this item to Tally"
+            >
+              {syncingId === p.id
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <RefreshCw className="h-4 w-4 text-emerald-600" />}
+            </Button>
+          )}
           <Button variant="ghost" size="icon" onClick={() => onEdit(p)} title={t('product.editProductTitle')}>
             <Pencil className="h-4 w-4" />
           </Button>

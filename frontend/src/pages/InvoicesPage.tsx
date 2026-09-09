@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useTallyEnabled } from '@/hooks/useTallyEnabled';
 import { toast } from 'sonner';
 import { wasSubmittedForApproval } from '@/lib/approvalGate';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
@@ -1708,7 +1709,8 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
       });
   }, [user?.role, isAdmin]);
 
-  const canTallySync = actionPerms.includes('tally_sync');
+  const tallyEnabled = useTallyEnabled();
+  const canTallySync = tallyEnabled && actionPerms.includes('tally_sync');
   const canEInvoice = actionPerms.includes('einvoice');
   const canRecordPayment = actionPerms.includes('record_payment');
   const canRevise = actionPerms.includes('create_revision');
@@ -2166,7 +2168,7 @@ export default function InvoicesPage({ defaultType = 'sale' }: InvoicesPageProps
             </>
           )}
         </div>
-        {someSelected && (
+        {someSelected && canTallySync && (
           <Button
             size="sm"
             className="bg-blue-600 hover:bg-blue-700 text-white gap-1.5 ml-auto"

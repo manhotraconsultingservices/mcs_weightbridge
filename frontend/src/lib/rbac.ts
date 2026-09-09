@@ -135,6 +135,7 @@ export const HUB_TABS: Record<string, { value: string; label: string }[]> = {
   '/crm': [
     { value: 'customers', label: 'Customers 360' },
     { value: 'suppliers', label: 'Suppliers 360' },
+    { value: 'master',    label: 'Party Master (add/edit)' },
   ],
   '/procurement': [
     { value: 'purchases', label: 'Purchase Invoices' },

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useTallyEnabled } from '@/hooks/useTallyEnabled';
 import { Plus, Search, Pencil, Loader2, ExternalLink, RefreshCw } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -58,6 +59,7 @@ interface PartyDialogProps {
 }
 
 function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
+  const tallyEnabled = useTallyEnabled();
   const { t } = useTranslation();
   const [form, setForm] = useState<PartyForm>({ ...EMPTY });
   const [saving, setSaving] = useState(false);
@@ -230,7 +232,8 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
             </div>
           </div>
 
-          {/* Tally Integration */}
+          {/* Tally Integration — only meaningful when Tally is switched on */}
+          {tallyEnabled && (
           <div className="border-t pt-4">
             <p className="text-sm font-medium mb-1">{t('party.tallyIntegration')}</p>
             <p className="text-xs text-muted-foreground mb-3">
@@ -246,6 +249,7 @@ function PartyDialog({ open, editing, onClose, onSaved }: PartyDialogProps) {
               />
             </div>
           </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -344,13 +348,7 @@ function PartiesTable({
   const { t } = useTranslation();
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<{ id: string; text: string; ok: boolean } | null>(null);
-  const [tallyEnabled, setTallyEnabled] = useState(false);
-
-  useEffect(() => {
-    api.get<{ is_enabled?: boolean }>('/api/v1/tally/config')
-      .then(({ data }) => setTallyEnabled(!!data?.is_enabled))
-      .catch(() => setTallyEnabled(false));
-  }, []);
+  const tallyEnabled = useTallyEnabled();
 
   async function syncToTally(p: Party) {
     setSyncingId(p.id); setSyncMsg(null);
@@ -453,16 +451,18 @@ function PartiesTable({
               {syncMsg.text}
             </span>
           )}
-          <Button
-            size="icon" variant="ghost"
-            onClick={() => syncToTally(p)}
-            disabled={syncingId === p.id || !tallyEnabled}
-            title={tallyEnabled ? 'Sync this master to Tally' : 'Enable Tally Integration in Settings → Tally to sync'}
-          >
-            {syncingId === p.id
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <RefreshCw className={`h-4 w-4 ${tallyEnabled ? 'text-emerald-600' : 'text-muted-foreground'}`} />}
-          </Button>
+          {tallyEnabled && (
+            <Button
+              size="icon" variant="ghost"
+              onClick={() => syncToTally(p)}
+              disabled={syncingId === p.id}
+              title="Sync this master to Tally"
+            >
+              {syncingId === p.id
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <RefreshCw className="h-4 w-4 text-emerald-600" />}
+            </Button>
+          )}
           <Button
             size="icon" variant="ghost"
             onClick={() => navigate(`/customers/${p.id}`)}

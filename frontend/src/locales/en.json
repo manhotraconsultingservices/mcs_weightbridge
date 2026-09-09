@@ -952,7 +952,8 @@
     },
     "crm": {
       "customers": "Customers",
-      "suppliers": "Suppliers"
+      "suppliers": "Suppliers",
+      "master": "Party Master"
     },
     "procurement": {
       "purchaseInvoices": "Purchase Invoices",
