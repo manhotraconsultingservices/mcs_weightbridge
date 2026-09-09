@@ -78,6 +78,18 @@ def _fmt_amt(v, sign: int = 1) -> str:
     return f"{sign * float(v):.2f}"
 
 
+def _current_company(rdesc, tally_company) -> None:
+    """Name the target company on a REQUESTDESC — only when one is configured.
+
+    With no name, STATICVARIABLES is omitted entirely so Tally imports into the
+    company that is currently open. Sending a name Tally does not have open fails
+    the whole import before a single voucher is read.
+    """
+    name = (tally_company or "").strip()
+    if name:
+        _sub(_sub(rdesc, "STATICVARIABLES"), "SVCURRENTCOMPANY", name)
+
+
 def _sub(parent, tag, text=""):
     el = ET.SubElement(parent, tag)
     if text is not None:
@@ -167,8 +179,7 @@ def _build_voucher_xml(
     imp = _sub(body, "IMPORTDATA")
     rdesc = _sub(imp, "REQUESTDESC")
     _sub(rdesc, "REPORTNAME", "Vouchers")
-    static = _sub(rdesc, "STATICVARIABLES")
-    _sub(static, "SVCURRENTCOMPANY", tally_company)
+    _current_company(rdesc, tally_company)
 
     rdata = _sub(imp, "REQUESTDATA")
     msg = _sub(rdata, "TALLYMESSAGE")
@@ -392,8 +403,7 @@ def _build_party_master_xml(
     imp = _sub(body, "IMPORTDATA")
     rdesc = _sub(imp, "REQUESTDESC")
     _sub(rdesc, "REPORTNAME", "All Masters")
-    static = _sub(rdesc, "STATICVARIABLES")
-    _sub(static, "SVCURRENTCOMPANY", tally_company)
+    _current_company(rdesc, tally_company)
 
     rdata = _sub(imp, "REQUESTDATA")
     msg = _sub(rdata, "TALLYMESSAGE")
@@ -442,7 +452,7 @@ def _build_party_master_xml(
 
 def build_customer_master_xml(party, company) -> str:
     """Build Tally XML to create a Customer master (Sundry Debtors)."""
-    tally_company = getattr(company, "tally_company_name", None) or company.name
+    tally_company = _tally_company_name(company)
     name = getattr(party, "tally_ledger_name", None) or party.name
     return _build_party_master_xml(
         party_name=name,
@@ -460,7 +470,7 @@ def build_customer_master_xml(party, company) -> str:
 
 def build_supplier_master_xml(party, company) -> str:
     """Build Tally XML to create a Supplier master (Sundry Creditors)."""
-    tally_company = getattr(company, "tally_company_name", None) or company.name
+    tally_company = _tally_company_name(company)
     name = getattr(party, "tally_ledger_name", None) or party.name
     return _build_party_master_xml(
         party_name=name,
@@ -483,13 +493,13 @@ def build_ledger_master_xml(name: str, parent: str, company, gst_duty_head: str 
     ``gst_duty_head`` = "Central Tax" / "State Tax" / "Integrated Tax" for GST
     ledgers (sets TAXTYPE=GST so TallyPrime treats them as tax ledgers).
     """
-    tally_company = getattr(company, "tally_company_name", None) or company.name
+    tally_company = _tally_company_name(company)
     root = ET.Element("ENVELOPE")
     _sub(_sub(root, "HEADER"), "TALLYREQUEST", "Import Data")
     imp = _sub(_sub(root, "BODY"), "IMPORTDATA")
     rdesc = _sub(imp, "REQUESTDESC")
     _sub(rdesc, "REPORTNAME", "All Masters")
-    _sub(_sub(rdesc, "STATICVARIABLES"), "SVCURRENTCOMPANY", tally_company)
+    _current_company(rdesc, tally_company)
     msg = _sub(_sub(imp, "REQUESTDATA"), "TALLYMESSAGE")
     msg.set("xmlns:UDF", "TallyUDF")
     led = _sub(msg, "LEDGER")
@@ -531,13 +541,13 @@ def gl_ledger_specs(ledgers: "TallyLedgerMap",
 
 def build_unit_xml(symbol: str, company, decimals: int = 3) -> str:
     """Build Tally XML to create a simple Unit of Measure (e.g. MT, Nos, Qtl)."""
-    tally_company = getattr(company, "tally_company_name", None) or company.name
+    tally_company = _tally_company_name(company)
     root = ET.Element("ENVELOPE")
     _sub(_sub(root, "HEADER"), "TALLYREQUEST", "Import Data")
     imp = _sub(_sub(root, "BODY"), "IMPORTDATA")
     rdesc = _sub(imp, "REQUESTDESC")
     _sub(rdesc, "REPORTNAME", "All Masters")
-    _sub(_sub(rdesc, "STATICVARIABLES"), "SVCURRENTCOMPANY", tally_company)
+    _current_company(rdesc, tally_company)
     msg = _sub(_sub(imp, "REQUESTDATA"), "TALLYMESSAGE")
     msg.set("xmlns:UDF", "TallyUDF")
     unit = _sub(msg, "UNIT")
@@ -567,7 +577,7 @@ def build_stock_item_xml(product, company, volume_unit: str = "CUM") -> str:
     volume item; ``tally_units.convert_line`` then maps every billed unit of that
     dimension onto it exactly. Both units must exist in Tally first.
     """
-    tally_company = getattr(company, "tally_company_name", None) or company.name
+    tally_company = _tally_company_name(company)
     name = getattr(product, "name", None) or "Item"
     unit = getattr(product, "unit", None) or "Nos"
     _hsn = (getattr(product, "hsn_code", None) or "").strip()
@@ -580,7 +590,7 @@ def build_stock_item_xml(product, company, volume_unit: str = "CUM") -> str:
     imp = _sub(_sub(root, "BODY"), "IMPORTDATA")
     rdesc = _sub(imp, "REQUESTDESC")
     _sub(rdesc, "REPORTNAME", "All Masters")
-    _sub(_sub(rdesc, "STATICVARIABLES"), "SVCURRENTCOMPANY", tally_company)
+    _current_company(rdesc, tally_company)
     msg = _sub(_sub(imp, "REQUESTDATA"), "TALLYMESSAGE")
     msg.set("xmlns:UDF", "TallyUDF")
     item = _sub(msg, "STOCKITEM")
@@ -634,7 +644,7 @@ def build_sales_order_xml(
     if ledgers is None:
         ledgers = TallyLedgerMap()
 
-    tally_company = getattr(company, "tally_company_name", None) or company.name
+    tally_company = _tally_company_name(company)
     party_name_str = getattr(party, "tally_ledger_name", None) or party.name if party else "Walk-in Customer"
     voucher_date = quotation.quotation_date
     voucher_no = quotation.quotation_no
@@ -655,8 +665,7 @@ def build_sales_order_xml(
     imp = _sub(body, "IMPORTDATA")
     rdesc = _sub(imp, "REQUESTDESC")
     _sub(rdesc, "REPORTNAME", "Vouchers")
-    static = _sub(rdesc, "STATICVARIABLES")
-    _sub(static, "SVCURRENTCOMPANY", tally_company)
+    _current_company(rdesc, tally_company)
 
     rdata = _sub(imp, "REQUESTDATA")
     msg = _sub(rdata, "TALLYMESSAGE")
@@ -779,8 +788,7 @@ def build_purchase_order_xml(
     imp = _sub(body, "IMPORTDATA")
     rdesc = _sub(imp, "REQUESTDESC")
     _sub(rdesc, "REPORTNAME", "Vouchers")
-    static = _sub(rdesc, "STATICVARIABLES")
-    _sub(static, "SVCURRENTCOMPANY", tally_company)
+    _current_company(rdesc, tally_company)
 
     rdata = _sub(imp, "REQUESTDATA")
     msg = _sub(rdata, "TALLYMESSAGE")
@@ -1088,8 +1096,25 @@ def _place_of_supply(party) -> str | None:
     return None
 
 
+def _tally_company_name(company) -> str:
+    """The company name Tally should file this document under — or "" for none.
+
+    Deliberately does NOT fall back to the app's own ``company.name``. Tally rejects
+    the ENTIRE import with "Could not set 'SVCurrentCompany'" when the name is not a
+    company it has open, and the client's Tally company is very rarely spelled the
+    way the app's company is. Blank means "whichever company is open in Tally",
+    which is what a single-company site wants and is far likelier to succeed than a
+    guess (see _current_company).
+
+    The value is stamped onto the Company instance by ``routers.tally._get_company``
+    from ``tally_config.tally_company_name`` — the column lives on TallyConfig, not
+    on Company, so reading it here without that stamp silently yields nothing.
+    """
+    return (getattr(company, "tally_company_name", None) or "").strip()
+
+
 def _tally_company(invoice, company) -> str:
-    return getattr(company, "tally_company_name", None) or company.name
+    return _tally_company_name(company)
 
 
 def _fmt_rate(rate) -> str:

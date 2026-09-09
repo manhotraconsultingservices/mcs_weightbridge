@@ -146,7 +146,27 @@ async def _get_config(db: AsyncSession, company_id: uuid.UUID) -> TallyConfig:
 
 
 async def _get_company(db: AsyncSession, company_id: uuid.UUID) -> Company:
-    return (await db.execute(select(Company).where(Company.id == company_id))).scalar_one()
+    """The company, stamped with the Tally company its documents file under.
+
+    ``tally_company_name`` is a column on **TallyConfig**, but every XML builder
+    reads it off the Company object — so without this stamp the Settings → Tally
+    "Tally company name" field never reached a single voucher and the builders
+    silently fell back to the app's own company name. Since the client's Tally
+    company is rarely spelled the same, Tally rejected the whole import with
+    "Could not set 'SVCurrentCompany'".
+
+    Stamped here rather than at each of the ten call sites so every builder, and
+    the connector's rebuild-on-retry path, pick it up. The attribute is unmapped,
+    so SQLAlchemy never persists it.
+    """
+    company = (await db.execute(select(Company).where(Company.id == company_id))).scalar_one()
+    configured = (await db.execute(
+        select(TallyConfig.tally_company_name).where(TallyConfig.company_id == company_id)
+    )).scalar_one_or_none()
+    # Blank stays blank: the builders then omit SVCURRENTCOMPANY so Tally imports
+    # into whichever company is open. Never guess with company.name.
+    company.tally_company_name = (configured or "").strip() or None
+    return company
 
 
 async def _allow_non_gst(db: AsyncSession, company_id: uuid.UUID) -> bool:
@@ -326,7 +346,27 @@ async def _build_invoice_xml(
     )
 
 
-def _merge_voucher_xmls(xmls: list[str]) -> str:
+def _tally_cfg_company(cfg, company=None) -> str:
+    """The configured Tally company name — "" when unset (never the app's name)."""
+    return (getattr(cfg, "tally_company_name", None) or "").strip()
+
+
+def _static_vars(tally_company: str | None) -> str:
+    """The STATICVARIABLES block for a re-built envelope, or "" when unnamed.
+
+    A merge discards the source envelopes and writes a new one, so without this the
+    company name the individual builders set is silently dropped — masters would
+    import into whichever company happens to be open while vouchers targeted the
+    configured one. Blank stays blank (see xml_builder._current_company).
+    """
+    name = (tally_company or "").strip()
+    if not name:
+        return ""
+    from xml.sax.saxutils import escape
+    return f"<STATICVARIABLES><SVCURRENTCOMPANY>{escape(name)}</SVCURRENTCOMPANY></STATICVARIABLES>"
+
+
+def _merge_voucher_xmls(xmls: list[str], tally_company: str | None = None) -> str:
     """Bundle N single-voucher ENVELOPEs into one importable Tally ENVELOPE by
     collecting their TALLYMESSAGE blocks under one REQUESTDATA (REPORTNAME=Vouchers).
     """
@@ -343,13 +383,13 @@ def _merge_voucher_xmls(xmls: list[str]) -> str:
     return (
         '<ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>'
         '<BODY><IMPORTDATA>'
-        '<REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME></REQUESTDESC>'
+        f'<REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME>{_static_vars(tally_company)}</REQUESTDESC>'
         f'<REQUESTDATA>{body}</REQUESTDATA>'
         '</IMPORTDATA></BODY></ENVELOPE>'
     )
 
 
-def _merge_master_xmls(xmls: list[str]) -> str:
+def _merge_master_xmls(xmls: list[str], tally_company: str | None = None) -> str:
     """Bundle N master ENVELOPEs into one importable Tally 'All Masters' ENVELOPE.
 
     Order is preserved, so a Unit master can precede the Stock Item that
@@ -368,7 +408,7 @@ def _merge_master_xmls(xmls: list[str]) -> str:
     return (
         '<ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>'
         '<BODY><IMPORTDATA>'
-        '<REQUESTDESC><REPORTNAME>All Masters</REPORTNAME></REQUESTDESC>'
+        f'<REQUESTDESC><REPORTNAME>All Masters</REPORTNAME>{_static_vars(tally_company)}</REQUESTDESC>'
         f'<REQUESTDATA>{body}</REQUESTDATA>'
         '</IMPORTDATA></BODY></ENVELOPE>'
     )
@@ -766,7 +806,8 @@ async def sync_product_to_tally(
     _units = [unit] + ([_alt[0]] if _alt and _alt[0].upper() != unit.upper() else [])
     xml = _merge_master_xmls(
         [build_unit_xml(u, company) for u in _units]
-        + [build_stock_item_xml(product, company, volume_unit=vol_unit)]
+        + [build_stock_item_xml(product, company, volume_unit=vol_unit)],
+        tally_company=_tally_cfg_company(cfg, company),
     )
 
     company_name = cfg.tally_company_name or getattr(company, "name", "") or ""
@@ -827,7 +868,8 @@ async def sync_ledgers_to_tally(
     xml = _merge_master_xmls(
         [build_unit_xml(u, company) for u in unit_syms]
         + [build_ledger_master_xml(n, parent, company, gst_duty_head=duty)
-           for (n, parent, duty) in specs]
+           for (n, parent, duty) in specs],
+        tally_company=_tally_cfg_company(cfg, company),
     )
     company_name = cfg.tally_company_name or getattr(company, "name", "") or ""
     eid = uuid.uuid5(uuid.NAMESPACE_URL, f"tally-ledgers:{current_user.company_id}")
@@ -1155,7 +1197,7 @@ async def export_vouchers_xml(
         x, _err = await _build_invoice_xml(inv, company, cfg, db)
         if x:
             xmls.append(x)
-    merged = _merge_voucher_xmls(xmls)
+    merged = _merge_voucher_xmls(xmls, _tally_cfg_company(cfg, company))
     fname = f"tally-vouchers-{datetime.now().strftime('%Y%m%d')}.xml"
     return Response(
         content=merged, media_type="application/xml",

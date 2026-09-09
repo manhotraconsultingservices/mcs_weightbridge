@@ -56,7 +56,18 @@ async def connector_ping(payload: dict[str, Any]):
         dead = (await db.execute(text(
             "SELECT count(*) FROM tally_sync_jobs WHERE status='dead'"
         ))).scalar()
-    return {"ok": True, "pending": int(pending or 0), "dead": int(dead or 0)}
+        # The name every voucher will carry as SVCURRENTCOMPANY. The connector
+        # compares it with the companies its Tally actually has open — a mismatch
+        # rejects every import, and reachability alone never reveals it.
+        company = (await db.execute(text(
+            "SELECT tally_company_name FROM tally_config LIMIT 1"
+        ))).scalar()
+    return {
+        "ok": True,
+        "pending": int(pending or 0),
+        "dead": int(dead or 0),
+        "tally_company": (company or "").strip(),
+    }
 
 
 @router.post("/jobs/claim")
