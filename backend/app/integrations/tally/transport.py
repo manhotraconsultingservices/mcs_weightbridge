@@ -56,7 +56,8 @@ class DirectTransport:
 
     async def dispatch(self, *, entity_type: str, entity_id: uuid.UUID,
                        company_name: str, xml: str, idempotency_key: str,
-                       db: AsyncSession) -> TallyDispatchResult:
+                       db: AsyncSession, actor_id=None, actor_name: str | None = None,
+                       ) -> TallyDispatchResult:
         client = TallyClient(
             host=self.cfg.host or "localhost",
             port=self.cfg.port or 9002,
@@ -72,7 +73,8 @@ class RelayTransport:
 
     async def dispatch(self, *, entity_type: str, entity_id: uuid.UUID,
                        company_name: str, xml: str, idempotency_key: str,
-                       db: AsyncSession) -> TallyDispatchResult:
+                       db: AsyncSession, actor_id=None, actor_name: str | None = None,
+                       ) -> TallyDispatchResult:
         from app.models.tally_job import TallySyncJob
 
         now = datetime.now(timezone.utc)
@@ -90,6 +92,8 @@ class RelayTransport:
                 priority=priority,
                 company_name=company_name or None,
                 xml=xml,
+                created_by=actor_id,
+                created_by_name=actor_name,
                 status="pending",
                 attempts=0,
                 next_attempt_at=now,
@@ -100,6 +104,9 @@ class RelayTransport:
                     status="pending",
                     attempts=0,
                     xml=xml,
+                    # a re-push is attributable to whoever pushed it THIS time
+                    created_by=actor_id,
+                    created_by_name=actor_name,
                     priority=priority,
                     company_name=company_name or None,
                     next_attempt_at=now,

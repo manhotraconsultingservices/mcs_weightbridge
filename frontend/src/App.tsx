@@ -44,6 +44,7 @@ import VehiclesPage from '@/pages/VehiclesPage';
 import VehicleHistoryPage from '@/pages/VehicleHistoryPage';
 import InvoiceDrilldownPage from '@/pages/InvoiceDrilldownPage';
 import TallySyncLogPage from '@/pages/TallySyncLogPage';
+import TallyHubPage from '@/pages/TallyHubPage';
 import FuelMileagePage from '@/pages/FuelMileagePage';
 import WorkforcePage from '@/pages/WorkforcePage';
 import DeviceHealthPage from '@/pages/DeviceHealthPage';
@@ -244,6 +245,7 @@ function AppLayout({ user, logout }: { user: User; logout: () => void }) {
             <Route path="/invoices" element={<InvoicesPage defaultType="sale" />} />
             <Route path="/purchase-invoices" element={<InvoicesPage defaultType="purchase" />} />
             <Route path="/invoices/:id/detail" element={<InvoiceDrilldownPage />} />
+            <Route path="/tally" element={<TallyHubPage />} />
             <Route path="/tally-log" element={<TallySyncLogPage />} />
             <Route path="/quotations" element={<QuotationsPage />} />
             <Route path="/delivery-challans" element={<DeliveryChallansPage />} />

@@ -69,6 +69,7 @@ export const CATALOGUE_GROUPS: CatalogueGroup[] = [
       { path: '/compliance',      label: 'Compliance',        hint: 'Insurance / License / Permit tracker' },
       { path: '/gst-compliance',  label: 'GST & Compliance',  hint: 'GSTR-1 / 3B / 2B · Compliance Docs' },
       { path: '/analytics',       label: 'Analytics',         hint: 'P&L · Sales by Status · GST Split · Write-offs' },
+      { path: '/tally',           label: 'Tally',             hint: 'Sync Log · Pending — hidden unless Tally is enabled in Settings' },
       { path: '/fraud-registers', label: 'Fraud & Registers', hint: 'Anomaly Detection · Gate Pass Register · Token Register' },
     ],
   },
@@ -109,6 +110,7 @@ export const HUB_CHILDREN: Record<string, string[]> = {
   '/accounts':        ['/payments', '/ledger', '/audit', '/party-balances', '/advances', '/statutory-dues'],
   '/gst-compliance':  ['/gst-reports', '/compliance'],
   '/analytics':       ['/reports', '/reports-classic'],
+  '/tally':           ['/tally-log'],
   '/fraud-registers': ['/reports', '/reports-classic'],
 };
 
@@ -163,6 +165,10 @@ export const HUB_TABS: Record<string, { value: string; label: string }[]> = {
     { value: 'attendance', label: 'Attendance' },
     { value: 'payments',   label: 'Payments' },
     { value: 'summary',    label: 'Payroll' },
+  ],
+  '/tally': [
+    { value: 'log',     label: 'Sync Log' },
+    { value: 'pending', label: 'Pending' },
   ],
   '/accounts': [
     { value: 'payments',  label: 'Payments' },

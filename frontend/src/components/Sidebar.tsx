@@ -16,8 +16,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  Activity, Bell, BookOpen, Building2, Camera, Car, Cog, DoorOpen, Factory, FileBarChart, FileCheck2, FileText, Fuel, Handshake, HardDrive, HardHat, ImageIcon, IndianRupee, LayoutDashboard, Lock, LogOut, Package, Scale, Settings, ShieldAlert, ShieldCheck, ShoppingCart, Tags, TrendingUp, Truck, Upload, Usb, UserCog, Users, Wallet,
-} from 'lucide-react';
+  Activity, Bell, BookOpen, Building2, Camera, Car, Cog, DoorOpen, Factory, FileBarChart, FileCheck2, FileText, Fuel, Handshake, HardDrive, HardHat, ImageIcon, IndianRupee, LayoutDashboard, Lock, LogOut, Package, Scale, Settings, ShieldAlert, ShieldCheck, ShoppingCart, Tags, TrendingUp, Truck, Upload, Usb, UserCog, Users, Wallet, ClipboardList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getTenantModules, getTenantAdminRestrictions } from '@/hooks/useAuth';
 import LanguageToggle from '@/components/LanguageToggle';
@@ -41,6 +40,7 @@ const HUB_MODULES: Record<string, string[]> = {
   '/procurement':   ['invoicing'],
   '/production-hub': ['production'],
   '/accounts':      ['payments', 'gst_reports', 'compliance'],
+  '/tally':         ['tally_sync'],
   '/compliance':    ['compliance'],
   '/gst-compliance': ['gst_reports', 'compliance'],
   '/analytics':     ['reports'],
@@ -101,6 +101,7 @@ const NAV_SECTIONS: NavSection[] = [
     headerKey: 'sidebar.sectionFinance',
     items: [
       { to: '/accounts',        icon: BookOpen,     labelKey: 'sidebar.accounts' },
+      { to: '/tally',           icon: ClipboardList, labelKey: 'sidebar.tally' },
       { to: '/reports?tab=eod', icon: Wallet,       labelKey: 'sidebar.dayBook', permKey: '/analytics' },
       { to: '/workforce',       icon: HardHat,      labelKey: 'sidebar.workforce' },
       { to: '/compliance',      icon: FileCheck2,   labelKey: 'sidebar.compliance' },

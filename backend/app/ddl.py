@@ -463,6 +463,8 @@ def get_column_migrations() -> list[str]:
         "ALTER TABLE tally_config ADD COLUMN IF NOT EXISTS ledger_tcs VARCHAR(100) NOT NULL DEFAULT 'TCS Payable'",
         "ALTER TABLE tally_config ADD COLUMN IF NOT EXISTS ledger_roundoff VARCHAR(100) NOT NULL DEFAULT 'Round Off'",
         "ALTER TABLE tally_config ADD COLUMN IF NOT EXISTS accounting_only BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE tally_sync_jobs ADD COLUMN IF NOT EXISTS created_by UUID",
+        "ALTER TABLE tally_sync_jobs ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(120)",
         "ALTER TABLE tally_config ADD COLUMN IF NOT EXISTS sync_non_gst BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE tally_config ADD COLUMN IF NOT EXISTS volume_unit VARCHAR(10)",
         "ALTER TABLE tally_config ADD COLUMN IF NOT EXISTS narration_vehicle BOOLEAN NOT NULL DEFAULT TRUE",

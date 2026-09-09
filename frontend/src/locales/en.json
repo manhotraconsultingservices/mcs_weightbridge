@@ -98,7 +98,8 @@
     "dayBook": "Day Book",
     "fraudRegisters": "Fraud & Registers",
     "compliance": "Compliance",
-    "openGatePasses": "Vehicles Still Inside"
+    "openGatePasses": "Vehicles Still Inside",
+    "tally": "Tally"
   },
   "token": {
     "title": "Trips / Gate Register",

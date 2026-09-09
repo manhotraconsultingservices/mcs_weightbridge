@@ -29,6 +29,7 @@ interface LogRow {
   attempts: number;
   reason: string | null;
   tally_company: string | null;
+  pushed_by: string | null;
   created_at: string | null;
   completed_at: string | null;
   next_attempt_at: string | null;
@@ -115,6 +116,10 @@ export default function TallySyncLogPage() {
     {
       key: 'reason', label: 'Tally said', accessor: r => r.reason ?? '',
       format: v => v ? <span className="text-rose-600 text-xs">{String(v)}</span> : <span className="text-muted-foreground">—</span>,
+    },
+    {
+      key: 'pushed_by', label: 'Pushed by', accessor: r => r.pushed_by ?? '',
+      format: v => v ? String(v) : <span className="text-muted-foreground">—</span>,
     },
     { key: 'attempts', label: 'Tries', type: 'number', align: 'right', accessor: r => r.attempts },
     {

@@ -670,7 +670,7 @@ function WeightScaleTab() {
   const selectedProto = protocols.find(p => p.id === cfg.protocol);
 
   return (
-    <div className="space-y-5 max-w-2xl">
+    <div className="space-y-5 max-w-2xl xl:max-w-[1500px]">
       {/* Auto-detect banner */}
       <Card className="border-blue-200 bg-blue-50">
         <CardContent className="pt-4 pb-3">
@@ -1407,7 +1407,8 @@ function TallyTab() {
       )}
 
       {/* Enable toggle */}
-      <Card>
+      <div className="space-y-5 xl:space-y-0 xl:columns-2 xl:gap-5">
+      <Card className="break-inside-avoid xl:mb-5">
         <CardContent className="pt-4 space-y-4">
           <div className="flex items-center justify-between">
             <div>
@@ -1488,7 +1489,7 @@ function TallyTab() {
       </Card>
 
       {/* Ledger Name Mapping */}
-      <Card>
+      <Card className="break-inside-avoid xl:mb-5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold">Ledger Name Mapping</CardTitle>
           <p className="text-xs text-muted-foreground">These names must match the ledger names in your Tally company exactly (case-sensitive).</p>
@@ -1536,7 +1537,7 @@ function TallyTab() {
       </Card>
 
       {/* Narration Options */}
-      <Card>
+      <Card className="break-inside-avoid xl:mb-5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold">Narration Options</CardTitle>
           <p className="text-xs text-muted-foreground">Choose what information appears in the Tally voucher narration field.</p>
@@ -1566,7 +1567,7 @@ function TallyTab() {
       </Card>
 
       {/* Export format */}
-      <Card>
+      <Card className="break-inside-avoid xl:mb-5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold">Export Format</CardTitle>
           <p className="text-xs text-muted-foreground">How invoices are written to Tally.</p>
@@ -1604,7 +1605,7 @@ function TallyTab() {
       </Card>
 
       {/* Units — Tally holds ONE alternate unit per stock item */}
-      <Card>
+      <Card className="break-inside-avoid xl:mb-5">
         <CardHeader>
           <CardTitle className="text-base">Units in Tally</CardTitle>
           <p className="text-xs text-muted-foreground">
@@ -1637,7 +1638,7 @@ function TallyTab() {
       </Card>
 
       {/* One-time ledger setup — creates the GL ledgers Tally needs for vouchers */}
-      <Card>
+      <Card className="break-inside-avoid xl:mb-5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <RefreshCw className="h-4 w-4" /> Create Tally ledgers (run once)
@@ -1659,7 +1660,7 @@ function TallyTab() {
       </Card>
 
       {/* Did it actually land? Tally's own verdict, per record. */}
-      <Card>
+      <Card className="break-inside-avoid xl:mb-5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <ClipboardList className="h-4 w-4" /> Sync log
@@ -1677,7 +1678,7 @@ function TallyTab() {
       </Card>
 
       {/* Tier-0 manual export — works in any mode, no connector needed */}
-      <Card>
+      <Card className="break-inside-avoid xl:mb-5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <Download className="h-4 w-4" /> Manual export (no connector)
@@ -1694,6 +1695,7 @@ function TallyTab() {
           </Button>
         </CardContent>
       </Card>
+      </div>
 
       {/* Test + Save */}
       <div className="flex gap-2 flex-wrap">

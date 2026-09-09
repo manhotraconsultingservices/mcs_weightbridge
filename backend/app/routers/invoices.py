@@ -1749,6 +1749,8 @@ async def finalise_invoice(
                 if _invoice_matches_prefix(inv.invoice_no, getattr(_tcfg, "sync_invoice_prefix", None)):
                     background_tasks.add_task(
                         _auto_sync_tally_bg, co.id, invoice_id, _bg_tenant,
+                        current_user.id,
+                        f"Auto-sync · {current_user.full_name or current_user.username}",
                     )
         except Exception:
             pass
@@ -2070,6 +2072,8 @@ async def _auto_sync_tally_bg(
     company_id: uuid.UUID,
     invoice_id: uuid.UUID,
     tenant_slug: str | None = None,
+    actor_id: uuid.UUID | None = None,
+    actor_name: str | None = None,
 ) -> None:
     """GAP-1 — background-task wrapper that pushes a finalised GST invoice to Tally.
 
@@ -2115,7 +2119,13 @@ async def _auto_sync_tally_bg(
             )).scalar_one_or_none()
             if company is None:
                 return
-            success, message = await _push_invoice(inv, company, db)
+            # Attribute the automatic push to whoever finalised the invoice —
+            # plain values, not an ORM object, since this runs in its own session.
+            _actor = None
+            if actor_id or actor_name:
+                from types import SimpleNamespace as _SNS
+                _actor = _SNS(id=actor_id, full_name=actor_name, username=None)
+            success, message = await _push_invoice(inv, company, db, _actor)
             await db.commit()
             if not success:
                 _logging.getLogger(__name__).warning(

@@ -45,6 +45,11 @@ class TallySyncJob(Base):
     claim_token: Mapped[str | None] = mapped_column(String(64))
     claimed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Who sent it. Denormalised name so the log still reads correctly after a
+    # user is renamed or deactivated; None = pushed automatically on finalise.
+    created_by: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    created_by_name: Mapped[str | None] = mapped_column(String(120))
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     picked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

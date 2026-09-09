@@ -31,7 +31,9 @@ async def _ensure_schema(db: AsyncSession) -> None:
         if "tally_sync_jobs" in stmt:
             await db.execute(text(stmt))
     for stmt in get_column_migrations():
-        if "tally_config" in stmt and "mode" in stmt:
+        # every Tally column migration — a dev DB predating any of them would
+        # otherwise fail here rather than in the code under test
+        if ("tally_config" in stmt and "mode" in stmt) or "tally_sync_jobs" in stmt:
             await db.execute(text(stmt))
     await db.commit()
 

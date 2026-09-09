@@ -231,6 +231,14 @@ def _prefix_sql_clause(raw_prefix: str | None):
     return _or(*[Invoice.invoice_no.ilike(f"{p}%") for p in prefixes])
 
 
+def _actor(user) -> tuple[object | None, str | None]:
+    """Who to record as having pushed this. None = an automatic push."""
+    if user is None:
+        return None, None
+    name = (getattr(user, "full_name", None) or getattr(user, "username", None) or "").strip()
+    return getattr(user, "id", None), (name or None)
+
+
 async def _dispatch_xml(
     cfg: TallyConfig,
     entity_type: str,
@@ -238,6 +246,7 @@ async def _dispatch_xml(
     company_name: str,
     xml: str,
     db: AsyncSession,
+    actor=None,
 ) -> tuple[bool, str, bool]:
     """Send the built XML via the tenant's configured transport.
 
@@ -248,10 +257,13 @@ async def _dispatch_xml(
     The single seam shared by manual, bulk, and auto-sync.
     """
     from app.integrations.tally.transport import get_transport
+    actor_id, actor_name = _actor(actor)
     result = await get_transport(cfg).dispatch(
         entity_type=entity_type,
         entity_id=entity_id,
         company_name=company_name,
+        actor_id=actor_id,
+        actor_name=actor_name,
         xml=xml,
         idempotency_key=f"{entity_type}:{entity_id}",
         db=db,
@@ -418,8 +430,13 @@ async def _push_invoice(
     invoice: Invoice,
     company: Company,
     db: AsyncSession,
+    actor=None,
 ) -> tuple[bool, str]:
-    """Build XML and push to Tally. Updates tally_synced on the invoice."""
+    """Build XML and push to Tally. Updates tally_synced on the invoice.
+
+    ``actor`` is the person who pushed it, recorded on the queued job so the sync
+    log can say who sent each record; None means it went automatically on finalise.
+    """
     # Ensure company has tally config
     cfg_result = await db.execute(
         select(TallyConfig).where(TallyConfig.company_id == company.id)
@@ -444,7 +461,7 @@ async def _push_invoice(
 
     # Dispatch via the configured transport (direct push, or relay queue in SaaS)
     company_name = cfg.tally_company_name or getattr(company, "name", "") or ""
-    op_ok, message, synced = await _dispatch_xml(cfg, "invoice", invoice.id, company_name, xml, db)
+    op_ok, message, synced = await _dispatch_xml(cfg, "invoice", invoice.id, company_name, xml, db, actor)
 
     # In relay mode `synced` is False (stays in /tally/pending until the
     # connector confirms); in direct mode it reflects the Tally result.
@@ -629,7 +646,8 @@ async def tally_sync_log(
 
     rows = (await db.execute(text(
         f"SELECT j.id, j.entity_type, {label} AS label, j.status, j.attempts, "
-        f"j.last_error, j.company_name, j.created_at, j.completed_at, j.next_attempt_at "
+        f"j.last_error, j.company_name, j.created_at, j.completed_at, j.next_attempt_at, "
+        f"j.created_by_name "
         f"{joins}{clause} ORDER BY COALESCE(j.completed_at, j.created_at) DESC "
         f"LIMIT :lim OFFSET :off"
     ), params)).fetchall()
@@ -663,6 +681,7 @@ async def tally_sync_log(
                 "attempts": r.attempts,
                 "reason": r.last_error,
                 "tally_company": r.company_name,
+                "pushed_by": r.created_by_name,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "completed_at": r.completed_at.isoformat() if r.completed_at else None,
                 "next_attempt_at": r.next_attempt_at.isoformat() if r.next_attempt_at else None,
@@ -747,7 +766,7 @@ async def sync_invoice_to_tally(
         )
 
     company = await _get_company(db, current_user.company_id)
-    success, message = await _push_invoice(invoice, company, db)
+    success, message = await _push_invoice(invoice, company, db, current_user)
     await db.commit()
 
     return {
@@ -891,7 +910,7 @@ async def sync_party_to_tally(
     xml = await _party_master_xml(db, party, company)
 
     company_name = cfg.tally_company_name or getattr(company, "name", "") or ""
-    op_ok, message, synced = await _dispatch_xml(cfg, "party", party.id, company_name, xml, db)
+    op_ok, message, synced = await _dispatch_xml(cfg, "party", party.id, company_name, xml, db, current_user)
 
     party.tally_synced = synced
     party.tally_sync_at = datetime.now(timezone.utc)
@@ -948,7 +967,7 @@ async def sync_product_to_tally(
     )
 
     company_name = cfg.tally_company_name or getattr(company, "name", "") or ""
-    op_ok, message, _synced = await _dispatch_xml(cfg, "product", product.id, company_name, xml, db)
+    op_ok, message, _synced = await _dispatch_xml(cfg, "product", product.id, company_name, xml, db, current_user)
     await db.commit()   # persist the relay job (no-op in direct mode)
 
     return {
@@ -1010,7 +1029,7 @@ async def sync_ledgers_to_tally(
     )
     company_name = cfg.tally_company_name or getattr(company, "name", "") or ""
     eid = uuid.uuid5(uuid.NAMESPACE_URL, f"tally-ledgers:{current_user.company_id}")
-    op_ok, message, _synced = await _dispatch_xml(cfg, "ledger", eid, company_name, xml, db)
+    op_ok, message, _synced = await _dispatch_xml(cfg, "ledger", eid, company_name, xml, db, current_user)
     await db.commit()
     return {"success": op_ok, "message": message,
             "ledgers": [n for (n, _, _) in specs], "units": unit_syms}
@@ -1049,7 +1068,7 @@ async def bulk_sync_parties_to_tally(
     for party in parties:
         xml = await _party_master_xml(db, party, company)
 
-        op_ok, message, synced = await _dispatch_xml(cfg, "party", party.id, company_name, xml, db)
+        op_ok, message, synced = await _dispatch_xml(cfg, "party", party.id, company_name, xml, db, current_user)
         party.tally_synced = synced
         party.tally_sync_at = datetime.now(timezone.utc)
         results.append({
@@ -1117,7 +1136,7 @@ async def sync_sales_order_to_tally(
 
     xml = build_sales_order_xml(quotation, company, party, ledger_map)
     company_name = cfg.tally_company_name or getattr(company, "name", "") or ""
-    op_ok, message, synced = await _dispatch_xml(cfg, "sales_order", quotation.id, company_name, xml, db)
+    op_ok, message, synced = await _dispatch_xml(cfg, "sales_order", quotation.id, company_name, xml, db, current_user)
 
     quotation.tally_synced = synced
     quotation.tally_sync_at = datetime.now(timezone.utc)
@@ -1169,7 +1188,7 @@ async def sync_purchase_order_to_tally(
 
     xml = build_purchase_order_xml(po, po_items, tally_company, ledger_map)
     company_name = cfg.tally_company_name or tally_company or ""
-    op_ok, message, synced = await _dispatch_xml(cfg, "purchase_order", po.id, company_name, xml, db)
+    op_ok, message, synced = await _dispatch_xml(cfg, "purchase_order", po.id, company_name, xml, db, current_user)
 
     po.tally_synced = synced
     po.tally_sync_at = datetime.now(timezone.utc)
@@ -1228,7 +1247,7 @@ async def bulk_sync_to_tally(
     failed = 0
 
     for inv in invoices:
-        success, message = await _push_invoice(inv, company, db)
+        success, message = await _push_invoice(inv, company, db, current_user)
         results.append(SyncResult(
             invoice_id=str(inv.id),
             invoice_no=inv.invoice_no,
