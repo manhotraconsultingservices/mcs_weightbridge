@@ -17,6 +17,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from decimal import Decimal
 from sqlalchemy import select, and_, text
 from sqlalchemy.orm import selectinload
 
@@ -35,6 +36,7 @@ from app.integrations.tally.xml_builder import (
     build_credit_note_xml, build_debit_note_xml,
     build_customer_master_xml, build_supplier_master_xml,
     build_stock_item_xml, build_unit_xml,
+    build_stock_journal_xml,
     build_ledger_master_xml, gl_ledger_specs,
     build_sales_order_xml, build_purchase_order_xml,
     TallyLedgerMap, NarrationOptions,
@@ -74,6 +76,10 @@ class TallyConfigIn(BaseModel):
     accounting_only: bool = False
     # Also sync non-GST (Bill of Supply) invoices to Tally.
     sync_non_gst: bool = False
+    # Inventory vouchers: the Tally godown stock posts to, and whether items
+    # are batched. Both must match the Tally company exactly.
+    godown_name: Optional[str] = None
+    use_batches: bool = False
     # Volume unit Tally stock items carry as their alternate unit (CUM default).
     volume_unit: Optional[str] = None
     # Invoice-number prefix filter (comma-separated; blank = sync all). Only
@@ -107,6 +113,10 @@ class TallyConfigOut(BaseModel):
     narration_weight: bool
     accounting_only: bool = False
     sync_non_gst: bool = False
+    # Inventory vouchers: the Tally godown stock posts to, and whether items
+    # are batched. Both must match the Tally company exactly.
+    godown_name: Optional[str] = None
+    use_batches: bool = False
     volume_unit: Optional[str] = None
     sync_invoice_prefix: Optional[str] = None
     mode: Optional[str] = None
@@ -335,12 +345,15 @@ async def _build_invoice_xml(
     )
     acct_only = bool(getattr(cfg, "accounting_only", False))
     vol_unit = tally_units.canonical_volume_unit(cfg)
+    godown, batch_name = _stock_location(cfg)
     if invoice.invoice_type == "sale":
         return build_sales_xml(invoice, company, party, ledger_map, narration_opts,
-                               accounting_only=acct_only, volume_unit=vol_unit), ""
+                               accounting_only=acct_only, volume_unit=vol_unit,
+                               godown=godown, batch_name=batch_name), ""
     if invoice.invoice_type == "purchase":
         return build_purchase_xml(invoice, company, party, ledger_map, narration_opts,
-                                  accounting_only=acct_only, volume_unit=vol_unit), ""
+                                  accounting_only=acct_only, volume_unit=vol_unit,
+                                  godown=godown, batch_name=batch_name), ""
     if invoice.invoice_type in ("credit_note", "debit_note"):
         # Settle the note "Agst Ref" the original invoice number (GSTR-1 CDNR link).
         ref_no = None
@@ -351,7 +364,7 @@ async def _build_invoice_xml(
         builder = build_credit_note_xml if invoice.invoice_type == "credit_note" else build_debit_note_xml
         return builder(invoice, company, party, ledger_map, narration_opts,
                        reference_invoice_no=ref_no, accounting_only=acct_only,
-                       volume_unit=vol_unit), ""
+                       volume_unit=vol_unit, godown=godown, batch_name=batch_name), ""
     return None, (
         f"Invoice type '{invoice.invoice_type}' cannot be exported to Tally. "
         "Only sale, purchase, credit_note and debit_note are supported."
@@ -476,6 +489,17 @@ async def _push_invoice(
 # Routes
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _stock_location(cfg) -> tuple[str, str | None]:
+    """The godown every stock line posts to, and a batch name only when enabled.
+
+    Both must match the Tally company exactly: an unknown godown, or a batch on
+    an item that has no batching, rejects the whole voucher.
+    """
+    godown = (getattr(cfg, "godown_name", None) or "").strip() or "Main Location"
+    batch = "Primary Batch" if getattr(cfg, "use_batches", False) else None
+    return godown, batch
+
+
 def _effective_mode(cfg) -> str:
     """Resolved transport mode ('direct'|'relay'). Imported lazily like the
     transport itself, so this router never imports the queue at module load."""
@@ -534,6 +558,8 @@ async def update_tally_config(
     cfg.narration_weight = payload.narration_weight
     cfg.accounting_only = payload.accounting_only
     cfg.sync_non_gst = payload.sync_non_gst
+    cfg.godown_name = (payload.godown_name or "").strip() or None
+    cfg.use_batches = payload.use_batches
     _vu = (payload.volume_unit or "").strip().upper()
     cfg.volume_unit = _vu if _vu in VOLUME_UNITS else None
     # Invoice prefix filter — normalise blank → NULL (means "sync all")
@@ -581,6 +607,140 @@ async def list_tally_companies(
     client = _make_client(cfg)
     ok, companies = await client.get_companies()
     return {"success": ok, "companies": companies}
+
+
+@router.post("/sync/production-cycle/{cycle_id}")
+async def sync_production_cycle_to_tally(
+    cycle_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Push one production cycle to Tally as a Stock Journal.
+
+    This is the inflow side of inventory. A sale takes stock OUT of Tally, but a
+    crusher's finished goods are manufactured, not bought — without this the
+    stock only ever falls and Tally goes permanently negative.
+    """
+    from app.models.production import ProductionCycle, ProductionCycleOutput
+
+    cfg = await _get_config(db, current_user.company_id)
+    if not cfg or not cfg.is_enabled:
+        raise HTTPException(400, "Tally integration is not enabled. Enable it in Tally → Setup & Mapping.")
+    if getattr(cfg, "accounting_only", False):
+        raise HTTPException(
+            400,
+            "Accounting-only mode is on, so no stock moves in Tally. Turn it off in "
+            "Tally → Setup & Mapping to send inventory.",
+        )
+
+    cycle = (await db.execute(select(ProductionCycle).where(
+        ProductionCycle.id == cycle_id,
+        ProductionCycle.company_id == current_user.company_id,
+    ))).scalar_one_or_none()
+    if not cycle:
+        raise HTTPException(404, "Production cycle not found")
+
+    outputs = (await db.execute(select(ProductionCycleOutput).where(
+        ProductionCycleOutput.cycle_id == cycle.id))).scalars().all()
+
+    # Stock is held in the PRODUCT's own unit while production is recorded in kg —
+    # convert exactly as product_stock does, so Tally and Stock on Hand cannot drift.
+    pids = {o.product_id for o in outputs} | ({cycle.raw_material_id} if cycle.raw_material_id else set())
+    pmap = {}
+    if pids:
+        for pr in (await db.execute(select(Product).where(Product.id.in_(pids)))).scalars().all():
+            pmap[pr.id] = pr
+
+    def _to_product_unit(kg, product) -> Decimal:
+        qty = Decimal(str(kg or 0))
+        unit = (getattr(product, "unit", "") or "").upper()
+        if unit == "MT":
+            return qty / Decimal("1000")
+        if unit == "QUINTAL":
+            return qty / Decimal("100")
+        return qty
+
+    consumed, produced, skipped = [], [], []
+    raw = pmap.get(cycle.raw_material_id) if cycle.raw_material_id else None
+    if raw is not None and (cycle.input_kg or 0) > 0:
+        consumed.append({"name": raw.name, "unit": raw.unit or "Nos",
+                         "qty": _to_product_unit(cycle.input_kg, raw)})
+    for o in outputs:
+        pr = pmap.get(o.product_id)
+        if pr is None:
+            continue
+        if not (o.output_kg or 0) > 0:
+            continue
+        produced.append({"name": pr.name, "unit": pr.unit or "Nos",
+                         "qty": _to_product_unit(o.output_kg, pr)})
+        if not getattr(pr, "tally_synced", False):
+            skipped.append(pr.name)
+
+    if not consumed and not produced:
+        raise HTTPException(400, "This cycle has no input or output quantity to send.")
+
+    company = await _get_company(db, current_user.company_id)
+    godown, batch_name = _stock_location(cfg)
+    xml = build_stock_journal_xml(cycle, company, consumed, produced,
+                                  godown=godown, batch_name=batch_name)
+    company_name = cfg.tally_company_name or getattr(company, "name", "") or ""
+    op_ok, message, _ = await _dispatch_xml(
+        cfg, "production_cycle", cycle.id, company_name, xml, db, current_user)
+    await db.commit()
+    return {
+        "success": op_ok,
+        "message": message,
+        "consumed": [{"item": c["name"], "qty": float(c["qty"]), "unit": c["unit"]} for c in consumed],
+        "produced": [{"item": p_["name"], "qty": float(p_["qty"]), "unit": p_["unit"]} for p_ in produced],
+        # Naming an item Tally has never been told about rejects the voucher.
+        "items_not_yet_in_tally": sorted(set(skipped)),
+    }
+
+
+@router.post("/sync/opening-stock")
+async def sync_opening_stock_to_tally(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Seed Tally with today's Stock on Hand as each item's opening balance.
+
+    Run ONCE, before inventory vouchers start flowing. Tally starts every item at
+    zero, so without this the first sale drives it negative. Deliberately separate
+    from the ordinary item sync: re-sending an item master must never silently
+    reset an opening balance the accountant has since adjusted.
+    """
+    from app.models.product_stock import ProductStock
+
+    cfg = await _get_config(db, current_user.company_id)
+    if not cfg or not cfg.is_enabled:
+        raise HTTPException(400, "Tally integration is not enabled. Enable it in Tally → Setup & Mapping.")
+
+    company = await _get_company(db, current_user.company_id)
+    vol_unit = tally_units.canonical_volume_unit(cfg)
+    rows = (await db.execute(
+        select(Product, ProductStock.current_stock)
+        .join(ProductStock, ProductStock.product_id == Product.id)
+        .where(Product.company_id == current_user.company_id)
+    )).all()
+
+    xmls, seeded = [], []
+    for product, qty in rows:
+        if not qty or Decimal(str(qty)) <= 0:
+            continue
+        xmls.append(build_stock_item_xml(product, company, volume_unit=vol_unit,
+                                         opening_qty=Decimal(str(qty))))
+        seeded.append({"item": product.name, "qty": float(qty), "unit": product.unit})
+
+    if not xmls:
+        return {"success": True, "message": "No item has stock on hand — nothing to seed.", "items": []}
+
+    xml = _merge_master_xmls(xmls, tally_company=_tally_cfg_company(cfg, company))
+    company_name = cfg.tally_company_name or getattr(company, "name", "") or ""
+    eid = uuid.uuid5(uuid.NAMESPACE_URL, f"tally-opening-stock:{current_user.company_id}")
+    op_ok, message, _ = await _dispatch_xml(
+        cfg, "opening_stock", eid, company_name, xml, db, current_user)
+    await db.commit()
+    return {"success": op_ok, "message": message, "items": seeded}
 
 
 @router.get("/sync-log")
@@ -968,6 +1128,11 @@ async def sync_product_to_tally(
 
     company_name = cfg.tally_company_name or getattr(company, "name", "") or ""
     op_ok, message, _synced = await _dispatch_xml(cfg, "product", product.id, company_name, xml, db, current_user)
+    # In direct mode Tally confirms immediately; in relay mode the connector's
+    # report flips this later (see relay_queue._SOURCE_TABLE).
+    if _synced:
+        product.tally_synced = True
+        product.tally_sync_at = datetime.now(timezone.utc)
     await db.commit()   # persist the relay job (no-op in direct mode)
 
     return {

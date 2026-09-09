@@ -83,6 +83,13 @@ class TallyConfig(Base):
     # eligible for Tally sync (pending list / auto-sync / manual). Default False
     # keeps the historical GST-only behaviour (cash sales stay out of the books).
     sync_non_gst: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Inventory (full-mode) vouchers. The godown must exist in Tally by this
+    # exact name or EVERY stock line is rejected; 'Main Location' is Tally's
+    # default. A batch name is only valid when the item has batching enabled,
+    # so it is opt-in — sending one to a non-batched item is refused by Tally.
+    godown_name: Mapped[str | None] = mapped_column(String(100))
+    use_batches: Mapped[bool] = mapped_column(Boolean, default=False)
     # Which volume unit Tally stock items carry as their alternate unit. Tally
     # allows ONE alternate per item, and the app bills volume under several
     # labels (CBM/CUM/CFT/BRASS), so the tenant picks the one Tally should hold;

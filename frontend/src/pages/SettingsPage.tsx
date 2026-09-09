@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Save, Loader2, Plus, CheckCircle2, Usb, Shield, Trash2, Mail, Phone, MessageSquare, TestTube, Send, RefreshCw, CheckCircle, XCircle, Server, Scale, ScanLine, Play, RotateCcw, Camera, Truck, X, Download, HardDrive, Upload, ClipboardList } from 'lucide-react';
+import { Save, Loader2, Plus, CheckCircle2, Usb, Shield, Trash2, Mail, Phone, MessageSquare, TestTube, Send, RefreshCw, CheckCircle, XCircle, Server, Scale, ScanLine, Play, RotateCcw, Camera, Truck, X, Download, HardDrive, Upload, ClipboardList, Boxes } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -987,6 +987,9 @@ interface TallyConfig {
   // No-GST / accounting-only export (legacy Tally + non-GST demo companies)
   accounting_only: boolean;
   sync_non_gst: boolean;
+  // Inventory vouchers: where stock posts in Tally.
+  godown_name: string;
+  use_batches: boolean;
   // Volume unit Tally stock items carry as their alternate unit
   volume_unit?: string | null;
   // Invoice-number prefix filter (comma-separated; blank = sync all)
@@ -1243,6 +1246,8 @@ const DEFAULT_TALLY_CFG: TallyConfig = {
   narration_vehicle: true, narration_token: true, narration_weight: true,
   accounting_only: false,
   sync_non_gst: false,
+  godown_name: '',
+  use_batches: false,
   volume_unit: 'CUM',
 };
 
@@ -1258,6 +1263,21 @@ export function TallyTab() {
   const [connStatus, setConnStatus] = useState<ConnectorStatus | null>(null);
   const [deadJobs, setDeadJobs] = useState<TallyJob[]>([]);
   const isRelay = cfg.mode === 'relay';
+  const [seeding, setSeeding] = useState(false);
+  const [openingMsg, setOpeningMsg] = useState('');
+
+  async function seedOpeningStock() {
+    setSeeding(true); setOpeningMsg('');
+    try {
+      const { data } = await api.post<{ message?: string; items?: unknown[] }>(
+        '/api/v1/tally/sync/opening-stock');
+      const n = data?.items?.length ?? 0;
+      setOpeningMsg(`${data?.message ?? 'Sent'} — ${n} item(s) seeded.`);
+    } catch (e: any) {
+      const d = e?.response?.data?.detail;
+      setOpeningMsg(typeof d === 'string' ? d : 'Could not send opening stock');
+    } finally { setSeeding(false); }
+  }
 
   const loadConnector = useCallback(() => {
     api.get<ConnectorStatus>('/api/v1/tally/connector/status').then(r => setConnStatus(r.data)).catch(() => {});
@@ -1660,6 +1680,50 @@ export function TallyTab() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Inventory — only meaningful when stock lines are actually being sent */}
+      {!cfg.accounting_only && (
+      <Card className="break-inside-avoid xl:mb-5">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold">Inventory in Tally</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Where stock lines post. The godown must exist in Tally under this exact name or
+            Tally rejects the whole voucher. Blank uses Tally's default,
+            <span className="font-mono"> Main Location</span>.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-1">
+            <Label>Godown / Location name</Label>
+            <Input value={cfg.godown_name} onChange={e => setCfg(c => ({ ...c, godown_name: e.target.value }))}
+                   placeholder="Main Location" />
+          </div>
+          <label className="flex items-start gap-2 text-sm cursor-pointer">
+            <input type="checkbox" checked={cfg.use_batches}
+              onChange={e => setCfg(c => ({ ...c, use_batches: e.target.checked }))}
+              className="h-4 w-4 mt-0.5 rounded border-gray-300" />
+            <span>
+              <span className="font-medium">My stock items use batches</span>
+              <span className="block text-xs text-muted-foreground mt-0.5">
+                Tick only if batching is enabled on those items in Tally — a batch name on an
+                item that has none makes Tally reject the voucher.
+              </span>
+            </span>
+          </label>
+          <div className="pt-1 border-t">
+            <p className="text-xs text-muted-foreground mb-2">
+              Tally starts every item at zero. Seed it with today's Stock on Hand <b>once</b>,
+              before invoices start moving stock, or the first sale drives it negative.
+            </p>
+            <Button variant="outline" size="sm" onClick={seedOpeningStock} disabled={seeding}>
+              {seeding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Boxes className="mr-2 h-4 w-4" />}
+              Send opening stock to Tally
+            </Button>
+            {openingMsg && <p className="text-xs mt-2">{openingMsg}</p>}
+          </div>
+        </CardContent>
+      </Card>
+      )}
 
       {/* Did it actually land? Tally's own verdict, per record. */}
       <Card className="break-inside-avoid xl:mb-5">

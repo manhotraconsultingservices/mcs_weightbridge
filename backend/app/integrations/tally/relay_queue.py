@@ -20,6 +20,7 @@ from app.models.tally_job import TallySyncJob
 _SOURCE_TABLE = {
     "invoice": "invoices",
     "party": "parties",
+    "product": "products",
     "sales_order": "quotations",
     "purchase_order": "inventory_purchase_orders",
 }

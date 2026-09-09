@@ -155,6 +155,8 @@ def _build_voucher_xml(
     bill_type: str = "New Ref",           # "New Ref" (invoice) | "Agst Ref" (credit/debit note vs original)
     bill_ref_name: str | None = None,     # original invoice no, used when bill_type="Agst Ref"
     accounting_only: bool = False,        # legacy/no-GST mode: party + income ledger only, no stock/GST
+    godown: str | None = None,            # Tally godown for stock lines (must exist in Tally)
+    batch_name: str | None = None,        # only for items with batching enabled
 ) -> str:
     # Sign + income-ledger selection are decoupled from the voucher label so a
     # Credit Note (which reverses a sale) can carry VCHTYPE="Credit Note", post
@@ -304,10 +306,13 @@ def _build_voucher_xml(
         if item.get("gst_rate") and float(item["gst_rate"]) > 0:
             _sub(inv_entry, "GSTRATE", f"{float(item['gst_rate']):.2f}")
 
-        # Batch allocation
+        # Godown allocation. The godown must exist in Tally under this exact
+        # name or the line is rejected. A BATCHNAME is only valid on an item with
+        # batching enabled, so it is opt-in per tenant.
         batch = _sub(inv_entry, "BATCHALLOCATIONS.LIST")
-        _sub(batch, "GODOWNNAME", "Main Location")
-        _sub(batch, "BATCHNAME", "Primary Batch")
+        _sub(batch, "GODOWNNAME", godown or "Main Location")
+        if batch_name:
+            _sub(batch, "BATCHNAME", batch_name)
         _sub(batch, "AMOUNT", _fmt_amt(item["amount"], stock_sign))
         _sub(batch, "ACTUALQTY", f"{float(item['qty']):.3f} {item['unit']}")
         _sub(batch, "BILLEDQTY", f"{float(item['qty']):.3f} {item['unit']}")
@@ -559,7 +564,8 @@ def build_unit_xml(symbol: str, company, decimals: int = 3) -> str:
     return _pretty(root)
 
 
-def build_stock_item_xml(product, company, volume_unit: str = "CUM") -> str:
+def build_stock_item_xml(product, company, volume_unit: str = "CUM",
+                         opening_qty=None) -> str:
     """Build Tally XML to create a Stock Item master.
 
     Minimal by default (name + base unit + HSN) so it imports on legacy Tally too.
@@ -606,6 +612,10 @@ def build_stock_item_xml(product, company, volume_unit: str = "CUM") -> str:
         _sub(item, "ADDITIONALUNITS", _alt_sym)
         _sub(item, "CONVERSION", tally_units.format_conversion(_conv))
         _sub(item, "DENOMINATOR", "1")
+    if opening_qty is not None and float(opening_qty) > 0:
+        # Only the deliberate one-time seed passes this. An ordinary item re-sync
+        # must never carry it, or it would reset a balance Tally has since moved.
+        _sub(item, "OPENINGBALANCE", f"{float(opening_qty):.3f} {unit}")
     if _hsn:
         _sub(item, "HSNCODE", _hsn)          # for GSTR-1 HSN summary (harmless in no-GST)
     if _gst_rate > 0:
@@ -625,6 +635,71 @@ def build_stock_item_xml(product, company, volume_unit: str = "CUM") -> str:
             rd = _sub(sw, "RATEDETAILS.LIST")
             _sub(rd, "GSTRATEDUTYHEAD", head)
             _sub(rd, "GSTRATE", f"{rate:g}")
+    return _pretty(root)
+
+
+def build_stock_journal_xml(
+    cycle,
+    company,
+    consumed: list[dict],      # [{name, unit, qty}] raw material used
+    produced: list[dict],      # [{name, unit, qty}] finished goods made
+    godown: str | None = None,
+    batch_name: str | None = None,
+) -> str:
+    """Build a Tally **Stock Journal** for one production cycle.
+
+    A crusher's finished goods are MANUFACTURED, not bought — so a sales voucher
+    takes stock out of Tally while nothing ever puts it in, and Tally's inventory
+    runs permanently negative. This is the missing inflow: raw material out,
+    finished goods in, as one voucher.
+
+    Quantity only. Weighbridge holds no cost for produced goods, so no value is
+    asserted — Tally values the transfer by its own costing method rather than a
+    number we would have to invent.
+    """
+    tally_company = _tally_company_name(company)
+    root = ET.Element("ENVELOPE")
+    _sub(_sub(root, "HEADER"), "TALLYREQUEST", "Import Data")
+    imp = _sub(_sub(root, "BODY"), "IMPORTDATA")
+    rdesc = _sub(imp, "REQUESTDESC")
+    _sub(rdesc, "REPORTNAME", "Vouchers")
+    _current_company(rdesc, tally_company)
+
+    msg = _sub(_sub(imp, "REQUESTDATA"), "TALLYMESSAGE")
+    msg.set("xmlns:UDF", "TallyUDF")
+    vch = _sub(msg, "VOUCHER")
+    vch.set("VCHTYPE", "Stock Journal")
+    vch.set("ACTION", "Create")
+    vch.set("OBJVIEW", "Consumption Voucher View")
+
+    _sub(vch, "DATE", _fmt_date(cycle.cycle_date))
+    # Same GUID rule as invoices: re-sending a corrected cycle ALTERs the voucher
+    # instead of adding a second one (needs Tally's overwrite-same-GUID setting).
+    _sub(vch, "GUID", str(cycle.id))
+    _sub(vch, "VOUCHERTYPENAME", "Stock Journal")
+    _sub(vch, "VOUCHERNUMBER", f"CYC/{cycle.cycle_date}/{getattr(cycle, 'cycle_no', '')}".rstrip("/"))
+    _sub(vch, "NARRATION", f"Production cycle {cycle.cycle_date}")
+
+    def _leg(tag: str, row: dict) -> None:
+        e = _sub(vch, tag)
+        _sub(e, "STOCKITEMNAME", row["name"])
+        qty = f"{float(row['qty']):.3f} {row['unit']}"
+        _sub(e, "ACTUALQTY", qty)
+        _sub(e, "BILLEDQTY", qty)
+        b = _sub(e, "BATCHALLOCATIONS.LIST")
+        _sub(b, "GODOWNNAME", godown or "Main Location")
+        if batch_name:
+            _sub(b, "BATCHNAME", batch_name)
+        _sub(b, "ACTUALQTY", qty)
+        _sub(b, "BILLEDQTY", qty)
+
+    for row in consumed:
+        if float(row.get("qty") or 0) > 0:
+            _leg("INVENTORYENTRIESOUT.LIST", row)
+    for row in produced:
+        if float(row.get("qty") or 0) > 0:
+            _leg("INVENTORYENTRIESIN.LIST", row)
+
     return _pretty(root)
 
 
@@ -865,6 +940,8 @@ def build_sales_xml(
     ledgers: TallyLedgerMap | None = None,
     narration_opts: NarrationOptions | None = None,
     accounting_only: bool = False,
+    godown: str | None = None,
+    batch_name: str | None = None,
     volume_unit: str = "CUM",
 ) -> str:
     """Build Tally XML for a Sales voucher."""
@@ -885,6 +962,8 @@ def build_sales_xml(
     return _build_voucher_xml(
         vch_type="Sales",
         accounting_only=accounting_only,
+        godown=godown,
+        batch_name=batch_name,
         voucher_no=invoice.invoice_no or "",
         voucher_date=invoice.invoice_date,
         due_date=getattr(invoice, "due_date", None),
@@ -916,6 +995,8 @@ def build_purchase_xml(
     ledgers: TallyLedgerMap | None = None,
     narration_opts: NarrationOptions | None = None,
     accounting_only: bool = False,
+    godown: str | None = None,
+    batch_name: str | None = None,
     volume_unit: str = "CUM",
 ) -> str:
     """Build Tally XML for a Purchase voucher."""
@@ -936,6 +1017,8 @@ def build_purchase_xml(
     return _build_voucher_xml(
         vch_type="Purchase",
         accounting_only=accounting_only,
+        godown=godown,
+        batch_name=batch_name,
         voucher_no=invoice.invoice_no or "",
         voucher_date=invoice.invoice_date,
         due_date=getattr(invoice, "due_date", None),
@@ -985,6 +1068,8 @@ def build_credit_note_xml(
     narration_opts: NarrationOptions | None = None,
     reference_invoice_no: str | None = None,
     accounting_only: bool = False,
+    godown: str | None = None,
+    batch_name: str | None = None,
     volume_unit: str = "CUM",
 ) -> str:
     """Build Tally XML for a Credit Note (seller-issued, against a SALE invoice).
@@ -1000,6 +1085,8 @@ def build_credit_note_xml(
     return _build_voucher_xml(
         vch_type="Credit Note",
         accounting_only=accounting_only,
+        godown=godown,
+        batch_name=batch_name,
         sign_basis="purchase",
         item_ledger_kind="sales",
         bill_type="Agst Ref",
@@ -1034,6 +1121,8 @@ def build_debit_note_xml(
     narration_opts: NarrationOptions | None = None,
     reference_invoice_no: str | None = None,
     accounting_only: bool = False,
+    godown: str | None = None,
+    batch_name: str | None = None,
     volume_unit: str = "CUM",
 ) -> str:
     """Build Tally XML for a Debit Note (seller-issued supplementary, against a
@@ -1047,6 +1136,8 @@ def build_debit_note_xml(
     return _build_voucher_xml(
         vch_type="Debit Note",
         accounting_only=accounting_only,
+        godown=godown,
+        batch_name=batch_name,
         sign_basis="sales",
         item_ledger_kind="sales",
         bill_type="Agst Ref",

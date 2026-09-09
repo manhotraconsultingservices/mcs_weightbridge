@@ -28,7 +28,12 @@ class Product(Base):
     name: Mapped[str] = mapped_column(String(200))
     code: Mapped[str | None] = mapped_column(String(50))
     hsn_code: Mapped[str] = mapped_column(String(8), default="2517")
-    unit: Mapped[str] = mapped_column(String(10))  # MT, CFT, BRASS, CUM, NOS
+    unit: Mapped[str] = mapped_column(String(10))
+    # Which items have actually reached Tally as Stock Items — without this
+    # there is no way to see what is missing, and a voucher naming an unknown
+    # item is rejected outright.
+    tally_synced: Mapped[bool] = mapped_column(Boolean, default=False)
+    tally_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # MT, CFT, BRASS, CUM, NOS
     default_rate: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
     gst_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=5.00)
     # Govt mineral royalty rate, ₹ per cubic metre (CUM). Nullable — set per item on
