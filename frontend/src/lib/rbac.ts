@@ -169,6 +169,7 @@ export const HUB_TABS: Record<string, { value: string; label: string }[]> = {
   '/tally': [
     { value: 'log',     label: 'Sync Log' },
     { value: 'pending', label: 'Pending' },
+    { value: 'setup',   label: 'Setup & Mapping (admin only)' },
   ],
   '/accounts': [
     { value: 'payments',  label: 'Payments' },

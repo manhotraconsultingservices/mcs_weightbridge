@@ -1246,7 +1246,9 @@ const DEFAULT_TALLY_CFG: TallyConfig = {
   volume_unit: 'CUM',
 };
 
-function TallyTab() {
+// Exported so the Tally hub can host it — all Tally configuration lives under
+// the Tally nav now, not split between here and there.
+export function TallyTab() {
   const [cfg, setCfg] = useState<TallyConfig>({ ...DEFAULT_TALLY_CFG });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -4235,7 +4237,6 @@ export default function SettingsPage() {
             { value: 'prefixes', label: 'Invoice Prefixes' },
             { value: 'fy', label: 'Financial Years' },
             ...(!isSaas ? [{ value: 'usb', label: 'USB Guard' }, { value: 'scale', label: 'Weight Scale' }] : []),
-            { value: 'tally', label: 'Tally' },
             { value: 'weighbridge', label: 'Weighbridge' },
             { value: 'notifications', label: 'Notifications' },
             ...(!isSaas ? [{ value: 'cameras', label: 'Cameras' }] : []),
@@ -4260,7 +4261,6 @@ export default function SettingsPage() {
           {canShow('fy') && <TabsTrigger value="fy">Financial Years</TabsTrigger>}
           {!isSaas && canShow('usb') && <TabsTrigger value="usb">USB Guard</TabsTrigger>}
           {!isSaas && canShow('scale') && <TabsTrigger value="scale">Weight Scale</TabsTrigger>}
-          {canShow('tally') && <TabsTrigger value="tally">Tally</TabsTrigger>}
           {canShow('weighbridge') && <TabsTrigger value="weighbridge">Weighbridge</TabsTrigger>}
           {canShow('notifications') && <TabsTrigger value="notifications">Notifications</TabsTrigger>}
           {!isSaas && canShow('cameras') && (
@@ -4409,11 +4409,6 @@ export default function SettingsPage() {
           <WeightScaleTab />
         </TabsContent>
 
-        {/* Tally Integration */}
-        <TabsContent value="tally" className="mt-4">
-          <TallyTab />
-        </TabsContent>
-
         {/* Weighbridge urgency thresholds */}
         <TabsContent value="weighbridge" className="mt-4">
           <WeighbridgeTab />
@@ -4476,7 +4471,7 @@ export default function SettingsPage() {
       </Tabs>
 
       {/* Save button (not on FY, USB Guard, Scale, Tally, Weighbridge, Notifications, or Print tabs) */}
-      {tab !== 'fy' && tab !== 'usb' && tab !== 'scale' && tab !== 'tally' && tab !== 'weighbridge' && tab !== 'notifications' && tab !== 'cameras' && tab !== 'einvoice' && tab !== 'eway' && tab !== 'upi' && tab !== 'anpr' && tab !== 'barrier' && tab !== 'units' && tab !== 'gate-cameras' && tab !== 'print' && (
+      {tab !== 'fy' && tab !== 'usb' && tab !== 'scale' && tab !== 'weighbridge' && tab !== 'notifications' && tab !== 'cameras' && tab !== 'einvoice' && tab !== 'eway' && tab !== 'upi' && tab !== 'anpr' && tab !== 'barrier' && tab !== 'units' && tab !== 'gate-cameras' && tab !== 'print' && (
         <div className="flex items-center gap-3">
           <Button onClick={saveCompany} disabled={saving}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

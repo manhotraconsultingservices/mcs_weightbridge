@@ -1,14 +1,14 @@
 /**
  * Tally hub — everything a user does with Tally, in one place.
  *
- * Two questions this answers: what has NOT gone to Tally yet (Pending), and what
- * happened to everything that was sent (Sync Log). Configuration stays in
- * Settings → Tally, which is admin-only and is also the switch that reveals this
- * hub at all.
+ * Three questions: what has NOT gone to Tally yet (Pending), what happened to
+ * everything sent (Sync Log), and how it is wired up (Setup & Mapping). Setup was
+ * moved out of Settings so nothing Tally lives in two places — it stays admin-only,
+ * and stays reachable with the integration off, because it is the switch.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ClipboardList, Clock, RefreshCw } from 'lucide-react';
+import { ClipboardList, Clock, RefreshCw, Settings2 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { MobileTabSelect } from '@/components/MobileTabSelect';
 import { Card, CardContent } from '@/components/ui/card';
@@ -19,8 +19,10 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { useTallyEnabled } from '@/hooks/useTallyEnabled';
 import api from '@/services/api';
 import TallySyncLogPage from './TallySyncLogPage';
+import { TallyTab as TallySetup } from './SettingsPage';
+import { getCurrentUser } from '@/hooks/useAuth';
 
-type Tab = 'log' | 'pending';
+type Tab = 'log' | 'pending' | 'setup';
 
 interface PendingRow {
   id: string;
@@ -95,12 +97,17 @@ export default function TallyHubPage() {
   const nav = useNavigate();
   const loc = useLocation();
 
+  // Setup carries connection + ledger mapping, so it stays admin-only exactly as
+  // it was under Settings — moving it here must not widen who can change it.
+  const isAdmin = getCurrentUser()?.role === 'admin';
   const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
     { value: 'log', label: 'Sync Log', icon: ClipboardList },
     { value: 'pending', label: 'Pending', icon: Clock },
+    ...(isAdmin ? [{ value: 'setup' as Tab, label: 'Setup & Mapping', icon: Settings2 }] : []),
   ];
   const visibleTabs = TABS.filter(tb => isTabAllowed('/tally', tb.value));
-  const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab) || 'log';
+  const initialRaw = (new URLSearchParams(loc.search).get('tab') as Tab)
+    || (!tallyEnabled && isAdmin ? 'setup' : 'log');
   const initial = (visibleTabs.find(tb => tb.value === initialRaw)?.value ?? visibleTabs[0]?.value ?? 'log') as Tab;
   const [tab, setTab] = useState<Tab>(initial);
 
@@ -112,11 +119,13 @@ export default function TallyHubPage() {
     }
   }, [tab, loc.search, nav]);
 
-  if (!tallyEnabled) {
+  // With Tally off there is nothing to log — but an admin still needs Setup here,
+  // since this page is now the only place to switch it on.
+  if (!tallyEnabled && !isAdmin) {
     return (
       <Card>
         <CardContent className="pt-6 text-sm text-muted-foreground">
-          Tally integration is switched off. An administrator can turn it on in <b>Settings → Tally</b>.
+          Tally integration is switched off. An administrator can turn it on under <b>Tally → Setup &amp; Mapping</b>.
         </CardContent>
       </Card>
     );
@@ -140,6 +149,7 @@ export default function TallyHubPage() {
 
         <TabsContent value="log" className="mt-4"><TallySyncLogPage /></TabsContent>
         <TabsContent value="pending" className="mt-4"><PendingTab /></TabsContent>
+        {isAdmin && <TabsContent value="setup" className="mt-4"><TallySetup /></TabsContent>}
       </Tabs>
     </div>
   );
