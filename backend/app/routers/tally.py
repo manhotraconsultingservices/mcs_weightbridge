@@ -459,13 +459,34 @@ async def _push_invoice(
 # Routes
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _effective_mode(cfg) -> str:
+    """Resolved transport mode ('direct'|'relay'). Imported lazily like the
+    transport itself, so this router never imports the queue at module load."""
+    from app.integrations.tally.transport import effective_mode
+    return effective_mode(cfg)
+
+
+def _config_out(cfg) -> TallyConfigOut:
+    """Serialise the config reporting the EFFECTIVE transport mode.
+
+    ``mode`` is stored as an OVERRIDE — NULL means "derive from the deployment"
+    (cloud → relay, on-prem → direct). Returning the raw NULL made the Settings
+    page treat every cloud tenant as on-premise: it showed Host/Port and a "Test
+    Connection" button that makes the CLOUD dial its own localhost (always fails,
+    and reads as if the client's Tally were unreachable), while hiding the
+    connector queue that tenant actually needs. Report what will really happen.
+    """
+    out = TallyConfigOut.model_validate(cfg)
+    return out.model_copy(update={"mode": _effective_mode(cfg)})
+
+
 @router.get("/config", response_model=TallyConfigOut)
 async def get_tally_config(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     cfg = await _get_config(db, current_user.company_id)
-    return cfg
+    return _config_out(cfg)
 
 
 @router.put("/config", response_model=TallyConfigOut)
@@ -519,6 +540,16 @@ async def test_tally_connection(
     db: AsyncSession = Depends(get_db),
 ):
     cfg = await _get_config(db, current_user.company_id)
+    if _effective_mode(cfg) == "relay":
+        # There is nothing meaningful to test from here: this server would be
+        # dialling its OWN localhost, not the client's Tally PC.
+        return {
+            "success": False,
+            "message": ("This company syncs through the Tally Connector running on your own "
+                        "PC — the cloud cannot reach your Tally directly, so there is nothing "
+                        "to test from here. On the Tally PC run:  tally_connector.exe --test"),
+            "host": cfg.host, "port": cfg.port,
+        }
     client = _make_client(cfg)
     success, message = await client.test_connection()
     return {"success": success, "message": message, "host": cfg.host, "port": cfg.port}
@@ -533,6 +564,112 @@ async def list_tally_companies(
     client = _make_client(cfg)
     ok, companies = await client.get_companies()
     return {"success": ok, "companies": companies}
+
+
+@router.get("/sync-log")
+async def tally_sync_log(
+    status: Optional[str] = None,          # delivered | waiting | failed
+    entity_type: Optional[str] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 100,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every record sent to Tally, and whether Tally accepted it.
+
+    Answers the only question that matters day to day — "did this actually land?"
+    — from Tally's OWN reply, not from our intent to send. `delivered` means Tally
+    reported it created or altered the record; `failed` carries Tally's exact
+    words (missing ledger, refused company, timeout) so the cause is actionable.
+
+    Reads the connector queue, so it is populated in cloud (relay) mode. On-prem
+    direct mode pushes synchronously and keeps no queue — the caller is told so
+    rather than being shown a misleading empty log.
+    """
+    cid = str(current_user.company_id)
+    mode = _effective_mode(await _get_config(db, cid))
+
+    where = ["j.company_id = :cid"]
+    params: dict = {"cid": cid}
+    status_sql = {
+        "delivered": "j.status = 'done'",
+        "waiting": "j.status IN ('pending','in_progress')",
+        "failed": "j.status IN ('dead','failed')",
+    }
+    if status in status_sql:
+        where.append(status_sql[status])
+    if entity_type:
+        where.append("j.entity_type = :et")
+        params["et"] = entity_type
+
+    # One readable name per row, whatever kind of record it is.
+    label = (
+        "COALESCE(i.invoice_no, pa.name, pr.name, "
+        "substring(j.xml from '<VOUCHERNUMBER>([^<]*)</VOUCHERNUMBER>'), "
+        "substring(j.xml from '<LEDGER NAME=\"([^\"]*)\"'), "
+        "substring(j.xml from '<STOCKITEM NAME=\"([^\"]*)\"'), "
+        "j.entity_type)"
+    )
+    if search:
+        where.append(f"{label} ILIKE :q")
+        params["q"] = f"%{search.strip()}%"
+
+    joins = (
+        "FROM tally_sync_jobs j "
+        "LEFT JOIN invoices i ON i.id = j.entity_id "
+        "LEFT JOIN parties  pa ON pa.id = j.entity_id "
+        "LEFT JOIN products pr ON pr.id = j.entity_id "
+    )
+    clause = " WHERE " + " AND ".join(where)
+
+    total = (await db.execute(text(f"SELECT count(*) {joins}{clause}"), params)).scalar() or 0
+    params["lim"] = max(1, min(int(page_size or 100), 500))
+    params["off"] = max(0, (max(1, int(page or 1)) - 1) * params["lim"])
+
+    rows = (await db.execute(text(
+        f"SELECT j.id, j.entity_type, {label} AS label, j.status, j.attempts, "
+        f"j.last_error, j.company_name, j.created_at, j.completed_at, j.next_attempt_at "
+        f"{joins}{clause} ORDER BY COALESCE(j.completed_at, j.created_at) DESC "
+        f"LIMIT :lim OFFSET :off"
+    ), params)).fetchall()
+
+    counts = dict((r[0], r[1]) for r in (await db.execute(text(
+        f"SELECT j.status, count(*) {joins} WHERE j.company_id = :cid GROUP BY j.status"
+    ), {"cid": cid})).fetchall())
+
+    def outcome(st: str) -> str:
+        if st == "done":
+            return "delivered"
+        if st in ("dead", "failed"):
+            return "failed"
+        return "waiting"
+
+    return {
+        "mode": mode,
+        "total": int(total),
+        "summary": {
+            "delivered": int(counts.get("done", 0)),
+            "waiting": int(counts.get("pending", 0)) + int(counts.get("in_progress", 0)),
+            "failed": int(counts.get("dead", 0)) + int(counts.get("failed", 0)),
+        },
+        "items": [
+            {
+                "id": str(r.id),
+                "entity_type": r.entity_type,
+                "label": r.label,
+                "outcome": outcome(r.status),
+                "status": r.status,
+                "attempts": r.attempts,
+                "reason": r.last_error,
+                "tally_company": r.company_name,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+                "next_attempt_at": r.next_attempt_at.isoformat() if r.next_attempt_at else None,
+            }
+            for r in rows
+        ],
+    }
 
 
 @router.get("/pending")
